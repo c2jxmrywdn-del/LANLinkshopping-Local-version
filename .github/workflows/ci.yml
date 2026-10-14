@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-fund
+      - name: Run tests
+        working-directory: frontend
+        run: npm test
+      - name: Build production assets
+        working-directory: frontend
+        run: npm run build
+
+  backend:
+    name: Backend tests and verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - name: Verify backend
+        working-directory: backend
+        run: mvn -B -ntp verify
+
+  support-sandbox:
+    name: Support sandbox regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run sandbox regression tests
+        working-directory: support-learning-sandbox
+        run: python -m unittest -v
+      - name: Check Python syntax and regression JSON
+        working-directory: support-learning-sandbox
+        run: |
+          python -m py_compile conversation_quality.py test_conversation_quality.py
+          python -m json.tool conversation_regression_cases.json > /dev/null

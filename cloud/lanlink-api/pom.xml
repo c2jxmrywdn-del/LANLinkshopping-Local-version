@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lanlink.cloud</groupId>
+        <artifactId>lanlink-cloud-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>lanlink-api</artifactId>
+    <name>lanlink-api</name>
+    <description>OpenFeign 接口契约与跨服务 DTO（服务间唯一契约源）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.lanlink.cloud</groupId>
+            <artifactId>lanlink-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+    </dependencies>
+</project>

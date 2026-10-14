@@ -1,0 +1,27 @@
+services:
+  support-learning-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8080"
+      SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in your shell before starting}
+    ports:
+      - "127.0.0.1:18080:8080"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: "0.25"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=8m
+    restart: unless-stopped
+    networks:
+      - sandbox-internal
+
+networks:
+  sandbox-internal:
+    internal: true

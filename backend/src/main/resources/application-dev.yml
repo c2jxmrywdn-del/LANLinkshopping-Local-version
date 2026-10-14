@@ -1,0 +1,60 @@
+server:
+  # 本地开发：HTTP + 同源（Vite 代理），Session Cookie 必须放开 secure/same-site 限制，
+  # 否则浏览器在 http://localhost 上不会保存登录 Session（原配置为 Vercel/Railway 跨站生产策略）。
+  servlet:
+    session:
+      cookie:
+        secure: false
+        http-only: true
+        same-site: lax
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: "${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/lanlink_shopping?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true}"
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+  # 启动时自动执行建表脚本(脚本幂等, 表已存在/字典已插入时会跳过, 不会覆盖业务数据)
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:sql/schema.sql,classpath:sql/account.sql
+
+  # 本地邮件：指向 Mailpit 容器（docker-compose.local.yml 提供，SMTP :1025，收件箱 UI :8081）。
+  # Mailpit 免认证收信，用户名/密码任意非空即可（后端要求非空才算 smtpConfigured）。
+  # 需要切换真实 QQ 邮箱 SMTP 时：MAIL_HOST=smtp.qq.com / MAIL_PORT=465 / MAIL_SMTP_SSL=true 并填授权码。
+  mail:
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
+    username: ${MAIL_USERNAME:lanlink@local.dev}
+    password: ${MAIL_PASSWORD:lanlink-local}
+    properties:
+      mail:
+        smtp:
+          auth: false
+          ssl:
+            enable: ${MAIL_SMTP_SSL:false}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+            required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}
+
+# 本地公网基址：营销邮件退订链接等（生产默认指向 Railway 公网地址，本地必须覆盖）
+LANLINK_PUBLIC_API_URL: http://localhost:8080/api
+
+# 客服学习沙盒（Docker 容器，见 docker-compose.local.yml）：
+#   SUPPORT_SANDBOX_URL    沙盒服务地址
+#   SUPPORT_SANDBOX_TOKEN  与沙盒容器共享的访问令牌（.env 中配置）
+#   SUPPORT_SANDBOX_MODE   container=容器评估 / local=降级模式
+SUPPORT_SANDBOX_URL: ${SUPPORT_SANDBOX_URL:http://127.0.0.1:18080}
+SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:}
+SUPPORT_SANDBOX_MODE: ${SUPPORT_SANDBOX_MODE:container}
+
+# 开发环境显式启用演示功能；生产环境不加载此配置文件
+lanlink:
+  payment:
+    mock: ${LANLINK_PAYMENT_MOCK:true}
+  verify-code:
+    demo-mode: true
+  demo-data:
+    enabled: true

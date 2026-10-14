@@ -1,0 +1,251 @@
+/* =====================================================
+   LANLinkshopping 品牌色板（全局 CSS 变量）
+   前台 MainLayout 与后台 AdminLayout 共用，改色只动这里。
+   与 LOGO 双环 / 汇聚流 / 琥珀火花 取自同一套色。
+   ===================================================== */
+:root {
+  /* 主色（LOGO 双环渐变） */
+  --ll-indigo: #4F46E5;   /* 靛蓝 */
+  --ll-azure:  #0EA5E9;   /* 天蓝 */
+  --ll-sky:    #38BDF8;   /* 亮天蓝 */
+  --ll-cyan:   #22D3EE;   /* 青（核心节点） */
+
+  /* 点缀色（LOGO 裂变火花） */
+  --ll-amber:  #F59E0B;   /* 琥珀 */
+  --ll-amber-strong: #B45309; /* 琥珀加深（小字号/浅色底可达 WCAG 对比度 4.5:1） */
+  --ll-coral:  #FB7185;   /* 珊瑚 */
+
+  /* 中性 / 背景 */
+  --ll-navy:   #1F3864;   /* 前台顶栏深海军蓝 */
+  --ll-ink:    #0F172A;   /* 主文字 */
+  --ll-muted:  #64748B;   /* 次要文字 */
+  --ll-page:   #f5f6f8;   /* 页面底色 */
+
+  /* 渐变 token */
+  --ll-brand-gradient: linear-gradient(92deg, var(--ll-sky) 0%, var(--ll-cyan) 100%);
+  --ll-accent-gradient: linear-gradient(90deg, var(--ll-azure) 0%, var(--ll-cyan) 100%);
+  --ll-ring-gradient: linear-gradient(135deg, var(--ll-indigo) 0%, var(--ll-azure) 100%);
+  --ll-spark-gradient: linear-gradient(90deg, var(--ll-amber) 0%, var(--ll-coral) 100%);
+
+  /* =====================================================
+     Brand System v1 · Hero / Glass / Logo / Motion
+     首页 Hero、About Hero、Splash 启动过渡统一读取这些 Token。
+     ===================================================== */
+  --ll-brand-base: #13233A;
+  --ll-brand-base-deep: #0B1220;
+  --ll-brand-surface: #1F3864;
+  --ll-brand-red: #9B2D20;
+  --ll-brand-gold: #C8A45C;
+  --ll-brand-blue: #1E6EB8;
+  --ll-brand-gold-soft: #F6D38A;
+  --ll-brand-hero-gradient: linear-gradient(125deg, var(--ll-brand-base) 0%, var(--ll-brand-surface) 58%, #233F5F 100%);
+  --ll-brand-ambient-gradient: conic-gradient(from 120deg at 50% 50%, rgba(155,45,32,.09), rgba(200,164,92,.12), rgba(30,110,184,.12), rgba(155,45,32,.09));
+  --ll-brand-glow-red: rgba(155,45,32,.24);
+  --ll-brand-glow-gold: rgba(200,164,92,.18);
+  --ll-brand-glow-blue: rgba(30,110,184,.18);
+
+  /* Liquid-glass material */
+  --ll-glass-bg: rgba(255,255,255,.055);
+  --ll-glass-bg-strong: rgba(255,255,255,.085);
+  --ll-glass-border: rgba(255,255,255,.18);
+  --ll-glass-highlight: rgba(255,255,255,.16);
+  --ll-glass-shadow: 0 24px 70px rgba(19,35,58,.18);
+  --ll-glass-blur: 18px;
+  --ll-glass-blur-soft: 10px;
+  --ll-glass-saturate: 135%;
+
+  /* Logo motion */
+  --ll-logo-reveal-duration: .7s;
+  --ll-logo-reveal-delay: 1.55s;
+  --ll-logo-ring-duration: 1s;
+  --ll-logo-core-delay: 1.15s;
+  --ll-logo-ease: cubic-bezier(.2,.8,.2,1);
+  --ll-brand-transition: .65s;
+  --ll-brand-sheen-duration: 7.5s;
+  --ll-brand-ambient-duration: 8.5s;
+
+  /* 页面装饰 / 语义色 */
+  --ll-white:  #ffffff;
+  --ll-gray:   #4b5563;   /* 次要说明文字（浅色底对比度 ≥4.5:1） */
+  --ll-gray2:  #4b5563;   /* 提示文字 */
+  --ll-price:  #d93025;   /* 价格红（白底对比度 ≥4.5:1） */
+  --ll-thumb-bg: #eef1f6; /* 商品占位图底色 */
+  --ll-thumb-fg: #b9c3d4; /* 商品占位图文字 */
+
+  /* =====================================================
+     小清新浅天蓝 · 全局交互状态色系（点击/悬停/按压/禁用）
+     饱和度 30–45%，明亮通透、柔和不刺眼。
+     WCAG 2.1 AA 对比度实测见 docs/小清新浅天蓝-对比度测试报告.md
+     ===================================================== */
+  /* 浅天蓝主色（全局点击态填充 / “加入购物车”默认底）HSL(200°,40%,76%) */
+  --ll-skyblue: #A9CADA;
+  /* 悬停：亮度提升约 4pp，HSL(200°,43%,80%) */
+  --ll-skyblue-hover: #B7D4E2;
+  /* 按压：略深以反馈点击，HSL(204°,45%,73%) */
+  --ll-skyblue-active: #9BC0D9;
+  /* 协调边框色：白底非文本 ≥3:1，HSL(205°,38%,53%) */
+  --ll-skyblue-border: #5B8FB5;
+  /* 浅天蓝底上的深色文字（WCAG 普通文本 ≥4.5:1，实测 6.72:1） */
+  --ll-skyblue-on: #1F3864;
+  /* 禁用态：浅天蓝 45% 透明度 + 文字降透明（WCAG 豁免 disabled） */
+  --ll-skyblue-disabled: rgba(100, 197, 239, 0.45);
+  --ll-skyblue-on-disabled: rgba(31, 56, 100, 0.5);
+
+  /* 天蓝系主按钮色（antd colorPrimary，白字 ≥4.5:1 实测 5.28:1） */
+  --ll-primary: #1E6EB8;
+  --ll-primary-hover: #2774BD;  /* 白字 4.86:1 */
+  --ll-primary-active: #155B9E; /* 白字 6.95:1 */
+
+  /* 交互过渡时长：0.2–0.3s 平滑反馈 */
+  --ll-transition-fast: 0.2s;
+  --ll-transition-base: 0.25s;
+
+  /* 首页 banner 三张幻灯片渐变 */
+  --ll-slide1: linear-gradient(120deg, #1f3864, #3f6fb5);
+  --ll-slide2: linear-gradient(120deg, #0f6b5c, #39b58f);
+  --ll-slide3: linear-gradient(120deg, #8a4b1f, #d98e3a);
+}
+
+/* 品牌字标统一规范：首页、登录、后台、启动过渡共用同一字标效果。 */
+.ll-wordmark {
+  font-family: inherit;
+  font-weight: 700;
+  letter-spacing: -0.35px;
+  white-space: nowrap;
+}
+.ll-wordmark .ll-lan { color: #fff; }
+.ll-wordmark .ll-link { color: var(--ll-amber); font-weight: 700; }
+.ll-wordmark .ll-shopping { color: inherit; font-weight: 700; }
+.ll-wordmark-on-light .ll-lan { color: var(--ll-ink); }
+.ll-wordmark-on-light .ll-shopping { color: var(--ll-ink); }
+
+/* 兼容旧 .wordmark 标记 */
+.wordmark .ll-link { color: var(--ll-amber-strong); }
+
+/* =====================================================
+   全局交互状态标准化（点击态浅天蓝）
+   规则位于 antd reset.css 之后加载，保证同优先级时生效。
+   主按钮（白字）按压沿用 antd 天蓝加深，避免白字落在浅底上。
+   ===================================================== */
+
+/* 链接：点击反馈为浅天蓝 */
+a:active { color: var(--ll-skyblue-active); }
+
+/* 默认/描边/幽灵按钮：点击填充浅天蓝 */
+.ant-btn:not(.ant-btn-primary):not(.ant-btn-text):not(.ant-btn-link):not(:disabled):active {
+  background: var(--ll-skyblue-active);
+  border-color: var(--ll-skyblue-border);
+  color: var(--ll-skyblue-on);
+}
+
+/* 可点击卡片：按压描边 + 浅天蓝投影 */
+.ant-card-hoverable:active {
+  border-color: var(--ll-skyblue-border);
+  box-shadow: 0 4px 16px rgba(91, 143, 181, 0.45);
+}
+.ant-card-hoverable {
+  transition: border-color var(--ll-transition-base) ease,
+              box-shadow var(--ll-transition-base) ease;
+}
+
+/* 菜单项 / 下拉选项：点击填充浅天蓝 */
+.ant-menu-item:active,
+.ant-dropdown-menu-item:active,
+.ant-select-item-option:active {
+  background: var(--ll-skyblue) !important;
+}
+
+/* =====================================================
+   “加入购物车”按钮色系统（四态统一，全站通用类）
+   主色与品牌色板同源（--ll-brand-gradient: 天蓝→青），
+   与 LOGO/首页装饰使用同一组 token，保证全站视觉一致。
+   深海军蓝文字在渐变两端实测 ≥4.5:1（见对比度测试报告）。
+   用法：<a-button class="ll-add-cart" ...>加入购物车</a-button>
+   ===================================================== */
+.ll-add-cart.ant-btn {
+  background: var(--ll-brand-gradient);
+  border-color: transparent;
+  color: var(--ll-navy);
+  transition: filter var(--ll-transition-base) ease,
+              color var(--ll-transition-base) ease,
+              border-color var(--ll-transition-base) ease,
+              opacity var(--ll-transition-fast) ease;
+}
+.ll-add-cart.ant-btn:not(:disabled):hover {
+  filter: brightness(1.05);
+  border-color: transparent;
+  color: var(--ll-navy);
+}
+.ll-add-cart.ant-btn:not(:disabled):active {
+  filter: brightness(0.94);
+  border-color: transparent;
+  color: var(--ll-navy);
+}
+.ll-add-cart.ant-btn:disabled,
+.ll-add-cart.ant-btn[disabled] {
+  background: var(--ll-brand-gradient);
+  border-color: transparent;
+  color: var(--ll-skyblue-on-disabled);
+  opacity: 0.45;
+}
+
+/* =====================================================
+   按钮点击波纹（Material 风格，全站统一）
+   JS：src/utils/ripple.js（pointerdown 注入 .ll-ripple）
+   颜色按按钮表面自适应：浅底深波纹 / 深底白波纹。
+   ===================================================== */
+/* 裁剪波纹到按钮圆角范围（按钮自身 box-shadow 不受影响） */
+.ant-btn { overflow: hidden; }
+/* 统一接管：隐藏 antd 内置 Wave（默认/渐变按钮的颜色提取本就不可见） */
+.ant-btn .ant-wave { display: none !important; }
+
+/* 波纹颜色自适应 */
+.ant-btn { --ll-ripple-color: rgba(31, 56, 100, 0.16); }
+.ant-btn-primary { --ll-ripple-color: rgba(255, 255, 255, 0.35); }
+.ll-add-cart.ant-btn { --ll-ripple-color: rgba(31, 56, 100, 0.20); }
+/* 深色顶栏上的文字按钮（消息/购物车）：改用品牌天蓝波纹 */
+.header .ant-btn-text { --ll-ripple-color: rgba(155, 192, 217, 0.55); }
+/* 非按钮的波纹宿主（如用户下拉 <a>）：需自身定位+裁剪 */
+.ll-ripple-host { position: relative; overflow: hidden; border-radius: 8px; --ll-ripple-color: rgba(155, 192, 217, 0.55); }
+
+/* 顶栏文字按钮（消息/购物车）+ 用户下拉：点击/悬停反馈色（品牌天蓝 #9BC0D9） */
+.header .right .ant-btn-text:hover { background: rgba(155, 192, 217, 0.20); }
+.header .right .ant-btn-text:active { background: rgba(155, 192, 217, 0.42); }
+.user-trigger { padding: 6px 12px; border-radius: 8px; line-height: 1.4; transition: background var(--ll-transition-fast, 0.2s) ease; }
+.user-trigger:hover { background: rgba(155, 192, 217, 0.20); }
+.user-trigger:active { background: rgba(155, 192, 217, 0.42); }
+
+.ll-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--ll-ripple-color, rgba(31, 56, 100, 0.16));
+  transform: scale(0);
+  opacity: 0.4;
+  pointer-events: none;
+  animation: ll-ripple-spread 0.55s ease-out forwards;
+}
+@keyframes ll-ripple-spread {
+  from { transform: scale(0); opacity: 0.4; }
+  to   { transform: scale(1); opacity: 0; }
+}
+
+/* =====================================================
+   导航模块触达反馈（消息 / 购物车 / 我的）
+   视觉：150ms 缩放 + 高亮（100–200ms 区间内）
+   触觉：navigator.vibrate(15)（见 utils/feedback.js）
+   用法：元素加 class="ll-tap"，pointerdown 调 tapFeedback(el)
+   ===================================================== */
+.ll-tap {
+  transition: transform var(--ll-transition-fast) cubic-bezier(.2, .6, .4, 1),
+              background-color var(--ll-transition-fast) ease;
+  /* 移动端：消除点按高亮残留与 300ms 点击延迟 */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.ll-tap.ll-tapped {
+  transform: scale(0.9);
+  background-color: rgba(255, 255, 255, 0.16);
+}

@@ -1,0 +1,46 @@
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api
+    session:
+      cookie:
+        secure: true
+        http-only: true
+        same-site: none
+
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 10000
+      validation-timeout: 5000
+
+  jpa:
+    open-in-view: false
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
+  sql:
+    init:
+      mode: never
+
+# Production defaults are fail-closed.
+lanlink:
+  payment:
+    mock: false
+  verify-code:
+    demo-mode: false
+  demo-data:
+    enabled: false
+
+# Server-only proxy secret. A blank or missing secret fails closed.
+support:
+  proxy-secret: ${SUPPORT_PROXY_SECRET:}

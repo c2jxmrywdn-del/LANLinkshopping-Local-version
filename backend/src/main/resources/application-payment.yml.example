@@ -1,0 +1,68 @@
+# ============================================================
+# 支付配置模板 —— 复制为 application-payment.yml 后填入真实值
+#   路径：backend/src/main/resources/application-payment.yml
+#   该文件已被 .gitignore 忽略，真实私钥/密钥/证书不会入库。
+#
+# 运行策略：
+#   mock=true（默认）  → 不触达真实渠道，本地即可跑通发起/回调/查单/退款全流程，用于演示与测试。
+#   mock=false         → 走真实微信/支付宝；此时必须满足：
+#                        1) 服务部署在【公网可访问的 HTTPS 域名】，异步通知才能收到；
+#                        2) 对应渠道凭证填齐；
+#                        3) notify-base-url 改为你的真实域名（末尾含 /api 上下文）。
+#
+# 说明：以下所有占位值均为示例，切勿把真实密钥提交到任何仓库或聊天中。
+# ============================================================
+lanlink:
+  payment:
+    mock: true
+    # 回调/跳转的公网基址。真实环境示例：https://shop.your-domain.com/api
+    # 代码会自动拼接：{notify-base-url}/payment/notify/wechat 、 /payment/notify/alipay 、 /payment/alipay/return
+    notify-base-url: http://localhost:8080/api
+
+    # -------------------- 微信支付（APIv2 / Native 扫码） --------------------
+    wechat:
+      # 公众号/服务号 AppID：微信公众平台 → 设置与开发 → 基本配置
+      app-id: ""
+      # 商户号：微信支付商户平台 → 账户中心 → 商户信息
+      mch-id: "1746178875"
+      # APIv2 商户密钥（32 位，自行设置）：商户平台 → 账户中心 → API 安全 → 设置 API 密钥
+      # 注意：这是"密钥字符串"，与下面的证书文件是两样东西，两者都需要。切勿入库。
+      api-key: ""
+      # 商户 API 证书 apiclient_cert.p12 的绝对路径（退款/企业付款等双向 TLS 接口必需）
+      # 可用官方"微信支付证书工具"申请下载后放到本地，路径写绝对路径。
+      cert-path: "E:/WXPay API Key/1746178875_20260622_cert/apiclient_cert.p12"
+      # 签名类型：MD5 或 HMAC-SHA256（须与商户平台设置一致）
+      sign-type: MD5
+      # 交易类型：NATIVE(扫码，PC 网页推荐) / JSAPI(需 openid) / MWEB(H5)
+      trade-type: NATIVE
+
+    # -------------------- 支付宝（电脑网站支付） --------------------
+    alipay:
+      # 网关：正式 https://openapi.alipay.com/gateway.do
+      #      沙箱 https://openapi-sandbox.dl.alipaydev.com/gateway.do
+      gateway-url: https://openapi.alipay.com/gateway.do
+      # 支付宝应用 AppID：开放平台 → 我的应用 → 应用详情
+      app-id: ""
+      # 应用私钥（RSA2，PKCS8 的 base64 字符串，单行）。用"支付宝密钥生成工具"生成，
+      # 私钥自己保管、切勿入库；对应的"应用公钥"要上传到开放平台。
+      private-key: ""
+      # 签名类型：固定 RSA2
+      sign-type: RSA2
+      # 异步通知地址（留空则用 notify-base-url 拼接 /payment/notify/alipay）
+      notify-url: ""
+      # 同步跳转地址（留空则用 notify-base-url 拼接 /payment/alipay/return）
+      return-url: ""
+
+      # 支持两种验签模式，二选一：
+      # 【模式 A：普通公钥模式】cert-mode=false（默认），填 alipay-public-key
+      # 【模式 B：公钥证书模式】cert-mode=true，填下面三个证书路径（开放平台下载）
+      cert-mode: false
+      # —— 模式 A：支付宝公钥（开放平台"支付宝公钥"，非应用公钥；单行 base64）——
+      alipay-public-key: ""
+      # —— 模式 B：三个证书文件绝对路径（从开放平台"证书"页下载后放本地）——
+      # 应用公钥证书 appCertPublicKey_xxxxx.crt
+      app-cert-path: ""
+      # 支付宝公钥证书 alipayCertPublicKey_RSA2.crt
+      alipay-public-cert-path: ""
+      # 支付宝根证书 alipayRootCert.crt
+      root-cert-path: ""

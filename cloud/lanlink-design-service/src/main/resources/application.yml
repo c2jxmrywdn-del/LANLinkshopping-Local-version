@@ -1,0 +1,39 @@
+server:
+  port: 8107
+
+spring:
+  application:
+    name: lanlink-design-service
+  config:
+    import: optional:nacos:${spring.application.name}.yaml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yaml
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+# 设计工具对接配置（插件化适配器）
+lanlink:
+  design:
+    # 适配器运行模式：mock=内置演示数据（默认，无需外部凭据）/ live=真实调用（需凭据）
+    mode: ${DESIGN_ADAPTER_MODE:mock}
+    figma:
+      # OAuth2 应用凭据（live 模式必填；mock 模式忽略）
+      client-id: ${FIGMA_CLIENT_ID:}
+      client-secret: ${FIGMA_CLIENT_SECRET:}
+      redirect-uri: ${FIGMA_REDIRECT_URI:http://localhost:8300/api/design/auth/figma/callback}
+      api-base-url: https://api.figma.com
+    canva:
+      # Canva 开发者凭据（live 模式必填）
+      client-id: ${CANVA_CLIENT_ID:}
+      client-secret: ${CANVA_CLIENT_SECRET:}
+      redirect-uri: ${CANVA_REDIRECT_URI:http://localhost:8300/api/design/auth/canva/callback}
+      api-base-url: https://api.canva.com

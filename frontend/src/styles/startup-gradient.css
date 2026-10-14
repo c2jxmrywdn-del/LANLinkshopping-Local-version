@@ -1,0 +1,38 @@
+/* LANLink first-entry dynamic gradient layer */
+.ss-bg::before{
+  content:"";
+  position:absolute;
+  inset:-28%;
+  pointer-events:none;
+  background:
+    radial-gradient(30% 26% at 32% 36%,rgba(155,45,32,.28),transparent 72%),
+    radial-gradient(28% 25% at 68% 34%,rgba(200,164,92,.22),transparent 70%),
+    radial-gradient(32% 28% at 54% 78%,rgba(30,110,184,.18),transparent 72%);
+  filter:blur(28px);
+  transform:translate3d(-3%,-2%,0) scale(1.02);
+  animation:llGradientDrift 6.5s cubic-bezier(.45,0,.25,1) infinite alternate;
+}
+.ss-content::before{
+  content:"";
+  position:absolute;
+  left:50%;top:50%;
+  width:360px;height:360px;
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(200,164,92,.13),rgba(155,45,32,.06) 34%,transparent 70%);
+  filter:blur(12px);
+  animation:llGradientPulse 3.2s ease-in-out infinite;
+  pointer-events:none;
+}
+@keyframes llGradientDrift{
+  0%{transform:translate3d(-3%,-2%,0) scale(1.02) rotate(0deg);filter:blur(28px) hue-rotate(0deg)}
+  50%{transform:translate3d(2%,3%,0) scale(1.07) rotate(4deg);filter:blur(34px) hue-rotate(-8deg)}
+  100%{transform:translate3d(5%,-1%,0) scale(1.11) rotate(-3deg);filter:blur(30px) hue-rotate(7deg)}
+}
+@keyframes llGradientPulse{
+  0%,100%{transform:translate(-50%,-50%) scale(.86);opacity:.55}
+  50%{transform:translate(-50%,-50%) scale(1.16);opacity:1}
+}
+@media (prefers-reduced-motion:reduce){
+  .ss-bg::before,.ss-content::before{animation:none!important}
+}

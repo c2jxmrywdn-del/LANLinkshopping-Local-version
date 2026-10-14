@@ -1,0 +1,39 @@
+# ============================================================
+# 本地开发基础服务（与根目录脚手架 compose.yaml 无关，后者可忽略）
+#   用法：
+#     1) 复制 .env.example 为 .env 并填写 SUPPORT_SANDBOX_TOKEN
+#     2) docker compose -f docker-compose.local.yml up -d
+#   服务：
+#     - mailpit                  本地 SMTP 收信（1025）+ 收件箱 UI（8081）
+#     - support-learning-sandbox 客服学习沙盒（127.0.0.1:18080，容器内 8080）
+# ============================================================
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: lanlink-mailpit
+    ports:
+      - "1025:1025"    # SMTP（后端 spring.mail 指向 localhost:1025）
+      - "8081:8025"    # 收件箱 Web UI：http://localhost:8081（新版 Mailpit HTTP 端口 8025）
+    restart: unless-stopped
+
+  support-learning-sandbox:
+    build:
+      context: ./support-learning-sandbox
+      dockerfile: Dockerfile
+    container_name: lanlink-support-sandbox
+    environment:
+      PORT: "8080"
+      SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?请在 .env 中设置 SUPPORT_SANDBOX_TOKEN}
+    ports:
+      - "127.0.0.1:18080:8080"   # 后端 SUPPORT_SANDBOX_URL 指向 http://127.0.0.1:18080
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: "0.25"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=8m
+    restart: unless-stopped

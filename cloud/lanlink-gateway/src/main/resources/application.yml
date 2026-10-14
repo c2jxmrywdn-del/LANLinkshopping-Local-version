@@ -1,0 +1,64 @@
+server:
+  port: 8300
+
+spring:
+  application:
+    name: lanlink-gateway
+  config:
+    import: optional:nacos:${spring.application.name}.yaml
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+      config:
+        server-addr: ${NACOS_ADDR:127.0.0.1:8848}
+        file-extension: yaml
+    gateway:
+      # 统一入口 /api/** → 6 个业务微服务（lb:// 负载均衡 + Nacos 发现）
+      routes:
+        - id: auth-service
+          uri: lb://lanlink-auth-service
+          predicates:
+            - Path=/api/auth/**,/api/users/**
+          filters:
+            - StripPrefix=1
+        - id: merchant-service
+          uri: lb://lanlink-merchant-service
+          predicates:
+            - Path=/api/merchants/**
+          filters:
+            - StripPrefix=1
+        - id: product-service
+          uri: lb://lanlink-product-service
+          predicates:
+            - Path=/api/products/**,/api/home/**
+          filters:
+            - StripPrefix=1
+        - id: cart-service
+          uri: lb://lanlink-cart-service
+          predicates:
+            - Path=/api/carts/**
+          filters:
+            - StripPrefix=1
+        - id: order-service
+          uri: lb://lanlink-order-service
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - StripPrefix=1
+        - id: payment-service
+          uri: lb://lanlink-payment-service
+          predicates:
+            - Path=/api/payments/**
+          filters:
+            - StripPrefix=1
+        - id: design-service
+          uri: lb://lanlink-design-service
+          predicates:
+            - Path=/api/design/**
+          filters:
+            - StripPrefix=1
+
+logging:
+  level:
+    com.lanlink.cloud.gateway: debug

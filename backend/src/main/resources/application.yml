@@ -1,0 +1,81 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+    encoding:
+      charset: UTF-8
+      force: true
+      enabled: true
+    # Vercel 前端与 Railway API 为跨站请求，必须允许跨站 Session Cookie
+    session:
+      cookie:
+        http-only: true
+        secure: true
+        same-site: none
+
+spring:
+  profiles:
+    default: prod
+  config:
+    import: optional:classpath:application-payment.yml
+  application:
+    name: lanlink-shopping
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  # 邮箱验证码支持 SMTP 和 HTTPS 邮件 API。QQ 邮箱 SMTP 默认使用 SSL 465。
+  # MAIL_FROM 可覆盖登录账号；HTTPS API 一般要求已验证的发件域名。
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    protocol: smtp
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: ${MAIL_SMTP_SSL:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:false}
+            required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}
+          # 超时机制：连接/读取/写入均 10 秒，避免 SMTP 无响应拖垮接口
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
+
+# 只公开健康状态，不公开组件详情、数据库地址或凭据。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    # SMTP 不是应用存活探针的一部分；出站 SMTP 超时不能拖慢健康检查。
+    mail:
+      enabled: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0

@@ -1,0 +1,1 @@
+<template><div class="page"><a-page-header title="账户设置" sub-title="密码、两步验证、通知、隐私与界面偏好" @back="$router.push('/me')"/><SettingsPanel/></div></template><script setup>import SettingsPanel from '../components/account/SettingsPanel.vue'</script><style scoped>.page{max-width:1000px;margin:0 auto}</style>

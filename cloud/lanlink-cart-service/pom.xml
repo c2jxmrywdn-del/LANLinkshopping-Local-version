@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lanlink.cloud</groupId>
+        <artifactId>lanlink-cloud-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>lanlink-cart-service</artifactId>
+    <name>lanlink-cart-service</name>
+    <description>购物车微服务（8104）：增删改查、勾选、价格快照校验（Feign → product）</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.lanlink.cloud</groupId>
+            <artifactId>lanlink-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.lanlink.cloud</groupId>
+            <artifactId>lanlink-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

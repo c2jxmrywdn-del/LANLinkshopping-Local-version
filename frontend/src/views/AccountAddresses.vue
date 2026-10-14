@@ -1,0 +1,1 @@
+<template><div class="page"><a-page-header title="收货地址" sub-title="管理配送地址与默认地址" @back="$router.push('/me')"/><a-card :bordered="false" class="card"><AddressPanel/></a-card></div></template><script setup>import AddressPanel from '../components/account/AddressPanel.vue'</script><style scoped>.page{max-width:1000px;margin:0 auto}.card{border-radius:18px}</style>

@@ -1,0 +1,1 @@
+<template><div class="page"><a-page-header title="登录安全记录" sub-title="查看近期登录与安全异常" @back="$router.push('/me')"/><a-card :bordered="false" class="card"><LoginLogPanel/></a-card></div></template><script setup>import LoginLogPanel from '../components/account/LoginLogPanel.vue'</script><style scoped>.page{max-width:1000px;margin:0 auto}.card{border-radius:18px}</style>

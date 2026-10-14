@@ -1,0 +1,1 @@
+<template><div class="page"><a-page-header title="消息中心" sub-title="订单、促销与系统通知" @back="$router.push('/me')"/><a-card :bordered="false" class="card"><MessagePanel/></a-card></div></template><script setup>import MessagePanel from '../components/account/MessagePanel.vue'</script><style scoped>.page{max-width:1000px;margin:0 auto}.card{border-radius:18px}</style>
