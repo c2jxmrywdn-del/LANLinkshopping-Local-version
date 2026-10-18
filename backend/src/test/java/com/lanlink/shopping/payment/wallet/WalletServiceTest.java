@@ -106,6 +106,20 @@ class WalletServiceTest {
                         && new BigDecimal("30.00").compareTo(l.getAmount()) == 0));
     }
 
+    // ===== 流水详情 =====
+
+    @Test
+    void logDetailReturnsOwnRecord() {
+        WalletLog wl = new WalletLog();
+        wl.setId(7L);
+        wl.setUserId(2L);
+        when(logMapper.selectOne(any())).thenReturn(wl);
+        assertSame(wl, service.log(2L, 7L));
+        // 未登录 / 缺少流水ID：直接返回 null，不触发查询
+        assertNull(service.log(null, 7L));
+        assertNull(service.log(2L, null));
+    }
+
     // ===== 建卡 =====
 
     @Test

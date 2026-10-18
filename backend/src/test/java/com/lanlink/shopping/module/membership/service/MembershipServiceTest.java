@@ -2,6 +2,7 @@ package com.lanlink.shopping.module.membership.service;
 
 import com.lanlink.shopping.module.membership.entity.MemberCard;
 import com.lanlink.shopping.module.membership.entity.MemberLevel;
+import com.lanlink.shopping.module.membership.entity.MemberPointLog;
 import com.lanlink.shopping.module.membership.mapper.MemberCardMapper;
 import com.lanlink.shopping.module.membership.mapper.MemberLevelMapper;
 import com.lanlink.shopping.module.membership.mapper.MemberPointLogMapper;
@@ -94,6 +95,17 @@ class MembershipServiceTest {
         when(cardMapper.selectOne(any())).thenReturn(card);
         when(levelMapper.selectById(1L)).thenReturn(level(1L, "普通会员", 0));
         assertEquals(0, BigDecimal.ONE.compareTo(service.levelDiscountRate(2L)));
+    }
+
+    @Test
+    void pointLogScopedToUser() {
+        MemberPointLog log = new MemberPointLog();
+        log.setLogId(9L); log.setUserId(2L); log.setChangeVal(120);
+        when(logMapper.selectOne(any())).thenReturn(log);
+        assertSame(log, service.pointLog(2L, 9L));
+        // 未登录 / 缺少流水ID：直接返回 null，不触发查询
+        assertNull(service.pointLog(null, 9L), "未登录不查询");
+        assertNull(service.pointLog(2L, null), "缺少流水ID不查询");
     }
 
     private MemberLevel level(Long id, String name, int min) {

@@ -7,6 +7,6 @@
 import {ref,computed,onMounted} from 'vue';import {membershipApi} from '../api'
 const data=ref(null),logs=ref([]);const points=computed(()=>data.value?.card?.points||0),growth=computed(()=>data.value?.card?.growth||0),value=computed(()=>((Number(points.value)/(data.value?.rule?.redeemPointsPerYuan||1000))).toFixed(2))
 const cols=[{title:'变动',key:'change',width:100},{title:'说明',dataIndex:'remark'},{title:'关联订单',dataIndex:'refOrderNo'},{title:'时间',key:'time',width:180},{title:'',key:'detail',width:70}]
-onMounted(async()=>{data.value=await membershipApi.my();logs.value=data.value?.pointsLog||[]})
+onMounted(async()=>{try{data.value=await membershipApi.my();logs.value=data.value?.pointsLog||[]}catch(e){data.value=null;logs.value=[]}})
 </script>
 <style scoped>.sys{max-width:1000px;margin:auto}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}.stats span{display:block;color:#667085;font-size:12px}.stats b{display:block;font-size:28px;margin-top:8px;color:var(--ll-navy)}.card{border-radius:14px}.plus{color:#b45309;font-weight:700}.minus{color:#9b2d20;font-weight:700}@media(max-width:640px){.stats{grid-template-columns:1fr}}</style>

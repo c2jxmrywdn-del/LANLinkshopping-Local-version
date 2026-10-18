@@ -143,7 +143,11 @@ let tLeave2 = null
 let tLeave3 = null
 
 function reducedMotion() {
-  return typeof window !== 'undefined' &&
+  if (typeof window === 'undefined') return true
+  // 性能治理熔断（suspended）时同样跳过 3D 指针动效，释放渲染资源
+  const tier = typeof document !== 'undefined'
+    ? document.documentElement.dataset.perfTier : ''
+  return tier === 'suspended' ||
     window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 

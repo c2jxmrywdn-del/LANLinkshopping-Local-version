@@ -1,14 +1,114 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="notranslate" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="google" content="notranslate" />
+    <meta name="robots" content="notranslate" />
+    <!-- 站点图标：现代浏览器优先采用矢量 SVG（任意缩放清晰、体积更小）；
+         保留 PNG 作为不支持 SVG favicon 的环境（旧 Safari/部分内嵌 WebView）的回退。 -->
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <!-- iOS 不支持 SVG apple-touch-icon，必须保留 PNG -->
     <link rel="apple-touch-icon" sizes="180x180" href="/logo-256.png" />
     <title>LANLinkshopping · 聚合型B2B电商平台</title>
+    <meta name="description" content="LANLinkshopping 聚合型一体多元化解决方案 B2B 电商平台：商品商城、商户入驻、购物车下单支付、智能客服一站式采购体验。" />
+    <!-- 首屏关键 logo 预加载（LCP 候选资源） -->
+    <link rel="preload" as="image" href="/logo.svg" />
+    <style>
+      /* 首屏骨架占位：JS 加载前防止白屏，减少布局偏移（CLS） */
+      html { background: #f6f8fb; }
+      #app { min-height: 100vh; }
+      .ll-boot-skeleton {
+        position: fixed; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px;
+        background: #f6f8fb; z-index: 1; transition: opacity .3s ease;
+      }
+      .ll-boot-skeleton.hide { opacity: 0; pointer-events: none; }
+      .ll-boot-bar {
+        width: min(320px, 70vw); height: 6px; border-radius: 999px;
+        background: linear-gradient(90deg, #dbe6f5, #eef3fa, #dbe6f5);
+        background-size: 200% 100%; animation: llBootPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes llBootPulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
+      @media (prefers-reduced-motion: reduce) { .ll-boot-bar { animation: none } }
+    </style>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js"></script>
+    <div class="ll-boot-skeleton" id="ll-boot-skeleton" aria-hidden="true">
+      <img src="/logo.svg" width="64" height="64" alt="" />
+      <div class="ll-boot-bar"></div>
+    </div>
+    <!-- 入口脚本：保留静态 src（Vite 构建依赖它识别入口）；
+         旁路 error 捕获实现弱网重试，全部失败展示基础降级提示。 -->
+    <script>
+      (function () {
+        var attempts = 0
+        var MAX_RETRY = 2
+        function hideSkeleton() {
+          var sk = document.getElementById('ll-boot-skeleton')
+          if (sk) { sk.classList.add('hide'); setTimeout(function () { sk.remove() }, 400) }
+        }
+        var entrySrc = '' // 入口实际 src（构建后为 /assets/index-[hash].js），重试时惰性读取
+        function resolveEntrySrc() {
+          if (entrySrc) return entrySrc
+          var el = document.getElementById('ll-entry') || document.querySelector('script[type="module"][src]')
+          entrySrc = el ? (el.getAttribute('src') || '') : ''
+          return entrySrc
+        }
+        function retryEntry() {
+          if (attempts++ >= MAX_RETRY) {
+            var sk = document.getElementById('ll-boot-skeleton')
+            if (sk) {
+              sk.innerHTML = '<p style="color:#64748b;font:14px/1.6 system-ui,sans-serif;text-align:center;padding:0 24px">' +
+                '网络异常，资源加载失败。<br/>请检查网络后 <a href="javascript:location.reload()" style="color:#1E6EB8">点击重试</a></p>'
+            }
+            return
+          }
+          var base = resolveEntrySrc() || '/src/main.js'
+          var s = document.createElement('script')
+          s.type = 'module'
+          s.src = base + (base.includes('?') ? '&' : '?') + 'retry=' + attempts
+          s.onload = hideSkeleton
+          s.onerror = function () { setTimeout(retryEntry, 800 * attempts) }
+          document.head.appendChild(s)
+        }
+        // 捕获入口脚本网络错误（bubble 阶段拿不到，用 window 捕获阶段）。
+        // Vite 构建重写入口标签会丢 id，改按 src 特征匹配：
+        // dev=/src/main.js，构建产物=/assets/index-[hash].js，排除带 retry 参数的重试脚本。
+        window.addEventListener('error', function (e) {
+          var t = e.target
+          if (t && t.tagName === 'SCRIPT' && !/retry=/.test(t.src || '') &&
+              (/\/assets\/index-/.test(t.src || '') || /\/src\/main\.js/.test(t.src || ''))) {
+            if (!entrySrc) entrySrc = t.getAttribute('src') || ''
+            retryEntry()
+          }
+        }, true)
+        function showNetworkFallback() {
+          var sk = document.getElementById('ll-boot-skeleton')
+          if (sk) {
+            sk.innerHTML = '<p style="color:#64748b;font:14px/1.6 system-ui,sans-serif;text-align:center;padding:0 24px">' +
+              '网络异常，资源加载失败。<br/>请检查网络后 <a href="javascript:location.reload()" style="color:#1E6EB8">点击重试</a></p>'
+          }
+        }
+        // 入口正常执行后（Vue 挂载完成）隐藏骨架；未挂载则显示降级页
+        // （module 脚本失败不冒泡 error，故按"是否挂载"兜底判定，与 attempts 无关）
+        window.addEventListener('load', function () {
+          setTimeout(function () {
+            var app = document.getElementById('app')
+            if (app && app.children.length > 0) hideSkeleton()
+            else showNetworkFallback()
+          }, 1500)
+        })
+        // 6s 兜底：仍未挂载 → 降级页；已挂载 → 撤掉骨架
+        setTimeout(function () {
+          var app = document.getElementById('app')
+          if (app && app.children.length > 0) hideSkeleton()
+          else showNetworkFallback()
+        }, 6000)
+      })()
+    </script>
+    <script type="module" id="ll-entry" src="/src/main.js"></script>
   </body>
 </html>

@@ -115,11 +115,11 @@ function go(s) {
 .slide { position: relative; height: 320px; cursor: pointer; }
 .slide img { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
 .slide-p img { object-position: center 100%; }
-.mask { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(15,23,42,.78) 0%, rgba(15,23,42,.35) 45%, rgba(15,23,42,0) 75%); }
+.mask { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(15,23,42,.86) 0%, rgba(15,23,42,.80) 50%, rgba(15,23,42,.72) 62%, rgba(15,23,42,.28) 82%, rgba(15,23,42,0) 100%); }
 .content { position: absolute; left: 0; bottom: 0; top: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 48px; color: #fff; max-width: 62%; }
 .content h2 { font-size: 30px; margin: 0 0 8px; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,.35); }
 .content p { font-size: 15px; margin: 0 0 14px; opacity: .92; }
-.cta { font-size: 14px; font-weight: 600; color: #ffb020; }
+.cta { font-size: 14px; font-weight: 600; color: var(--ll-brand-gold-soft, #F6D38A); }
 </style>
 
 <style>
@@ -130,15 +130,15 @@ function go(s) {
 .banner-swiper .swiper-pagination-bullet { background: #cbd5e1; opacity: .8; }
 .banner-swiper .swiper-pagination-bullet-active { background: #0ea5e9; opacity: 1; }
 
-/* 箭头：无底衬，默认隐藏，悬停浮现，半透明，两侧垂直居中 */
+/* 箭头：深色玻璃底衬 + 白色图标，保证在任意幻灯片（含浅色渐变）上均 ≥3:1 */
 .banner-swiper .swiper-button-next,
 .banner-swiper .swiper-button-prev {
-  width: auto; height: auto; margin-top: 0; border-radius: 0;
+  width: 40px; height: 40px; margin-top: 0; border-radius: 50%;
   top: 50%;
-  background: none; box-shadow: none; backdrop-filter: none;
-  color: rgba(255, 255, 255, .65);
+  background: rgba(15, 23, 42, .62); box-shadow: 0 6px 18px rgba(15, 23, 42, .26); backdrop-filter: blur(6px);
+  color: #fff;
   opacity: 0; pointer-events: none;
-  transition: opacity .25s ease, transform .25s ease, color .2s ease;
+  transition: opacity .25s ease, transform .25s ease, background-color .2s ease;
 }
 .banner-swiper .swiper-button-prev { left: 16px; transform: translateY(-50%) translateX(-12px); }
 .banner-swiper .swiper-button-next { right: 16px; transform: translateY(-50%) translateX(12px); }
@@ -147,7 +147,7 @@ function go(s) {
 .banner-swiper:hover .swiper-button-prev { transform: translateY(-50%) translateX(0); }
 .banner-swiper:hover .swiper-button-next { transform: translateY(-50%) translateX(0); }
 .banner-swiper .swiper-button-next:hover,
-.banner-swiper .swiper-button-prev:hover { color: rgba(255, 255, 255, .95); }
+.banner-swiper .swiper-button-prev:hover { color: rgba(255, 255, 255, .95); background: rgba(15, 23, 42, .78); }
 .banner-swiper .swiper-button-next:after,
-.banner-swiper .swiper-button-prev:after { font-size: 44px; font-weight: 700; }
+.banner-swiper .swiper-button-prev:after { font-size: 17px; font-weight: 900; }
 </style>

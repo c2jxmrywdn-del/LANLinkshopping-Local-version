@@ -3,7 +3,7 @@
     <a-layout-header class="header" :class="{ 'is-scrolled': scrolled }">
       <div class="header-inner">
         <div class="logo" @click="$router.push('/')">
-          <img src="/logo-256.png" alt="LANLinkshopping" class="logo-img" />
+          <img src="/logo.svg" alt="LANLinkshopping" class="logo-img" />
           <span class="logo-text ll-wordmark"><span class="ll-lan">LAN</span><span class="ll-link">Link</span><span class="ll-shopping">shopping</span></span>
         </div>
         <div class="nav-shell" ref="navShell" @mouseleave="scheduleCloseMallMenu">
@@ -222,6 +222,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateIndicator)
   window.removeEventListener('scroll', onScroll)
   if (mallCloseTimer) clearTimeout(mallCloseTimer)
+  // 购物车弹跳反馈定时器：卸载时清理，避免回调持有组件实例导致内存泄漏
+  clearTimeout(bounceTimer)
 })
 
 // 顶栏滚动状态：下滑后加深投影，强化层级感（rAF 节流）

@@ -4,9 +4,9 @@ server:
     context-path: /api
     session:
       cookie:
-        secure: true
+        secure: ${SESSION_COOKIE_SECURE:false}
         http-only: true
-        same-site: none
+        same-site: ${SESSION_COOKIE_SAMESITE:lax}
 
 spring:
   datasource:
@@ -32,14 +32,14 @@ spring:
     init:
       mode: never
 
-# Production defaults are fail-closed.
+# Production defaults are fail-closed, with configurable env overrides
 lanlink:
   payment:
-    mock: false
+    mock: ${LANLINK_PAYMENT_MOCK:false}
   verify-code:
-    demo-mode: false
+    demo-mode: ${LANLINK_VERIFY_CODE_DEMO_MODE:false}
   demo-data:
-    enabled: false
+    enabled: ${LANLINK_DEMO_DATA_ENABLED:false}
 
 # Server-only proxy secret. A blank or missing secret fails closed.
 support:

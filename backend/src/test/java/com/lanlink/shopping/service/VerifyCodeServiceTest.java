@@ -218,4 +218,24 @@ class VerifyCodeServiceTest {
         assertDoesNotThrow(() -> service.verify(1L, "phone", "13900000002", c2));
         assertDoesNotThrow(() -> service.verify(1L, "phone", "13900000001", c1));
     }
+
+    @Test
+    void wrongCodeMaxFiveAttemptsInvalidatesCode() {
+        String code = service.send(1L, "phone", "13900000001");
+        for (int i = 1; i <= 4; i++) {
+            final int attempt = i;
+            BusinessException ex = assertThrows(BusinessException.class,
+                    () -> service.verify(1L, "phone", "13900000001", "000000"));
+            assertTrue(ex.getMessage().contains("还剩 " + (5 - attempt) + " 次尝试机会"));
+        }
+        // 第 5 次错误，验证码作废
+        BusinessException ex5 = assertThrows(BusinessException.class,
+                () -> service.verify(1L, "phone", "13900000001", "000000"));
+        assertTrue(ex5.getMessage().contains("错误次数超限已作废"));
+
+        // 作废后即使输入正确验证码也已被清除
+        BusinessException ex6 = assertThrows(BusinessException.class,
+                () -> service.verify(1L, "phone", "13900000001", code));
+        assertTrue(ex6.getMessage().contains("过期") || ex6.getMessage().contains("重新获取"));
+    }
 }

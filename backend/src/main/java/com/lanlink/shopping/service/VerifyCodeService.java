@@ -51,6 +51,7 @@ public class VerifyCodeService {
         String code;
         long exp;
         long lastSendAt;
+        int failedAttempts;
     }
 
     private final Map<String, CodeBox> store = new ConcurrentHashMap<>();
@@ -172,7 +173,7 @@ public class VerifyCodeService {
         return code; // 仅开发演示模式回显
     }
 
-    /** 校验验证码；成功后立即失效（单次使用） */
+    /** 校验验证码；成功后立即失效（单次使用）；最多允许 5 次错误尝试，超限作废防爆破 */
     public void verify(Long userId, String type, String target, String code) {
         String key = key(userId, type, target);
         CodeBox box = store.get(key);
@@ -184,7 +185,13 @@ public class VerifyCodeService {
             throw new BusinessException("验证码已过期，请重新获取");
         }
         if (!box.code.equals(code)) {
-            throw new BusinessException("验证码错误");
+            box.failedAttempts++;
+            if (box.failedAttempts >= 5) {
+                store.remove(key, box);
+                throw new BusinessException("验证码错误次数超限已作废，请重新获取");
+            }
+            int remain = 5 - box.failedAttempts;
+            throw new BusinessException("验证码错误，还剩 " + remain + " 次尝试机会");
         }
         if (!store.remove(key, box)) {
             throw new BusinessException("验证码已使用，请重新获取");

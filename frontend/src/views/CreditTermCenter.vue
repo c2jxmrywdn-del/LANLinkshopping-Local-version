@@ -19,7 +19,15 @@
     </div>
 
     <a-alert
-      v-if="accountStatus === 'NOT_APPLIED'"
+      v-if="loadError"
+      type="error"
+      show-icon
+      message="账期信息加载失败"
+      description="请检查网络连接后重试，或稍后再访问。"
+      class="notice"
+    />
+    <a-alert
+      v-else-if="accountStatus === 'NOT_APPLIED'"
       type="info"
       show-icon
       message="尚未开通企业账期"
@@ -136,6 +144,7 @@ import { useUserStore } from '../store/user'
 
 const user = useUserStore()
 const loading = ref(true)
+const loadError = ref(false)
 const account = ref(null)
 const accountStatus = ref('NOT_APPLIED')
 const bills = ref([])
@@ -173,6 +182,10 @@ onMounted(async () => {
     accountStatus.value = data?.status || 'NOT_APPLIED'
     bills.value = data?.bills || []
     outstanding.value = Number(data?.outstanding || 0)
+  } catch (e) {
+    // 加载失败：以错误提示替代误导性的“未开通”空态；具体错误由请求拦截器统一提示
+    loadError.value = true
+    bills.value = []
   } finally {
     loading.value = false
   }

@@ -1,180 +1,241 @@
-# LANLinkshopping · 聚合型一体多元化解决方案电商平台
+<div align="center">
 
-> 软件技术 2404 · Spring Boot 毕业设计（Web 网站端 · 全栈核心 MVP）
-> 技术栈：Spring Boot 3.5.3 + MyBatis-Plus 3.5.9 + MySQL 8 + Vue 3 + Vite + Ant Design Vue 4 + Pinia
+# LANLinkshopping
 
-本项目依据《LANLinkshopping 项目方案》与《Web 网站搭建方案》落地，实现五大核心业务模块：
-**登录鉴权(RBAC) · 商户入驻与筛选 · 商品商城 · 购物车 · 下单支付**，并内置"链式业务拓展"设计。
+### 聚合型一体多元化解决方案 · B2B 电商平台
+
+**Spring Boot 3 + Vue 3 全栈电商毕业设计项目**
+
+![Java](https://img.shields.io/badge/Java-17-orange)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen)
+![Vue 3](https://img.shields.io/badge/Vue-3-42b883)
+![MySQL](https://img.shields.io/badge/MySQL-8-blue)
+![License](https://img.shields.io/badge/License-GNU%20GPL%20v3-blue)
+
+[功能特性](#-功能特性) · [快速开始](#-快速开始) · [使用说明](#-使用说明) · [贡献指南](#-贡献指南) · [许可证](#-许可证)
+
+</div>
 
 ---
 
-## 一、目录结构
+## 📖 项目简介
+
+**LANLinkshopping** 是一个聚合型、多行业、B2B 一体化的电商平台，覆盖 **登录鉴权（RBAC）· 商户入驻与筛选 · 商品商城 · 购物车 · 下单支付** 五大核心业务闭环，并内置"链式业务拓展"设计，可按行业低成本扩展。
+
+项目同时交付：
+
+- **Web 网站端**（Spring Boot + Vue 3 全栈 MVP，本仓库主线）
+- **微服务骨架**（`cloud/`：Spring Cloud + Nacos + Gateway + OpenFeign，8 个模块）
+- **AI 网关沙盒**（`ai-gateway/`：OpenAI 兼容接口 + 本地大模型 Ollama + 知识库 RAG）
+- **智能客服**（本地知识库问答 + 哨兵式备用链路 + 策略守卫）
+
+> 本项目为**教学 / 毕业设计演示项目**，默认运行在本地开发模式，请勿直接用于真实交易或对外提供服务。
+
+## ✨ 功能特性
+
+### 核心业务（五大模块）
+
+| 模块 | 能力 |
+|------|------|
+| 🔐 登录鉴权 | 注册/登录、RBAC 五级身份（GUEST/BUYER/VIP/MERCHANT/ADMIN）、TOTP 两步验证、CSRF 双提交、登录限流 |
+| 🏪 商户入驻 | 入驻申请、资质审核、智能筛选（企业类型 + 注册资本 + 纳税记录自动过审）、后台审核工作台 |
+| 🛍️ 商品商城 | 24 行业分类导航、商品检索/详情/发布、阶梯价、商品审核流 |
+| 🛒 购物车 | 加购、改量、勾选结算、库存校验 |
+| 📦 下单支付 | 结算下单（事务扣库存 + 订单明细快照）、微信/支付宝（mock 沙箱）、积分抵扣（1000 积分 = 1 元）、订单全生命周期 |
+
+### 增值能力
+
+- **智能客服**：本地知识库匹配问答、寒暄/自我介绍意图路由、统一对话礼仪（标准问候语）、会话落库、PII 自动脱敏
+- **客服备用链路**：主服务异常时自动接管，DeepSeek/Mimosa 仅限寒暄润色、知识问答强制走本地知识库、反代/绕过策略拦截、恢复后自动切回
+- **AI 网关（Docker 沙盒）**：OpenAI 兼容 `/v1/chat/completions`、本地 qwen2.5 推理、TF-IDF 向量检索 RAG、电商场景 Prompt 模板
+- **账号中心**：AES-256-GCM 敏感字段加密、钱包与账期、会员等级、审计日志
+- **前端体验**：全站动效体系（滚动进场/骨架屏/微交互）、i18n 中英切换、响应式布局、性能治理（帧率自适应 + 软硬解码切换 + 熔断降级）
+
+## 🗂️ 项目结构
 
 ```
 LANLinkshopping/
-├── backend/                 # Spring Boot 后端
-│   ├── pom.xml
-│   └── src/main/
-│       ├── java/com/lanlink/shopping/
-│       │   ├── common/      R、BusinessException、GlobalExceptionHandler
-│       │   ├── config/      MybatisPlusConfig、WebConfig、AuthInterceptor、UserContext、DataInitializer
-│       │   ├── controller/  Auth、Home、Product、Merchant、Cart、Order
-│       │   ├── service/     同名业务服务（Order 含事务扣库存）
-│       │   ├── mapper/      11 个 BaseMapper
-│       │   ├── entity/      11 张表实体
-│       │   ├── dto/ vo/     出入参对象
-│       │   └── LanlinkShoppingApplication.java
-│       └── resources/
-│           ├── application.yml / application-dev.yml
-│           └── sql/schema.sql        # 建库 + 建表 + 字典数据（幂等，可重复执行）
-├── frontend/                # Vue3 + Ant Design Vue 前端
-│   └── src/{api,router,store,layouts,views}
+├── backend/                  # Spring Boot 3 后端（主应用）
+│   ├── src/main/java/…       # controller / service / mapper / entity / support / payment
+│   └── src/main/resources/
+│       ├── application.yml   # 主配置（默认 dev profile）
+│       ├── application-dev.yml / application-prod.yml
+│       ├── knowledge-base/   # 客服知识库（customer-service-zh-CN.json）
+│       └── sql/              # schema.sql（幂等建表）+ account.sql
+├── frontend/                 # Vue 3 + Vite + Ant Design Vue + Pinia
+│   ├── src/{api,router,store,views,components,utils,styles}
+│   └── package-lock.json     # 依赖锁定文件（必须提交）
+├── ai-gateway/               # AI 网关沙盒（FastAPI + Ollama + RAG，Docker 编排）
+├── cloud/                    # Spring Cloud 微服务骨架（8 模块 + Nacos）
+├── support-learning-sandbox/ # 客服学习沙盒（Python 评估服务）
+├── docs/                     # 项目文档（部署说明 / 接口文档 / 测试报告）
+├── docker-compose.local.yml  # 本地基础设施（Mailpit / 客服沙盒）
+├── start-local-env.ps1       # 一键启动脚本（读取 .env）
+├── 启动本地环境.bat            # 一键启动入口（纯 ASCII 薄壳）
+├── LICENSE                   # GNU General Public License v3.0
+├── SECURITY.md               # 安全策略与漏洞披露流程
 └── README.md
 ```
 
-## 二、启动步骤
+## 🚀 快速开始
 
-### 1. 初始化数据库
+### 环境要求
 
-**前提**：本机 MySQL 8 已启动。开发环境通过 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME` 和 `SPRING_DATASOURCE_PASSWORD` 环境变量配置连接；数据库密码不再保存在仓库文件中。运行一键脚本前需设置 `SPRING_DATASOURCE_PASSWORD`。
+| 组件 | 版本要求 |
+|------|----------|
+| JDK | 17+ |
+| Maven | 3.8+（或使用 `mvnw`） |
+| Node.js | 18+ |
+| MySQL | 8.0+ |
+| Docker | 24+（可选，本地基础设施 / AI 网关沙盒） |
 
-脚本按下面 4 步引导式执行，**全文没有 `DROP DATABASE` / `DROP TABLE` / `TRUNCATE` / `DELETE`，可以重复执行且不丢数据**：
+### 1. 克隆仓库
 
-| 步骤 | 内容 | 谁来做 |
-|------|------|--------|
-| 1 | 创建数据库 `lanlink_shopping`（`utf8mb4` + `utf8mb4_general_ci`） | `schema.sql` 第 1 段 / 数据源 URL |
-| 2 | 建 11 张表 `t_role`、`t_enterprise`、`t_user`、`t_merchant`、`t_qualification`、`t_industry`、`t_category`、`t_product`、`t_cart`、`t_order`、`t_order_item` | `schema.sql` 第 2 段 |
-| 3 | 插基础字典：角色 3 条、行业 4 条、分类 11 条（显式主键 + `INSERT IGNORE`） | `schema.sql` 第 3 段 |
-| 4 | 示例用户 / 企业 / 商户 / 商品（密码 BCrypt） | 后端 `DataInitializer`，仅当 `t_user` 为空时写入 |
-
-#### 方式 A：自动执行（仅开发 Profile）
-
-`application-dev.yml` 已配置好，**不需要手动建表**，直接启动后端即可：
-
-```yaml
-spring:
-  sql:
-    init:
-      mode: always                                  # 每次启动都执行脚本（脚本幂等，所以安全）
-      encoding: UTF-8                               # 防止中文注释/中文数据乱码
-      schema-locations: classpath:sql/schema.sql    # 脚本在 sql/ 子目录，必须显式指定
-```
-
-关于**谁真正负责建库**：自动路径下是数据源 URL 里的 <createDatabaseIfNotExist=true>——JDBC 驱动必须先连上（或先建好）目标库，连接建立成功后才轮到 `spring.sql.init` 跑脚本，所以脚本内的 `CREATE DATABASE IF NOT EXISTS` 在这条路径上是幂等的双保险，执行时直接跳过。手动导入时反过来的：由脚本自己建库，无需提前手建。
-
-需要**手动先建库**的只有两种情况：① URL 去掉了 <createDatabaseIfNotExist=true>；② 执行账号没有 `CREATE DATABASE` 权限（由 DBA 先建库）。另外，若你改了 URL 里的库名，请同步修改脚本中 `CREATE DATABASE` 与 `USE` 两行（或删掉这两行完全交给 URL）。
-
-#### 方式 B：手动导入
-
-PowerShell（**注意 PowerShell 不支持 `<` 输入重定向**，会报 The ‘<’ operator is reserved for future use）：
-
-```powershell
-# 路径含中文与空格，必须加引号；先切到项目根目录
-Set-Location -LiteralPath 'D:\桌面\创新创业\Spring boot毕业设计\LANLinkshopping'
-
-# 写法一：借 cmd 完成重定向（最稳）
-cmd /c 'mysql -uroot -p"<你的MySQL密码>" --default-character-set=utf8mb4 < "backend\src\main\resources\sql\schema.sql"'
-
-# 写法二：管道（先把输出编码设为 UTF-8，否则中文会乱码）
-$OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
-Get-Content -Raw -Encoding UTF8 'backend\src\main\resources\sql\schema.sql' |
-  mysql -uroot -p"<你的MySQL密码>" --default-character-set=utf8mb4
-
-# 写法三：用 mysql 客户端自身的 source 命令（路径用正斜杠更稳）
-mysql -uroot -p"<你的MySQL密码>" --default-character-set=utf8mb4 -e "source backend/src/main/resources/sql/schema.sql"
-```
-
-如果 `mysql` 不在 PATH（常见于只装了 MySQL Server 没装 Tools），用完整路径或临时加入 PATH：
-
-```powershell
-& 'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe' -uroot -p --default-character-set=utf8mb4 -e 'SELECT VERSION()'
-$env:Path += ';C:\Program Files\MySQL\MySQL Server 8.0\bin'   # 当次会话生效，然后就能直接敲 mysql
-```
-
-CMD（支持 `<` 重定向）：
-
-```cmd
-chcp 65001
-cd /d "D:\桌面\创新创业\Spring boot毕业设计\LANLinkshopping"
-mysql -uroot -p"<你的MySQL密码>" --default-character-set=utf8mb4 < "backend\src\main\resources\sql\schema.sql"
-```
-
-图形化（Navicat / DataGrip / IDEA 的 Database 工具窗）：新建连接指向 `localhost:3306`（用户 `root`）→ 打开查询控制台 → 载入 `backend/src/main/resources/sql/schema.sql` → 执行整个文件。因为脚本第 1 段自带建库与 `USE`，执行前**不需要**先选中某个 schema。注意在 IDEA 中编辑此文件时保持右下角编码为 UTF-8（不保 BOM）。
-
-乱码避免清单：① 文件以 UTF-8 无 BOM 保存；② 库/表字符集 `utf8mb4`（脚本已写）；③ 客户端带 `--default-character-set=utf8mb4`；④ Spring 侧由 `spring.sql.init.encoding: UTF-8` 保证。导入后若中文变问号或乱码，优先查 ① 和 ③。
-
-#### 执行后自检
-
-```sql
-SELECT COUNT(*) AS tables_created FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'lanlink_shopping';  -- 预期 11
-SELECT COUNT(*) AS roles       FROM t_role;                                     -- 预期 3
-SELECT COUNT(*) AS industries  FROM t_industry;                                 -- 预期 4
-SELECT COUNT(*) AS categories  FROM t_category;                                 -- 预期 11
-SELECT COUNT(*) AS users       FROM t_user WHERE deleted = 0;                   -- 启动后端后预期 3
-SELECT title FROM t_product LIMIT 3;                                            -- 验证中文未乱码
-```
-
-> ⚠️ 历史版本脚本里的 `DROP TABLE IF EXISTS` 已全部移除。在 `mode: always` 下，一旦脚本含 `DROP TABLE`，每次重启后端都会重建表、清空已录入的数据。
-> 如需彻底重置演示数据：`DROP DATABASE lanlink_shopping;` 后重启后端，库表与示例数据会重新自动创建。
-
-### 2. 启动后端（端口 8080，接口前缀 /api）
 ```bash
+git clone https://github.com/<your-username>/LANLinkshopping.git
+cd LANLinkshopping
+```
+
+### 2. 配置本地环境变量
+
+```bash
+# 复制模板并填写（.env 已被 .gitignore 排除，绝不入库）
+copy .env.example .env       # Windows
+cp .env.example .env         # macOS / Linux
+```
+
+`.env` 至少需要配置：
+
+```env
+SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/lanlink_shopping?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+SPRING_DATASOURCE_USERNAME=root
+SPRING_DATASOURCE_PASSWORD=<你的 MySQL root 密码>
+```
+
+> 完整可选项（邮件 / 支付沙箱 / 客服沙盒令牌 / 备用链路 API Key）见 [.env.example](./.env.example)。
+
+### 3. 一键启动（推荐）
+
+```powershell
+# Windows：双击 启动本地环境.bat，或执行
+powershell -ExecutionPolicy Bypass -File start-local-env.ps1
+```
+
+脚本自动完成：读取 `.env` → 启动 Docker 基础设施 → 启动后端（8080）→ 启动前端（5173）→ 健康检查。
+
+### 4. 手动启动（分步）
+
+```bash
+# 数据库初始化（后端 dev profile 启动时自动执行 schema.sql，幂等安全）
+# 如需手动导入：
+mysql -uroot -p --default-character-set=utf8mb4 < backend/src/main/resources/sql/schema.sql
+
+# 后端（端口 8080，接口前缀 /api）
 cd backend
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
-# 或运行已打好的 jar：
-java -jar target/lanlink-shopping.jar --spring.profiles.active=dev
-```
-开发 Profile 下 `spring.sql.init` 自动执行脚本，`DataInitializer` 根据开关写入演示数据；生产 Profile 默认禁用 SQL 自动初始化和演示数据注入。
 
-### 3. 启动前端（端口 5173，已配 /api 代理到 8080）
-```bash
+# 前端（端口 5173，已配置 /api 代理到 8080）
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
-浏览器打开 http://localhost:5173
 
-## 三、演示账号（仅开发 Profile 提供，密码均为 123456）
+浏览器访问 **http://localhost:5173**（局域网访问使用 `http://<本机IP>:5173`）。
 
-| 手机号 | 身份 | 说明 |
-|--------|------|------|
-| 13800000000 | 平台运营 admin | 可访问商户审核接口 |
+## 🧭 使用说明
+
+### 演示账号（dev profile 自动初始化，密码均为 `123456`）
+
+| 手机号 | 角色 | 权限说明 |
+|--------|------|----------|
+| 13800000000 | 平台运营 admin | 商户审核、退款、运营后台 |
 | 13900000001 | 采购方 buyer | 浏览、加购、下单、支付 |
-| 13700000002 | 商户 merchant | 已通过审核，可上架商品 |
+| 13700000002 | 商户 merchant | 商品发布、店铺管理 |
 
-## 四、核心接口一览（前缀 /api）
+### 核心接口速览（前缀 `/api`）
 
-- 认证：`POST /auth/register`、`POST /auth/login`、`POST /auth/logout`、`GET /auth/me`
-- 首页：`GET /home/industries`、`GET /home/hot`、`GET /category/list`
-- 商城：`GET /product/page`、`GET /product/detail/{id}`、`POST /product/publish`（商户）
-- 商户：`POST /merchant/apply`、`GET /merchant/my`、`GET /merchant/admin/list`、`POST /merchant/admin/review/{id}`
-- 购物车：`POST /cart/add`、`GET /cart/list`、`POST /cart/quantity/{id}`、`DELETE /cart/{id}`
-- 订单：`POST /order/checkout`、`GET /order/my`、`GET /order/detail/{no}`、`POST /order/pay/{no}`、`POST /order/cancel/{no}`
+| 分组 | 接口 |
+|------|------|
+| 认证 | `POST /auth/register` `POST /auth/login` `POST /auth/logout` `GET /auth/me` |
+| 首页 | `GET /home/industries` `GET /home/hot` `GET /category/list` |
+| 商城 | `GET /product/page` `GET /product/detail/{id}` `POST /product/publish` |
+| 商户 | `POST /merchant/apply` `GET /merchant/my` `POST /merchant/admin/review/{id}` |
+| 购物车 | `POST /cart/add` `GET /cart/list` `DELETE /cart/{id}` |
+| 订单 | `POST /order/checkout` `GET /order/my` `POST /order/pay/{no}` |
+| 客服 | `POST /support/ask`（知识库问答 / 会话记录） |
 
-## 五、链式业务拓展（设计亮点）
+接口出入参与鉴权细节见 [docs/账号中心接口文档.md](./docs/账号中心接口文档.md)。
 
-平台不是十个孤立模块，而是把相似业务逻辑抽象为可复用的"链"：
+### 运行测试
 
-- **审核链**：商户入驻 / 资质 / 金融授信 / 定制报价 共用 `AuditService` 式流程；
-- **订单链**：商城 / 购物车 / 礼品定制 共用 `OrderService`，以 `orderType` 区分；
-- **资金链**：钱包 / 账期 / 结算 共用余额与流水逻辑；
-- **行业适配链**：新增行业只需在 `t_industry` / `t_category` 配置数据，前端专区与商户资质要求自动生效，**零代码接入**。
+```bash
+# 后端测试（JUnit，约 190+ 用例）
+cd backend && mvn test
 
-商户筛选机制（对应思维导图硬指标）在 `MerchantService.applyScreening()` 中实现：
-公司类型，或个体工商户且注册资本 > 10 万元，且有稳定纳税记录 → 自动通过，否则驳回并给出原因。
+# 前端测试（Vitest）
+cd frontend && npm test
 
-## 六、已验证
+# AI 网关测试（22 用例，构建镜像时自动执行）
+cd ai-gateway && python -m unittest discover -s tests
+```
 
-- 后端 `mvn package` 编译打包通过，产出 `lanlink-shopping.jar`；
-- 前端 `npm run build` 构建通过，产出 `dist/`；
-- 下单主流程含事务：校验库存 → 生成订单+明细（冗余快照）→ 扣库存加销量 → 清购物车。
+## 🤝 贡献指南
 
-## 七、后续可扩展
+欢迎通过 Issue 与 Pull Request 参与贡献！
 
-供应链金融（账期/尾款）、礼品定制、消息中心、评价信用、运营数据看板等增值模块，
-可基于上述"链式"复用点增量开发，无需改动核心交易链路。
+1. **Fork** 本仓库并创建特性分支：`git checkout -b feature/your-feature`
+2. **遵循现有代码风格**：后端 Java 使用 Spring Boot 分层规范，前端 Vue 3 组合式 API
+3. **提交前自检**：
+   - 后端 `mvn test`、前端 `npm test` 全部通过
+   - 不提交任何密钥、证书、`.env`、数据库口令（`.gitignore` 已覆盖常见敏感文件）
+   - 新增配置项请同步更新 `.env.example` 与文档
+4. **提交信息**：使用清晰的 Conventional 风格（如 `feat: xxx` / `fix: xxx` / `docs: xxx`）
+5. 发起 Pull Request，描述改动动机、方案与测试结果
 
+行为准则：请以尊重、建设性的态度参与讨论。
 
-## 生产部署配置
+## 🔒 安全
 
-默认 Profile 为 `prod`。部署到 Railway 等环境时，应配置 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`，并按需配置 `MAIL_HOST`、`MAIL_PORT`、`MAIL_USERNAME`、`MAIL_PASSWORD`。生产 Profile 显式关闭 SQL 自动初始化、模拟支付、验证码回显和演示数据注入。不要把数据库口令、邮件授权码或支付私钥提交到 GitHub。本地开发时请显式指定 `--spring.profiles.active=dev`。
+- 本项目是**演示项目**，请勿用于真实交易或生产环境。
+- 发现安全漏洞请按 [SECURITY.md](./SECURITY.md) 私密披露，**不要在公开 Issue 中披露**。
+- 疑似泄露的密钥（数据库口令、支付私钥、API Key）请立即轮换并联系我们。
+- 安全设计要点：BCrypt 口令哈希、TOTP 两步验证、AES-256-GCM 敏感字段加密、CSRF 防护、RBAC 权限矩阵、请求限流、审计日志、支付回调签名校验。
+
+## 📦 依赖锁定与供应链安全
+
+- 前端：[frontend/package-lock.json](./frontend/package-lock.json) 已提交，安装请使用 `npm ci` 保证版本一致
+- 后端：[backend/pom.xml](./backend/pom.xml) 固定依赖版本；Maven Wrapper 锁定构建工具（`.mvn/wrapper/maven-wrapper.properties`）
+- 依赖漏洞由 [`.github/dependabot.yml`](./.github/dependabot.yml) 自动跟踪，CI 含 CodeQL 静态扫描（[`.github/workflows/codeql.yml`](./.github/workflows/codeql.yml)）
+
+## 📄 许可证
+
+本项目采用 **GNU General Public License v3.0（GNU GPL-3.0）** 开源许可证发布。
+
+```
+LANLinkshopping — 聚合型一体多元化解决方案 B2B 电商平台
+Copyright (C) 2026  LANLinkshopping Contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+```
+
+- 完整许可证全文见根目录 [LICENSE](./LICENSE) 文件（GNU GPL v3.0 官方原文）
+- 你可以自由地使用、修改、分发本软件，但**衍生作品必须以相同 GPL-3.0 条款开源**（copyleft）
+- 本软件不提供任何明示或默示的担保，详见许可证第 15-17 节
+
+## 🙏 致谢
+
+- [Spring Boot](https://spring.io/projects/spring-boot) · [Vue.js](https://vuejs.org/) · [Ant Design Vue](https://antdv.com/) · [MyBatis-Plus](https://baomidou.com/)
+- 前端动效与组件设计参考 [21st.dev](https://21st.dev)（相关组件已标注来源与许可证）
+
+---
+
+<div align="center">
+
+**如果本项目对你有帮助，请给一个 ⭐ Star 支持一下！**
+
+Made with ❤️ for Graduation Project 2026
+
+</div>

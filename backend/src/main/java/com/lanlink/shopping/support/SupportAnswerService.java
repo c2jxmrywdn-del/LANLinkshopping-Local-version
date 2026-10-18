@@ -57,12 +57,33 @@ public class SupportAnswerService {
             "(?i)(ignore|disregard|forget|override|bypass)[\\s\\S]{0,80}(instruction|prompt|system|policy|knowledge base|rules)"
     );
     private static final Pattern INVISIBLE_CHARACTERS = Pattern.compile("[\\u200B-\\u200D\\u2060\\uFEFF]");
+    /** 所有回复统一使用的标准问候语前缀（沟通礼仪）。 */
+    private static final String GREETING_PREFIX = "您好！";
+    /** 纯寒暄问候：仅含问候语（可重复、可带语气标点），走独立应答而非拒答兜底。 */
+    private static final Pattern PURE_GREETING = Pattern.compile(
+            "^(?:(?:你好|您好|哈喽|哈啰|嗨|嘿|在吗|在不在|在么|有人吗|早上好|中午好|下午好|晚上好|"
+                    + "hi|hello|hey|good morning|good afternoon|good evening)"
+                    + "[\\s!！?？。.，,、～~·啊呀嘛呗哦呢哈]*)+$", Pattern.CASE_INSENSITIVE);
+    /** 自我介绍 / 能力说明类提问，走自我介绍应答。 */
+    private static final Pattern SELF_INTRO = Pattern.compile(
+            "^(?:你叫什么(?:名字)?|你叫啥|你是谁|你是什么(?:人|东西|客服|机器人|智能体)?|"
+                    + "介绍(?:一下)?(?:你)?自己|你能做什么|你会什么|你能帮(?:我)?(?:做)?什么|"
+                    + "你有什么(?:功能|用|作用|本事)|你能回答什么|你都会什么|"
+                    + "who are you|what(?:'s| is) your name|what can you do)"
+                    + "[\\s!！?？。.，,、～~·啊呀嘛呗哦呢]*$", Pattern.CASE_INSENSITIVE);
+    private static final String DEFAULT_GREETING =
+            "您好！我是 LANLinkshopping 专属智能客服，很高兴为您服务。请问有什么可以帮您？";
+    private static final String DEFAULT_SELF_INTRO =
+            "您好！我是 LANLinkshopping 专属智能客服，可解答平台账号注册与登录、商品浏览、购物车与订单、"
+                    + "商户入驻、钱包与账期、会员与活动、站内消息及 Cookie 设置等电商问题。请问您想了解哪一方面？";
 
     private final ObjectMapper objectMapper;
     private final Resource knowledgeBaseResource;
     private final JdbcTemplate jdbcTemplate;
     private volatile String fallback;
     private volatile String welcome;
+    private volatile String greeting;
+    private volatile String selfIntro;
     private volatile List<Entry> entries = List.of();
     private volatile long publishedCacheLoadedAtMs;
     private volatile List<Entry> publishedEntriesCache = List.of();
@@ -122,17 +143,41 @@ public class SupportAnswerService {
         if (loadedEntries.isEmpty()) throw new IllegalStateException("Customer support knowledge base must not be empty");
         this.fallback = loadedFallback;
         this.welcome = StringUtils.hasText(loadedWelcome) ? loadedWelcome : loadedFallback;
+        String loadedGreeting = root.path("greeting").asText("");
+        String loadedSelfIntro = root.path("selfIntro").asText("");
+        this.greeting = StringUtils.hasText(loadedGreeting) ? loadedGreeting : DEFAULT_GREETING;
+        this.selfIntro = StringUtils.hasText(loadedSelfIntro) ? loadedSelfIntro : DEFAULT_SELF_INTRO;
         this.entries = List.copyOf(loadedEntries);
     }
 
     public String fallback() { return fallback; }
     public String welcome() { return welcome; }
+    public String greeting() { return greeting; }
+    public String selfIntro() { return selfIntro; }
 
     public String answer(String rawQuestion) {
         String question = validatedQuestion(rawQuestion);
-        if (question == null || isBlockedQuestion(question)) return fallback;
+        // 纯寒暄（你好/在吗 等）：直接问候应答，不再落入拒答兜底。
+        if (question != null && PURE_GREETING.matcher(question).matches()) {
+            return withGreeting(greeting);
+        }
+        // 自我介绍 / 能力说明类提问：返回客服身份与能力范围。
+        if (question != null && SELF_INTRO.matcher(question).matches()) {
+            return withGreeting(selfIntro);
+        }
+        if (question == null || isBlockedQuestion(question)) return withGreeting(fallback);
         Entry entry = findEntry(question);
-        return entry == null ? fallback : entry.answer();
+        return entry == null ? withGreeting(fallback) : withGreeting(entry.answer());
+    }
+
+    /** 统一在回复开头加标准问候语；已带问候语的文本（欢迎语/兜底等）不重复添加。 */
+    private String withGreeting(String text) {
+        if (!StringUtils.hasText(text)) return text;
+        String trimmed = text.trim();
+        if (trimmed.startsWith("您好") || trimmed.startsWith("你好") || trimmed.startsWith(GREETING_PREFIX)) {
+            return trimmed;
+        }
+        return GREETING_PREFIX + trimmed;
     }
 
     /** Exposes the intent selected by the exact same matcher for the admin-only sandbox. */
@@ -247,6 +292,24 @@ public class SupportAnswerService {
         available.addAll(publishedEntries());
         return available.stream().anyMatch(entry ->
                 entry.keywords().stream().anyMatch(normalized::contains));
+    }
+
+    /**
+     * 自动学习候选用：提取问题中命中的全部知识关键词（去重，最长优先），供候选关键词自动填充。
+     * 未命中返回空列表（调用方兜底取问题片段）。
+     */
+    public List<String> extractMatchedKeywords(String question) {
+        if (!StringUtils.hasText(question)) return List.of();
+        String normalizedQuestion = normalize(question);
+        List<Entry> available = new ArrayList<>(entries);
+        available.addAll(publishedEntries());
+        return available.stream()
+                .flatMap(entry -> entry.keywords().stream())
+                .filter(k -> normalizedQuestion.contains(k))
+                .distinct()
+                .sorted(Comparator.comparingInt(String::length).reversed())
+                .limit(16)
+                .toList();
     }
 
     private static boolean isPromptInjection(String question) {

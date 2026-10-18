@@ -1,5 +1,6 @@
 package com.lanlink.shopping.controller;
 
+import com.lanlink.shopping.common.DesensitizeUtil;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.CsrfInterceptor;
 import com.lanlink.shopping.config.UserContext;
@@ -79,6 +80,11 @@ public class UserController {
         }
         if (dto.getBio() != null) {
             dto.setBio(sanitizeBio(dto.getBio())); // 服务端内容合规预检
+        }
+        // 逆向一致性保护：若前端提交包含星号的脱敏姓名，保留数据库现有真实值
+        if (dto.getRealName() != null && DesensitizeUtil.isMasked(dto.getRealName())) {
+            var existingProfile = profileService.get(userId);
+            dto.setRealName(existingProfile != null ? existingProfile.getRealName() : null);
         }
         if (dto.getRealName() != null || dto.getGender() != null || dto.getBirthday() != null || dto.getBio() != null) {
             profileService.save(userId, dto);
@@ -320,7 +326,7 @@ public class UserController {
 
     // ===== 工具 =====
 
-    /** 个人资料合并视图：基础字段(t_user) + 资料字段(t_user_profile，敏感字段已解密) */
+    /** 个人资料合并视图：基础字段(t_user) + 资料字段(t_user_profile，敏感字段脱敏输出) */
     private ProfileVO toVO(Long userId) {
         ProfileVO vo = new ProfileVO();
         vo.setUserId(userId);
@@ -328,17 +334,17 @@ public class UserController {
         if (u != null) vo.setNickname(u.getNickname());
         var p = profileService.get(userId);
         if (p != null) {
-            vo.setRealName(p.getRealName());
+            vo.setRealName(DesensitizeUtil.maskRealName(p.getRealName()));
             vo.setGender(p.getGender());
             vo.setBirthday(p.getBirthday());
             vo.setAvatar(p.getAvatar());
             vo.setBio(p.getBio());
-            vo.setPhone(p.getPhone());
-            vo.setEmail(p.getEmail());
+            vo.setPhone(DesensitizeUtil.maskPhone(p.getPhone()));
+            vo.setEmail(DesensitizeUtil.maskEmail(p.getEmail()));
         }
         // 资料表手机号未绑定时回退到登录手机号（t_user.phone），保证联系方式始终可见
         if ((vo.getPhone() == null || vo.getPhone().isBlank()) && u != null) {
-            vo.setPhone(u.getPhone());
+            vo.setPhone(DesensitizeUtil.maskPhone(u.getPhone()));
         }
         return vo;
     }

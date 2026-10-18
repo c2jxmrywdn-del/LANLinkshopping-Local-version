@@ -75,6 +75,12 @@ public class AuthInterceptor implements HandlerInterceptor {
     private boolean isWhiteList(String uri) {
         return uri.startsWith("/auth/login")
                 || uri.startsWith("/auth/register")
+                // 社交登录：仅放行匿名可达的三个入口；/auth/social/bind/** 需登录（绑定动作挂在当前账号下）
+                || uri.equals("/auth/social/providers")
+                || uri.startsWith("/auth/social/authorize/")
+                || uri.startsWith("/auth/social/callback/")
+                // 语言自动识别的地理提示：启动期（登录前）即需调用
+                || uri.startsWith("/i18n/")
                 || uri.startsWith("/home/")
                 || uri.startsWith("/category/")
                 // 商品仅公开浏览(分页/详情)；发布/图片上传/我的列表/审核均需登录

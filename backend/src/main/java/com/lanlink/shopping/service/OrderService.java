@@ -2,6 +2,7 @@ package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.common.DesensitizeUtil;
 import com.lanlink.shopping.dto.CheckoutDTO;
 import com.lanlink.shopping.entity.*;
 import com.lanlink.shopping.integration.event.OrderPaidEvent;
@@ -37,13 +38,26 @@ public class OrderService {
     private final ApplicationEventPublisher eventPublisher;
     private final com.lanlink.shopping.module.membership.service.MembershipService membershipService;
     private final CreditTermService creditTermService;
+    private final IdempotentService idempotentService;
+    private final TamperGuardService tamperGuardService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AddressMapper addressMapper;
+
+    public void setAddressMapper(AddressMapper addressMapper) {
+        this.addressMapper = addressMapper;
+    }
+
+    /** 支付方式白名单（需求 1/3：与前端 validationRules.js 同契约，见 ValidationRules） */
+    private static final java.util.Set<String> ALLOWED_PAY_TYPES =
+            com.lanlink.shopping.common.ValidationRules.ALLOWED_PAY_TYPES;
 
     public OrderService(CartMapper cartMapper, ProductMapper productMapper, OrderMapper orderMapper,
                         OrderItemMapper orderItemMapper, UserMapper userMapper, MessageService messageService,
                         IdentityService identityService, AuditService auditService,
                         PricingFacade pricingFacade, ApplicationEventPublisher eventPublisher,
                         com.lanlink.shopping.module.membership.service.MembershipService membershipService,
-                        CreditTermService creditTermService) {
+                        CreditTermService creditTermService, IdempotentService idempotentService,
+                        TamperGuardService tamperGuardService) {
         this.cartMapper = cartMapper;
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
@@ -56,10 +70,37 @@ public class OrderService {
         this.eventPublisher = eventPublisher;
         this.membershipService = membershipService;
         this.creditTermService = creditTermService;
+        this.idempotentService = idempotentService;
+        this.tamperGuardService = tamperGuardService;
     }
 
     @Transactional
     public Order checkout(Long userId, CheckoutDTO dto) {
+        // ===== 需求 2：幂等校验（防重复提交/并发重放） =====
+        Long idemToken = idempotentService.reserve("checkout", dto.getIdempotentKey(), userId, null);
+        try {
+            Order order = doCheckout(userId, dto);
+            idempotentService.bound(idemToken, order.getOrderNo());
+            return order;
+        } catch (RuntimeException e) {
+            idempotentService.release(idemToken); // 失败释放，允许携带同一幂等键重试
+            throw e;
+        }
+    }
+
+    private Order doCheckout(Long userId, CheckoutDTO dto) {
+        // ===== 需求 1：敏感字段后端独立校验，不信任前端 =====
+        if (!ALLOWED_PAY_TYPES.contains(dto.getPayType() == null ? "" : dto.getPayType())) {
+            // 需求 4：异常篡改请求记录告警（绕过前端校验/非法枚举值）
+            tamperGuardService.report(userId, "order", "payType", dto.getPayType(),
+                    String.join("/", ALLOWED_PAY_TYPES), "非法支付方式尝试(白名单外)", null);
+            throw new BusinessException("非法支付方式");
+        }
+        if (dto.getUsePoints() != null && dto.getUsePoints() < 0) {
+            tamperGuardService.report(userId, "order", "usePoints", String.valueOf(dto.getUsePoints()),
+                    ">=0", "使用积分数为负数(参数篡改)", null);
+            throw new BusinessException("使用积分数不能为负");
+        }
         User user = userMapper.selectById(userId);
         List<Cart> carts;
         if (dto.getCartIds() != null && !dto.getCartIds().isEmpty()) {
@@ -78,8 +119,29 @@ public class OrderService {
         order.setPayType(dto.getPayType());
         order.setPayStatus("term".equals(dto.getPayType()) ? 1 : 0);
         order.setOrderStatus(0);
-        order.setReceiver(dto.getReceiver());
-        order.setPhone(dto.getPhone());
+        String receiver = dto.getReceiver();
+        String phone = dto.getPhone();
+        if (DesensitizeUtil.isMasked(phone) || DesensitizeUtil.isMasked(receiver)) {
+            if (addressMapper != null) {
+                List<Address> addresses = addressMapper.selectList(Wrappers.<Address>lambdaQuery().eq(Address::getUserId, userId));
+                for (Address a : addresses) {
+                    if (DesensitizeUtil.isMasked(phone) && a.getPhone() != null
+                            && (DesensitizeUtil.maskPhone(a.getPhone()).equals(phone) || a.getPhone().equals(phone))) {
+                        phone = a.getPhone();
+                    }
+                    if (DesensitizeUtil.isMasked(receiver) && a.getReceiver() != null
+                            && (DesensitizeUtil.maskRealName(a.getReceiver()).equals(receiver) || a.getReceiver().equals(receiver))) {
+                        receiver = a.getReceiver();
+                    }
+                }
+            }
+            if (DesensitizeUtil.isMasked(phone) && user != null && user.getPhone() != null
+                    && (DesensitizeUtil.maskPhone(user.getPhone()).equals(phone) || user.getPhone().equals(phone))) {
+                phone = user.getPhone();
+            }
+        }
+        order.setReceiver(receiver);
+        order.setPhone(phone);
         order.setAddress(dto.getAddress());
         order.setRemark(dto.getRemark());
         order.setCreateTime(LocalDateTime.now());
@@ -87,6 +149,7 @@ public class OrderService {
         if ("term".equals(dto.getPayType())) order.setPayTime(LocalDateTime.now());
 
         // 先校验库存（并确认商品可售：仅审核通过的商品可下单），累计原价与行业
+        // 需求 1：价格/金额由后端按商品当前价重算，禁止信任前端传入金额
         BigDecimal total = BigDecimal.ZERO;
         Long orderIndId = null;
         for (Cart c : carts) {
@@ -96,6 +159,9 @@ public class OrderService {
                 throw new BusinessException("商品暂不可购买(未通过审核或已下架): " + p.getTitle());
             }
             if (p.getStock() < c.getQuantity()) throw new BusinessException("库存不足: " + p.getTitle());
+            if (p.getPrice() == null || p.getPrice().signum() <= 0) {
+                throw new BusinessException("商品价格异常: " + p.getTitle());
+            }
             total = total.add(p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity())));
             if (orderIndId == null) orderIndId = p.getIndId();
         }
@@ -116,13 +182,19 @@ public class OrderService {
         order.setPointDeductAmount(pointDeductAmount);
         order.setPointDeductPoints(pointDeductPoints);
         order.setTotalAmount(payable);
+        // 需求 1+4：防篡改比对（客户端传入 expectedTotal 时与后端重算总额一致性核验，不一致则告警并拒绝）
+        if (dto.getExpectedTotal() != null) {
+            if (!tamperGuardService.checkNumeric(userId, "order", "totalAmount", dto.getExpectedTotal(), payable, null)) {
+                throw new BusinessException("订单金额异常(客户端传入金额与后端重算不一致)");
+            }
+        }
         // 账期订单在结算时直接形成授信应付账单，不再进入普通支付弹窗
         orderMapper.insert(order);
         if ("term".equals(dto.getPayType())) {
             creditTermService.createBillForOrder(userId, order.getOrderNo(), payable);
         }
 
-        // 明细 + 扣库存
+        // 明细 + 扣库存（需求 2：数据库原子扣减防并发超卖）
         for (Cart c : carts) {
             Product p = productMapper.selectById(c.getProdId());
             BigDecimal subtotal = p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity()));
@@ -135,11 +207,11 @@ public class OrderService {
             item.setSubtotal(subtotal);
             item.setCoverUrl(p.getCoverUrl());
             orderItemMapper.insert(item);
-            // 扣库存 + 加销量
-            p.setStock(p.getStock() - c.getQuantity());
-            p.setSales(p.getSales() + c.getQuantity());
-            p.setUpdateTime(LocalDateTime.now());
-            productMapper.updateById(p);
+            // 原子扣库存 + 加销量（条件更新 stock >= quantity，失败回滚整个事务）
+            int affected = productMapper.deductStockAtomic(p.getProdId(), c.getQuantity());
+            if (affected == 0) {
+                throw new BusinessException("库存不足(并发扣减冲突): " + p.getTitle());
+            }
             // 移除已购购物车项
             cartMapper.deleteById(c.getCartId());
         }
@@ -173,11 +245,15 @@ public class OrderService {
     public Order pay(Long userId, String orderNo) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null || !o.getUserId().equals(userId)) throw new BusinessException("订单不存在");
-        if (o.getPayStatus() != null && o.getPayStatus() == 1) throw new BusinessException("订单已支付");
-        o.setPayStatus(1);
-        o.setPayTime(LocalDateTime.now());
-        o.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(o);
+        // 需求 2：支付状态原子流转（防并发重复支付/防状态篡改，移除前置Java状态判断消除竞态）
+        int affected = orderMapper.markPaidAtomic(orderNo);
+        if (affected == 0) {
+            // 需求 4：并发/重放支付尝试告警（payStatus 状态机非法流转）
+            tamperGuardService.report(userId, "order", "payStatus", "pay", "already-paid-or-invalid",
+                    "支付状态原子流转失败(重复支付/并发篡改)", null);
+            throw new BusinessException("订单已支付或当前状态不允许支付");
+        }
+        o = orderMapper.selectById(orderNo); // 刷新最新状态
         messageService.send(userId, "order", "支付成功",
                 "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo);
         // 跨模块事件：通知营销中台（会员累计积分/成长值、消费活动自动参与）
@@ -271,17 +347,63 @@ public class OrderService {
         messageService.send(userId, "order", "订单已取消", "订单 " + orderNo + " 已取消，库存已恢复。", orderNo);
     }
 
-    /** 恢复订单占用库存并回退销量（取消 / 全额退款共用） */
+    /**
+     * 用户申请退款：进入平台审核队列（refundStatus=applied），由平台在交易管理中受理。
+     * 规则：
+     *  - 仅"已支付"且非账期订单可申请（账期走账单还款）；
+     *  - 订单已取消/已退款不可申请；
+     *  - 申请中/处理中/已退款不可重复申请；已驳回可重新申请；
+     *  - 申请按"可退余额全额"提交，平台实际退款时可选全额或部分。
+     */
+    @Transactional
+    public void applyRefund(Long userId, String orderNo, String reason) {
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null || !o.getUserId().equals(userId)) throw new BusinessException("订单不存在");
+        if (o.getPayStatus() == null || o.getPayStatus() != 1) throw new BusinessException("仅已支付订单可申请退款");
+        if ("term".equals(o.getPayType())) throw new BusinessException("账期订单请前往账期账单处理还款，不支持退款申请");
+        if (o.getOrderStatus() != null && (o.getOrderStatus() == 3 || o.getOrderStatus() == 4)) {
+            throw new BusinessException("该订单已结束，无法申请退款");
+        }
+        if (reason == null || reason.isBlank()) throw new BusinessException("请填写退款原因");
+        BigDecimal already = o.getRefundAmount() == null ? BigDecimal.ZERO : o.getRefundAmount();
+        if (o.getTotalAmount().subtract(already).compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("该订单已无可退金额");
+        }
+        // 需求 2：退款状态原子流转（防并发重复申请/防退款状态篡改，移除前置Java状态判断消除竞态）
+        int affected = orderMapper.applyRefundAtomic(orderNo, reason.trim());
+        if (affected == 0) {
+            tamperGuardService.report(userId, "order", "refundStatus", "apply", o.getRefundStatus() == null ? "none" : o.getRefundStatus(),
+                    "退款状态原子流转失败(并发重复申请/状态篡改)", null);
+            throw new BusinessException("退款申请已提交或订单状态不允许申请，请等待平台处理，请勿重复操作");
+        }
+        messageService.send(userId, "order", "退款申请已提交",
+                "订单 " + orderNo + " 的退款申请已提交，平台将尽快处理。", orderNo);
+    }
+
+    /**
+     * 平台驳回退款申请：状态置 rejected 并保留驳回原因（回显给用户），用户可重新申请。
+     */
+    @Transactional
+    public void rejectRefund(String orderNo, String reason) {
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null) throw new BusinessException("订单不存在");
+        String why = reason == null || reason.isBlank() ? "不符合退款条件" : reason.trim();
+        // 需求 2：驳回状态原子流转（防并发竞态覆盖其他并行操作的结果，移除前置Java状态判断消除竞态）
+        int affected = orderMapper.rejectRefundAtomic(orderNo, why);
+        if (affected == 0) {
+            throw new BusinessException("该订单没有待处理的退款申请或状态已变更，请刷新后重试");
+        }
+        messageService.send(o.getUserId(), "order", "退款申请未通过",
+                "订单 " + orderNo + " 的退款申请未通过：" + why, orderNo);
+    }
+
+    /** 恢复订单占用库存并回退销量（取消 / 全额退款共用；需求 2：原子回滚防并发丢失更新） */
     private void restoreStock(String orderNo) {
         List<OrderItem> items = orderItemMapper.selectList(Wrappers.<OrderItem>lambdaQuery()
                 .eq(OrderItem::getOrderNo, orderNo));
         for (OrderItem it : items) {
-            Product p = productMapper.selectById(it.getProdId());
-            if (p != null) {
-                p.setStock(p.getStock() + it.getQuantity());
-                p.setSales(Math.max(0, p.getSales() - it.getQuantity()));
-                productMapper.updateById(p);
-            }
+            // 原子回滚库存/销量（单条 UPDATE 消除并发竞态）
+            productMapper.restoreStockAtomic(it.getProdId(), it.getQuantity());
         }
     }
 

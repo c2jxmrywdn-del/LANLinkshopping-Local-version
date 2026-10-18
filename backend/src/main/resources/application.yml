@@ -17,7 +17,7 @@ spring:
   profiles:
     default: dev
   config:
-    import: optional:classpath:application-payment.yml
+    import: optional:classpath:application-payment.yml,optional:classpath:application-social.yml,optional:classpath:application-i18n.yml
   application:
     name: lanlink-shopping
   jackson:

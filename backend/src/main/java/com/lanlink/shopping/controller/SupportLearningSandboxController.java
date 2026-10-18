@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.support.SupportAnswerService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -32,6 +34,7 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/admin/support-learning")
 public class SupportLearningSandboxController {
+    private static final Logger log = LoggerFactory.getLogger(SupportLearningSandboxController.class);
     private static final Pattern ENTRY_ID = Pattern.compile("[a-z0-9][a-z0-9-]{1,63}");
     private static final Pattern CREDENTIAL_CONTENT = Pattern.compile(
             "(?i)(-----BEGIN [A-Z ]*PRIVATE KEY-----|sk-[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|(?:password|passwd|pwd|密码|token|secret|api[_ -]?key|access[_ -]?token)\\s*[:=：])");
@@ -117,7 +120,7 @@ public class SupportLearningSandboxController {
                     .build();
             HttpResponse<String> response = httpClient.send(outbound, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() != 200) {
-                System.err.println("[support-learning-sandbox] container returned HTTP " + response.statusCode());
+                log.warn("[support-learning-sandbox] container returned HTTP {}", response.statusCode());
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(R.<PreviewResult>fail(503,
                         "隔离 Docker 沙盒暂时不可用，请稍后重试。"));
             }
@@ -132,8 +135,8 @@ public class SupportLearningSandboxController {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(R.<PreviewResult>fail(503,
                     "隔离 Docker 沙盒请求已中断，请重试。"));
         } catch (IOException | IllegalArgumentException ex) {
-            // Deliberately omit request/answer/token values from logs.
-            System.err.println("[support-learning-sandbox] isolated evaluation failed: " + ex.getClass().getSimpleName());
+            // Deliberately omit request/answer/token values from logs; only the exception stack is recorded.
+            log.error("[support-learning-sandbox] isolated evaluation failed", ex);
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(R.<PreviewResult>fail(503,
                     "隔离 Docker 沙盒暂时不可用，请检查容器状态与服务地址。"));
         }

@@ -75,7 +75,12 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
     private static final Map<String, Policy> POLICIES = Map.of(
             "/auth/login", new Policy(8, 120),
             "/auth/login/2fa", new Policy(8, 120),
-            "/auth/register", new Policy(4, 30)
+            "/auth/register", new Policy(4, 30),
+            "/user/phone-code", new Policy(5, 30),
+            "/user/email-code", new Policy(5, 30),
+            "/order/checkout", new Policy(10, 60),
+            "/wallet/pay", new Policy(10, 60),
+            "/wallet/recharge", new Policy(10, 60)
     );
 
     private final LongSupplier clock;
@@ -145,8 +150,9 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
         response.setContentType("application/json;charset=UTF-8");
         response.setHeader("Retry-After", "60");
         response.setHeader("Cache-Control", "no-store");
+        String message = path.startsWith("/auth/") ? "认证请求过于频繁，请稍后再试" : "请求过于频繁，请稍后再试";
         response.getWriter().write(objectMapper.writeValueAsString(
-                R.fail(429, "认证请求过于频繁，请稍后再试")));
+                R.fail(429, message)));
         return false;
     }
 

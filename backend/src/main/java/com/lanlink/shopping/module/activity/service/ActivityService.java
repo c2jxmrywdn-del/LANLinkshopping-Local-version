@@ -39,21 +39,32 @@ public class ActivityService {
                 .eq(Activity::getStatus, 1)
                 .and(w -> w.isNull(Activity::getEndTime).or().ge(Activity::getEndTime, now))
                 .orderByDesc(Activity::getActivityId));
-        return acts.stream().map(a -> {
-            Map<String, Object> m = new java.util.LinkedHashMap<>();
-            m.put("activityId", a.getActivityId());
-            m.put("title", a.getTitle());
-            m.put("type", a.getType());
-            m.put("description", a.getDescription());
-            m.put("startTime", a.getStartTime());
-            m.put("endTime", a.getEndTime());
-            if (userId != null) {
-                m.put("joined", participantMapper.selectCount(Wrappers.<ActivityParticipant>lambdaQuery()
-                        .eq(ActivityParticipant::getActivityId, a.getActivityId())
-                        .eq(ActivityParticipant::getUserId, userId)) > 0);
-            }
-            return m;
-        }).toList();
+        return acts.stream().map(a -> toView(a, userId)).toList();
+    }
+
+    /** 单个进行中活动详情（含是否已参与；非进行中/不存在返回 null，口径与列表一致） */
+    public Map<String, Object> detail(Long userId, Long activityId) {
+        if (activityId == null) return null;
+        return ongoing(userId).stream()
+                .filter(m -> String.valueOf(activityId).equals(String.valueOf(m.get("activityId"))))
+                .findFirst().orElse(null);
+    }
+
+    /** 活动视图（字段口径统一，供列表与详情复用） */
+    private Map<String, Object> toView(Activity a, Long userId) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("activityId", a.getActivityId());
+        m.put("title", a.getTitle());
+        m.put("type", a.getType());
+        m.put("description", a.getDescription());
+        m.put("startTime", a.getStartTime());
+        m.put("endTime", a.getEndTime());
+        if (userId != null) {
+            m.put("joined", participantMapper.selectCount(Wrappers.<ActivityParticipant>lambdaQuery()
+                    .eq(ActivityParticipant::getActivityId, a.getActivityId())
+                    .eq(ActivityParticipant::getUserId, userId)) > 0);
+        }
+        return m;
     }
 
     /** 用户参与活动（幂等：同一活动不可重复参与） */

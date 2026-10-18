@@ -46,7 +46,7 @@ const typeName=computed(()=>promotion.value?.type==='full_reduce'?'满减':'折�
 const scopeName=computed(()=>promotion.value?.scope==='all'?'全场适用':'指定行业适用')
 const benefit=computed(()=>promotion.value?.type==='full_reduce'?'减 ¥'+money(promotion.value?.benefitAmount):(Number(promotion.value?.discountRate||1)*10).toFixed(1)+' 折')
 const timeText=computed(()=>fmt(promotion.value?.startTime)+' ～ '+(promotion.value?.endTime?fmt(promotion.value?.endTime):'长期'))
-onMounted(async()=>{loading.value=true;try{const list=await promotionApi.list();promotion.value=(list||[]).find(x=>String(x.promoId)===String(route.params.id))||null}finally{loading.value=false}})
+onMounted(async()=>{loading.value=true;try{promotion.value=await promotionApi.detail(route.params.id)||null}catch(e){promotion.value=null}finally{loading.value=false}})
 </script>
 <style scoped>
 .page{max-width:980px;margin:0 auto}.hero-card{border-radius:22px;background:var(--ll-brand-hero-gradient);color:#fff;margin-bottom:16px}.eyebrow{font-size:11px;letter-spacing:.16em;opacity:.68}.hero-card h1{color:#fff;font-size:32px;margin:12px 0 4px}.benefit{font-size:38px;font-weight:800;color:#f6d38a;margin:14px 0}.hero-card p{color:rgba(255,255,255,.7);margin:0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{border-radius:18px}.actions{display:flex;justify-content:center;gap:10px;margin:20px 0}@media(max-width:640px){.grid{grid-template-columns:1fr}.hero-card h1{font-size:26px}.actions{flex-direction:column}}

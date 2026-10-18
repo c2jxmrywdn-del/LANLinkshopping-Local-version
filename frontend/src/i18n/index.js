@@ -1,9 +1,34 @@
 // 轻量 i18n：locale ref + t('a.b') 取值，取不到回退中文再回退 key
 import { ref } from 'vue'
+import { LOCALE_STORAGE_KEY, detectLocale } from '../utils/localeDetect'
 
 export const locale = ref('zh-CN')
 
 const zh = {
+  qrsl: {
+    title: '扫码登录',
+    subtitle: '使用手机扫描二维码，在「{app}」确认后即可登录',
+    badge: '安全登录',
+    qrAria: '扫码登录二维码',
+    expired: '二维码已失效',
+    refreshNow: '点击刷新',
+    scanned: '已扫码，请在手机上确认',
+    confirming: '确认成功，正在进入…',
+    refresh: '刷新二维码',
+    usePassword: '使用密码登录',
+    demo: '演示',
+    simScan: '模拟已扫码',
+    simConfirm: '模拟确认登录',
+    pause: '暂停',
+    play: '播放',
+    replay: '重播',
+    noteExpired: '二维码已失效，点击「刷新二维码」重新获取',
+    noteCountdown: '{s}s 后自动刷新（有效期 {total}s）',
+    stWaiting: '等待扫码…',
+    stScanned: '{device} 已扫码，等待确认',
+    stConfirmed: '{msg}，正在跳转…',
+    stExpired: '二维码已失效，请刷新后重试'
+  },
   acct: {
     title: '账号中心',
     nav: { profile: '个人信息', settings: '系统设置' },
@@ -142,6 +167,30 @@ const zh = {
 }
 
 const en = {
+  qrsl: {
+    title: 'Scan to sign in',
+    subtitle: 'Scan this QR code with your phone and confirm in {app}',
+    badge: 'Secure',
+    qrAria: 'Sign-in QR code',
+    expired: 'QR code expired',
+    refreshNow: 'Refresh now',
+    scanned: 'Scanned — confirm on your phone',
+    confirming: 'Confirmed — signing you in…',
+    refresh: 'Refresh QR code',
+    usePassword: 'Sign in with password',
+    demo: 'Demo',
+    simScan: 'Simulate scan',
+    simConfirm: 'Simulate confirm',
+    pause: 'Pause',
+    play: 'Play',
+    replay: 'Replay',
+    noteExpired: 'The QR code expired — tap "Refresh QR code" to get a new one',
+    noteCountdown: 'Auto-refresh in {s}s (valid {total}s)',
+    stWaiting: 'Waiting for scan…',
+    stScanned: '{device} scanned — awaiting confirmation',
+    stConfirmed: '{msg} — redirecting…',
+    stExpired: 'QR code expired, please refresh and try again'
+  },
   acct: {
     title: 'Account Center',
     nav: { profile: 'Profile', settings: 'Settings' },
@@ -308,7 +357,7 @@ export function t(key, params) {
 
 export function setLocale(l) {
   locale.value = dicts[l] ? l : 'zh-CN'
-  try { localStorage.setItem('ll_locale', locale.value) } catch (e) {}
+  try { localStorage.setItem(LOCALE_STORAGE_KEY, locale.value) } catch (e) {}
   applyDomLocale()
 }
 
@@ -351,6 +400,21 @@ const UI_ZH_EN = {
   '隐私中心':'Privacy Center','隐私政策':'Privacy Policy','数据保护':'Data Protection',
   '请选择':'Please select','请输入':'Please enter','请输入验证码':'Please enter the verification code','验证码':'Verification Code','获取验证码':'Get Code','重新获取':'Resend','秒后重发':'s before resend',
   '登录成功':'Signed in successfully','注册成功':'Registration successful','登录失败':'Sign-in failed','注册':'Register','登录':'Sign in','忘记密码':'Forgot password','没有账号？':'No account?','已有账号？':'Already have an account?','退出成功':'Signed out',
+  // 登录/注册互切提示语：按整段短语建词条，避免逐词替换残留中文造成"请 Register"式中英混杂
+  '首次使用？请':'First time here? Please','创建账号。':'to create an account.','已有账号？请':'Already have an account? Please',
+  // 高频业务复合词条（整词建条，配合防混杂护栏让核心界面完整翻译，避免逐词拼接）
+  '订单号':'Order No.','支付状态':'Payment Status','支付渠道':'Payment Channel','支付时间':'Payment Time','订单金额':'Order Amount','订单摘要':'Order Summary',
+  '已支付':'Paid','未支付':'Unpaid','支付成功':'Payment Successful','支付已确认':'Payment Confirmed','立即支付':'Pay Now','企业钱包':'Corporate Wallet','支付宝':'alipay','微信支付':'WeChat Pay',
+  // 社交登录渠道名：英文写法按需求方指定（Wechat / alipay），不套用官方大小写，改动前请先确认
+  '微信':'Wechat',
+  '商品名称':'Product Name','商品介绍':'Product Intro','累计销量':'Total Sales','已下架':'Delisted','业务分类':'Category','接口类型':'API Type','类型':'Type','关联订单':'Related Order',
+  '退款申请原因':'Refund Reason','退款申请被驳回':'Refund Rejected','退款申请已提交，请等待平台处理':'Refund request submitted, awaiting review','请填写退款原因':'Please fill in the refund reason','请填写驳回原因':'Please fill in the rejection reason','退款原因（必填，将提交平台审核）':'Refund reason (required, will be submitted for review)','审核驳回':'Review Rejected','平台驳回':'Rejected by Platform',
+  '支付与退款':'Payment & Refund','积分中心':'Points Center','积分抵现':'Points Deduction','积分奖励':'Points Reward','账期管理':'Credit Term','钱包流水':'Wallet Transactions','平台管理员':'Platform Admin','网站访客':'Site Visitor','注册有礼':'Signup Gift',
+  '请输入 6 位验证码':'Please enter the 6-digit code','请输入 6 位数字验证码':'Please enter the 6-digit code','6 位验证码':'6-digit code','验证码错误':'Incorrect code','请先获取验证码':'Please get a code first','请先填写正确的手机号':'Please enter a valid phone number first',
+  '收货人':'Receiver','联系电话':'Contact Phone','详细地址':'Detailed Address','省市区':'Province/City/District','还没有收货地址':'No shipping addresses yet','设为默认':'Set as Default','默认':'Default',
+  '保存成功':'Saved','已加入购物车':'Added to cart','已删除':'Deleted','请先登录':'Please sign in first','登录后购买':'Sign in to purchase','刷新数据':'Refresh','清空筛选条件':'Clear filters','没有找到相关商品':'No matching products',
+  '价格降序':'Price: High to Low','价格升序':'Price: Low to High','销量优先':'Best Selling','搜索商品名称':'Search product name','暂无账单':'No bills','暂无账期账单':'No credit bills','申请账期':'Apply for Credit','订单、支付与退款核对':'Orders, payments & refunds',
+  '用户账号 / 邮箱':'Account / Email','请输入用户账号或邮箱':'Please enter account or email','请输入正确的手机号或邮箱格式':'Please enter a valid phone or email','请输入注册手机号或邮箱':'Please enter registered phone or email','请输入注册时设置的密码':'Please enter your password','请输入已注册的手机号':'Please enter registered phone','密码重置链接已发送至您的邮箱，请查收':'Password reset link sent to your email',
   '密码':'Password','确认密码':'Confirm Password','手机号格式不正确':'Invalid phone number','邮箱格式不正确':'Invalid email address',
   '策略版本':'Policy version','最近更新':'Last updated','当前状态':'Current status','尚未选择':'Not selected','策略版本 v1.0':'Policy v1.0',
   '项目作者：Jason Ouyang':'Project Author: Jason Ouyang','本页面公开的联系方式由项目作者本人提供，仅用于项目展示、交流与联系。':'The contact details on this page are provided by the project author for project presentation, communication and academic exchange.',
@@ -360,10 +424,30 @@ const UI_ZH_EN = {
   '行业':'Industry','行业列表':'Industry List','全部行业':'All Industries','行业数据暂时无法更新':'Industry data is temporarily unavailable','自动同步':'Auto Sync','同步中…':'Syncing…','该行业暂无细分分类':'No subcategories in this industry yet','行业已自动接入，等待商品分类配置。':'This industry is connected automatically and is waiting for category configuration.','综合商品中心':'All-Industry Product Center','覆盖平台当前全部行业采购供给。':'Covers procurement supply across all industries on the platform.','采购入口':'Procurement','热销采购':'Best-Selling Procurement','查看全平台供给':'View platform-wide supply','按销量快速筛选':'Quickly filter by sales','采购优惠':'Procurement Offers','满减与行业折扣':'Threshold discounts and industry offers','类':'categories','进入':'Enter',
   '待审核':'Pending Review','已通过':'Approved','已驳回':'Rejected','审核通过':'Approve','审核完成':'Review Completed','资质核验':'Qualification Check','提交申请':'Application Submitted','材料':'Materials','已入驻':'Onboarded','原因':'Reason','工商信息':'Business Registration','主体类型':'Entity Type','注册资本':'Registered Capital','入驻方式':'Onboarding Method','企业ID':'Enterprise ID','商户ID':'Merchant ID','纳税申报':'Tax Filing','证照材料':'Licensing Documents','申请时间':'Application Time','营业执照':'Business License','查看原件':'View Original','近期纳税记录':'Recent Tax Records','税务登记号':'Tax Registration No.','纳税记录材料':'Tax Record Documents','记录':'Record','已具备资质':'Existing Qualifications','驳回原因':'Rejection Reason','操作':'Actions','快速查看':'Quick View','档案':'Profile','通过':'Approve','驳回':'Reject','商户档案详情':'Merchant Profile Details','驳回入驻申请':'Reject Onboarding Application','驳回原因（必填，将展示给商户用于整改）':'Rejection reason (required; shown to the merchant for remediation)','请输入驳回原因':'Please enter a rejection reason','确认通过':'Confirm Approval','审核通过该商户入驻申请':'Approve this merchant onboarding application',
   '平台运营 13800000000':'Platform Ops 13800000000','采购方':'Buyer','商户/供应商':'Merchant / Supplier','注册身份':'Registration Role','邮箱（选填）':'Email (optional)','11 位手机号':'11-digit phone number','至少 8 位，含字母与数字':'At least 8 characters, including letters and numbers','两次输入的密码不一致':'The passwords do not match','密码强度不足，至少 8 位且含字母与数字':'Password is too weak; use at least 8 characters with letters and numbers','演示账号（密码均 123456）':'Demo accounts (all passwords are 123456)','演示: 13900000001':'Demo: 13900000001','演示密码: 123456':'Demo password: 123456','动态验证码':'One-Time Code','验证并登录':'Verify & Sign In','返回重新登录':'Back to Sign In','去登录':'Go to Sign In','注册账号':'Create Account','请填写 6 位动态验证码':'Enter the 6-digit one-time code','验证码错误或未获取':'Invalid or missing verification code',
-  '必要 Cookie 用于登录、会话和安全功能；可选 Cookie 用于记住偏好、分析平台使用情况及改善营销体验。':'Necessary cookies support sign-in, sessions and security; optional cookies remember preferences, analyze usage and improve marketing experiences.','你可以接受全部，也可以仅启用必要 Cookie。':'You can accept all cookies or enable only necessary cookies.','必要 Cookie 用于身份认证、会话保持、CSRF 防护和核心交易流程，无法关闭。':'Necessary cookies support authentication, sessions, CSRF protection and core transaction flows and cannot be disabled.','当前状态：尚未选择':'Current status: Not selected','当前：':'Current:','更新时间：':'Updated:','管理必要、偏好、分析和营销 Cookie。必要 Cookie 始终启用。':'Manage necessary, preference, analytics and marketing cookies. Necessary cookies are always enabled.','当前平台默认不启用第三方广告追踪':'Third-party ad tracking is disabled by default on this platform'
+  '必要 Cookie 用于登录、会话和安全功能；可选 Cookie 用于记住偏好、分析平台使用情况及改善营销体验。':'Necessary cookies support sign-in, sessions and security; optional cookies remember preferences, analyze usage and improve marketing experiences.','你可以接受全部，也可以仅启用必要 Cookie。':'You can accept all cookies or enable only necessary cookies.','必要 Cookie 用于身份认证、会话保持、CSRF 防护和核心交易流程，无法关闭。':'Necessary cookies support authentication, sessions, CSRF protection and core transaction flows and cannot be disabled.','当前状态：尚未选择':'Current status: Not selected','当前：':'Current:','更新时间：':'Updated:','管理必要、偏好、分析和营销 Cookie。必要 Cookie 始终启用。':'Manage necessary, preference, analytics and marketing cookies. Necessary cookies are always enabled.','当前平台默认不启用第三方广告追踪':'Third-party ad tracking is disabled by default on this platform',
+  '扫码登录':'Scan to Sign In','扫码登录二维码':'Sign-in QR code','扫码支付二维码':'Payment QR code',
+  '本地未接入扫码换票后端，演示确认后以平台演示账号登录。':'No QR ticket-exchange backend locally; demo confirmation signs in with the demo account.',
+  '微信扫码支付':'WeChat QR Pay',
+  '请使用微信「扫一扫」完成支付，支付成功后订单状态自动更新':'Scan with WeChat to pay; the order status updates automatically once paid',
+  '支付渠道未配置，以下为演示二维码（可真实扫描查看订单信息）':'Payment channel not configured — a demo QR is shown and is still scannable',
+  '刷新二维码':'Refresh QR code','模拟支付成功':'Simulate payment success','返回其它支付方式':'Back to other payment methods',
+  '或使用账号登录':'or sign in with your account',
+  '面向 B2B 采购与供给的一体化平台，覆盖商品、订单、钱包、账期、会员与物流全链路。':'An integrated B2B procurement & supply platform covering products, orders, wallet, credit terms, membership and logistics.',
+  '演示平台 · 数据仅用于功能验证':'Demo platform · data is used for feature validation only',
+  '全行业采购供给':'All-industry procurement','企业钱包与账期':'Corporate wallet & credit terms','会员权益与活动':'Member benefits & campaigns',
+  '正在探测可用渠道…':'Detecting available providers…',
+  '社交登录均已接入但尚未配置凭证，填写 application-social.yml 后自动启用':'Social sign-in is wired up but has no credentials yet; fill in application-social.yml to enable it',
+  '登录未配置，请在 application-social.yml 中填写凭证后启用':'sign-in is not configured; fill in application-social.yml to enable it',
+  '未配置':'Not configured',
+  '社交登录已取消或授权失败':'Social sign-in was cancelled or failed',
+  '无法确定授权渠道，请重新发起社交登录':'Could not determine the provider; please start social sign-in again'
 }
 
 const _zhOrder = Object.keys(UI_ZH_EN).sort((a,b)=>b.length-a.length)
+// 单遍正则替换：400+ 词条原本逐条 includes+split/join（O(词条数×文本长)），
+// 对中文文本节点是主线程热点；合并为一个 alternation 正则后单次 replace（O(文本长)），
+// 结果与逐条替换等价（_zhOrder 已按长度降序，长词优先命中）。
+const _zhPattern = new RegExp(_zhOrder.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'g')
 const _nodeSources = new WeakMap()
 const _attrSources = new WeakMap()
 let _observer = null
@@ -371,17 +455,33 @@ let _domApplying = false
 
 function _translateString(value, toEn) {
   if (!value || !toEn || !/[\u4e00-\u9fff]/.test(value)) return value
-  let out = value
-  for (const zhKey of _zhOrder) out = out.includes(zhKey) ? out.split(zhKey).join(UI_ZH_EN[zhKey]) : out
-  return out
+  const MARK = '\u0001'
+  let out = value.replace(_zhPattern, (m) => (UI_ZH_EN[m] ?? m) + MARK)
+  // 中文原文无空格，多个词条连译会粘连成 "Please enterReceiverName"；
+  // 在词条边界（标记处）补空格还原单词分隔——仅当下一个字符是词字符时补，
+  // 句尾标记与标点前标记直接丢弃，避免尾随空格与 "code 。" 式错位。
+  out = out.replace(/\u0001(?=[A-Za-z0-9])/g, ' ').replace(/\u0001/g, '')
+  // 防混杂护栏：翻译后仍含中文说明词条只覆盖了部分片段，
+  // 输出"请 Register 创建账号。"式中英拼接会很难看——此时整体保留原文，
+  // 待词条补齐后再完整翻译。整句要么全译、要么保持原文，绝不拼接。
+  return /[\u4e00-\u9fff]/.test(out) ? value : out
+}
+
+function _isIgnoredNode(node) {
+  if (!node) return true
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement
+  if (!el) return true
+  const tag = el.tagName
+  if (tag === 'FONT' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') return true
+  return Boolean(el.closest?.('.skiptranslate, [data-no-translate]'))
 }
 
 function _walkAndTranslate(root=document.body) {
   if (!root || locale.value !== 'en-US') return
+  if (_isIgnoredNode(root)) return
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
-      const p=node.parentElement
-      if (!p || /^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/.test(p.tagName)) return NodeFilter.FILTER_REJECT
+      if (_isIgnoredNode(node)) return NodeFilter.FILTER_REJECT
       return node.nodeValue?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP
     }
   })
@@ -395,6 +495,7 @@ function _walkAndTranslate(root=document.body) {
   }
   const attrs=['placeholder','title','aria-label','alt']
   root.querySelectorAll?.('*').forEach(el=>{
+    if (_isIgnoredNode(el)) return
     for(const attr of attrs){
       if(!el.hasAttribute(attr)) continue
       const key=el
@@ -428,6 +529,9 @@ function applyDomLocale(){
   if(typeof document==='undefined') return
   document.documentElement.lang=locale.value
   document.documentElement.setAttribute('data-locale',locale.value)
+  // 保持 notranslate 与 translate="no"，防止浏览器内置翻译扩展（Edge/Chrome "正在翻译"）注入 <font> 破坏 DOM
+  document.documentElement.setAttribute('translate', 'no')
+  document.documentElement.classList.add('notranslate')
   if(_observer) _observer.disconnect()
   _domApplying=true
   if(locale.value==='en-US') _walkAndTranslate(document.body)
@@ -437,31 +541,75 @@ function applyDomLocale(){
   _observeDom()
 }
 
+let _mutationCount = 0
+let _mutationWindowStart = 0
+const MAX_MUTATIONS_PER_SEC = 60
+
 function _observeDom(){
   if(typeof MutationObserver==='undefined' || !document.body) return
   if(_observer) _observer.disconnect()
   _observer=new MutationObserver(mutations=>{
     if(_domApplying || locale.value!=='en-US') return
+
+    // 熔断保护：1秒内超过 MAX_MUTATIONS_PER_SEC 次变更，判断存在外部扩展（如浏览器翻译）死循环，立即熔断断开
+    const now = Date.now()
+    if (now - _mutationWindowStart > 1000) {
+      _mutationWindowStart = now
+      _mutationCount = 0
+    }
+    _mutationCount += mutations.length
+    if (_mutationCount > MAX_MUTATIONS_PER_SEC) {
+      console.warn('[i18n] Runaway DOM mutation detected; disconnecting observer to prevent UI lockup.')
+      _observer.disconnect()
+      return
+    }
+
+    // 暂停监听以避免修改 DOM 时产生新的 MutationObserver 递归触发
+    _observer.disconnect()
     _domApplying=true
-    for(const m of mutations){
-      if(m.type==='characterData' && m.target){
-        const node=m.target
-        if(!_nodeSources.has(node)) _nodeSources.set(node,node.nodeValue)
-        const next=_translateString(_nodeSources.get(node),true)
-        if(next!==node.nodeValue) node.nodeValue=next
-      } else if(m.type==='childList'){
-        m.addedNodes.forEach(n=>{ if(n.nodeType===Node.ELEMENT_NODE) _walkAndTranslate(n); else if(n.nodeType===Node.TEXT_NODE && n.nodeValue?.trim()){_nodeSources.set(n,n.nodeValue);n.nodeValue=_translateString(n.nodeValue,true)} })
-      } else if(m.type==='attributes'){
-        const el=m.target
-        const attr=m.attributeName
-        if(['placeholder','title','aria-label','alt'].includes(attr)){
-          let cache=_attrSources.get(el); if(!cache){cache={};_attrSources.set(el,cache)}
-          if(cache[attr]===undefined) cache[attr]=el.getAttribute(attr)
-          el.setAttribute(attr,_translateString(cache[attr],true))
+
+    try {
+      for(const m of mutations){
+        if(m.type==='characterData' && m.target){
+          const node=m.target
+          if(_isIgnoredNode(node)) continue
+          const cur=node.nodeValue||''
+          if(/[一-鿿]/.test(cur)){
+            _nodeSources.set(node,cur)
+            const next=_translateString(cur,true)
+            if(next!==cur) node.nodeValue=next
+          }
+        } else if(m.type==='childList'){
+          m.addedNodes.forEach(n=>{
+            if(_isIgnoredNode(n)) return
+            if(n.nodeType===Node.ELEMENT_NODE) _walkAndTranslate(n);
+            else if(n.nodeType===Node.TEXT_NODE && n.nodeValue?.trim()){
+              const val = n.nodeValue
+              if(/[一-鿿]/.test(val)){
+                _nodeSources.set(n,val)
+                const next=_translateString(val,true)
+                if(next!==val) n.nodeValue=next
+              }
+            }
+          })
+        } else if(m.type==='attributes'){
+          const el=m.target
+          if(_isIgnoredNode(el)) continue
+          const attr=m.attributeName
+          if(['placeholder','title','aria-label','alt'].includes(attr)){
+            let cache=_attrSources.get(el); if(!cache){cache={};_attrSources.set(el,cache)}
+            if(cache[attr]===undefined) cache[attr]=el.getAttribute(attr)
+            const next=_translateString(cache[attr],true)
+            if(el.getAttribute(attr)!==next) el.setAttribute(attr,next)
+          }
         }
       }
+    } finally {
+      _domApplying=false
+      if(locale.value==='en-US' && document.body){
+        _observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['placeholder','title','aria-label','alt']})
+      }
     }
-    _domApplying=false
   })
   _observer.observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['placeholder','title','aria-label','alt']})
 }
@@ -470,9 +618,36 @@ export function initI18nDom(){
   if(typeof window==='undefined') return
   // localStorage 在隐私模式/禁用 Cookie/配额满时会抛异常，必须容错，否则应用启动即崩
   let saved=null
-  try{ saved=localStorage.getItem('ll_locale') }catch(e){ saved=null }
+  try{ saved=localStorage.getItem(LOCALE_STORAGE_KEY) }catch(e){ saved=null }
   if(saved && dicts[saved]) locale.value=saved
   applyDomLocale()
+}
+
+/**
+ * 系统语言自动识别并落地（多维特征：时区 / 浏览器语言 / Intl 区域指纹 / IP 归属地）。
+ *
+ * 约定：
+ *  - **用户显式选择优先**：只要 localStorage 里有 ll_locale 就直接采用，不做任何自动覆盖，
+ *    因此登录后手动切换的语言不会被识别逻辑改回去；
+ *  - 识别过程不写入 localStorage（不污染"是否已手动选择"这一事实），仅设置当前 locale；
+ *  - 离线信号高置信时跳过 IP 请求，兼顾启动速度与隐私外发最小化；
+ *  - 失败静默降级为站点默认语言，绝不阻塞启动。
+ * @returns {Promise<{locale:string, confidence:number, source:string}|null>}
+ */
+export async function applyAutoLocale() {
+  if (typeof window === 'undefined') return null
+  let saved = null
+  try { saved = localStorage.getItem(LOCALE_STORAGE_KEY) } catch (e) { saved = null }
+  if (saved && dicts[saved]) {
+    // 已存在有效手动选择 → 直接生效，不参与自动识别
+    locale.value = saved
+    applyDomLocale()
+    return { locale: saved, confidence: 1, source: 'stored' }
+  }
+  const result = await detectLocale({ saved: null })
+  if (result && dicts[result.locale]) locale.value = result.locale
+  applyDomLocale()
+  return result
 }
 
 export const switchLocale = setLocale

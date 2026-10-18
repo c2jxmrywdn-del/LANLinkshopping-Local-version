@@ -178,7 +178,7 @@ watch(
 .ptitle { font-size: 14px; height: 40px; overflow: hidden; }
 .pprice { color: #e4393c; font-weight: 700; font-size: 18px; margin: 4px 0; }
 .pvip { color: #b45309; font-weight: 600; font-size: 13px; }
-.pmeta { color: #999; font-size: 12px; margin-bottom: 8px; }
+.pmeta { color: var(--ll-gray, #4b5563); font-size: 12px; margin-bottom: 8px; }
 :deep(.product-card-meta) { color: rgba(255,255,255,.84); font-size: 12px; line-height: 1.45; text-shadow: 0 1px 8px rgba(0,0,0,.2); }
 :deep(.product-card-vip) { color: #F7D894; font-size: 12px; font-weight: 750; }
 :deep(.interactive-product-card .ant-btn) { min-height: 34px; border-radius: 9px; font-weight: 700; }

@@ -1,7 +1,7 @@
 <template>
   <section class="author-card" :class="[`author-card--${variant}`, { 'author-card--socials': showSocials }]" aria-label="项目作者信息">
     <div class="author-card__identity">
-      <a class="author-card__avatar" href="https://x.com/Orion_Yves_Jude" target="_blank" rel="noopener noreferrer" aria-label="在 X 查看 Jason Ouyang"><img src="https://unavatar.io/x/Orion_Yves_Jude" alt="Jason Ouyang X 头像" /></a>
+      <a class="author-card__avatar" href="https://x.com/Orion_Yves_Jude" target="_blank" rel="noopener noreferrer" aria-label="在 X 查看 Jason Ouyang"><img src="https://unavatar.io/x/Orion_Yves_Jude" alt="Jason Ouyang X 头像" loading="lazy" decoding="async" /></a>
       <div class="author-card__copy">
         <span class="author-card__eyebrow">PROJECT AUTHOR · LANLINKSHOPPING</span>
         <strong>{{ AUTHOR.name }}</strong>
@@ -135,12 +135,12 @@ const year = computed(() => new Date().getFullYear())
 .author-card--compact .author-card__avatar { width: 38px; height: 38px; }
 .author-card__copy { min-width: 0; display: grid; gap: 3px; }
 .author-card__eyebrow {
-  color: var(--ll-brand-gold, #C8A45C);
+  color: var(--ll-brand-gold-strong, #8A6A2F);
   font-size: 8px; font-weight: 850; letter-spacing: .13em;
 }
 .author-card__copy strong { color: var(--ll-ink, #0F172A); font-size: 16px; line-height: 1.2; }
 .author-card--compact .author-card__copy strong { font-size: 13px; }
-.author-card__copy small { color: #7B8492; font-size: 10px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.author-card__copy small { color: #4b5563; font-size: 10px; line-height: 1.45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .author-card__badge {
   margin-left: auto; flex: 0 0 auto;
   padding: 6px 9px; border-radius: 999px;
@@ -153,15 +153,15 @@ const year = computed(() => new Date().getFullYear())
   display: flex; justify-content: space-between; gap: 14px;
   margin-top: 10px; padding-top: 9px;
   border-top: 1px solid rgba(217,211,199,.72);
-  color: #7B8492; font-size: 10px; line-height: 1.55;
+  color: #4b5563; font-size: 10px; line-height: 1.55;
 }
 .author-card--compact .author-card__meta { margin: 0 0 0 auto; padding: 0; border-top: 0; text-align: right; white-space: nowrap; }
 .author-card__link-groups { display: grid; gap: 18px; margin-top: 18px; }
 .author-card__link-group { min-width: 0; }
 .author-card__group-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .author-card__group-heading strong { color: var(--ll-ink, #0F172A); font-size: 12px; }
-.author-card__group-heading small { color: #9A8B70; font-size: 8px; font-weight: 800; letter-spacing: .12em; }
-.author-card__group-description { margin: -2px 0 10px; color: #7B8492; font-size: 10px; line-height: 1.6; }
+.author-card__group-heading small { color: var(--ll-brand-gold-strong, #8A6A2F); font-size: 8px; font-weight: 800; letter-spacing: .12em; }
+.author-card__group-description { margin: -2px 0 10px; color: #4b5563; font-size: 10px; line-height: 1.6; }
 .author-card__socials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .author-card--detailed .author-card__socials { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .author-card__developer { padding: 13px; border: 1px solid rgba(200,164,92,.28); border-radius: 14px; background: rgba(245,240,232,.58); }
@@ -179,7 +179,7 @@ const year = computed(() => new Date().getFullYear())
 .author-card__social-icon img { width: 17px; height: 17px; display: block; }
 .author-card__social > span:nth-child(2) { min-width: 0; display: grid; gap: 1px; }
 .author-card__social b { font-size: 11px; color: var(--ll-ink, #0F172A); }
-.author-card__social small { font-size: 9px; color: #7B8492; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.author-card__social small { font-size: 9px; color: #4b5563; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .author-card__arrow { margin-left: auto; color: var(--ll-brand-gold, #C8A45C); }
 @media (max-width: 767px) {
   .author-card--compact { align-items: flex-start; flex-wrap: wrap; }

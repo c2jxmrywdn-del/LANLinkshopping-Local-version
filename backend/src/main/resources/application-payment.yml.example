@@ -24,13 +24,13 @@ lanlink:
       # 公众号/服务号 AppID：微信公众平台 → 设置与开发 → 基本配置
       app-id: ""
       # 商户号：微信支付商户平台 → 账户中心 → 商户信息
-      mch-id: "1746178875"
+      mch-id: ""
       # APIv2 商户密钥（32 位，自行设置）：商户平台 → 账户中心 → API 安全 → 设置 API 密钥
       # 注意：这是"密钥字符串"，与下面的证书文件是两样东西，两者都需要。切勿入库。
       api-key: ""
       # 商户 API 证书 apiclient_cert.p12 的绝对路径（退款/企业付款等双向 TLS 接口必需）
       # 可用官方"微信支付证书工具"申请下载后放到本地，路径写绝对路径。
-      cert-path: "E:/WXPay API Key/1746178875_20260622_cert/apiclient_cert.p12"
+      cert-path: ""
       # 签名类型：MD5 或 HMAC-SHA256（须与商户平台设置一致）
       sign-type: MD5
       # 交易类型：NATIVE(扫码，PC 网页推荐) / JSAPI(需 openid) / MWEB(H5)

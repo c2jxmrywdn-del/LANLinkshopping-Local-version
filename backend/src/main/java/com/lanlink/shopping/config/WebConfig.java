@@ -13,6 +13,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    private final SecurityRouteGuardInterceptor securityRouteGuardInterceptor;
     private final AuthRateLimitInterceptor authRateLimitInterceptor;
     private final AuthInterceptor authInterceptor;
     private final com.lanlink.shopping.integration.security.PermInterceptor permInterceptor;
@@ -20,9 +21,11 @@ public class WebConfig implements WebMvcConfigurer {
     @Value("${app.cors.allowed-origin-patterns:http://localhost:*,http://127.0.0.1:*}")
     private String allowedOriginPatterns;
 
-    public WebConfig(AuthRateLimitInterceptor authRateLimitInterceptor,
+    public WebConfig(SecurityRouteGuardInterceptor securityRouteGuardInterceptor,
+                     AuthRateLimitInterceptor authRateLimitInterceptor,
                      AuthInterceptor authInterceptor,
                      com.lanlink.shopping.integration.security.PermInterceptor permInterceptor) {
+        this.securityRouteGuardInterceptor = securityRouteGuardInterceptor;
         this.authRateLimitInterceptor = authRateLimitInterceptor;
         this.authInterceptor = authInterceptor;
         this.permInterceptor = permInterceptor;
@@ -30,9 +33,16 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // Rate-limit public login, second-factor, and registration routes before auth/session work.
+        // 安全路由守卫：最前置拦截第三方渗透工具路径穿越、恶意探针与探测扫描
+        registry.addInterceptor(securityRouteGuardInterceptor)
+                .addPathPatterns("/**");
+        // 核心接口频次防护：防爆破/防暴力请求（登录/两步验证/注册/验证码/下单/支付）
         registry.addInterceptor(authRateLimitInterceptor)
-                .addPathPatterns("/auth/login", "/auth/login/2fa", "/auth/register");
+                .addPathPatterns(
+                        "/auth/login", "/auth/login/2fa", "/auth/register",
+                        "/user/phone-code", "/user/email-code",
+                        "/order/checkout", "/wallet/pay", "/wallet/recharge"
+                );
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/**");
         // 权限校验：AuthInterceptor 之后执行（先保证登录与身份识别）

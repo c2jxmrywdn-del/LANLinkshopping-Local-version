@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -20,6 +21,8 @@ public class Product {
     private String brand;
     private String spec;
     private BigDecimal price;
+    /** 阶梯价JSON（存储层内部格式，服务层解析，不外发） */
+    @JsonIgnore
     private String tierPriceJson;
     private Integer stock;
     private String coverUrl;
@@ -31,5 +34,6 @@ public class Product {
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     @TableLogic
+    @JsonIgnore
     private Integer deleted;
 }

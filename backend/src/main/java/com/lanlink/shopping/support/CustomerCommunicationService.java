@@ -54,13 +54,22 @@ public class CustomerCommunicationService {
     private final ObjectMapper objectMapper;
     private final SupportAnswerService answers;
     private final AuditService auditService;
+    private final OutboundModelConfigService outboundModelConfigService;
 
     public CustomerCommunicationService(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                         SupportAnswerService answers, AuditService auditService) {
+        this(jdbc, objectMapper, answers, auditService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public CustomerCommunicationService(JdbcTemplate jdbc, ObjectMapper objectMapper,
+                                        SupportAnswerService answers, AuditService auditService,
+                                        @org.springframework.beans.factory.annotation.Autowired(required = false) OutboundModelConfigService outboundModelConfigService) {
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.answers = answers;
         this.auditService = auditService;
+        this.outboundModelConfigService = outboundModelConfigService;
     }
 
     /** Record the user question and the exact knowledge-base answer, after PII redaction. */
@@ -70,7 +79,7 @@ public class CustomerCommunicationService {
         String question = sanitize(rawQuestion, 300);
         String answer = sanitize(rawAnswer, 1000);
         if (!StringUtils.hasText(question)) question = "（空问题）";
-        if (!StringUtils.hasText(answer)) answer = "客服暂时无法响应，请稍后重试。";
+        if (!StringUtils.hasText(answer)) answer = "您好！客服暂时无法响应，请稍后重试。";
         String category = classify(question);
         String conversationNo = "CS" + LocalDateTime.now().format(NO_TIME)
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase();
@@ -341,6 +350,74 @@ public class CustomerCommunicationService {
         return key.longValue();
     }
 
+    /**
+     * 自主学习：未命中知识库的提问自动沉淀为待审核候选（不自动发布，保持人工审核流）。
+     * 无会话上下文（conversation/message id 为空），answer_text 留空待管理员填写；
+     * 按 question_hash + pending 去重（同一问题重复提问不产生第二条候选）。
+     *
+     * @return 候选 ID（新建或已存在的 pending 候选）；问题不合格返回 null（不建候选）
+     */
+    public Long createAutoCandidate(String question) {
+        if (!StringUtils.hasText(question)) return null;
+        String safeQuestion = sanitize(question.trim(), 300);
+        if (!StringUtils.hasText(safeQuestion) || !answers.isEligibleForKnowledgeLearning(safeQuestion)) {
+            return null; // 超范围/安全拦截的问题不进入学习
+        }
+        String questionHash = sha256(safeQuestion);
+        // 去重：同 hash 的 pending 候选已存在则返回已有 ID（驳回后 hash 不再占用，可再生成）
+        Long existing = jdbc.query(
+                "SELECT id FROM t_support_learning_candidate WHERE question_hash = ? AND status = 'pending'",
+                rs -> rs.next() ? rs.getLong(1) : null, questionHash);
+        if (existing != null) return existing;
+        // 自动生成候选关键词：取问题中命中的知识关键词（至少 1 个），兜底用问题前 20 字
+        List<String> keywords = answers.extractMatchedKeywords(safeQuestion);
+        if (keywords.isEmpty()) {
+            keywords = List.of(safeQuestion.length() > 20 ? safeQuestion.substring(0, 20) : safeQuestion);
+        }
+        String keywordsJson;
+        try {
+            keywordsJson = objectMapper.writeValueAsString(keywords);
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+        String entryId = "auto-" + questionHash.substring(0, 12);
+        // entry_id 撞车（极端 hash 前缀碰撞）则放弃本次沉淀，不抛出打扰主链路
+        Long dup = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM t_support_learning_candidate WHERE entry_id = ?", Long.class, entryId);
+        if (dup != null && dup > 0) return null;
+        KeyHolder holder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement("""
+                    INSERT INTO t_support_learning_candidate
+                      (conversation_id, source_question_message_id, source_answer_message_id,
+                       entry_id, question_text, keywords_json, answer_text, status, source, question_hash, created_at)
+                    VALUES (NULL, NULL, NULL, ?, ?, ?, '', 'pending', 'auto', ?, NOW())
+                    """, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, entryId);
+            ps.setString(2, safeQuestion);
+            ps.setString(3, keywordsJson);
+            ps.setString(4, questionHash);
+            return ps;
+        }, holder);
+        Number key = holder.getKey();
+        return key == null ? null : key.longValue();
+    }
+
+    /** 规范化问题哈希（NFKC + 去多余空白 + 小写）后 SHA-256，用于自动候选去重 */
+    static String sha256(String text) {
+        try {
+            String norm = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+                    .replaceAll("\\s+", " ").trim().toLowerCase(java.util.Locale.ROOT);
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(norm.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("哈希计算失败", e);
+        }
+    }
+
     public Map<String, Object> learningCandidatePage(String status, String query, long page, long size) {
         long safePage = Math.max(1L, page);
         long safeSize = Math.max(1L, Math.min(50L, size));
@@ -361,7 +438,7 @@ public class CustomerCommunicationService {
         List<Map<String, Object>> records = jdbc.queryForList("""
                 SELECT id AS id, conversation_id AS conversationId, entry_id AS entryId,
                        question_text AS questionText, keywords_json AS keywordsJson, answer_text AS answerText,
-                       status AS status, reviewer_name AS reviewerName, review_note AS reviewNote,
+                       status AS status, source AS source, reviewer_name AS reviewerName, review_note AS reviewNote,
                        DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(reviewed_at, '%Y-%m-%d %H:%i:%s') AS reviewedAt,
                        DATE_FORMAT(published_at, '%Y-%m-%d %H:%i:%s') AS publishedAt
@@ -381,7 +458,8 @@ public class CustomerCommunicationService {
                        source_question_message_id AS sourceQuestionMessageId,
                        source_answer_message_id AS sourceAnswerMessageId,
                        entry_id AS entryId, question_text AS questionText, keywords_json AS keywordsJson,
-                       answer_text AS answerText, status AS status, reviewer_user_id AS reviewerUserId,
+                       answer_text AS answerText, status AS status, source AS source,
+                       reviewer_user_id AS reviewerUserId,
                        reviewer_name AS reviewerName, review_note AS reviewNote,
                        DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS createdAt,
                        DATE_FORMAT(reviewed_at, '%Y-%m-%d %H:%i:%s') AS reviewedAt,
@@ -390,8 +468,11 @@ public class CustomerCommunicationService {
                 """, id);
         if (rows.isEmpty()) throw new EmptyResultDataAccessException(1);
         Map<String, Object> candidate = rows.get(0);
-        Map<String, Object> question = messageSummary(((Number) candidate.get("sourceQuestionMessageId")).longValue());
-        Map<String, Object> answer = messageSummary(((Number) candidate.get("sourceAnswerMessageId")).longValue());
+        // 自动候选无会话消息上下文（source_*_message_id 为空），需判空避免 NPE
+        Number qId = (Number) candidate.get("sourceQuestionMessageId");
+        Number aId = (Number) candidate.get("sourceAnswerMessageId");
+        Map<String, Object> question = qId == null ? null : messageSummary(qId.longValue());
+        Map<String, Object> answer = aId == null ? null : messageSummary(aId.longValue());
         Map<String, Object> out = new HashMap<>();
         out.put("candidate", candidate);
         out.put("sourceQuestion", question);
@@ -401,23 +482,49 @@ public class CustomerCommunicationService {
     }
 
     @Transactional
-    public void reviewLearningCandidate(Long id, User admin, String decision, String note, HttpServletRequest request) {
+    public void reviewLearningCandidate(Long id, User admin, String decision, String note,
+                                        String answerText, List<String> keywords, HttpServletRequest request) {
         if (admin == null || admin.getUserId() == null) throw new IllegalArgumentException("管理员登录状态已失效，请重新登录。");
         if (!"publish".equals(decision) && !"reject".equals(decision)) {
             throw new IllegalArgumentException("审核操作不合法。");
         }
         String reviewNote = sanitize(note, 500);
         List<Map<String, Object>> candidateRows = jdbc.queryForList(
-                "SELECT id, entry_id FROM t_support_learning_candidate WHERE id = ? AND status = 'pending'", id);
+                "SELECT id, entry_id, answer_text, keywords_json FROM t_support_learning_candidate WHERE id = ? AND status = 'pending'", id);
         if (candidateRows.isEmpty()) throw new IllegalArgumentException("候选不存在或已审核，请刷新列表。");
+
+        // 如果审核人调整了关键词，更新关键词
+        if (keywords != null && !keywords.isEmpty()) {
+            List<String> cleanKeywords = keywords.stream()
+                    .filter(StringUtils::hasText)
+                    .map(k -> sanitize(k.trim(), 80))
+                    .filter(StringUtils::hasText)
+                    .distinct()
+                    .limit(16)
+                    .toList();
+            if (!cleanKeywords.isEmpty()) {
+                try {
+                    String kwJson = objectMapper.writeValueAsString(cleanKeywords);
+                    jdbc.update("UPDATE t_support_learning_candidate SET keywords_json = ? WHERE id = ?", kwJson, id);
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // 自动候选 answer_text 为空：发布前必须先补全回答（空回答发布会污染线上知识匹配）
+        String existingAnswer = String.valueOf(candidateRows.get(0).get("answer_text") == null
+                ? "" : candidateRows.get(0).get("answer_text"));
+        String finalAnswer = StringUtils.hasText(answerText) ? sanitize(answerText.trim(), 1000) : existingAnswer;
+        if ("publish".equals(decision) && finalAnswer.isBlank()) {
+            throw new IllegalArgumentException("候选回答为空（自动沉淀候选），请先补充回答内容再发布。");
+        }
         String newStatus = "publish".equals(decision) ? "published" : "rejected";
         String reviewerName = StringUtils.hasText(admin.getNickname()) ? admin.getNickname() : "平台运营";
         int updated = jdbc.update("""
                 UPDATE t_support_learning_candidate
-                   SET status = ?, reviewer_user_id = ?, reviewer_name = ?, review_note = ?,
+                   SET status = ?, reviewer_user_id = ?, reviewer_name = ?, review_note = ?, answer_text = ?,
                        reviewed_at = NOW(), published_at = CASE WHEN ? = 'published' THEN NOW() ELSE NULL END
                  WHERE id = ? AND status = 'pending'
-                """, newStatus, admin.getUserId(), reviewerName, reviewNote, newStatus, id);
+                """, newStatus, admin.getUserId(), reviewerName, reviewNote, finalAnswer, newStatus, id);
         // Compare-and-set the pending state. A second administrator can win the race
         // after the initial SELECT; never report success or audit a transition that did not occur.
         if (updated != 1) {
@@ -425,6 +532,27 @@ public class CustomerCommunicationService {
         }
         auditService.record(admin.getUserId(), "published".equals(newStatus) ? "SUPPORT_KNOWLEDGE_PUBLISHED" : "SUPPORT_KNOWLEDGE_REJECTED",
                 "候选知识 ID " + id + "（" + String.valueOf(candidateRows.get(0).get("entry_id")) + "）审核结果：" + newStatus, request);
+    }
+
+    @Transactional
+    public void reviewLearningCandidate(Long id, User admin, String decision, String note,
+                                        String answerText, HttpServletRequest request) {
+        reviewLearningCandidate(id, admin, decision, note, answerText, null, request);
+    }
+
+    public Map<String, Object> suggestCandidateAnswer(Long candidateId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT question_text FROM t_support_learning_candidate WHERE id = ?", candidateId);
+        if (rows.isEmpty()) throw new EmptyResultDataAccessException(1);
+        String question = String.valueOf(rows.get(0).get("question_text"));
+        if (outboundModelConfigService != null) {
+            return outboundModelConfigService.generateAiDraft(question);
+        }
+        Map<String, Object> out = new HashMap<>();
+        out.put("suggestedAnswer", "您好！感谢您的咨询。我们已为您记录该问题，并会尽快完善答复。");
+        out.put("suggestedKeywords", List.of("咨询", "客服"));
+        out.put("source", "fallback");
+        return out;
     }
 
     public boolean isSafeCandidateEntryId(String entryId) {

@@ -1,0 +1,43 @@
+# ============================================================
+# 社交登录（OAuth）配置
+#
+# 默认「全部关闭」：未配置凭证时，前端社交入口仍展示品牌按钮，
+# 点击后明确提示「未配置」，不做任何伪造登录。
+# 需在各平台开放平台申请应用后，通过环境变量注入凭证即自动启用对应入口。
+#
+# 各平台后台需登记的回调地址（redirect_uri）：
+#   {app.social.redirect-base}  → 例如 http://localhost:5173/login
+#   平台侧还需允许 /auth/social/callback/{provider} 作为服务端回调
+#
+# 安全约束：密钥一律走环境变量，禁止写入仓库（见 .gitignore / SECURITY.md）。
+# ============================================================
+app:
+  social:
+    # 前端授权完成后回跳的地址（前端页面），需与平台后台登记的 redirect_uri 一致
+    redirect-base: ${SOCIAL_REDIRECT_BASE:http://localhost:5173/login}
+
+    providers:
+      # 微信开放平台（网站应用扫码登录）：encoder = appid
+      wechat:
+        enabled: ${SOCIAL_WECHAT_ENABLED:false}
+        app-id: ${SOCIAL_WECHAT_APP_ID:}
+        app-secret: ${SOCIAL_WECHAT_APP_SECRET:}
+      # 支付宝开放平台（网页授权）：encoder = app_id
+      #   alipay-private-key：商户应用私钥（PKCS#8，PEM 去头尾），RSA2 请求签名唯一使用；
+      #   app-secret 不参与签名（支付宝签名要求用商户私钥，误用 appSecret 会签名校验失败），
+      #   因此 alipay 的可用性判定只要求「app-id + alipay-private-key」两者在位。
+      alipay:
+        enabled: ${SOCIAL_ALIPAY_ENABLED:false}
+        app-id: ${SOCIAL_ALIPAY_APP_ID:}
+        app-secret: ${SOCIAL_ALIPAY_APP_SECRET:}
+        alipay-private-key: ${SOCIAL_ALIPAY_PRIVATE_KEY:}
+      # Apple Sign In：encoder = client_id；client_secret 为预生成的 JWT（ES256 签名）
+      apple:
+        enabled: ${SOCIAL_APPLE_ENABLED:false}
+        client-id: ${SOCIAL_APPLE_CLIENT_ID:}
+        client-secret: ${SOCIAL_APPLE_CLIENT_SECRET:}
+      # Google Identity：encoder = client_id
+      google:
+        enabled: ${SOCIAL_GOOGLE_ENABLED:false}
+        client-id: ${SOCIAL_GOOGLE_CLIENT_ID:}
+        client-secret: ${SOCIAL_GOOGLE_CLIENT_SECRET:}

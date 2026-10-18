@@ -162,7 +162,7 @@ public class CustomerCommunicationController {
                 throw new IllegalArgumentException("审核备注不能超过 500 字。");
             }
             communications.reviewLearningCandidate(id, UserContext.current(request), body.decision(),
-                    body.note(), request);
+                    body.note(), body.answerText(), body.keywords(), request);
             return ResponseEntity.ok(R.ok(Map.of("reviewed", true,
                     "status", "publish".equals(body.decision()) ? "published" : "rejected")));
         } catch (IllegalArgumentException e) {
@@ -172,8 +172,23 @@ public class CustomerCommunicationController {
         }
     }
 
+    @PostMapping("/learning-candidates/{id}/ai-suggest")
+    public ResponseEntity<R<Map<String, Object>>> aiSuggest(@PathVariable Long id) {
+        try {
+            return ResponseEntity.ok(R.ok(communications.suggestCandidateAnswer(id)));
+        } catch (EmptyResultDataAccessException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(R.fail(404, "候选不存在。"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(R.fail(400, "生成建议失败：" + e.getMessage()));
+        }
+    }
+
     public record ReplyRequest(String content, Boolean internalNote) {}
     public record StatusRequest(String status) {}
     public record PriorityRequest(String priority) {}
-    public record ReviewRequest(String decision, String note) {}
+    public record ReviewRequest(String decision, String note, String answerText, List<String> keywords) {
+        public ReviewRequest(String decision, String note, String answerText) {
+            this(decision, note, answerText, null);
+        }
+    }
 }

@@ -9,6 +9,6 @@ const data=ref(null),levels=ref([])
 const cols=[{title:'等级',dataIndex:'levelName'},{title:'成长值门槛',dataIndex:'minGrowth'},{title:'权益说明',dataIndex:'description'},{title:'等级折扣',key:'rate'},{title:'状态',key:'current'}]
 const currentIndex=computed(()=>Math.max(0,levels.value.findIndex(x=>x.levelId===data.value?.level?.levelId)))
 const discount=r=>!r||Number(r)>=1?'无折扣':(Number(r)*10).toFixed(1)+' 折'
-onMounted(async()=>{data.value=await membershipApi.my();levels.value=data.value?.levels||[]})
+onMounted(async()=>{try{data.value=await membershipApi.my();levels.value=data.value?.levels||[]}catch(e){data.value=null;levels.value=[]}})
 </script>
 <style scoped>.sys{max-width:1000px;margin:auto}.card{border-radius:14px;margin-bottom:16px}</style>

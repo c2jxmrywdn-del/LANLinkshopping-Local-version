@@ -1,6 +1,7 @@
 package com.lanlink.shopping.controller;
 
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.common.DesensitizeUtil;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.common.UserIdentity;
 import com.lanlink.shopping.config.UserContext;
@@ -11,6 +12,7 @@ import com.lanlink.shopping.dto.RegisterDTO;
 import com.lanlink.shopping.entity.Role;
 import com.lanlink.shopping.entity.User;
 import com.lanlink.shopping.entity.UserProfile;
+import com.lanlink.shopping.service.AuthLockoutService;
 import com.lanlink.shopping.service.LoginLogService;
 import com.lanlink.shopping.service.AuditService;
 import com.lanlink.shopping.service.IdentityService;
@@ -26,7 +28,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 认证控制器: 注册 / 登录(含两步验证与登录安全记录) / 登出 / 当前用户 / 个人资料 / 修改密码
+ * 认证控制器: 注册 / 登录(含两步验证与登录安全记录、防爆破锁定) / 登出 / 当前用户 / 个人资料 / 修改密码
  */
 @RestController
 @RequestMapping("/auth")
@@ -39,10 +41,12 @@ public class AuthController {
     private final MessageService messageService;
     private final IdentityService identityService;
     private final AuditService auditService;
+    private final AuthLockoutService authLockoutService;
 
     public AuthController(UserService userService, UserProfileService profileService, TotpService totpService,
                           LoginLogService loginLogService, MessageService messageService,
-                          IdentityService identityService, AuditService auditService) {
+                          IdentityService identityService, AuditService auditService,
+                          AuthLockoutService authLockoutService) {
         this.userService = userService;
         this.profileService = profileService;
         this.totpService = totpService;
@@ -50,6 +54,7 @@ public class AuthController {
         this.messageService = messageService;
         this.identityService = identityService;
         this.auditService = auditService;
+        this.authLockoutService = authLockoutService;
     }
 
     @PostMapping("/register")
@@ -66,10 +71,13 @@ public class AuthController {
      */
     @PostMapping("/login")
     public R<Map<String, Object>> login(@Valid @RequestBody LoginDTO dto, HttpServletRequest request) {
+        String clientIp = resolveClientIp(request);
+        authLockoutService.checkLocked(dto.getPhone(), clientIp);
         Long foundUserId = null;
         try {
             User u = userService.login(dto);
             foundUserId = u.getUserId();
+            authLockoutService.recordSuccess(dto.getPhone(), clientIp);
             if (totpService.isEnabled(u.getUserId())) {
                 Map<String, Object> out = new HashMap<>();
                 out.put("require2fa", true);
@@ -84,6 +92,7 @@ public class AuthController {
                     "登录，身份: " + identityService.identify(u.getUserId(), u.getRoleId()).getCode(), request);
             return R.ok("登录成功", toView(u, request));
         } catch (BusinessException e) {
+            authLockoutService.recordFailure(dto.getPhone(), clientIp);
             loginLogService.record(foundUserId, dto.getPhone(), false, e.getMessage(), request);
             throw e;
         }
@@ -129,10 +138,22 @@ public class AuthController {
         return R.ok(toView(u, request));
     }
 
+    /**
+     * 供其它登录入口（社交登录）复用：建立会话 + 记录登录安全日志与身份审计 + 返回登录视图。
+     * 统一出口避免各入口各写一套视图/日志逻辑。
+     */
+    public Map<String, Object> establishSessionAndView(User u, String channel, HttpServletRequest request) {
+        request.getSession().setAttribute(UserContext.SESSION_KEY, u);
+        loginLogService.record(u.getUserId(), u.getPhone(), true, "登录成功（" + channel + "）", request);
+        auditService.record(u.getUserId(), "IDENTITY_RECOGNIZE",
+                "登录，身份: " + identityService.identify(u.getUserId(), u.getRoleId()).getCode(), request);
+        return toView(u, request);
+    }
+
     private Map<String, Object> toView(User u, HttpServletRequest request) {
         Map<String, Object> map = new HashMap<>();
         map.put("userId", u.getUserId());
-        map.put("phone", u.getPhone());
+        map.put("phone", DesensitizeUtil.maskPhone(u.getPhone()));
         map.put("nickname", u.getNickname());
         map.put("roleId", u.getRoleId());
         map.put("entId", u.getEntId());
@@ -144,5 +165,22 @@ public class AuthController {
         // 未读站内消息数（顶栏角标），login/login2fa/me 全链路生效
         map.put("unreadCount", messageService.unreadCount(u.getUserId()));
         return map;
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String ip = request.getHeader("CF-Connecting-IP");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Forwarded-For");
+        }
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Real-IP");
+        }
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        if (ip != null && ip.contains(",")) {
+            ip = ip.split(",")[0].trim();
+        }
+        return ip == null ? "unknown" : ip;
     }
 }

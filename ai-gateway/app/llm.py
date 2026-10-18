@@ -6,6 +6,7 @@
   - mock：离线兜底（基于知识库摘录作答），保证网关在模型未就绪时链路仍可验证。
 """
 import json
+import logging
 import os
 import re
 import time
@@ -13,6 +14,8 @@ import urllib.error
 import urllib.request
 
 import jieba
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaBackend:
@@ -95,6 +98,7 @@ class LLMClient:
         if self.ollama.available():
             try:
                 return self.ollama.chat(messages, temperature, max_tokens), "ollama", time.time() - start
-            except Exception:
-                pass
+            except Exception as e:
+                # 推理失败降级 mock 时记录错误日志，便于排查 Ollama 故障
+                logger.error("Ollama chat failed, falling back to mock: %s", e)
         return self.mock.chat(messages, temperature, max_tokens), "mock", time.time() - start

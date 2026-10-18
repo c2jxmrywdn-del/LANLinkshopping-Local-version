@@ -16,6 +16,7 @@
           <a-menu-item key="admin-communications-inbox">会话工作台</a-menu-item>
           <a-menu-item key="admin-communications-learning">对话学习审核</a-menu-item>
           <a-menu-item key="admin-support-learning">学习沙盒</a-menu-item>
+          <a-menu-item key="admin-communications-ai-config">AI 与密钥配置</a-menu-item>
         </a-sub-menu>
       </a-menu>
     </a-layout-sider>
@@ -65,7 +66,8 @@ const communicationRouteToMenu = {
   'admin-communications-learning': 'admin-communications-learning',
   'admin-communications-learning-detail': 'admin-communications-learning',
   'admin-communications-learning-review': 'admin-communications-learning',
-  'admin-support-learning': 'admin-support-learning'
+  'admin-support-learning': 'admin-support-learning',
+  'admin-communications-ai-config': 'admin-communications-ai-config'
 }
 
 watch(() => route.name, (name) => {

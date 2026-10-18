@@ -69,4 +69,10 @@ public class PromotionService {
     public List<Promotion> list() {
         return activeNow();
     }
+
+    /** 单个促销详情（仅返回当前生效促销，口径与 list 一致；不存在返回 null） */
+    public Promotion detail(Long promoId) {
+        if (promoId == null) return null;
+        return activeNow().stream().filter(p -> promoId.equals(p.getPromoId())).findFirst().orElse(null);
+    }
 }

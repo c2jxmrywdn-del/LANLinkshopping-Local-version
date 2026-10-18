@@ -31,7 +31,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
-    @Value("${lanlink.demo-data.enabled:false}")
+    @Value("${lanlink.demo-data.enabled:true}")
     private boolean demoDataEnabled;
 
     private final UserMapper userMapper;
@@ -68,18 +68,8 @@ public class DataInitializer implements CommandLineRunner {
             log.info("演示数据初始化已关闭，跳过示例用户、营销及授权数据");
             return;
         }
-        // 营销中台演示数据：与主初始化解耦，已存在的库也补种子（幂等）
-        seedMarketingDemo();
-        // 第三方授权演示数据：与主初始化解耦，已存在的库也会补种子（按 用户+应用 幂等判断）
-        seedThirdAuthDemo();
-        // 站内消息演示数据：按 用户+类型+标题 幂等判断
-        seedMessageDemo();
 
-        if (userMapper.selectCount(null) > 0) {
-            log.info("已存在用户数据, 跳过初始化");
-            return;
-        }
-        log.info("==== 初始化示例数据 ====");
+        log.info("==== 检查并初始化演示数据 ====");
         Role buyer = roleMapper.selectOne(Wrappers.<Role>lambdaQuery().eq(Role::getRoleCode, "buyer"));
         Role merchantRole = roleMapper.selectOne(Wrappers.<Role>lambdaQuery().eq(Role::getRoleCode, "merchant"));
         Role admin = roleMapper.selectOne(Wrappers.<Role>lambdaQuery().eq(Role::getRoleCode, "admin"));
@@ -87,47 +77,62 @@ public class DataInitializer implements CommandLineRunner {
             throw new IllegalStateException("t_role 缺少 buyer/merchant/admin 基础数据, 请检查 sql/schema.sql 是否执行成功");
         }
 
-        // 企业
-        Enterprise ent = new Enterprise();
-        ent.setName("华晨建材集团有限公司");
-        ent.setCreditCode("91500000MA5U0000XA");
-        ent.setMemberLevel(2);
-        ent.setCreateTime(LocalDateTime.now());
-        enterpriseMapper.insert(ent);
-
-        // 用户
-        User uAdmin = mkUser("13800000000", "平台运营", admin.getRoleId(), null);
-        User uBuyer = mkUser("13900000001", "重庆建工采购", buyer.getRoleId(), null);
-        User uMer   = mkUser("13700000002", "华晨建材", merchantRole.getRoleId(), ent.getEntId());
-
-        // 商户(已通过筛选: 公司类型 + 稳定纳税)
-        Merchant m = new Merchant();
-        m.setEntId(ent.getEntId()); m.setUserId(uMer.getUserId());
-        m.setRegType("公司"); m.setRegCapital(new BigDecimal("5000000"));
-        m.setTaxStatus(1); m.setJoinType("邀约"); m.setReviewStatus(1);
-        m.setCreateTime(LocalDateTime.now()); m.setUpdateTime(LocalDateTime.now());
-        merchantMapper.insert(m);
-
-        // 商品(覆盖四大行业, 关联到已审核商户)
-        List<Product> products = new ArrayList<>();
-        products.add(mkProduct(m.getMerId(), "建筑钢材 HRB400 螺纹钢 Φ20", "华晨", "Φ20*9m", "3850.00", 1L, 5000, "吨", 320));
-        products.add(mkProduct(m.getMerId(), "硅酸盐水泥 P.O42.5 袋装", "华新", "50kg/袋", "420.00", 2L, 8000, "吨", 210));
-        products.add(mkProduct(m.getMerId(), "PPR 给水管材 DN25", "日丰", "25mm*4m", "28.50", 3L, 12000, "根", 150));
-        products.add(mkProduct(m.getMerId(), "全棉坯布 40*40 133*72", "华纺", "幅宽160cm", "8.60", 4L, 30000, "米", 90));
-        products.add(mkProduct(m.getMerId(), "涤纶短纤 1.56D*38mm", "恒力", "1.56D", "6800.00", 5L, 2000, "吨", 60));
-        products.add(mkProduct(m.getMerId(), "工业级碳酸钠 99.2%", "三友", "25kg/袋", "1850.00", 7L, 4000, "吨", 45));
-        products.add(mkProduct(m.getMerId(), "抗磨液压油 L-HM46", "长城", "18L/桶", "360.00", 8L, 1500, "桶", 75));
-        products.add(mkProduct(m.getMerId(), "贴片电阻 0805 10KΩ", "风华", "0805", "0.02", 9L, 500000, "只", 980));
-        products.add(mkProduct(m.getMerId(), "板对板连接器 2.0mm 双排", "立讯", "2x10P", "1.85", 10L, 60000, "只", 260));
-        products.add(mkProduct(m.getMerId(), "IPS 显示面板 7寸 1024*600", "京东方", "7inch", "96.00", 11L, 3000, "片", 130));
-        for (Product p : products) {
-            productMapper.insert(p);
-            // 挂上无水印商品图（public/products/{id}.jpg）
-            p.setCoverUrl("/products/" + p.getProdId() + ".jpg");
-            productMapper.updateById(p);
+        // 1. 企业（幂等）
+        Enterprise ent = enterpriseMapper.selectOne(Wrappers.<Enterprise>lambdaQuery().eq(Enterprise::getName, "华晨建材集团有限公司"));
+        if (ent == null) {
+            ent = new Enterprise();
+            ent.setName("华晨建材集团有限公司");
+            ent.setCreditCode("91500000MA5U0000XA");
+            ent.setMemberLevel(2);
+            ent.setCreateTime(LocalDateTime.now());
+            enterpriseMapper.insert(ent);
         }
 
-        log.info("==== 初始化完成: 3用户/1商户/10商品, 演示账号密码均为 123456 ====");
+        // 2. 演示用户（幂等确保 3 个演示账号存在且密码为 123456）
+        User uAdmin = ensureUser("13800000000", "平台运营", admin.getRoleId(), null);
+        User uBuyer = ensureUser("13900000001", "重庆建工采购", buyer.getRoleId(), null);
+        User uMer   = ensureUser("13700000002", "华晨建材", merchantRole.getRoleId(), ent.getEntId());
+
+        // 3. 演示商户（幂等）
+        Merchant m = merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery().eq(Merchant::getUserId, uMer.getUserId()));
+        if (m == null) {
+            m = new Merchant();
+            m.setEntId(ent.getEntId()); m.setUserId(uMer.getUserId());
+            m.setRegType("公司"); m.setRegCapital(new BigDecimal("5000000"));
+            m.setTaxStatus(1); m.setJoinType("邀约"); m.setReviewStatus(1);
+            m.setCreateTime(LocalDateTime.now()); m.setUpdateTime(LocalDateTime.now());
+            merchantMapper.insert(m);
+        }
+
+        // 4. 演示商品（幂等：商品表为空时补齐）
+        if (productMapper.selectCount(null) == 0) {
+            List<Product> products = new ArrayList<>();
+            products.add(mkProduct(m.getMerId(), "建筑钢材 HRB400 螺纹钢 Φ20", "华晨", "Φ20*9m", "3850.00", 1L, 5000, "吨", 320));
+            products.add(mkProduct(m.getMerId(), "硅酸盐水泥 P.O42.5 袋装", "华新", "50kg/袋", "420.00", 2L, 8000, "吨", 210));
+            products.add(mkProduct(m.getMerId(), "PPR 给水管材 DN25", "日丰", "25mm*4m", "28.50", 3L, 12000, "根", 150));
+            products.add(mkProduct(m.getMerId(), "全棉坯布 40*40 133*72", "华纺", "幅宽160cm", "8.60", 4L, 30000, "米", 90));
+            products.add(mkProduct(m.getMerId(), "涤纶短纤 1.56D*38mm", "恒力", "1.56D", "6800.00", 5L, 2000, "吨", 60));
+            products.add(mkProduct(m.getMerId(), "工业级碳酸钠 99.2%", "三友", "25kg/袋", "1850.00", 7L, 4000, "吨", 45));
+            products.add(mkProduct(m.getMerId(), "抗磨液压油 L-HM46", "长城", "18L/桶", "360.00", 8L, 1500, "桶", 75));
+            products.add(mkProduct(m.getMerId(), "贴片电阻 0805 10KΩ", "风华", "0805", "0.02", 9L, 500000, "只", 980));
+            products.add(mkProduct(m.getMerId(), "板对板连接器 2.0mm 双排", "立讯", "2x10P", "1.85", 10L, 60000, "只", 260));
+            products.add(mkProduct(m.getMerId(), "IPS 显示面板 7寸 1024*600", "京东方", "7inch", "96.00", 11L, 3000, "片", 130));
+            for (Product p : products) {
+                productMapper.insert(p);
+                // 挂上无水印商品图（public/products/{id}.webp，已由位图转为 WebP 以减小体积）
+                p.setCoverUrl("/products/" + p.getProdId() + ".webp");
+                productMapper.updateById(p);
+            }
+        }
+
+        // 5. 营销中台演示数据
+        seedMarketingDemo();
+        // 6. 第三方授权演示数据
+        seedThirdAuthDemo();
+        // 7. 站内消息演示数据
+        seedMessageDemo();
+
+        log.info("==== 演示数据就绪: 演示账号(13800000000/13900000001/13700000002)密码均为 123456 ====");
     }
 
     /** 营销中台演示数据：活动 + 促销（按标题幂等，重复启动不会叠加） */
@@ -171,12 +176,23 @@ public class DataInitializer implements CommandLineRunner {
         promotionMapper.insert(p);
     }
 
-    private User mkUser(String phone, String nick, Long roleId, Long entId) {
-        User u = new User();
-        u.setPhone(phone); u.setPassword(passwordEncoder.encode("123456"));
-        u.setNickname(nick); u.setRoleId(roleId); u.setEntId(entId);
-        u.setCreateTime(LocalDateTime.now()); u.setUpdateTime(LocalDateTime.now());
-        userMapper.insert(u);
+    private User ensureUser(String phone, String nick, Long roleId, Long entId) {
+        User u = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getPhone, phone));
+        if (u == null) {
+            u = new User();
+            u.setPhone(phone);
+            u.setPassword(passwordEncoder.encode("123456"));
+            u.setNickname(nick);
+            u.setRoleId(roleId);
+            u.setEntId(entId);
+            u.setCreateTime(LocalDateTime.now());
+            u.setUpdateTime(LocalDateTime.now());
+            userMapper.insert(u);
+        } else if (u.getPassword() == null || !passwordEncoder.matches("123456", u.getPassword())) {
+            u.setPassword(passwordEncoder.encode("123456"));
+            u.setUpdateTime(LocalDateTime.now());
+            userMapper.updateById(u);
+        }
         return u;
     }
 

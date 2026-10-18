@@ -257,6 +257,15 @@ public class MembershipService {
                 .eq(MemberPointLog::getUserId, userId).orderByDesc(MemberPointLog::getLogId).last("LIMIT 20")));
         return out;
     }
+
+    /** 单条积分流水详情（按用户归属校验，避免越权读取他人流水；不存在返回 null） */
+    public MemberPointLog pointLog(Long userId, Long logId) {
+        if (userId == null || logId == null) return null;
+        return pointLogMapper.selectOne(Wrappers.<MemberPointLog>lambdaQuery()
+                .eq(MemberPointLog::getLogId, logId)
+                .eq(MemberPointLog::getUserId, userId));
+    }
+
     /** 活动/营销奖励发放积分，不增加成长值；积分流水独立记账。 */
     @Transactional
     public int awardPoints(Long userId, int points, String refNo, String remark) {

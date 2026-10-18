@@ -28,14 +28,48 @@ class SupportAnswerServiceTest {
 
     @Test
     void supportedQuestionReturnsExactKnowledgeBaseAnswer() {
-        assertEquals("请打开登录页面并切换到“注册”标签，选择“采购方”或“商户/供应商”身份，填写手机号、密码及页面要求的信息后提交。注册成功后，使用注册的手机号和密码登录。",
+        assertEquals("您好！请打开登录页面并切换到“注册”标签，选择“采购方”或“商户/供应商”身份，填写手机号、密码及页面要求的信息后提交。注册成功后，使用注册的手机号和密码登录。",
                 answers.answer("请问如何注册账号？"));
     }
 
     @Test
     void cartCheckoutQuestionReturnsExactKnowledgeBaseAnswer() {
-        assertEquals("购物车和结算功能需要先登录。登录后可在商城或商品详情中使用购物车，再从“购物车”进入结算页面。",
+        assertEquals("您好！购物车和结算功能需要先登录。登录后可在商城或商品详情中使用购物车，再从“购物车”进入结算页面。",
                 answers.answer("购物车怎么结算？"));
+    }
+
+    @Test
+    void everyAnswerStartsWithStandardGreeting() {
+        for (String q : new String[]{"请问如何注册账号？", "购物车怎么结算？", "怎么下单？", "如何设置Cookie？"}) {
+            assertTrue(answers.answer(q).startsWith("您好！"), "回复应以标准问候语开头: " + q);
+        }
+    }
+
+    @Test
+    void pureGreetingReturnsGreetingInsteadOfFallback() {
+        String answer = answers.answer("你好");
+        assertNotEquals(answers.fallback(), answer);
+        assertTrue(answer.contains("智能客服"));
+        assertEquals(answers.greeting(), answers.answer("你好"));
+        assertEquals(answers.greeting(), answers.answer("您好！"));
+        assertEquals(answers.greeting(), answers.answer("在吗"));
+        assertEquals(answers.greeting(), answers.answer("hello"));
+    }
+
+    @Test
+    void selfIntroductionQuestionReturnsSelfIntro() {
+        String answer = answers.answer("你叫什么");
+        assertNotEquals(answers.fallback(), answer);
+        assertEquals(answers.selfIntro(), answers.answer("你叫什么"));
+        assertEquals(answers.selfIntro(), answers.answer("你是谁？"));
+        assertEquals(answers.selfIntro(), answers.answer("你能做什么"));
+    }
+
+    @Test
+    void greetingLikeQuestionWithRealIntentStillRoutesToKnowledge() {
+        // 带真实意图的问句不应被误判为纯寒暄
+        assertNotEquals(answers.greeting(), answers.answer("你好，请问如何注册账号"));
+        assertTrue(answers.answer("你好，请问如何注册账号").contains("注册"));
     }
 
     @Test
@@ -99,9 +133,9 @@ class SupportAnswerServiceTest {
                 new ClassPathResource("knowledge-base/customer-service-zh-CN.json"), jdbc);
         dynamic.loadKnowledgeBase();
 
-        assertEquals("请进入商城的行业分类区域，再选择对应供应商分类。",
+        assertEquals("您好！请进入商城的行业分类区域，再选择对应供应商分类。",
                 dynamic.answer("如何筛选供应商？"));
-        assertNotEquals("请进入商城的行业分类区域，再选择对应供应商分类。",
+        assertNotEquals("您好！请进入商城的行业分类区域，再选择对应供应商分类。",
                 answers.answer("如何筛选供应商？"));
     }
 

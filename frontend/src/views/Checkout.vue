@@ -85,6 +85,7 @@ import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi } from '../api'
+import { validateCheckoutForm } from '../utils/validationRules'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
 
@@ -93,6 +94,8 @@ const cart = useCartStore()
 const user = useUserStore()
 const loading = ref(false)
 const form = reactive({ receiver: '', phone: '', address: '', remark: '', payType: 'corporate' })
+// 幂等键（防重复下单）：submit 首次生成、成功后重置、失败重试保留同一 key
+const idempotentKey = ref('')
 
 // ===== 个人中心地址联动：默认地址自动带入，点击卡片一键填充 =====
 const addrList = ref([])
@@ -215,18 +218,22 @@ function pickAddr(a) {
 
 async function submit() {
   if (!cart.checkedItems.length) { message.warning('没有勾选的商品'); return }
-  if (!form.receiver.trim() || !form.phone.trim() || !form.address.trim()) {
-    message.warning('请完整填写收货人、联系电话与收货地址'); return
-  }
+  // L3 形式校验：规则与后端 CheckoutDTO 注解同契约（validationRules.js），金额/价格由后端权威重算
+  const check = validateCheckoutForm(form)
+  if (!check.ok) { message.warning(check.msg); return }
   loading.value = true
   try {
+    // 幂等键：同一结算动作（含失败重试）复用同一 key，服务端据此拦截重复下单
+    if (!idempotentKey.value) idempotentKey.value = window.crypto?.randomUUID?.() || ('ck-' + Date.now() + '-' + Math.random().toString(36).slice(2))
     const order = await orderApi.checkout({
       cartIds: cart.checkedItems.map(i => i.cartId),
       receiver: form.receiver, phone: form.phone, address: form.address,
       remark: form.remark, payType: form.payType,
       // 积分抵现：勾选且输入有效时携带（后端按实际应付金额同口径校验）
-      usePoints: usePoints.value && pointsInput.value > 0 ? pointsInput.value : null
+      usePoints: usePoints.value && pointsInput.value > 0 ? pointsInput.value : null,
+      idempotentKey: idempotentKey.value
     })
+    idempotentKey.value = '' // 下单成功，重置幂等键，允许下一次新结算
     await cart.load()
     if (form.payType === 'term') {
       Modal.info({
@@ -244,6 +251,9 @@ async function submit() {
         onCancel: () => router.push('/orders')
       })
     }
+  } catch (e) {
+    // 校验被拦截（幂等重复/价格篡改/库存不足等）由后端返回业务错误，拦截器已提示
+    message.error(e?.message || '下单失败，请稍后重试')
   } finally { loading.value = false }
 }
 </script>

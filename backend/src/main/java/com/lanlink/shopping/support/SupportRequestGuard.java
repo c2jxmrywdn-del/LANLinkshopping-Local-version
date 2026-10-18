@@ -23,12 +23,20 @@ public class SupportRequestGuard {
     private static final int MAX_TRACKED_SOURCES = 10_000;
 
     private final String expectedProxySecret;
+    private final AiApiKeyService apiKeyService;
     private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
     private final AtomicLong rejectedAuth = new AtomicLong();
     private final AtomicLong rejectedRate = new AtomicLong();
 
     public SupportRequestGuard(Environment environment) {
+        this(environment, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public SupportRequestGuard(Environment environment,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false) AiApiKeyService apiKeyService) {
         this.expectedProxySecret = environment.getProperty("support.proxy-secret", "").trim();
+        this.apiKeyService = apiKeyService;
     }
 
     /** 启动自检：密钥未配置时立刻告警，避免“全部请求 403”类故障静默发生。 */
@@ -43,6 +51,21 @@ public class SupportRequestGuard {
     }
 
     public boolean isAuthorizedProxy(HttpServletRequest request) {
+        // 1. 优先检查平台 API 密钥（外部系统、移动端或第三方调用）
+        String apiKey = request.getHeader("X-API-Key");
+        if (!StringUtils.hasText(apiKey)) {
+            String authHeader = request.getHeader("Authorization");
+            if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
+                apiKey = authHeader.substring(7).trim();
+            }
+        }
+        if (StringUtils.hasText(apiKey) && apiKeyService != null) {
+            if (apiKeyService.authorize(apiKey, "support:ask") || apiKeyService.authorize(apiKey, "intent:analyze")) {
+                return true;
+            }
+        }
+
+        // 2. 检查内部可信反代专有密钥
         String supplied = request.getHeader("X-Support-Proxy-Secret");
         if (!StringUtils.hasText(expectedProxySecret)) {
             rejectedAuth.incrementAndGet();

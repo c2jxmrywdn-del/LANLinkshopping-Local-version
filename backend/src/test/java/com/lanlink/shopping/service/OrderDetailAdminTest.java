@@ -44,7 +44,8 @@ class OrderDetailAdminTest {
 
         orderService = new OrderService(cartMapper, productMapper, orderMapper, orderItemMapper,
                 userMapper, messageService, identityService, auditService, pricingFacade,
-                eventPublisher, membershipService, creditTermService);
+                eventPublisher, membershipService, creditTermService,
+                mock(IdempotentService.class), mock(TamperGuardService.class));
     }
 
     @Test

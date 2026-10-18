@@ -59,8 +59,23 @@ lanlink:
   demo-data:
     enabled: true
 
-# 本地客服代理密钥：与 frontend/vite.config.js 的 LOCAL_DEV_PROXY_SECRET 对应。
+# 本地客服代理密钥：与 frontend/vite.config.js 注入的 X-Support-Proxy-Secret 对应。
 # 本地 Vite 代理会注入 X-Support-Proxy-Secret / X-Support-Client-IP（生产由 Vercel 代理函数注入）。
-# 生产环境使用 application-prod.yml 的 ${SUPPORT_PROXY_SECRET}，禁止复用此开发默认值。
+# 安全要求：禁止在仓库中硬编码任何密钥默认值，必须通过环境变量 SUPPORT_PROXY_SECRET 提供
+# （本地写入 .env，生产注入容器/主机环境变量）。未配置时 SupportRequestGuard 将拒绝全部
+# /support/ask 请求（fail-closed），并输出配置指引日志。
 support:
-  proxy-secret: ${SUPPORT_PROXY_SECRET:local-dev-support-proxy-secret-000000000000}
+  proxy-secret: ${SUPPORT_PROXY_SECRET:}
+  # 客服备用链路外部模型渠道（仅限寒暄润色；留空则走本地寒暄模板，不影响功能）。
+  # 硬性约束：知识问答只走本地知识库，外部模型禁止生成回答；违规调用被 FallbackPolicyGuard 拦截。
+  fallback:
+    deepseek-api-key: ${DEEPSEEK_API_KEY:}
+    deepseek-base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    mimosa-api-key: ${MIMOSA_API_KEY:}
+    mimosa-base-url: ${MIMOSA_BASE_URL:}
+
+# 开发环境跨域白名单：放开本机所有网卡的前端来源（localhost/127.0.0.1/局域网 IP 均可访问）。
+# 仅 dev 生效；生产环境由 application-prod.yml 使用部署域名，不加载此宽松配置。
+app:
+  cors:
+    allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,http://172.16.*:*}

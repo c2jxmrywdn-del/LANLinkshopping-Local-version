@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -67,6 +68,19 @@ class ActivityServiceTest {
         when(activityMapper.selectById(1L)).thenReturn(activity(1L, "register", 2)); // 已结束
         when(participantMapper.selectCount(any())).thenReturn(0L);
         assertThrows(BusinessException.class, () -> service.join(2L, 1L));
+    }
+
+    @Test
+    void detailReturnsOngoingViewAndNullWhenMissing() {
+        when(activityMapper.selectList(any())).thenReturn(List.of(activity(1L, "register", 1)));
+        when(participantMapper.selectCount(any())).thenReturn(0L);
+        Map<String, Object> d = service.detail(2L, 1L);
+        assertNotNull(d);
+        assertEquals(1L, ((Number) d.get("activityId")).longValue());
+        assertEquals(Boolean.FALSE, d.get("joined"));
+        // 不存在 / 空ID → null（与列表口径一致：仅返回进行中活动）
+        assertNull(service.detail(2L, 999L));
+        assertNull(service.detail(2L, null));
     }
 
     @Test

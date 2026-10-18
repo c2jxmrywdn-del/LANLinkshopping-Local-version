@@ -550,6 +550,16 @@ PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_time DATETIME COMMENT ''退款完成时间''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_time');
 PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
+-- 退款申请闭环：用户申请原因/申请时间 + 平台驳回原因（退款状态扩展 applied/rejected）
+SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_reason VARCHAR(200) COMMENT ''退款申请原因(用户填写)''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_reason');
+PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
+SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_apply_time DATETIME COMMENT ''退款申请时间''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_apply_time');
+PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
+SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_reject_reason VARCHAR(200) COMMENT ''退款申请驳回原因(平台填写)''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_reject_reason');
+PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
 
 -- ==================== 钱包（支付系统） ====================
 CREATE TABLE IF NOT EXISTS t_wallet (
@@ -665,3 +675,272 @@ PREPARE pt_stmt1 FROM @pt1; EXECUTE pt_stmt1; DEALLOCATE PREPARE pt_stmt1;
 SET @pt2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN point_deduct_points INT NOT NULL DEFAULT 0 COMMENT ''积分抵扣消耗积分数(1000积分=1元)''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='point_deduct_points');
 PREPARE pt_stmt2 FROM @pt2; EXECUTE pt_stmt2; DEALLOCATE PREPARE pt_stmt2;
+
+-- ============================================================
+-- 物流模块（logistics）：服务商 / 运费模板 / 运单 / 轨迹 / 告警 / 售后 / 结算
+-- 设计文档：docs/物流板块业务设计文档.md（幂等建表，可重复执行）
+-- ============================================================
+
+-- 物流服务商
+CREATE TABLE IF NOT EXISTS t_logistics_provider (
+  provider_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  provider_name VARCHAR(64) NOT NULL COMMENT '服务商名称',
+  provider_code VARCHAR(32) NOT NULL COMMENT '编码 SF/DB/JD/ZT/SELF，接口对接标识',
+  contact_name VARCHAR(32) COMMENT '对接人',
+  contact_phone VARCHAR(20) COMMENT '联系电话',
+  api_type VARCHAR(16) DEFAULT 'mock' COMMENT 'mock=沙箱模拟 api=真实接口 manual=手工录入',
+  api_endpoint VARCHAR(255) COMMENT '轨迹查询接口地址',
+  api_key VARCHAR(255) COMMENT '接口密钥（加密存储）',
+  capability_json VARCHAR(500) COMMENT '能力标记 JSON',
+  status TINYINT DEFAULT 1 COMMENT '0停用 1启用',
+  settle_cycle VARCHAR(16) DEFAULT 'monthly' COMMENT '结算周期 monthly/weekly/realtime',
+  sort INT DEFAULT 0,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT DEFAULT 0,
+  UNIQUE KEY uk_provider_code (provider_code),
+  KEY idx_provider_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流服务商';
+
+-- 运费模板
+CREATE TABLE IF NOT EXISTS t_logistics_template (
+  template_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  template_name VARCHAR(64) NOT NULL COMMENT '模板名称',
+  provider_id BIGINT NOT NULL COMMENT '归属服务商',
+  pricing_type VARCHAR(16) DEFAULT 'weight' COMMENT 'weight按重量 volume按体积 fixed固定 piece按件',
+  first_weight DECIMAL(10,2) DEFAULT 1 COMMENT '首重(kg/件)',
+  first_price DECIMAL(10,2) DEFAULT 0 COMMENT '首重费用(元)',
+  continued_weight DECIMAL(10,2) DEFAULT 1 COMMENT '续重单位',
+  continued_price DECIMAL(10,2) DEFAULT 0 COMMENT '续重费用(元/单位)',
+  volume_factor DECIMAL(10,2) DEFAULT 6000 COMMENT '体积重系数(长*宽*高cm/系数)',
+  free_threshold DECIMAL(12,2) DEFAULT 0 COMMENT '满额包邮门槛(0不启用)',
+  region_rule_json TEXT COMMENT '区域加价规则 JSON',
+  remote_surcharge DECIMAL(10,2) DEFAULT 0 COMMENT '偏远地区附加费',
+  status TINYINT DEFAULT 1 COMMENT '0停用 1启用',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT DEFAULT 0,
+  KEY idx_template_provider (provider_id),
+  KEY idx_template_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='运费模板';
+
+-- 运单
+CREATE TABLE IF NOT EXISTS t_logistics_waybill (
+  waybill_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  waybill_no VARCHAR(32) NOT NULL COMMENT '平台运单号 LL+日期+序列',
+  order_no VARCHAR(32) NOT NULL COMMENT '关联订单号',
+  order_item_ids VARCHAR(255) COMMENT '分包裹订单明细ID(逗号分隔)',
+  provider_id BIGINT NOT NULL COMMENT '物流服务商',
+  template_id BIGINT COMMENT '运费模板',
+  logistics_no VARCHAR(64) COMMENT '第三方物流单号(快递单号)',
+  freight DECIMAL(10,2) DEFAULT 0 COMMENT '实际运费(元)',
+  freight_calc_json VARCHAR(500) COMMENT '计费快照明细(留痕可审计)',
+  weight DECIMAL(10,3) COMMENT '计费重量(kg)',
+  volume DECIMAL(10,3) COMMENT '体积(m³)',
+  sender_name VARCHAR(32) COMMENT '寄件人',
+  sender_phone VARCHAR(20) COMMENT '寄件电话',
+  sender_address VARCHAR(255) COMMENT '寄件地址',
+  receiver_name VARCHAR(32) COMMENT '收件人',
+  receiver_phone VARCHAR(20) COMMENT '收件电话',
+  receiver_province VARCHAR(32) COMMENT '收件省份',
+  receiver_city VARCHAR(32) COMMENT '收件城市',
+  receiver_district VARCHAR(32) COMMENT '收件区县',
+  receiver_address VARCHAR(255) COMMENT '收件详细地址',
+  status VARCHAR(24) DEFAULT 'pending_ship' COMMENT 'pending_ship/picked_up/in_transit/out_for_delivery/delivered/exception/returned/lost/cancelled',
+  exception_flag TINYINT DEFAULT 0 COMMENT '0正常 1有活跃异常告警',
+  ship_time DATETIME COMMENT '发货时间',
+  delivered_time DATETIME COMMENT '签收时间',
+  created_by BIGINT COMMENT '操作人',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT DEFAULT 0,
+  UNIQUE KEY uk_waybill_no (waybill_no),
+  UNIQUE KEY uk_logistics_no (logistics_no),
+  KEY idx_waybill_order (order_no),
+  KEY idx_waybill_status (status),
+  KEY idx_waybill_provider (provider_id),
+  KEY idx_waybill_provider_ship (provider_id, ship_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流运单';
+
+-- 结算查询索引优化：结算生成按 provider_id 等值 + ship_time 区间扫描运单，
+-- 建联合索引 (provider_id, ship_time) 走索引区间定位，避免服务商维度全量时间扫描（幂等，可重复执行）
+SET @ws_idx = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_logistics_waybill ADD INDEX idx_waybill_provider_ship (provider_id, ship_time)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_logistics_waybill' AND INDEX_NAME='idx_waybill_provider_ship');
+PREPARE ws_stmt FROM @ws_idx; EXECUTE ws_stmt; DEALLOCATE PREPARE ws_stmt;
+
+-- 轨迹节点
+CREATE TABLE IF NOT EXISTS t_logistics_trace (
+  trace_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  waybill_id BIGINT NOT NULL COMMENT '运单ID',
+  trace_time DATETIME NOT NULL COMMENT '节点时间',
+  location VARCHAR(128) COMMENT '节点地点',
+  status VARCHAR(24) COMMENT '节点状态',
+  description VARCHAR(255) COMMENT '轨迹描述原文',
+  is_abnormal TINYINT DEFAULT 0 COMMENT '0正常 1异常节点',
+  source VARCHAR(16) DEFAULT 'api' COMMENT 'api=接口同步 manual=人工录入',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_trace_unique (waybill_id, trace_time, status, description(100)),
+  KEY idx_trace_waybill (waybill_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流轨迹节点';
+
+-- 异常告警
+CREATE TABLE IF NOT EXISTS t_logistics_alert (
+  alert_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  waybill_id BIGINT NOT NULL COMMENT '运单ID',
+  alert_type VARCHAR(24) COMMENT 'delay/reject/return/damage/lost/timeout_no_update',
+  alert_level VARCHAR(12) DEFAULT 'medium' COMMENT 'low/medium/high',
+  content VARCHAR(255) COMMENT '告警内容',
+  status VARCHAR(12) DEFAULT 'pending' COMMENT 'pending/processing/resolved',
+  handled_by BIGINT COMMENT '处理人',
+  handled_at DATETIME COMMENT '处理时间',
+  handle_note VARCHAR(255) COMMENT '处理备注',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_alert_waybill (waybill_id),
+  KEY idx_alert_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流异常告警';
+
+-- 物流售后
+CREATE TABLE IF NOT EXISTS t_logistics_aftersale (
+  aftersale_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  aftersale_no VARCHAR(32) NOT NULL COMMENT '售后单号 LS+日期+序列',
+  waybill_id BIGINT NOT NULL COMMENT '运单ID',
+  order_no VARCHAR(32) COMMENT '关联订单号',
+  aftersale_type VARCHAR(16) COMMENT 'expedite催件 trace查件 claim赔付 reship补发 return_freight退回运费',
+  description VARCHAR(500) COMMENT '诉求描述',
+  evidence_json VARCHAR(500) COMMENT '凭证(图片URL列表)',
+  claim_amount DECIMAL(10,2) DEFAULT 0 COMMENT '赔付金额',
+  status VARCHAR(16) DEFAULT 'pending' COMMENT 'pending/processing/approved/rejected/done',
+  processor_id BIGINT COMMENT '处理人',
+  process_note VARCHAR(255) COMMENT '处理备注',
+  process_time DATETIME COMMENT '处理时间',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT DEFAULT 0,
+  UNIQUE KEY uk_aftersale_no (aftersale_no),
+  KEY idx_aftersale_waybill (waybill_id),
+  KEY idx_aftersale_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流售后';
+
+-- 物流结算主表
+CREATE TABLE IF NOT EXISTS t_logistics_settlement (
+  settlement_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  settlement_no VARCHAR(32) NOT NULL COMMENT '结算单号 JS+年月+序列',
+  provider_id BIGINT NOT NULL COMMENT '物流服务商',
+  period_start DATE COMMENT '账期起',
+  period_end DATE COMMENT '账期止',
+  waybill_count INT DEFAULT 0 COMMENT '运单数',
+  total_freight DECIMAL(12,2) DEFAULT 0 COMMENT '运费合计',
+  deduction DECIMAL(12,2) DEFAULT 0 COMMENT '扣减(赔付冲抵)',
+  extra_fee DECIMAL(12,2) DEFAULT 0 COMMENT '附加费',
+  payable_amount DECIMAL(12,2) DEFAULT 0 COMMENT '应付金额',
+  status VARCHAR(16) DEFAULT 'draft' COMMENT 'draft/pending_review/approved/paid',
+  reviewer_id BIGINT COMMENT '审核人',
+  review_note VARCHAR(255) COMMENT '审核备注',
+  paid_time DATETIME COMMENT '打款时间',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted TINYINT DEFAULT 0,
+  UNIQUE KEY uk_settlement_no (settlement_no),
+  KEY idx_settlement_provider (provider_id),
+  KEY idx_settlement_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流结算单';
+
+-- 物流结算明细
+CREATE TABLE IF NOT EXISTS t_logistics_settlement_item (
+  item_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  settlement_id BIGINT NOT NULL COMMENT '结算单ID',
+  waybill_id BIGINT NOT NULL COMMENT '运单ID',
+  waybill_no VARCHAR(32) COMMENT '运单号',
+  freight DECIMAL(10,2) DEFAULT 0 COMMENT '该单运费',
+  remark VARCHAR(255) COMMENT '备注(差异说明)',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_item_settlement (settlement_id),
+  KEY idx_item_waybill (waybill_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='物流结算明细';
+
+-- 字典：默认物流服务商（INSERT IGNORE 幂等）
+INSERT IGNORE INTO t_logistics_provider (provider_id, provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort) VALUES
+  (1, '顺丰速运', 'SF', 'mock', '{"insure":true,"signBack":true}', 1, 'monthly', 1),
+  (2, '德邦物流', 'DB', 'mock', '{"cod":true,"insure":true}', 1, 'monthly', 2),
+  (3, '京东物流', 'JD', 'mock', '{"insure":true,"signBack":true}', 1, 'monthly', 3),
+  (4, '中通快递', 'ZT', 'mock', '{"insure":false}', 1, 'monthly', 4),
+  (5, '商家自送', 'SELF', 'manual', '{}', 1, 'realtime', 5);
+
+-- 字典：默认运费模板（INSERT IGNORE 幂等）
+INSERT IGNORE INTO t_logistics_template (template_id, template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status) VALUES
+  (1, '顺丰标快-全国', 1, 'weight', 1, 12, 1, 5, 6000, 0, 0, 1),
+  (2, '德邦大件-全国', 2, 'weight', 5, 30, 1, 6, 6000, 0, 15, 1),
+  (3, '京东特快-全国', 3, 'weight', 1, 15, 1, 6, 6000, 299, 10, 1),
+  (4, '中通经济-全国', 4, 'weight', 1, 8, 1, 3, 6000, 199, 8, 1),
+  (5, '商家自送-固定', 5, 'fixed', 0, 0, 0, 0, 6000, 0, 0, 1);
+
+-- ============================================================
+-- 数据校验与防篡改：幂等令牌表（下单/支付/退款等核心接口重复提交拦截）
+--   唯一键(biz_type, biz_key) 保证同一业务键只允许一次成功执行；
+--   基于数据库唯一约束实现跨实例互斥，无需引入 Redis 即可防止并发重复提交。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_idempotent_token (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  biz_type VARCHAR(32) NOT NULL COMMENT '业务类型 checkout/pay/refund/settle',
+  biz_key VARCHAR(64) NOT NULL COMMENT '业务幂等键(客户端传入或服务端生成)',
+  user_id BIGINT COMMENT '发起用户',
+  result_ref VARCHAR(64) COMMENT '首次执行结果引用(如订单号)',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expire_time DATETIME COMMENT '过期时间(可清理)',
+  UNIQUE KEY uk_biz (biz_type, biz_key),
+  KEY idx_idem_user (user_id),
+  KEY idx_idem_expire (expire_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='幂等令牌表';
+
+-- ============================================================
+-- 数据校验与防篡改：敏感字段篡改告警表
+--   后端重算值与客户端传入值不一致、状态非法流转等异常请求落库告警，
+--   供运营追溯恶意攻击行为（配合 t_audit_log 审计链）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_tamper_alert (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT COMMENT '发起用户',
+  biz_type VARCHAR(32) COMMENT '业务类型 order/payment/product',
+  field_name VARCHAR(48) COMMENT '被篡改的敏感字段',
+  client_value VARCHAR(255) COMMENT '客户端传入值',
+  server_value VARCHAR(255) COMMENT '后端重算/期望值',
+  reason VARCHAR(255) COMMENT '告警原因',
+  client_ip VARCHAR(64) COMMENT '客户端IP',
+  user_agent VARCHAR(255) COMMENT 'UA',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_tamper_user (user_id),
+  KEY idx_tamper_biz (biz_type),
+  KEY idx_tamper_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='敏感字段篡改告警';
+
+-- ============================================================
+-- 业务单号序列号表：运单号/结算单号/售后单号等统一定长序号取号
+--   替代 selectCount()+1 取号在并发下的竞态（同序号撞唯一约束）；
+--   UPDATE ... LAST_INSERT_ID(current_val + 1) 行锁内原子自增，并发安全。
+--   序列键内含周期（waybill:20261016 / settlement:202610），天然按日/月重置。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_sys_sequence (
+  seq_key VARCHAR(48) PRIMARY KEY COMMENT '序列键(业务前缀:周期)',
+  current_val BIGINT NOT NULL DEFAULT 0 COMMENT '当前值(取号后即为已分配值)',
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='业务单号序列';
+
+-- ============================================================
+-- 社交登录绑定：渠道内唯一标识 → 平台账号
+--   与 t_third_auth（授权管理展示）不同，本表承载「登录」所需的稳定映射；
+--   (provider, subject) 唯一，保证同一第三方账号只对应一个平台账号。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS t_social_binding (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL COMMENT '平台账号ID',
+  provider VARCHAR(24) NOT NULL COMMENT 'wechat/alipay/apple/google',
+  subject VARCHAR(128) NOT NULL COMMENT '渠道内唯一标识(openid/sub/user_id)',
+  union_id VARCHAR(128) COMMENT '微信开放平台 unionid',
+  nickname VARCHAR(64) COMMENT '第三方昵称(展示用)',
+  avatar VARCHAR(255) COMMENT '第三方头像(展示用)',
+  email VARCHAR(128) COMMENT '第三方邮箱',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_social_provider_subject (provider, subject),
+  KEY idx_social_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='社交登录绑定';

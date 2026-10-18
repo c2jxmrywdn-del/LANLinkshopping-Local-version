@@ -9,9 +9,10 @@
   </a-card></div>
 </template>
 <script setup>
-import {ref} from 'vue';import {message} from 'ant-design-vue';import {walletApi} from '../api'
+import {ref} from 'vue';import {message} from 'ant-design-vue';import {useRouter} from 'vue-router';import {walletApi} from '../api'
+const router=useRouter()
 const amount=ref(500),remark=ref(''),loading=ref(false)
-async function submit(){if(!amount.value)return message.warning('请输入充值金额');loading.value=true;try{const d=await walletApi.recharge(amount.value,remark.value);const id=d?.logs?.[0]?.id||Date.now();message.success('充值成功');location.href='/wallet/recharge/result/'+id}finally{loading.value=false}}
+async function submit(){if(!amount.value)return message.warning('请输入充值金额');loading.value=true;try{const d=await walletApi.recharge(amount.value,remark.value);const id=d?.logs?.[0]?.id||Date.now();message.success('充值成功');router.push('/wallet/recharge/result/'+id)}catch(e){/* 拦截器已提示 */}finally{loading.value=false}}
 </script>
 <style scoped>
 .recharge{max-width:620px;margin:0 auto}.card{border-radius:22px;padding:8px;box-shadow:0 18px 60px rgba(19,35,58,.08)}.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}h1{margin:5px 0}.sub{color:var(--ll-muted)}.quick{display:flex;gap:8px;margin:-8px 0 18px;flex-wrap:wrap}

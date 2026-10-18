@@ -38,12 +38,17 @@ const cols = [
 ]
 
 onMounted(async () => {
-  const list = await merchantApi.adminList() || []
-  recent.value = list.slice(0, 6)
-  stats.total = list.length
-  stats.pending = list.filter(m => m.reviewStatus === 0).length
-  stats.passed = list.filter(m => m.reviewStatus === 1).length
-  const page = await productApi.page({ current: 1, size: 1 })
-  stats.products = page.total || 0
+  try {
+    const list = await merchantApi.adminList() || []
+    recent.value = list.slice(0, 6)
+    stats.total = list.length
+    stats.pending = list.filter(m => m.reviewStatus === 0).length
+    stats.passed = list.filter(m => m.reviewStatus === 1).length
+    const page = await productApi.page({ current: 1, size: 1 })
+    stats.products = page.total || 0
+  } catch (e) {
+    // 加载失败：保留零值统计与空列表；具体错误由请求拦截器统一提示
+    recent.value = []
+  }
 })
 </script>

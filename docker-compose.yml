@@ -1,0 +1,108 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lanlink_shopping}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/src/main/resources/sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8081:8025"
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: lanlink-backend:local
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lanlink_shopping}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+      MAIL_USERNAME: lanlink@local.dev
+      MAIL_PASSWORD: lanlink-local
+      SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
+      SUPPORT_SANDBOX_URL: http://support-learning-sandbox:8080
+      SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in .env}
+      SUPPORT_SANDBOX_MODE: container
+      LANLINK_DEMO_DATA_ENABLED: "true"
+      LANLINK_VERIFY_CODE_DEMO_MODE: "true"
+      LANLINK_PAYMENT_MOCK: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      support-learning-sandbox:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=- http://127.0.0.1:8080/api/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 8
+    restart: unless-stopped
+
+  support-learning-sandbox:
+    build:
+      context: ./support-learning-sandbox
+      dockerfile: Dockerfile
+    image: lanlink-support-learning-sandbox:local
+    environment:
+      PORT: "8080"
+      SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in .env}
+    expose:
+      - "8080"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: "0.25"
+    tmpfs:
+      - /tmp:noexec,nosuid,size=8m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()\""]
+      interval: 15s
+      timeout: 5s
+      start_period: 5s
+      retries: 5
+    restart: unless-stopped
+
+  frontend:
+    image: lanlink-frontend:local
+    environment:
+      SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=- http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

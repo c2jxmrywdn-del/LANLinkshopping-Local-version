@@ -2,6 +2,7 @@ package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.common.DesensitizeUtil;
 import com.lanlink.shopping.entity.Address;
 import com.lanlink.shopping.mapper.AddressMapper;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,12 @@ public class AddressService {
     @Transactional
     public Address update(Long userId, Long id, Address form) {
         Address exist = mustOwn(userId, id);
+        if (form.getPhone() != null && DesensitizeUtil.isMasked(form.getPhone())) {
+            form.setPhone(exist.getPhone());
+        }
+        if (form.getReceiver() != null && DesensitizeUtil.isMasked(form.getReceiver())) {
+            form.setReceiver(exist.getReceiver());
+        }
         validate(form);
         if (form.getReceiver() != null) exist.setReceiver(form.getReceiver());
         if (form.getPhone() != null) exist.setPhone(form.getPhone());

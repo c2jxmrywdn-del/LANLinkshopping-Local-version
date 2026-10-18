@@ -61,6 +61,27 @@ describe('i18n 中英文转换组件', () => {
     expect(document.getElementById('i').getAttribute('placeholder')).toBe('搜索')
   })
 
+  it('回归：en-US 下属性回写幂等，不会发生 MutationObserver 自触发死循环（页面无响应）', async () => {
+    document.body.innerHTML = '<input id="r" placeholder="搜索">'
+    setLocale('en-US')
+    const el = document.getElementById('r')
+    expect(el.getAttribute('placeholder')).toBe('Search')
+
+    const orig = Element.prototype.setAttribute
+    let calls = 0
+    Element.prototype.setAttribute = function (n, v) { calls++; return orig.call(this, n, v) }
+    try {
+      // 把属性改回中文源：观察者应翻译一次成英文后收敛；
+      // 若 attributes 分支缺少等值判断，setAttribute 会不断产生新的变更记录而无限回写
+      el.setAttribute('placeholder', '搜索')
+      await new Promise((r) => setTimeout(r, 40))
+      expect(calls).toBeLessThanOrEqual(3) // 上限保险：仅允许 1 次译文回写 + 极少量框架写入
+      expect(el.getAttribute('placeholder')).toBe('Search')
+    } finally {
+      Element.prototype.setAttribute = orig
+    }
+  })
+
   // ===== 参数传入/插值（边界） =====
   it('边界：t() 支持 {n} 插值', () => {
     setLocale('zh-CN')

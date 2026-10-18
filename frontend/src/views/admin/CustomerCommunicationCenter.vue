@@ -47,7 +47,7 @@
     </a-row>
 
     <a-row :gutter="[16,16]" class="action-grid">
-      <a-col :xs="24" :lg="8">
+      <a-col :xs="24" :sm="12" :lg="6">
         <a-card class="workflow-card" hoverable @click="go('admin-communications-inbox')">
           <div class="workflow-icon navy"><MessageOutlined /></div>
           <h3>会话工作台</h3>
@@ -55,7 +55,7 @@
           <a-button type="link" @click.stop="go('admin-communications-inbox')">打开工作台 <RightOutlined /></a-button>
         </a-card>
       </a-col>
-      <a-col :xs="24" :lg="8">
+      <a-col :xs="24" :sm="12" :lg="6">
         <a-card class="workflow-card" hoverable @click="go('admin-communications-learning')">
           <div class="workflow-icon amber"><BulbOutlined /></div>
           <h3>对话学习审核</h3>
@@ -63,12 +63,20 @@
           <a-button type="link" @click.stop="go('admin-communications-learning')">查看候选 <RightOutlined /></a-button>
         </a-card>
       </a-col>
-      <a-col :xs="24" :lg="8">
+      <a-col :xs="24" :sm="12" :lg="6">
         <a-card class="workflow-card" hoverable @click="go('admin-support-learning')">
           <div class="workflow-icon pale"><ExperimentOutlined /></div>
           <h3>学习沙盒</h3>
           <p>对新问法和候选回答进行隔离试跑。沙盒预检通过不等于自动发布，正式知识依然需要人工审核。</p>
           <a-button type="link" @click.stop="go('admin-support-learning')">进入沙盒 <RightOutlined /></a-button>
+        </a-card>
+      </a-col>
+      <a-col :xs="24" :sm="12" :lg="6">
+        <a-card class="workflow-card" hoverable @click="go('admin-communications-ai-config')">
+          <div class="workflow-icon purple"><RobotOutlined /></div>
+          <h3>AI 渠道与密钥配置</h3>
+          <p>配置外部大模型 API Key 与端点，自主测试延迟；发放与管理平台 API 密钥，实时测试意图识别。</p>
+          <a-button type="link" @click.stop="go('admin-communications-ai-config')">配置 AI 与密钥 <RightOutlined /></a-button>
         </a-card>
       </a-col>
     </a-row>
@@ -98,7 +106,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ReloadOutlined, MessageOutlined, RightOutlined, BulbOutlined, ExperimentOutlined } from '@ant-design/icons-vue'
+import { ReloadOutlined, MessageOutlined, RightOutlined, BulbOutlined, ExperimentOutlined, RobotOutlined } from '@ant-design/icons-vue'
 import { adminApi } from '../../api'
 
 const router = useRouter()
@@ -156,5 +164,5 @@ onMounted(load)
 .chip-top{top:5px;right:0}.chip-bottom{bottom:5px;left:-1px}
 @keyframes hero-glint{0%,72%,100%{transform:translateX(-70%)}32%{transform:translateX(70%)}}
 @media(max-width:760px){.workspace-hero{min-height:auto;padding:24px 20px}.hero-mark{display:none}.hero-copy h2{font-size:23px}.hero-actions{gap:8px 14px}}
-@media(prefers-reduced-motion:reduce){.workspace-hero::before{animation:none}}.privacy-alert{margin:0 0 18px}.stat-grid{margin-bottom:16px}.metric-card{height:100%;border:1px solid #e7eaf0;border-radius:14px;box-shadow:0 2px 8px rgba(16,24,40,.025)}.metric-note{margin-top:8px;color:#667085;font-size:12px}.action-grid{margin-bottom:18px}.workflow-card{height:100%;min-height:216px;border:1px solid #e7eaf0;border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}.workflow-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(16,24,40,.08)}.workflow-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;font-size:19px}.workflow-icon.navy{color:#fff;background:#13233a}.workflow-icon.amber{color:#8a4b08;background:#fff0d7}.workflow-icon.pale{color:#344054;background:#f2f4f7}.workflow-card h3{margin:14px 0 8px;color:#101828;font-size:15px;font-weight:650}.workflow-card p{min-height:56px;margin:0;color:#667085;font-size:13px;line-height:1.7}.panel-card{border:1px solid #e7eaf0;border-radius:14px}.panel-title{font-weight:650;color:#101828}.subject-link{padding:0;height:auto;font-weight:600;text-align:left}.muted{color:#98a2b3}.small{font-size:11px}.last-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#344054;font-size:12px}.page-foot{display:flex;align-items:center;gap:8px;margin-top:16px;color:#667085;font-size:12px}.status-dot{width:7px;height:7px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 3px #dcfae6}
+@media(prefers-reduced-motion:reduce){.workspace-hero::before{animation:none}}.privacy-alert{margin:0 0 18px}.stat-grid{margin-bottom:16px}.metric-card{height:100%;border:1px solid #e7eaf0;border-radius:14px;box-shadow:0 2px 8px rgba(16,24,40,.025)}.metric-note{margin-top:8px;color:#667085;font-size:12px}.action-grid{margin-bottom:18px}.workflow-card{height:100%;min-height:216px;border:1px solid #e7eaf0;border-radius:14px;transition:transform .18s ease,box-shadow .18s ease}.workflow-card:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(16,24,40,.08)}.workflow-icon{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;font-size:19px}.workflow-icon.navy{color:#fff;background:#13233a}.workflow-icon.amber{color:#8a4b08;background:#fff0d7}.workflow-icon.pale{color:#344054;background:#f2f4f7}.workflow-icon.purple{color:#5925dc;background:#f4ebff}.workflow-card h3{margin:14px 0 8px;color:#101828;font-size:15px;font-weight:650}.workflow-card p{min-height:56px;margin:0;color:#667085;font-size:13px;line-height:1.7}.panel-card{border:1px solid #e7eaf0;border-radius:14px}.panel-title{font-weight:650;color:#101828}.subject-link{padding:0;height:auto;font-weight:600;text-align:left}.muted{color:#98a2b3}.small{font-size:11px}.last-preview{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:#344054;font-size:12px}.page-foot{display:flex;align-items:center;gap:8px;margin-top:16px;color:#667085;font-size:12px}.status-dot{width:7px;height:7px;border-radius:50%;background:#12b76a;box-shadow:0 0 0 3px #dcfae6}
 </style>

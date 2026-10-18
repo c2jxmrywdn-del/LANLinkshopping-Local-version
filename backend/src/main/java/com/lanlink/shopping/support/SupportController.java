@@ -4,8 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.common.R;
+import com.lanlink.shopping.integration.security.RequirePerm;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -23,6 +27,7 @@ import java.util.regex.Pattern;
 @RestController
 @RequestMapping("/support")
 public class SupportController {
+    private static final Logger log = LoggerFactory.getLogger(SupportController.class);
     private static final long MAX_BODY_BYTES = 4096L;
     private static final Pattern UUID_TOKEN = Pattern.compile(
             "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
@@ -31,13 +36,18 @@ public class SupportController {
     private final SupportRequestGuard guard;
     private final ObjectMapper objectMapper;
     private final CustomerCommunicationService communications;
+    private final SupportFallbackService fallbackService;
+    private final IntentUnderstandingService intents;
 
     public SupportController(SupportAnswerService answers, SupportRequestGuard guard,
-                             ObjectMapper objectMapper, CustomerCommunicationService communications) {
+                             ObjectMapper objectMapper, CustomerCommunicationService communications,
+                             SupportFallbackService fallbackService, IntentUnderstandingService intents) {
         this.answers = answers;
         this.guard = guard;
         this.objectMapper = objectMapper;
         this.communications = communications;
+        this.fallbackService = fallbackService;
+        this.intents = intents;
     }
 
     @PostMapping("/ask")
@@ -98,7 +108,32 @@ public class SupportController {
             }
 
             String question = body.path("question").asText();
-            String answer = answers.answer(question);
+            String answer;
+            try {
+                answer = answers.answer(question);
+            } catch (Exception ex) {
+                // 主客服服务异常 → 备用链路接管（知识问答仍只走本地知识库；外部模型仅限寒暄润色）
+                log.error("[support] primary answer failed, switching to fallback", ex);
+                answer = fallbackService.answerInBackup(question);
+            }
+            // 自主学习：未命中知识库的合格提问自动沉淀为待审核候选（不自动发布）；
+            // 异步执行且吞异常，绝不影响回答主链路
+            try {
+                if (answers.matchedEntryId(question) == null
+                        && answers.isEligibleForKnowledgeLearning(question)
+                        && FallbackPolicyGuard.classify(question) != FallbackPolicyGuard.Intent.PROHIBITED) {
+                    final String learnQuestion = question;
+                    java.util.concurrent.CompletableFuture.runAsync(() -> {
+                        try {
+                            communications.createAutoCandidate(learnQuestion);
+                        } catch (Exception e) {
+                            log.warn("[support-learning] auto candidate skipped: {}", e.getMessage());
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                log.warn("[support-learning] auto candidate check failed: {}", e.getMessage());
+            }
             long lastMessageId = 0L;
             if (body.path("persistConversation").asBoolean(false)) {
                 try {
@@ -108,13 +143,31 @@ public class SupportController {
                     lastMessageId = turn.lastMessageId();
                 } catch (DataAccessException | IllegalStateException ex) {
                     // Knowledge replies remain available if optional conversation logging is temporarily degraded.
-                    System.err.println("[support] opted-in conversation persistence unavailable; question omitted from logs");
+                    log.warn("[support] opted-in conversation persistence unavailable; question omitted from logs: {}",
+                            ex.getMessage());
                 }
             }
             return ResponseEntity.ok(R.ok(Map.of(
-                    "answer", answer, "visitorToken", visitorToken, "lastMessageId", lastMessageId)));
+                    "answer", answer, "visitorToken", visitorToken, "lastMessageId", lastMessageId,
+                    "intent", intents.analyze(question, List.of()).data())));
         } catch (JsonProcessingException ex) {
             return ResponseEntity.ok(R.ok(Map.of("answer", fallback)));
         }
+    }
+
+    /**
+     * 备用链路监控状态（权限校验：仅平台运营 admin:all 可见）。
+     * 暴露：备用态开关、违规模型调用计数、外部渠道配置状态。
+     */
+    @PostMapping("/fallback/status")
+    @RequirePerm("admin:all")
+    public ResponseEntity<R<Map<String, Object>>> fallbackStatus() {
+        Map<String, Object> status = new LinkedHashMap<>();
+        status.put("backupActive", fallbackService.isBackupActive());
+        status.put("violationCount", fallbackService.violationCount());
+        // 真实反映配置有效性：至少配置一个外部渠道 API Key 才为 true（不再硬编码）
+        status.put("externalChannelConfigured", fallbackService.externalChannelConfigured());
+        status.put("policy", "knowledge=local-kb-only; external-model=greeting-only; anti-proxy=enforced");
+        return ResponseEntity.ok(R.ok(status));
     }
 }

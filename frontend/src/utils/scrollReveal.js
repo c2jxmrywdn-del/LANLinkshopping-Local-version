@@ -52,8 +52,11 @@ export function scanReveal(root = document) {
   })
 }
 
-/** 初始化：启动时 + 每次路由页面进入后自动扫描 */
+/** 初始化：启动时 + 每次路由页面进入后自动扫描（幂等：重复调用不重复挂监听） */
+let _inited = false
 export function initScrollReveal() {
+  if (_inited) return
+  _inited = true
   scanReveal()
   document.addEventListener('ll:page-entered', () => scanReveal())
 }

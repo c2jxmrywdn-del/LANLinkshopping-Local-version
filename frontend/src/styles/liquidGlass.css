@@ -1,0 +1,152 @@
+/* =====================================================
+   LANLinkshopping · 液态光感玻璃材质（Liquid Glass）
+   -----------------------------------------------------
+   材质构成（四层叠加，均为静态层，不参与逐帧动画）：
+     1) 背板模糊       backdrop-filter: blur + saturate（读 --ll-glass-* 令牌）
+     2) 厚度感         多层 box-shadow：上内高光 + 下内反光 + 外投影 + 内描边
+     3) 边环折射光     conic-gradient + mask-composite 抠出边框，@property 驱动角度缓慢流转
+     4) 流动高光       斜向亮带 + mix-blend-mode: screen，背景位移循环
+   另含 5) 交互态：悬停轻微收缩、按压 3D 倾斜（transform-style: preserve-3d）。
+
+   兼容性取舍（相比原参考实现）：
+     - 不使用 oklch(from …) 相对色语法（Safari <16.4 不支持），改用显式 rgba 令牌；
+     - mask-composite 同时给出 -webkit-mask-composite: xor 回退；
+     - @property 不被支持时，边环仍以 initial-value 静态渲染，不会缺失；
+     - 全部动效在 prefers-reduced-motion 下关闭。
+
+   用法：<div class="ll-glass">…</div>（可加 .ll-glass--thick / .ll-glass--interactive；
+        需要流动高光时内部加 <span class="ll-glass__sheen"></span>）
+   ===================================================== */
+
+@property --ll-glass-a1 {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: -75deg;
+}
+@property --ll-glass-a2 {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: -45deg;
+}
+
+.ll-glass {
+  /* 注意：宽度令牌必须用 --ll-glass-bw，不可复用 --ll-glass-border（主题里它是"颜色"令牌，
+     若被遮蔽成长度会使 linear-gradient(...) 非法，从而整条 background 被丢弃、边环不渲染） */
+  --ll-glass-bw: clamp(1px, .0625em, 3px);
+  --ll-glass-radius: 999px;
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--ll-glass-radius);
+  /* 1) 背板模糊：材质的基础通透感 */
+  backdrop-filter: blur(var(--ll-glass-blur, 18px)) saturate(var(--ll-glass-saturate, 135%));
+  -webkit-backdrop-filter: blur(var(--ll-glass-blur, 18px)) saturate(var(--ll-glass-saturate, 135%));
+  background: linear-gradient(-75deg,
+    rgba(255, 255, 255, .05) 0%,
+    var(--ll-glass-bg-strong, rgba(255, 255, 255, .085)) 50%,
+    rgba(255, 255, 255, .05) 100%);
+  /* 2) 厚度感：玻璃"块"的关键，纯描边做不出来 */
+  box-shadow:
+    inset 0 .09em .09em var(--ll-glass-highlight, rgba(255, 255, 255, .16)),
+    inset 0 -.09em .09em rgba(11, 18, 32, .30),
+    var(--ll-glass-shadow, 0 24px 70px rgba(19, 35, 58, .18)),
+    inset 0 0 0 .06em rgba(255, 255, 255, .05);
+  transition:
+    transform .4s cubic-bezier(.25, 1, .5, 1),
+    box-shadow .4s cubic-bezier(.25, 1, .5, 1),
+    backdrop-filter .4s cubic-bezier(.25, 1, .5, 1), --ll-glass-a1 .5s ease;
+}
+
+/* 3) 边环折射光：conic 亮弧绕边缓慢流转（mask 抠边，只留边框） */
+.ll-glass::after {
+  content: '';
+  position: absolute;
+  inset: calc(var(--ll-glass-bw) / -2);
+  z-index: 2;
+  border-radius: inherit;
+  padding: var(--ll-glass-bw);
+  box-sizing: border-box;
+  background:
+    conic-gradient(from var(--ll-glass-a1) at 50% 50%,
+      rgba(255, 255, 255, .78) 0%,
+      transparent 5% 40%,
+      rgba(255, 255, 255, .62) 50%,
+      transparent 60% 95%,
+      rgba(255, 255, 255, .78) 100%),
+    linear-gradient(180deg, var(--ll-glass-border, rgba(255, 255, 255, .18)), var(--ll-glass-border, rgba(255, 255, 255, .18)));
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+/* 4) 流动高光容器：内部亮带以 screen 混合扫过（"液态"观感来源） */
+.ll-glass__sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  overflow: clip;
+  pointer-events: none;
+}
+.ll-glass__sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(var(--ll-glass-a2),
+    transparent 0%,
+    rgba(255, 255, 255, .50) 40% 50%,
+    transparent 55%);
+  background-size: 200% 200%;
+  background-position: 0% 50%;
+  mix-blend-mode: screen;
+  animation: llGlassSheen 5.5s ease-in-out infinite;
+}
+
+/* 5) 交互态：仅用于可点击控件，避免非交互表面出现"可按压"的误导 */
+.ll-glass--interactive { cursor: pointer; }
+.ll-glass--interactive:hover {
+  transform: scale(.985);
+  backdrop-filter: blur(calc(var(--ll-glass-blur, 18px) * .6)) saturate(var(--ll-glass-saturate, 135%));
+  -webkit-backdrop-filter: blur(calc(var(--ll-glass-blur, 18px) * .6)) saturate(var(--ll-glass-saturate, 135%));
+  box-shadow:
+    inset 0 .09em .09em var(--ll-glass-highlight, rgba(255, 255, 255, .16)),
+    inset 0 -.09em .09em rgba(11, 18, 32, .30),
+    0 .18em .5em -.12em rgba(0, 0, 0, .32),
+    inset 0 0 0 .06em rgba(255, 255, 255, .14);
+  --ll-glass-a1: -125deg;
+}
+.ll-glass--interactive:active {
+  transform: rotateX(16deg) scale(.98);
+  --ll-glass-a1: -75deg;
+}
+.ll-glass--interactive:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 .09em .09em var(--ll-glass-highlight, rgba(255, 255, 255, .16)),
+    inset 0 -.09em .09em rgba(11, 18, 32, .30),
+    var(--ll-focus-ring, 0 0 0 3px rgba(30, 110, 184, .28));
+}
+
+/* 加厚变体：用于面积较大的玻璃面（圆角矩形场景可自行覆盖 --ll-glass-radius） */
+.ll-glass--thick {
+  --ll-glass-bw: clamp(1.5px, .09em, 4px);
+  box-shadow:
+    inset 0 .14em .16em rgba(255, 255, 255, .20),
+    inset 0 -.14em .16em rgba(11, 18, 32, .34),
+    0 .5em 1.6em -.3em rgba(0, 0, 0, .40),
+    inset 0 0 0 .08em rgba(255, 255, 255, .07);
+}
+
+@keyframes llGlassSheen {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ll-glass,
+  .ll-glass--interactive:hover,
+  .ll-glass--interactive:active { transition: none; transform: none; --ll-glass-a1: -75deg; }
+  .ll-glass__sheen { display: none; }
+}

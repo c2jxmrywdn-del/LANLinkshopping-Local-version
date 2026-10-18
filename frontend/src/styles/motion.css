@@ -308,3 +308,82 @@ html {
   .ll-backtop { transition: opacity 0.2s ease; transform: none; }
   .ll-badge-bounce .ant-badge-count { animation: none; }
 }
+
+/* =====================================================
+   性能治理分级降级（perfGovernor 驱动）
+   data-perf-tier: full | reduced | suspended
+   data-decode-mode: soft | hard
+   full      → 全量动效
+   reduced   → 降低动效规格（缩短时长/关闭装饰动画/停骨架闪烁）
+   suspended → 暂停非必要动效（仅保留关键反馈），释放渲染资源
+   ===================================================== */
+
+/* ---------- reduced：降规格（帧率/时长收紧、关闭装饰性动画） ---------- */
+[data-perf-tier="reduced"] .ll-skeleton {
+  animation-duration: 2.4s; /* 闪烁更慢，降低合成频率 */
+}
+[data-perf-tier="reduced"] .ll-card {
+  transition-duration: 0.18s;
+  box-shadow: var(--ll-shadow-xs, 0 1px 3px rgba(30, 60, 110, 0.08));
+}
+[data-perf-tier="reduced"] .ll-card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--ll-shadow-sm, 0 4px 12px rgba(30, 60, 110, 0.10));
+}
+[data-perf-tier="reduced"] .ll-revealed {
+  transition-duration: 0.32s;
+}
+[data-perf-tier="reduced"] .ll-img-zoom img {
+  transition: none;
+}
+[data-perf-tier="reduced"] .ll-backtop {
+  transition-duration: 0.16s;
+}
+
+/* ---------- suspended：熔断暂停非必要动效（仅留即时状态反馈） ---------- */
+[data-perf-tier="suspended"] .ll-skeleton {
+  animation: none;
+  background: var(--ll-thumb-bg, #eef1f6);
+}
+[data-perf-tier="suspended"] .ll-card {
+  transition: none;
+  transform: none !important;
+  box-shadow: var(--ll-shadow-xs, 0 1px 3px rgba(30, 60, 110, 0.08));
+}
+[data-perf-tier="suspended"] .ll-card-hover:hover {
+  transform: none;
+}
+[data-perf-tier="suspended"] .ll-reveal-armed {
+  opacity: 1;
+  transform: none;
+}
+[data-perf-tier="suspended"] .ll-revealed {
+  transition: none;
+}
+[data-perf-tier="suspended"] .ant-btn:not(:disabled) {
+  transition: none;
+}
+[data-perf-tier="suspended"] .ant-btn:not(:disabled):hover,
+[data-perf-tier="suspended"] .ant-btn:not(:disabled):active {
+  transform: none;
+}
+[data-perf-tier="suspended"] .ll-badge-bounce .ant-badge-count {
+  animation: none;
+}
+[data-perf-tier="suspended"] .ll-num-pop {
+  animation: none;
+}
+[data-perf-tier="suspended"] .ll-shake {
+  animation: none;
+}
+
+/* ---------- 解码/渲染路径标记 ---------- */
+/* hard：GPU 独立合成层（硬件加速解码/栅格化卸载），仅在高负载时启用 */
+.ll-decode-hard {
+  transform: translateZ(0);
+  will-change: transform;
+}
+/* soft：兼容优先路径，不提升合成层 */
+.ll-decode-soft {
+  will-change: auto;
+}

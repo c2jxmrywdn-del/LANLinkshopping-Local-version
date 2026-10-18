@@ -33,12 +33,18 @@ public class Order {
     private String transactionId;
     /** 微信预下单号 */
     private String prepayId;
-    /** 退款状态：none | processing | success */
+    /** 退款状态：none | applied(用户已申请待平台处理) | rejected(申请被驳回) | processing | success */
     private String refundStatus;
     /** 渠道退款单号 */
     private String refundId;
     /** 已退金额 */
     private BigDecimal refundAmount;
     private LocalDateTime refundTime;
+    /** 退款申请原因（用户填写） */
+    private String refundReason;
+    /** 退款申请时间 */
+    private LocalDateTime refundApplyTime;
+    /** 退款申请驳回原因（平台填写，回显给用户） */
+    private String refundRejectReason;
     private LocalDateTime updateTime;
 }

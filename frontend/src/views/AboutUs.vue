@@ -1,5 +1,15 @@
 <template>
   <div class="about-page">
+    <!-- 全页斜向平铺水印：SVG pattern 瓦片，纯装饰层，不参与布局、不拦截交互 -->
+    <svg class="about-watermark" aria-hidden="true" focusable="false">
+      <defs>
+        <pattern id="ab-wm-tile" width="360" height="170" patternUnits="userSpaceOnUse">
+          <text x="180" y="95" text-anchor="middle" transform="rotate(-24 180 95)">Dev of Jason ouyang · Since 2026.09.12</text>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#ab-wm-tile)" />
+    </svg>
+
     <!-- 头部：品牌叙事 + 快速入口 -->
     <section class="about-hero">
       <div class="hero-glow hero-glow-a"></div>
@@ -136,26 +146,26 @@
 
         <div class="contact-grid">
           <article class="contact-card">
-            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/qq/13233A" alt="QQ邮箱图标" /></span>
+            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/qq/13233A" alt="QQ邮箱图标" loading="lazy" decoding="async" /></span>
             <span class="contact-label">QQ邮箱</span>
             <a href="mailto:3514485358@qq.com" class="contact-link">3514485358@qq.com</a>
             <small>项目联系 / 日常沟通</small>
             <a-button block @click="copyText('3514485358@qq.com', '主要邮箱')">复制邮箱</a-button>
           </article>
           <article class="contact-card">
-            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/gmail/13233A" alt="Google Gmail 图标" /></span>
+            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/gmail/13233A" alt="Google Gmail 图标" loading="lazy" decoding="async" /></span>
             <span class="contact-label">Google Gmail</span>
             <a href="mailto:ouyangjason001@gmail.com" class="contact-link">ouyangjason001@gmail.com</a>
             <small>备用联系邮箱</small>
             <a-button block @click="copyText('ouyangjason001@gmail.com', '备用邮箱')">复制邮箱</a-button>
           </article>
           <article class="contact-card">
-            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/whatsapp/13233A" alt="WhatsApp 图标" /></span>
+            <span class="contact-icon"><img class="contact-icon-image" src="https://cdn.simpleicons.org/whatsapp/13233A" alt="WhatsApp 图标" loading="lazy" decoding="async" /></span>
             <span class="contact-label">WhatsApp</span>
             <a class="contact-link" href="https://wa.me/OuyangJason?s=t" target="_blank" rel="noopener noreferrer">WhatsApp · OuyangJason</a>
             <small>点击“显示二维码”查看扫码方式，也可直接打开 WhatsApp。</small>
             <div v-if="whatsappQrVisible" class="whatsapp-qr-panel">
-              <img class="contact-qr" src="/assets/contact/whatsapp-qr.png" alt="WhatsApp OuyangJason 联系二维码" />
+              <img class="contact-qr" src="/assets/contact/whatsapp-qr.svg" alt="WhatsApp OuyangJason 联系二维码" />
               <span>扫码添加 / 联系 OuyangJason</span>
             </div>
             <div class="whatsapp-actions">
@@ -178,6 +188,7 @@
             冒用、仿冒、包装、转化为他人项目或商业项目；如需用于商业宣传、商业产品、商业服务或其他营利性用途，
             应事先取得本人书面授权。本人将依法采取必要措施维护自身合法权益，请尊重知识产权。
           </p>
+          <p class="ip-notice-sign">Dev of Jason ouyang · Since 2026.09.12</p>
         </div>
         <div class="ip-notice-badge">
           <strong>请尊重知识产权</strong>
@@ -246,6 +257,16 @@
         </article>
       </section>
     </main>
+
+    <!-- 底部署名：开发者、项目启动时间与版权信息 -->
+    <footer class="about-footer" aria-label="开发者署名与版权">
+      <span class="about-footer-brand">LANLinkShopping · 关于我们</span>
+      <span class="about-footer-sign">
+        <span>Dev of Jason ouyang · Since 2026.09.12</span>
+        <i aria-hidden="true">·</i>
+        <span>© 2026 Jason Ouyang</span>
+      </span>
+    </footer>
   </div>
 </template>
 
@@ -327,10 +348,31 @@ async function copyText(text, label) {
 </script>
 
 <style scoped>
-.about-page { --ab-navy: var(--ll-brand-base); --ab-ink: #0F172A; --ab-muted: #667085; --ab-line: #D9D3C7; --ab-paper: #FBF9F1; --ab-paper2: #F5F0E8; --ab-gold: var(--ll-brand-gold); --ab-red: var(--ll-brand-red); --ab-blue: var(--ll-brand-blue); color: var(--ab-ink); padding-bottom: 24px; }
+/* 全页斜向平铺水印：SVG pattern 瓦片（浅色淡墨 / 深色淡光），无运行时逻辑 */
+.about-page { position: relative; }
+.about-watermark {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+.about-watermark :deep(text) {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  fill: rgba(15, 23, 42, .055);
+}
+[data-theme='dark'] .about-watermark :deep(text) { fill: rgba(232, 237, 245, .07); }
+.about-page { --ab-navy: var(--ll-brand-base); --ab-ink: #0F172A; --ab-muted: #667085; --ab-line: #D9D3C7; --ab-paper: #FBF9F1; --ab-paper2: #F5F0E8; --ab-gold: var(--ll-brand-gold); --ab-gold-strong: var(--ll-brand-gold-strong); --ab-red: var(--ll-brand-red); --ab-blue: var(--ll-brand-blue); color: var(--ab-ink); padding-bottom: 24px; }
 .about-hero { min-height: 430px; position: relative; overflow: hidden; border-radius: 28px; padding: 64px 68px; display: flex; align-items: center; background: var(--ll-brand-hero-gradient); box-shadow: var(--ll-glass-shadow); }
 .hero-copy { position: relative; z-index: 2; max-width: 650px; }
-.eyebrow, .section-kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .16em; color: var(--ab-gold); }
+.eyebrow, .section-kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .16em; }
+/* .eyebrow 落在深色 Hero 上 → 保持亮金（4.58:1）；.section-kicker 落在浅色纸底 → 用加深金（≥5.1:1） */
+.eyebrow { color: var(--ll-brand-gold); }
+.section-kicker { color: var(--ab-gold-strong); }
 .eyebrow::before, .section-kicker::before { content: ''; width: 24px; height: 1px; background: currentColor; }
 .hero-copy h1 { margin: 16px 0 16px; color: #fff; font-size: clamp(34px, 4vw, 54px); line-height: 1.12; letter-spacing: -.045em; font-weight: 750; }
 .hero-copy h1 em { color: var(--ll-brand-gold-soft); font-style: normal; }
@@ -382,7 +424,7 @@ async function copyText(text, label) {
 .identity-center span { color: var(--ll-brand-gold-soft); font-size: 24px; font-weight: 800; letter-spacing: -.06em; }
 .identity-center small { margin-top: 7px; color: rgba(255,255,255,.58); letter-spacing: .12em; font-size: 8px; }
 .identity-node { position: absolute; min-width: 92px; padding: 9px 12px; text-align: center; border-radius: 12px; color: #fff; background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(8px); }
-.identity-node b { display: block; font-size: 12px; } .identity-node span { font-size: 9px; color: rgba(255,255,255,.48); letter-spacing: .08em; }
+.identity-node b { display: block; font-size: 12px; } .identity-node span { font-size: 9px; color: rgba(255,255,255,.70); letter-spacing: .08em; }
 .identity-0 { left: 26px; top: 40px; } .identity-1 { right: 26px; top: 40px; } .identity-2 { right: 22px; bottom: 44px; } .identity-3 { left: 50%; bottom: 24px; transform: translateX(-50%); } .identity-4 { left: 22px; bottom: 44px; }
 .identity-node::after { content: ''; position: absolute; width: 54px; height: 1px; background: rgba(246,211,138,.38); top: 50%; }
 .identity-0::after, .identity-4::after { left: 100%; transform: rotate(18deg); transform-origin: left; }
@@ -457,12 +499,29 @@ async function copyText(text, label) {
 .legal-tabs button span { margin-left: 8px; opacity: .45; font-size: 9px; }
 .legal-tabs button.active { background: #fff; color: var(--ab-navy); font-weight: 700; box-shadow: 0 2px 8px rgba(19,35,58,.07); }
 .legal-panel { border: 1px solid var(--ab-line); border-radius: 20px; background: #fff; padding: 28px; }
-.legal-title span { color: var(--ab-gold); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.legal-title span { color: var(--ab-gold-strong); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 .legal-title h2 { margin-top: 6px; margin-bottom: 5px; }
 .legal-title p { color: var(--ab-muted); font-size: 13px; margin: 0; }
 .legal-list { margin: 22px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
 .legal-list li { display: grid; grid-template-columns: 110px 1fr; gap: 18px; padding: 13px 0; border-top: 1px solid #ECE8DF; }
 .legal-list b { color: var(--ab-navy); font-size: 13px; } .legal-list span { color: var(--ab-muted); font-size: 13px; line-height: 1.75; }
+
+/* 知识产权区块内的开发者署名：与正文保持明显的层级差 */
+.ip-notice-sign { margin: 12px 0 0; color: var(--ab-gold-strong); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+
+/* 底部署名栏：内容流末端，弱化于正文 */
+.about-footer { position: relative; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 8px; padding: 18px 4px 6px; border-top: 1px solid var(--ab-line); }
+.about-footer-brand { color: var(--ab-muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.about-footer-sign { display: inline-flex; align-items: center; gap: 8px; color: var(--ab-muted); font-size: 11px; letter-spacing: .04em; }
+.about-footer-sign i { color: #C8C2B6; font-style: normal; }
+.about-footer-sign span:last-child { color: #98A2B3; }
+[data-theme='dark'] .about-footer { border-top-color: rgba(255,255,255,.12); }
+[data-theme='dark'] .about-footer-brand,
+[data-theme='dark'] .about-footer-sign { color: #A7B0BD; }
+[data-theme='dark'] .about-footer-sign span:last-child { color: #8A94A3; }
+
+/* 打印时隐藏装饰水印 */
+@media print { .about-watermark { display: none; } }
 
 @media (max-width: 1000px) {
   .about-hero { padding: 52px 42px; }
@@ -473,6 +532,9 @@ async function copyText(text, label) {
 }
 @media (max-width: 640px) {
   .about-page { padding-bottom: 8px; }
+  .about-watermark :deep(text) { font-size: 11px; letter-spacing: 1.4px; }
+  .about-footer { flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px 2px 4px; }
+  .about-footer-sign { flex-wrap: wrap; gap: 6px; }
   .about-hero { min-height: 500px; border-radius: 20px; padding: 34px 24px; align-items: flex-start; }
   .hero-copy h1 { font-size: 34px; }
   .hero-copy p { font-size: 14px; }

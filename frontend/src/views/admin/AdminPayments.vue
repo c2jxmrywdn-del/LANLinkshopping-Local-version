@@ -26,15 +26,23 @@
         </template>
         <template v-else-if="column.key === 'refund'">
           <a-tag v-if="record.refundStatus === 'success'" color="green">已全额退款 ¥{{ record.refundAmount }}</a-tag>
+          <a-tooltip v-else-if="record.refundStatus === 'applied'"
+                     :title="'申请原因：' + (record.refundReason || '—') + (record.refundApplyTime ? ' ｜ 申请时间：' + String(record.refundApplyTime).replace('T', ' ') : '')">
+            <a-tag color="blue">退款申请中 ⓘ</a-tag>
+          </a-tooltip>
+          <a-tag v-else-if="record.refundStatus === 'rejected'" color="default">申请已驳回</a-tag>
           <a-tag v-else-if="record.refundStatus === 'processing'" color="orange">退款处理中</a-tag>
           <span v-else style="color:#999">—</span>
         </template>
         <template v-else-if="column.key === 'time'">{{ (record.payTime || record.createTime || '').replace('T', ' ') }}</template>
         <template v-else-if="column.key === 'op'">
-          <a-button size="small" @click="$router.push('/admin/payments/' + record.orderNo)">详情</a-button>
-          <a-button v-if="record.payStatus === 1 && record.refundStatus !== 'success'"
-                    size="small" danger @click="openRefund(record)">退款</a-button>
-          <span v-else style="color:#999">—</span>
+          <a-space>
+            <a-button size="small" @click="$router.push('/admin/payments/' + record.orderNo)">详情</a-button>
+            <a-button v-if="record.payStatus === 1 && record.refundStatus !== 'success'"
+                      size="small" danger @click="openRefund(record)">退款</a-button>
+            <a-button v-if="record.refundStatus === 'applied'"
+                      size="small" @click="openReject(record)">驳回申请</a-button>
+          </a-space>
         </template>
       </template>
     </a-table>
@@ -42,6 +50,10 @@
     <!-- 退款弹窗：全额 / 部分 -->
     <a-modal v-model:open="refundOpen" :title="`订单退款 · ${current?.orderNo}`" @ok="doRefund" :confirm-loading="refunding">
       <a-form layout="vertical">
+        <a-form-item v-if="current?.refundStatus === 'applied'">
+          <a-alert type="info" show-icon :message="'用户退款申请：' + (current?.refundReason || '—')"
+                   :description="current?.refundApplyTime ? ('申请时间：' + String(current.refundApplyTime).replace('T', ' ')) : ''" />
+        </a-form-item>
         <a-form-item label="订单金额">
           <b>¥{{ current?.totalAmount }}</b>
           <span v-if="current?.refundAmount" style="color:#999">（已退 ¥{{ current.refundAmount }}）</span>
@@ -56,6 +68,20 @@
         </a-form-item>
         <a-alert type="warning" show-icon
                  message="全额退款将自动恢复商品库存、扣回支付所得积分并返还积分抵现；退款金额原路退回用户支付账户。" />
+      </a-form>
+    </a-modal>
+
+    <!-- 驳回退款申请：原因必填，回显给用户 -->
+    <a-modal v-model:open="rejectOpen" :title="`驳回退款申请 · ${rejectTarget?.orderNo}`" ok-text="确认驳回" cancel-text="取消"
+             :confirm-loading="rejecting" @ok="doReject">
+      <a-form layout="vertical">
+        <a-form-item v-if="rejectTarget?.refundReason">
+          <a-alert type="info" show-icon :message="'用户申请原因：' + rejectTarget.refundReason" />
+        </a-form-item>
+        <a-form-item label="驳回原因（必填，将展示给用户）" required>
+          <a-textarea v-model:value="rejectReason" :rows="3" maxlength="200" show-count
+                      placeholder="如：商品已发货且无质量问题 / 超出可退款时限 / 与用户协商后取消申请" />
+        </a-form-item>
       </a-form>
     </a-modal>
   </a-card>
@@ -125,8 +151,33 @@ function onPage(p) { load(p.current) }
 function openRefund(record) {
   current.value = record
   refundAmount.value = null
-  refundReason.value = ''
+  // 若有用户退款申请，带出申请原因作为处理参考
+  refundReason.value = record.refundReason || ''
   refundOpen.value = true
+}
+
+// ===== 驳回退款申请 =====
+const rejectOpen = ref(false)
+const rejecting = ref(false)
+const rejectTarget = ref(null)
+const rejectReason = ref('')
+
+function openReject(record) {
+  rejectTarget.value = record
+  rejectReason.value = ''
+  rejectOpen.value = true
+}
+
+async function doReject() {
+  if (!rejectReason.value.trim()) { message.warning('请填写驳回原因'); return }
+  rejecting.value = true
+  try {
+    await orderApi.adminRejectRefund(rejectTarget.value.orderNo, rejectReason.value.trim())
+    message.success('已驳回退款申请，原因将展示给用户')
+    rejectOpen.value = false
+    await load(page.value)
+  } catch (e) { /* 拦截器已提示 */ }
+  finally { rejecting.value = false }
 }
 
 async function doRefund() {

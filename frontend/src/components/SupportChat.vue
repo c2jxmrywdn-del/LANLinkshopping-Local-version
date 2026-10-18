@@ -2,14 +2,15 @@
   <div class="support-root">
     <button class="support-launcher" type="button" :aria-expanded="visible"
       aria-controls="lanlink-support-panel" @click="toggle">
-      <span class="support-launcher-mark" aria-hidden="true">?</span>
+      <SupportAgentAvatar :size="30" status="online" class="support-launcher-avatar" />
       <span>专属客服</span>
     </button>
 
     <section v-if="visible" id="lanlink-support-panel" class="support-panel"
       role="dialog" aria-label="LANLinkshopping 专属客服">
       <header class="support-header">
-        <div>
+        <SupportAgentAvatar :size="34" status="online" />
+        <div class="support-header-copy">
           <strong>LANLinkshopping 客服</strong>
           <p>只回答专属知识库已收录的电商问题</p>
         </div>
@@ -19,7 +20,10 @@
       <div ref="messageList" class="support-messages" aria-live="polite">
         <div v-for="(item, index) in messages" :key="index" class="support-message"
           :class="item.role === 'user' ? 'from-user' : 'from-support'">
-          <div class="support-message-label">{{ item.role === 'user' ? '你' : '专属客服' }}</div>
+          <div class="support-message-label">
+            <SupportAgentAvatar v-if="item.role !== 'user'" :size="16" />
+            <span>{{ item.role === 'user' ? '你' : '专属客服' }}</span>
+          </div>
           <p>{{ item.text }}</p>
         </div>
         <div v-if="messages.length === 1 && !loading" class="support-suggestions" aria-label="常见问题">
@@ -29,7 +33,10 @@
           <button type="button" @click="askSuggested('如何申请商户入驻？')">商户入驻</button>
         </div>
         <div v-if="loading" class="support-message from-support">
-          <div class="support-message-label">专属客服</div>
+          <div class="support-message-label">
+            <SupportAgentAvatar :size="16" />
+            <span>专属客服</span>
+          </div>
           <p>正在检索知识库…</p>
         </div>
       </div>
@@ -58,8 +65,9 @@
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { supportApi } from '../api'
+import SupportAgentAvatar from './ui/SupportAgentAvatar.vue'
 
-const FALLBACK = '抱歉，当前客服仅能解答 LANLinkshopping 专属知识库已收录的电商相关问题。可咨询账号注册与登录、商品浏览、购物车与订单、商户入驻、钱包与账期、会员与活动、站内消息及 Cookie 设置；其他问题暂不在可答范围内。'
+const FALLBACK = '您好！感谢您的咨询。当前客服仅能解答 LANLinkshopping 专属知识库已收录的电商相关问题，可咨询账号注册与登录、商品浏览、购物车与订单、商户入驻、钱包与账期、会员与活动、站内消息及 Cookie 设置；其他问题暂不在可答范围内，敬请谅解。'
 const WELCOME = '您好，我是 LANLinkshopping 专属客服。请咨询平台账号注册与登录、商品浏览、购物车与订单、商户入驻、钱包与账期、会员与活动、站内消息或 Cookie 设置等已收录问题。'
 const TOKEN_KEY = 'll_support_visitor_token'
 
@@ -159,9 +167,10 @@ async function send() {
 .support-root { position: fixed; right: 24px; bottom: 24px; z-index: 1200; font-family: inherit; }
 .support-launcher { display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: 999px; padding: 12px 18px 12px 12px; color: #fff; background: #13233A; box-shadow: 0 10px 30px rgba(19,35,58,.24); font-size: 14px; font-weight: 650; cursor: pointer; }
 .support-launcher:hover { background: #203958; }
-.support-launcher-mark { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid rgba(255,255,255,.55); border-radius: 50%; font-size: 17px; }
+.support-launcher-avatar { margin-right: 1px; }
 .support-panel { display: flex; flex-direction: column; position: absolute; right: 0; bottom: 62px; width: min(370px, calc(100vw - 28px)); height: min(560px, calc(100vh - 110px)); background: #fff; border: 1px solid #e4e7ec; border-radius: 18px; box-shadow: 0 20px 55px rgba(16,24,40,.2); overflow: hidden; }
-.support-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 17px 18px; background: #13233A; color: #fff; }
+.support-header { display: flex; align-items: center; gap: 11px; padding: 17px 18px; background: #13233A; color: #fff; }
+.support-header-copy { flex: 1 1 auto; min-width: 0; }
 .support-header strong { display: block; font-size: 14px; font-weight: 700; }
 .support-header p { margin: 4px 0 0; color: rgba(255,255,255,.78); font-size: 11px; }
 .support-close { border: 0; background: transparent; color: #fff; font-size: 26px; line-height: 1; cursor: pointer; }
@@ -173,7 +182,7 @@ async function send() {
 .support-message { max-width: 92%; padding: 10px 12px; border-radius: 13px; border: 1px solid #e7eaf0; background: #fff; overflow-wrap: anywhere; }
 .support-message.from-user { align-self: flex-end; border-color: #d6e4f5; background: #eef5ff; }
 .support-message.from-support { align-self: flex-start; }
-.support-message-label { margin-bottom: 5px; color: #667085; font-size: 10px; font-weight: 700; }
+.support-message-label { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; color: #667085; font-size: 10px; font-weight: 700; }
 .support-message p { margin: 0; color: #182230; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
 .support-compose { padding: 11px 12px 9px; border-top: 1px solid #e4e7ec; background: #fff; }
 .support-compose textarea { display: block; box-sizing: border-box; width: 100%; resize: none; border: 1px solid #d0d5dd; border-radius: 10px; padding: 10px; outline: none; color: #182230; background: #fff; font: inherit; font-size: 12px; line-height: 1.6; }

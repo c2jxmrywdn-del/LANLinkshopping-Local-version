@@ -4,7 +4,7 @@ import { hasCookieConsent } from '../utils/cookieConsent'
 // The public assistant stays knowledge-base-only. Dialogue storage is token-scoped and redacted server-side.
 export const supportApi = {
   async ask(question, visitorToken, persistConversation = false) {
-    const unavailable = '客服暂时无法响应，请稍后重试。'
+    const unavailable = '您好！客服暂时无法响应，请稍后重试。'
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 10000)
     try {
@@ -66,6 +66,18 @@ export const authApi = {
   me: () => request.get('/auth/me')
 }
 
+// ===== 社交登录（微信 / 支付宝 / Apple / Google，公开接口）=====
+export const socialApi = {
+  // 渠道可用性：未配置也返回，前端据此渲染品牌入口并区分「已配置 / 未配置」
+  providers: () => request.get('/auth/social/providers'),
+  // 取平台授权地址（未配置时后端返回明确错误，不伪造登录）
+  authorize: (provider, state) => request.get(`/auth/social/authorize/${provider}`, { params: { state } }),
+  // 授权回调：平台回跳带回 code/state，前端交给后端换取身份并建立会话
+  callback: (provider, code, state) => request.post(`/auth/social/callback/${provider}`, { code, state }),
+  // 已登录用户绑定第三方账号（账号设置 → 第三方授权）
+  bind: (provider, code, state) => request.post(`/auth/social/bind/${provider}`, { code, state })
+}
+
 export const homeApi = {
   industries: () => request.get('/home/industries'),
   hot: (limit = 8) => request.get('/home/hot', { params: { limit } }),
@@ -101,6 +113,9 @@ export const orderApi = {
   detail: (orderNo) => request.get(`/order/detail/${orderNo}`),
   pay: (orderNo) => request.post(`/order/pay/${orderNo}`),
   cancel: (orderNo) => request.post(`/order/cancel/${orderNo}`),
+  // 退款申请闭环：用户提交申请（进入平台审核队列）/ 平台驳回申请（仅运营）
+  applyRefund: (orderNo, reason) => request.post(`/order/refund/apply/${orderNo}`, { reason }),
+  adminRejectRefund: (orderNo, reason) => request.post(`/order/admin/refund/reject/${orderNo}`, { reason }),
   // 管理后台：订单分页（交易管理，可按支付状态过滤）
   adminList: (params) => request.get('/order/admin/list', { params })
 }
@@ -122,6 +137,8 @@ export const paymentApi = {
 // ===== 钱包 =====
 export const walletApi = {
   my: () => request.get('/wallet/my'),
+  // 单条流水详情（按 ID 直查，不受"最近 50 条"窗口限制）
+  logDetail: (id) => request.get(`/wallet/log/${id}`),
   recharge: (amount, remark) => request.post('/wallet/recharge', { amount, remark })
 }
 
@@ -135,6 +152,34 @@ export const creditTermApi = {
   repay: (id, amount, method = 'wallet') => request.post(`/credit-term/bills/${id}/repay`, { amount, method }),
   adminAccounts: (status) => request.get('/credit-term/admin/accounts', { params: { status } }),
   review: (id, d) => request.post(`/credit-term/admin/accounts/${id}/review`, d)
+}
+
+// ===== 物流模块（运单/轨迹/服务商/模板/告警/售后/结算） =====
+export const logisticsApi = {
+  // 商家发货（创建运单）
+  ship: (d) => request.post('/logistics/ship', d),
+  // 状态流转（确认签收等）
+  transit: (waybillId, status, note) => request.post(`/logistics/transit/${waybillId}`, null, { params: { status, note } }),
+  // 运单分页
+  waybillList: (params) => request.get('/logistics/waybill/list', { params }),
+  // 运单轨迹
+  traces: (waybillId) => request.get(`/logistics/trace/${waybillId}`),
+  // 轨迹同步（联调/模拟服务商推送）
+  syncTrace: (waybillId, nodes) => request.post(`/logistics/trace/sync/${waybillId}`, nodes),
+  // ===== 运营后台（/admin/logistics） =====
+  providers: () => request.get('/admin/logistics/provider/list'),
+  saveProvider: (d) => request.post('/admin/logistics/provider/save', d),
+  templates: (providerId) => request.get('/admin/logistics/template/list', { params: { providerId } }),
+  saveTemplate: (d) => request.post('/admin/logistics/template/save', d),
+  alerts: (params) => request.get('/admin/logistics/alert/list', { params }),
+  handleAlert: (alertId, note) => request.post(`/admin/logistics/alert/handle/${alertId}`, null, { params: { note } }),
+  aftersales: (params) => request.get('/admin/logistics/aftersale/list', { params }),
+  createAftersale: (d) => request.post('/admin/logistics/aftersale/create', d),
+  processAftersale: (aftersaleId, action, note) => request.post(`/admin/logistics/aftersale/process/${aftersaleId}`, null, { params: { action, note } }),
+  settlements: (params) => request.get('/admin/logistics/settlement/list', { params }),
+  settlementItems: (settlementId) => request.get(`/admin/logistics/settlement/items/${settlementId}`),
+  generateSettlement: (params) => request.post('/admin/logistics/settlement/generate', null, { params }),
+  reviewSettlement: (settlementId, action, note) => request.post(`/admin/logistics/settlement/review/${settlementId}`, null, { params: { action, note } })
 }
 
 // ===== 账号中心（/user/**，非 GET 请求自动携带 CSRF 令牌，见 request.js） =====
@@ -259,22 +304,37 @@ export const adminApi = {
   communicationCreateLearningCandidate: (id, payload) => request.post('/admin/customer-communications/conversations/' + encodeURIComponent(id) + '/learn', payload),
   communicationLearningCandidates: (params) => request.get('/admin/customer-communications/learning-candidates', { params }),
   communicationLearningCandidate: (id) => request.get('/admin/customer-communications/learning-candidates/' + encodeURIComponent(id)),
-  communicationReviewLearningCandidate: (id, payload) => request.post('/admin/customer-communications/learning-candidates/' + encodeURIComponent(id) + '/review', payload)
+  communicationReviewLearningCandidate: (id, payload) => request.post('/admin/customer-communications/learning-candidates/' + encodeURIComponent(id) + '/review', payload),
+  communicationCandidateAiSuggest: (id) => request.post('/admin/customer-communications/learning-candidates/' + encodeURIComponent(id) + '/ai-suggest'),
+  outboundModelConfigList: () => request.get('/admin/outbound-model-config'),
+  outboundModelConfigUpsert: (payload) => request.post('/admin/outbound-model-config', payload),
+  outboundModelConfigToggle: (key, on) => request.post('/admin/outbound-model-config/toggle', { key, on }),
+  outboundModelConfigTest: (payload) => request.post('/admin/outbound-model-config/test', payload),
+  outboundModelAiSuggest: (question) => request.post('/admin/outbound-model-config/ai-suggest', { question }),
+  aiApiKeysList: () => request.get('/admin/ai-api-keys'),
+  aiApiKeyCreate: (payload) => request.post('/admin/ai-api-keys', payload),
+  aiApiKeyDisable: (id) => request.post(`/admin/ai-api-keys/${encodeURIComponent(id)}/disable`),
+  supportIntentStats: () => request.get('/support/intent/stats'),
+  supportIntentAnalyze: (payload) => request.post('/support/intent/analyze', payload)
 }
 
 // ===== 营销中台：活动系统 / 促销系统 / 会员系统 =====
 export const activityApi = {
   list: () => request.get('/activity/list'),
+  detail: (id) => request.get(`/activity/detail/${id}`),
   join: (id) => request.post(`/activity/${id}/join`),
   my: () => request.get('/activity/my')
 }
 
 export const promotionApi = {
-  list: () => request.get('/promotion/list')
+  list: () => request.get('/promotion/list'),
+  detail: (id) => request.get(`/promotion/detail/${id}`)
 }
 
 export const membershipApi = {
   my: () => request.get('/membership/my'),
+  // 单条积分流水详情（按 logId 直查，不受"最近 20 条"窗口限制）
+  pointLog: (logId) => request.get(`/membership/points/log/${logId}`),
   // 积分抵现试算：返回 { points 实际抵扣积分, amount 抵扣金额, maxAmount 本单上限, balance 积分余额 }
   redeemQuote: (points, orderAmount) => request.get('/membership/redeem-quote', { params: { points, orderAmount } })
 }

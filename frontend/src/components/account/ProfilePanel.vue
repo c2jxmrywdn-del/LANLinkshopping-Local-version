@@ -128,12 +128,20 @@ function disabledBirthday(d) {
 }
 
 // ===== 脱敏 =====
-function maskPhone(p) { return p ? String(p).replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2') : '' }
+function maskPhone(p) {
+  if (!p) return ''
+  const s = String(p)
+  if (s.includes('*')) return s
+  return s.replace(/^(\d{3})\d{4}(\d{4})$/, '$1****$2')
+}
 function maskEmail(e) {
   if (!e) return ''
-  const [local, domain] = String(e).split('@')
+  const s = String(e)
+  if (s.includes('*')) return s
+  const [local, domain] = s.split('@')
   if (!domain) return '***'
-  return '***' + local.slice(3) + '@' + domain
+  if (local.length <= 2) return local.charAt(0) + '***@' + domain
+  return local.charAt(0) + '***' + local.charAt(local.length - 1) + '@' + domain
 }
 
 // ===== 编辑状态 =====

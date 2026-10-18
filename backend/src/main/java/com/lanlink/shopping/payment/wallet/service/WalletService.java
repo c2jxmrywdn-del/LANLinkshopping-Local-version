@@ -78,6 +78,17 @@ public class WalletService {
     }
 
     /**
+     * 单条钱包流水详情（按用户归属校验，避免越权读取他人流水；不存在返回 null）。
+     * 相比 myView() 的"最近 N 条"窗口，此处可直接按 ID 命中历史任意流水。
+     */
+    public WalletLog log(Long userId, Long id) {
+        if (userId == null || id == null) return null;
+        return logMapper.selectOne(Wrappers.<WalletLog>lambdaQuery()
+                .eq(WalletLog::getId, id)
+                .eq(WalletLog::getUserId, userId));
+    }
+
+    /**
      * 充值（模拟网关即时到账；真实渠道可扩展为充值单 + 渠道回调入账，见 PaymentService 渠道层）。
      */
     @Transactional

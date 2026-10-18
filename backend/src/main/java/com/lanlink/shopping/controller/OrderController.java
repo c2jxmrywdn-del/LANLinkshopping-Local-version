@@ -13,9 +13,14 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * 订单 (需登录)
+ * 订单接口。
+ * 需登录：/order/checkout、/order/my、/order/detail/{orderNo}、/order/pay/{orderNo}、
+ *        /order/cancel/{orderNo}、/order/refund/apply/{orderNo}（AuthInterceptor 全局登录拦截，
+ *        不在公开白名单；各接口另做订单归属校验，仅订单本人可操作）。
+ * 需管理员：/order/admin/list、/order/admin/refund/reject/{orderNo}（@RequirePerm("admin:all")）。
  */
 @RestController
 @RequestMapping("/order")
@@ -62,5 +67,28 @@ public class OrderController {
     public R<Void> cancel(@PathVariable String orderNo, HttpServletRequest request) {
         orderService.cancel(UserContext.currentUserId(request), orderNo);
         return R.ok("订单已取消", null);
+    }
+
+    /**
+     * 用户申请退款（提交平台审核队列）。
+     * 权限：需登录（无 @RequirePerm 注解——这是用户自助操作而非管理员操作；
+     * 登录由 AuthInterceptor 全局拦截保证，服务层校验订单归属 userId，仅订单本人可申请）。
+     */
+    @PostMapping("/refund/apply/{orderNo}")
+    public R<Void> applyRefund(@PathVariable String orderNo,
+                               @RequestBody(required = false) Map<String, String> body,
+                               HttpServletRequest request) {
+        orderService.applyRefund(UserContext.currentUserId(request), orderNo,
+                body == null ? null : body.get("reason"));
+        return R.ok("退款申请已提交", null);
+    }
+
+    /** 平台驳回退款申请（仅平台运营，驳回原因回显给用户） */
+    @PostMapping("/admin/refund/reject/{orderNo}")
+    @RequirePerm("admin:all")
+    public R<Void> rejectRefund(@PathVariable String orderNo,
+                                @RequestBody(required = false) Map<String, String> body) {
+        orderService.rejectRefund(orderNo, body == null ? null : body.get("reason"));
+        return R.ok("已驳回退款申请", null);
     }
 }

@@ -86,6 +86,17 @@ class PromotionServiceTest {
     }
 
     @Test
+    void detailReturnsActivePromotionOnly() {
+        Promotion p = promo("full_reduce", new BigDecimal("500"), new BigDecimal("50"), null, "all", null);
+        p.setPromoId(11L);
+        when(mapper.selectList(any())).thenReturn(List.of(p));
+        assertEquals(11L, service.detail(11L).getPromoId());
+        // 未命中 / 空参 → null（仅返回当前生效促销）
+        assertNull(service.detail(99L));
+        assertNull(service.detail(null));
+    }
+
+    @Test
     void inactivePromotionIgnored() {
         Promotion p = promo("full_reduce", new BigDecimal("0"), new BigDecimal("10"), null, "all", null);
         p.setStatus(0);

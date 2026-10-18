@@ -31,6 +31,12 @@ public class ActivityController {
         return R.ok(activityService.ongoing(UserContext.currentUserId(request)));
     }
 
+    /** 单个活动详情（含是否已参与；非进行中/不存在返回 data=null） */
+    @GetMapping("/detail/{id}")
+    public R<Map<String, Object>> detail(@PathVariable Long id, HttpServletRequest request) {
+        return R.ok(activityService.detail(UserContext.currentUserId(request), id));
+    }
+
     @PostMapping("/{id}/join")
     public R<Void> join(@PathVariable Long id, HttpServletRequest request) {
         activityService.join(UserContext.currentUserId(request), id);

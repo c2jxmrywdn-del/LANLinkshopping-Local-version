@@ -1,0 +1,30 @@
+# Source and local tooling
+.git
+.github
+.vscode
+.idea
+.run
+.trae
+
+# Dependencies and build output
+**/node_modules
+**/target
+**/dist
+**/__pycache__
+*.pyc
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+**/*.log
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# Documentation and unrelated deployment assets
+support-learning-sandbox
+cloud
+ai-gateway
+**/tests

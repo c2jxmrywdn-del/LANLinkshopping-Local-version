@@ -23,7 +23,7 @@ const bills=ref([]),loading=ref(true)
 const money=v=>Number(v||0).toFixed(2)
 const billLabel=b=>b.status==='PAID'?'已结清':b.status==='CANCELLED'?'已取消':b.status==='OVERDUE'||(b.dueDate&&b.dueDate<new Date().toISOString().slice(0,10))?'已逾期':'待还'
 const billColor=b=>billLabel(b)==='已结清'?'green':billLabel(b)==='已逾期'?'red':'orange'
-onMounted(async()=>{try{bills.value=await creditTermApi.bills()||[]}finally{loading.value=false}})
+onMounted(async()=>{try{bills.value=await creditTermApi.bills()||[]}catch(e){bills.value=[]}finally{loading.value=false}})
 </script>
 <style scoped>
 .sys{max-width:1100px;margin:0 auto}.hero{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--ll-primary)}h1{margin:5px 0}.hero p{margin:0;color:var(--ll-muted)}.card{border-radius:20px}

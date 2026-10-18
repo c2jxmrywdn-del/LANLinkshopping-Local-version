@@ -36,6 +36,8 @@
   --ll-brand-surface: #1F3864;
   --ll-brand-red: #9B2D20;
   --ll-brand-gold: #C8A45C;
+  /* 品牌金·加深：浅色底上的小字号标签（金原本 #C8A45C 仅 ~2.2:1，加深后 ≥4.5:1） */
+  --ll-brand-gold-strong: #80601F;
   --ll-brand-blue: #1E6EB8;
   --ll-brand-gold-soft: #F6D38A;
   --ll-brand-hero-gradient: linear-gradient(125deg, var(--ll-brand-base) 0%, var(--ll-brand-surface) 58%, #233F5F 100%);

@@ -12,6 +12,8 @@ import os
 import time
 import uuid
 
+import jieba
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -87,7 +89,6 @@ def _completion_shell(model: str, content: str, finish: str, usage: dict, latenc
 
 def _usage(prompt: str, completion: str) -> dict:
     # 与 OpenAI 一致的 usage 统计（中文按 jieba 词数近似 token）
-    import jieba
     pt = len(list(jieba.cut(prompt)))
     ct = len(list(jieba.cut(completion)))
     return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct}

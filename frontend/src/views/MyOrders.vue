@@ -13,12 +13,15 @@
         </template>
         <template v-else-if="column.key === 'status'">
           <a-tag>{{ statusMap[record.orderStatus] || record.orderStatus }}</a-tag>
-          <div v-if="record.refundStatus === 'success'" class="rf">已全额退款 ¥{{ record.refundAmount }}</div>
+          <div v-if="record.refundStatus === 'applied'" class="rf rf-wait">退款申请中 · 待平台处理</div>
+          <div v-else-if="record.refundStatus === 'rejected'" class="rf rf-rej">退款申请被驳回：{{ record.refundRejectReason || '不符合退款条件' }}</div>
+          <div v-else-if="record.refundStatus === 'success'" class="rf">已全额退款 ¥{{ record.refundAmount }}</div>
         </template>
         <template v-else-if="column.key === 'op'">
           <a-space>
             <a @click="$router.push('/orders/' + record.orderNo)">详情</a>
             <a v-if="record.payStatus === 0 && record.orderStatus === 0 && record.payType !== 'term'" @click="openPay(record)">支付</a>
+            <a v-if="canRefund(record)" @click="openRefund(record)">申请退款</a>
             <a v-if="record.orderStatus === 0 && (record.payStatus === 0 || record.payType === 'term')" @click="cancel(record)" style="color:#999">取消</a>
           </a-space>
         </template>
@@ -68,6 +71,22 @@
       </div>
       <div class="pay-note">支付遇到问题？可前往「我的钱包」充值后使用余额支付。</div>
     </a-modal>
+
+    <!-- 申请退款弹窗 -->
+    <a-modal v-model:open="refundOpen" :title="`申请退款 · ${refundTarget?.orderNo}`" ok-text="提交申请" cancel-text="取消"
+             :confirm-loading="refunding" @ok="doRefund">
+      <a-form layout="vertical">
+        <a-form-item label="订单金额"><b>¥{{ refundTarget?.totalAmount }}</b>
+          <span v-if="refundTarget?.refundAmount" style="color:#999">（已退 ¥{{ refundTarget.refundAmount }}）</span>
+        </a-form-item>
+        <a-form-item label="退款原因（必填，将提交平台审核）" required>
+          <a-textarea v-model:value="refundReason" :rows="3" maxlength="200" show-count
+                      placeholder="例如：商品缺货 / 与描述不符 / 沟通后协商退款" />
+        </a-form-item>
+        <a-alert type="info" show-icon message="申请后由平台审核处理"
+                 description="申请按可退余额全额提交，平台审核通过后资金原路退回；若被驳回会展示驳回原因，你可再次申请。" />
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -88,7 +107,7 @@ const payTypeText = { corporate: '对公转账', balance: '企业钱包', term: 
 const cols = [
   { title: '订单号', dataIndex: 'orderNo', key: 'orderNo' },
   { title: '金额', key: 'total', width: 120 },
-  { title: '支付方式', dataIndex: 'payType', width: 120 },
+  { title: '支付方式', dataIndex: 'payType', key: 'payType', width: 120 },
   { title: '支付状态', key: 'pay', width: 110 },
   { title: '订单状态', key: 'status', width: 130 },
   { title: '操作', key: 'op', width: 120 }
@@ -142,6 +161,30 @@ function realChannelTip(name) {
 
 async function cancel(r) { await orderApi.cancel(r.orderNo); message.success('已取消'); load() }
 
+// ===== 退款申请 =====
+const refundOpen = ref(false)
+const refunding = ref(false)
+const refundTarget = ref(null)
+const refundReason = ref('')
+/** 可申请退款：已支付、非账期、订单未结束，且无进行中/已完成退款 */
+function canRefund(r) {
+  return Number(r.payStatus) === 1 && r.payType !== 'term'
+    && ![3, 4].includes(Number(r.orderStatus))
+    && !['applied', 'processing', 'success'].includes(r.refundStatus || 'none')
+}
+function openRefund(r) { refundTarget.value = r; refundReason.value = ''; refundOpen.value = true }
+async function doRefund() {
+  if (!refundReason.value.trim()) { message.warning('请填写退款原因'); return }
+  refunding.value = true
+  try {
+    await orderApi.applyRefund(refundTarget.value.orderNo, refundReason.value.trim())
+    message.success('退款申请已提交，请等待平台处理')
+    refundOpen.value = false
+    await load()
+  } catch (e) { /* 拦截器已提示 */ }
+  finally { refunding.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -149,6 +192,8 @@ onMounted(load)
 .eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}.sub{margin:-10px 0 12px;color:var(--ll-muted)}.order-tabs{margin-bottom:16px}.order-tabs :deep(.ant-radio-button-wrapper){font-size:12px}
 .ch { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }
 .rf { font-size: 12px; color: #7c3aed; margin-top: 2px; }
+.rf-wait { color: var(--ll-amber-strong, #b45309); }
+.rf-rej { color: var(--ll-price, #d93025); }
 .pay-amount { font-size: 15px; margin-bottom: 14px; color: var(--ll-gray, #4b5563); }
 .pay-amount b { color: var(--ll-price, #e4393c); font-size: 22px; margin-left: 6px; letter-spacing: -.02em; }
 .pay-list { display: flex; flex-direction: column; gap: 10px; }

@@ -1,6 +1,7 @@
 <template>
   <div
-    class="brand-decode"
+    class="brand-decode notranslate"
+    translate="no"
     :class="[`brand-decode--${mode}`, { 'is-ready': ready }]"
     :style="{ '--decode-delay': delay }"
     role="img"

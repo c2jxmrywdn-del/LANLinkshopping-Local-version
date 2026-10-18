@@ -2,33 +2,27 @@
   <a-config-provider :theme="{ algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm, token: themeTokens }">
     <!-- 页面切换过渡：out-in + 上浮淡入，路由跳转更顺滑（尊重 prefers-reduced-motion） -->
     <router-view v-slot="{ Component, route }">
-      <Transition name="page" mode="out-in" @before-enter="onPageEnter" @after-enter="onPageEntered">
+      <Transition name="page" mode="out-in" @after-enter="onPageEntered">
         <component :is="Component" :key="route.path" />
       </Transition>
     </router-view>
     <BusinessBusyLoading />
     <CookieConsent />
-    <!-- 语言切换：前台/后台已各自把控件并入头部；仅无头部的独立页（登录/注册）用浮层形态 -->
-    <LanguageSwitcher v-if="standaloneRoute" variant="float" />
+    <!-- 语言切换：过渡动画页与登录/注册页不提供手动入口，由多维特征自动识别（见 main.js → applyAutoLocale）；
+         登录进入主系统后，切换控件在各布局头部内保持正常可用 -->
     <SplashScreen v-if="showSplash" @done="showSplash = false" />
   </a-config-provider>
 </template>
 
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { theme } from 'ant-design-vue'
-import { useRoute } from 'vue-router'
 import SplashScreen from './components/SplashScreen.vue'
 import BusinessBusyLoading from './components/BusinessBusyLoading.vue'
 import CookieConsent from './components/CookieConsent.vue'
-import LanguageSwitcher from './components/LanguageSwitcher.vue'
 import { useUserStore } from './store/user'
 import { useSettingsStore } from './store/settings'
 import { fetchCsrfToken } from './api/request'
-
-// 无头部布局的独立路由（MainLayout 与 AdminLayout 之外的页面）
-const route = useRoute()
-const standaloneRoute = computed(() => route.name === 'login' || route.name === 'register')
 
 const showSplash = ref(false)
 watch(showSplash, (v) => { document.body.style.overflow = v ? 'hidden' : '' }, { immediate: true })
@@ -58,10 +52,8 @@ const themeTokens = {
   wireframe: false
 }
 
-// 页面切换：进入前滚回顶部（浏览器后退时不打断原滚动位置），进入后触发滚动进场扫描
-function onPageEnter() {
-  if (!history.state?.back) window.scrollTo({ top: 0, behavior: 'auto' })
-}
+// 页面切换：滚动复位统一交给 router.scrollBehavior（前进回顶、后退恢复原位置），
+// 这里只在新页面入场后触发滚动进场扫描
 function onPageEntered() {
   document.dispatchEvent(new CustomEvent('ll:page-entered'))
 }

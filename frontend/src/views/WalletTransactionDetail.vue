@@ -7,13 +7,13 @@
       <a-descriptions-item label="关联订单">{{item.refOrderNo||'—'}}</a-descriptions-item><a-descriptions-item label="时间">{{(item.createTime||'').replace('T',' ')}}</a-descriptions-item>
       <a-descriptions-item label="备注" :span="2">{{item.remark||'—'}}</a-descriptions-item>
     </a-descriptions>
-    <a-empty v-else description="未找到该流水"/>
+    <a-empty v-else :description="loadError?'加载失败，请稍后重试':'未找到该流水'"/>
   </a-card></div>
 </template>
 <script setup>
-import {ref,onMounted} from 'vue';import {walletApi} from '../api'
-const item=ref(null),labels={recharge:'充值',pay:'消费',refund:'退款入账'}
-onMounted(async()=>{try{const d=await walletApi.my();item.value=(d?.logs||[]).find(x=>String(x.id)===String(location.pathname.split('/').pop()))||null}catch(e){}})
+import {ref,onMounted} from 'vue';import {useRoute} from 'vue-router';import {walletApi} from '../api'
+const route=useRoute(),item=ref(null),loadError=ref(false),labels={recharge:'充值',pay:'消费',refund:'退款入账'}
+onMounted(async()=>{try{item.value=await walletApi.logDetail(route.params.id)||null}catch(e){loadError.value=true}})
 </script>
 <style scoped>
 .detail{max-width:860px;margin:0 auto}.hero-card{border-radius:22px;background:linear-gradient(135deg,rgba(19,35,58,.98),rgba(31,56,100,.95));color:#fff}.eyebrow{font-size:11px;letter-spacing:.18em;opacity:.65}h1{color:#fff;margin:8px 0}.amount{font-size:40px;font-weight:800;margin:20px 0}.plus{color:#f6d38a}.minus{color:#ffb4a8}

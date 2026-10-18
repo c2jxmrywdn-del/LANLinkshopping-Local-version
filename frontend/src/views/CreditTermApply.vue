@@ -27,9 +27,11 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { useRouter } from 'vue-router'
 import { creditTermApi } from '../api'
+const router=useRouter()
 const loading=ref(false),form=reactive({requestedLimit:100000,termDays:30,purpose:''})
-async function submit(){loading.value=true;try{await creditTermApi.apply(form);message.success('账期申请已提交');location.href='/credit-term'}finally{loading.value=false}}
+async function submit(){loading.value=true;try{await creditTermApi.apply(form);message.success('账期申请已提交');router.push('/credit-term')}catch(e){/* 拦截器已提示 */}finally{loading.value=false}}
 </script>
 <style scoped>
 .apply{max-width:720px;margin:0 auto}.card{border-radius:22px;box-shadow:0 18px 60px rgba(19,35,58,.08)}.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}h1{margin:6px 0}.sub{color:var(--ll-muted);margin-bottom:18px}.alert{margin-bottom:20px;border-radius:12px}.terms{display:flex}.actions{display:flex;justify-content:flex-end;gap:10px}

@@ -18,7 +18,7 @@ import {message} from 'ant-design-vue'
 import {creditTermApi} from '../../api'
 const list=ref([]),loading=ref(false),status=ref(),open=ref(false),reviewStatus=ref('ACTIVE'),current=ref(null),form=reactive({approvedLimit:0,termDays:30,remark:''})
 const money=v=>Number(v||0).toFixed(2),statusLabel=s=>s==='ACTIVE'?'已生效':s==='PENDING'?'待审核':'已驳回'
-async function load(){loading.value=true;try{list.value=await creditTermApi.adminAccounts(status.value)||[]}finally{loading.value=false}}
+async function load(){loading.value=true;try{list.value=await creditTermApi.adminAccounts(status.value)||[]}catch(e){list.value=[]}finally{loading.value=false}}
 function openReview(row,s){current.value=row;reviewStatus.value=s;form.approvedLimit=Number(row.creditLimit||row.requestedLimit||0);form.termDays=row.termDays||30;form.remark='';open.value=true}
 async function submitReview(){try{await creditTermApi.review(current.value.id,{status:reviewStatus.value,approvedLimit:form.approvedLimit,termDays:form.termDays,remark:form.remark});message.success('审核完成');open.value=false;await load()}catch(e){}}
 onMounted(load)

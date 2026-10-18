@@ -1,9 +1,45 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { gzipSync, brotliCompressSync, constants } from 'node:zlib'
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { join, extname } from 'node:path'
+
+/**
+ * 构建期预压缩插件：为 dist 内 JS/CSS/HTML/JSON/SVG 生成 .gz（Gzip）与 .br（Brotli）文件。
+ * 部署侧（Nginx/静态托管）按 Accept-Encoding 直接回源压缩文件，省去实时压缩 CPU，
+ * 传输体积较原文件缩小 60%~80%（Brotli 优于 Gzip），显著降低首屏资源加载耗时。
+ */
+function precompressPlugin() {
+  return {
+    name: 'precompress-assets',
+    apply: 'build',
+    closeBundle() {
+      const outDir = join(process.cwd(), 'dist')
+      const targets = new Set(['.js', '.css', '.html', '.json', '.svg', '.txt', '.wasm'])
+      const walk = (dir) => {
+        for (const name of readdirSync(dir)) {
+          const p = join(dir, name)
+          const st = statSync(p)
+          if (st.isDirectory()) { walk(p); continue }
+          if (!targets.has(extname(name).toLowerCase())) continue
+          const buf = readFileSync(p)
+          if (buf.length < 1024) continue // 过小文件压缩收益有限，跳过
+          writeFileSync(p + '.gz', gzipSync(buf, { level: 9 }))
+          writeFileSync(p + '.br', brotliCompressSync(buf, {
+            params: { [constants.BROTLI_PARAM_QUALITY]: 11 }
+          }))
+        }
+      }
+      walk(outDir)
+    }
+  }
+}
 
 // 本地开发代理密钥：与后端 application-dev.yml 的 support.proxy-secret 对应。
-// 仅本地开发使用；生产环境由 Vercel 代理函数注入真实密钥（SUPPORT_PROXY_SECRET），不得使用此默认值。
-const LOCAL_DEV_PROXY_SECRET = 'local-dev-support-proxy-secret-000000000000'
+// 安全要求：禁止在仓库中硬编码任何密钥默认值，必须通过环境变量 SUPPORT_PROXY_SECRET 提供
+// （本地写入 .env，Vite 启动时自动加载）。缺失时注入空头，后端 SupportRequestGuard 会拒绝
+// /support/ask 并输出配置指引日志（fail-closed），避免弱口令默认密钥被外部利用。
+const LOCAL_DEV_PROXY_SECRET = process.env.SUPPORT_PROXY_SECRET || ''
 
 // 客服问答接口要求可信代理注入签名头（生产由 Vercel 代理函数负责）。
 // 本地 Vite 代理承担同等职责，否则后端守卫会返回 403，前端显示“客服暂时无法响应”。
@@ -14,6 +50,14 @@ function injectSupportProxyHeaders(proxy) {
   proxy.on('proxyReq', (proxyReq, req) => {
     const rawIp = (req.socket && req.socket.remoteAddress) || 'unknown'
     proxyReq.setHeader('X-Support-Client-IP', rawIp.replace(/^::ffff:/, ''))
+    // 归一化 Origin：后端 CORS 白名单只认可 localhost/127.0.0.1。
+    // 用户经局域网 IP（如 192.168.x.x:5173）访问时 Origin 不在白名单，
+    // 会被 Spring CORS 过滤器以 “Invalid CORS request” 403 拦截。本地 Vite 代理
+    // 作为可信代理，把 Origin/Referer 统一改写为白名单来源，使任意 IP 访问均可用。
+    const localOrigin = 'http://127.0.0.1:5173'
+    proxyReq.setHeader('Origin', localOrigin)
+    const referer = proxyReq.getHeader('Referer')
+    if (referer) proxyReq.setHeader('Referer', String(referer).replace(/^https?:\/\/[^/]+/, localOrigin))
   })
 }
 
@@ -24,9 +68,33 @@ const supportProxy = {
   headers: { 'X-Support-Proxy-Secret': process.env.SUPPORT_PROXY_SECRET || LOCAL_DEV_PROXY_SECRET }
 }
 
+// 通用 /api 代理同样做 Origin 归一化，避免登录/注册等接口经局域网 IP 访问时被 CORS 拦截。
+function normalizeApiOrigin(proxy) {
+  proxy.on('proxyReq', (proxyReq) => {
+    const localOrigin = 'http://127.0.0.1:5173'
+    proxyReq.setHeader('Origin', localOrigin)
+    const referer = proxyReq.getHeader('Referer')
+    if (referer) proxyReq.setHeader('Referer', String(referer).replace(/^https?:\/\/[^/]+/, localOrigin))
+  })
+}
+
+const apiProxy = {
+  target: 'http://localhost:8080',
+  changeOrigin: true,
+  configure: normalizeApiOrigin
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), precompressPlugin()],
   build: {
+    // 生产构建压缩：esbuild 已默认 minify，显式声明便于审查
+    minify: 'esbuild',
+    // 静态资源内联阈值：小于 4KB 的图片/字体转 base64 内联，减少请求数
+    assetsInlineLimit: 4096,
+    // 关闭 sourcemap 上传（减小产物体积、避免源码泄露），本地排障用 vite build --sourcemap
+    sourcemap: false,
+    // chunk 大小告警阈值收紧到 800KB，便于发现异常膨胀
+    chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         // 第三方框架分包：利于浏览器缓存与并行加载，降低首屏 JS 阻塞
@@ -46,10 +114,7 @@ export default defineConfig({
     proxy: {
       // 注意：更精确的路径必须放在 /api 之前（按声明顺序匹配）
       '/api/support/ask': supportProxy,
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      }
+      '/api': apiProxy
     }
   },
   // 生产构建预览（Lighthouse 评测等）同样代理 /api 到后端
@@ -57,10 +122,7 @@ export default defineConfig({
     port: 4173,
     proxy: {
       '/api/support/ask': supportProxy,
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true
-      }
+      '/api': apiProxy
     }
   }
 })
