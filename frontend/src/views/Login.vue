@@ -163,15 +163,21 @@ async function doRegister() {
 </script>
 
 <style scoped>
-.wrap { display: flex; justify-content: center; align-items: center; min-height: 70vh; padding: 16px; }
-.box { width: 420px; max-width: 100%; }
+/* 登录/注册：品牌氛围底 + 悬浮卡片，进入时轻微上浮 */
+.wrap { display: flex; justify-content: center; align-items: center; min-height: 70vh; padding: 16px;
+        background:
+          radial-gradient(680px 340px at 12% 0%, rgba(30, 110, 184, 0.09), transparent 60%),
+          radial-gradient(560px 320px at 95% 100%, rgba(200, 164, 92, 0.12), transparent 60%); }
+.box { width: 420px; max-width: 100%; border-radius: var(--ll-radius-xl, 18px);
+       box-shadow: var(--ll-shadow-lg); border: 1px solid var(--ll-border, #e5e7eb);
+       animation: ll-fade-slide 0.35s var(--ll-ease-out, cubic-bezier(0.22, 1, 0.36, 1)); }
 .tip { text-align: center; margin-top: 12px; color: var(--ll-gray2); }
 .twofa-tip { margin-bottom: 16px; }
 .code-row { display: flex; gap: 8px; }
 .code-row :deep(.ant-input-affix-wrapper), .code-row :deep(.ant-input) { flex: 1; }
 .strength { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .strength .bars { display: inline-flex; gap: 4px; }
-.strength .bar { width: 34px; height: 5px; border-radius: 3px; background: #e5e7eb; }
+.strength .bar { width: 34px; height: 5px; border-radius: 3px; background: var(--ll-border, #e5e7eb); transition: background-color 0.25s ease; }
 .strength .bar.on.s1 { background: #ef4444; }
 .strength .bar.on.s2 { background: #f59e0b; }
 .strength .bar.on.s3 { background: #10b981; }
@@ -179,5 +185,8 @@ async function doRegister() {
 @media (max-width: 480px) {
   .box { width: 100%; }
   .strength .bar { width: 26px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .box { animation: none; }
 }
 </style>

@@ -8,7 +8,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 /**
  * 购物车微服务入口（8104）。
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.lanlink.cloud.common", "com.lanlink.cloud.cart"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.lanlink.cloud.api")
 public class CartServiceApplication {

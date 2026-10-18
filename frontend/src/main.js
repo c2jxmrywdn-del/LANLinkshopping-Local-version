@@ -3,9 +3,11 @@ import { createPinia } from 'pinia'
 import Antd from 'ant-design-vue'
 import 'ant-design-vue/dist/reset.css'
 import './styles/theme.css'
+import './styles/motion.css'
 import App from './App.vue'
 import router from './router'
 import { initRipple } from './utils/ripple'
+import { initScrollReveal } from './utils/scrollReveal'
 import { initI18nDom } from './i18n'
 import * as amplitude from '@amplitude/unified'
 
@@ -40,3 +42,5 @@ initI18nDom()
 
 // 全局按钮点击波纹（事件委托，任何 .ant-btn 生效）
 initRipple()
+// 滚动进场动效：启动 + 每次路由进入后自动扫描 [data-reveal] 元素
+initScrollReveal()

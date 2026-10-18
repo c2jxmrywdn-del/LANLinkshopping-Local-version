@@ -14,7 +14,7 @@
           <div class="media-column">
             <div class="gallery">
               <div class="gallery-main">
-                <img v-if="activeImage" :src="activeImage" :alt="p.title" decoding="async" />
+                <img v-if="activeImage" :key="activeIndex" :src="activeImage" :alt="p.title" class="gallery-img" decoding="async" />
                 <div v-else class="image-placeholder">{{ p.title.slice(0, 2) }}</div>
                 <span v-if="p.stock <= 0" class="sold-out">暂时缺货</span>
               </div>
@@ -98,9 +98,9 @@
 
         <section class="detail-shell">
           <div class="detail-nav">
-            <a href="#description">商品介绍</a>
-            <a href="#parameters">规格参数</a>
-            <a href="#service">服务说明</a>
+            <a href="#description" :class="{ active: activeSection === 'description' }" @click="jumpTo($event, 'description')">商品介绍</a>
+            <a href="#parameters" :class="{ active: activeSection === 'parameters' }" @click="jumpTo($event, 'parameters')">规格参数</a>
+            <a href="#service" :class="{ active: activeSection === 'service' }" @click="jumpTo($event, 'service')">服务说明</a>
           </div>
 
           <div id="description" class="detail-section">
@@ -154,7 +154,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { productApi, trafficApi } from '../api'
@@ -169,6 +169,33 @@ const p = ref(null)
 const qty = ref(1)
 const loading = ref(true)
 const activeIndex = ref(0)
+
+// 详情导航滚动联动：IntersectionObserver 追踪当前可见区块
+const activeSection = ref('description')
+let sectionObserver = null
+function setupSectionObserver() {
+  if (typeof IntersectionObserver === 'undefined') return
+  sectionObserver = new IntersectionObserver((entries) => {
+    // 取可见比例最大的区块作为当前激活项
+    const visible = entries.filter(e => e.isIntersecting)
+    if (!visible.length) return
+    visible.sort((a, b) => b.intersectionRatio - a.intersectionRatio)
+    activeSection.value = visible[0].target.id
+  }, { rootMargin: '-20% 0px -55% 0px', threshold: [0, 0.2, 0.5] })
+  ;['description', 'parameters', 'service'].forEach((id) => {
+    const el = document.getElementById(id)
+    if (el) sectionObserver.observe(el)
+  })
+}
+function jumpTo(e, id) {
+  e.preventDefault()
+  activeSection.value = id
+  const el = document.getElementById(id)
+  if (!el) return
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
+}
+onBeforeUnmount(() => { if (sectionObserver) sectionObserver.disconnect() })
 
 const vipRate = computed(() => user.hasPerm('vip:discount') ? 0.95 : 1)
 const gallery = computed(() => {
@@ -193,6 +220,7 @@ onMounted(async () => {
         sourceDetail: route.query.keyword || null
       }).catch(() => {})
     }
+    nextTick(setupSectionObserver)
   } catch (e) {
     message.error('商品信息加载失败')
   } finally {
@@ -241,6 +269,9 @@ async function buyNow() {
 .product-shell { display:grid; grid-template-columns:minmax(0,1.04fr) minmax(420px,.96fr); gap:48px; background:#fff; border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 10px 35px rgba(24,33,47,.05); }
 .gallery-main { position:relative; aspect-ratio:1/1; max-height:570px; border-radius:16px; background:var(--paper); overflow:hidden; display:flex; align-items:center; justify-content:center; }
 .gallery-main img { width:100%; height:100%; object-fit:contain; }.image-placeholder { font-size:80px; color:#a79f90; }
+/* 图集切换：淡入过渡（key 变化触发） */
+.gallery-img { animation: galleryFade .38s cubic-bezier(.22,1,.36,1); }
+@keyframes galleryFade { from { opacity:0; transform:scale(1.015); } to { opacity:1; transform:scale(1); } }
 .sold-out { position:absolute; top:18px; left:18px; background:#18212f; color:#fff; padding:6px 11px; border-radius:99px; font-size:12px; }
 .thumb-list { display:flex; gap:10px; margin-top:12px; overflow:auto; }.thumb { flex:0 0 68px; width:68px; height:68px; padding:3px; border:1px solid var(--line); border-radius:10px; background:#fff; cursor:pointer; }.thumb.active { border:2px solid var(--ink); padding:2px; }.thumb img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
 .trust-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:18px; color:#68707c; font-size:12px; }.trust-row span { text-align:center; }.trust-row strong { color:#3f6b4b; margin-right:4px; }
@@ -249,7 +280,7 @@ async function buyNow() {
 .decision-list { margin:20px 0; border-top:1px solid var(--line); }.decision-row { display:flex; gap:18px; padding:13px 0; border-bottom:1px solid var(--line); font-size:13px; }.decision-row .label { flex:0 0 48px; color:#8a8d93; }.decision-row .value { color:#303743; font-weight:600; }.decision-row .danger { color:var(--red); }
 .service-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-card div { display:flex; align-items:center; gap:9px; font-size:12px; margin:7px 0; }.service-card b { width:32px; }.service-card span:last-child { color:#777; }.service-icon { color:var(--gold); font-weight:800; }
 .purchase-area { margin-top:20px; }.quantity-line { display:flex; align-items:center; gap:14px; color:#555; font-size:13px; margin-bottom:13px; }.action-row { display:flex; gap:10px; }.cart-btn,.buy-btn { min-width:150px; height:46px; border-radius:9px; font-weight:700; }.cart-btn { border-color:#9b2d20; color:#9b2d20; }.buy-btn { background:#18212f; border-color:#18212f; }.secure-note { margin:10px 0 0; color:#969aa1; font-size:11px; }
-.detail-shell { margin-top:24px; background:#fff; border:1px solid var(--line); border-radius:20px; overflow:hidden; }.detail-nav { display:flex; gap:34px; padding:0 28px; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2; background:rgba(255,255,255,.94); backdrop-filter:blur(10px); }.detail-nav a { padding:18px 0; font-size:14px; font-weight:700; color:#70757e; }.detail-nav a:first-child { color:var(--ink); border-bottom:2px solid var(--ink); }.detail-section { padding:40px 42px; border-bottom:1px solid var(--line); scroll-margin-top:70px; }.detail-section:last-child { border-bottom:0; }.section-heading span { color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.16em; }.section-heading h2 { margin:5px 0 22px; font-size:24px; }.detail-copy { white-space:pre-wrap; color:#525965; line-height:2; font-size:14px; max-width:900px; }.parameter-grid { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line); }.parameter-grid div { min-height:62px; padding:12px 15px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:5px; }.parameter-grid span { color:#969aa1; font-size:11px; }.parameter-grid b { font-size:13px; font-weight:600; }.service-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }.service-grid div { padding:18px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-grid b { font-size:14px; }.service-grid p { color:#777; line-height:1.7; font-size:12px; margin:8px 0 0; }
+.detail-shell { margin-top:24px; background:#fff; border:1px solid var(--line); border-radius:20px; overflow:hidden; }.detail-nav { display:flex; gap:34px; padding:0 28px; border-bottom:1px solid var(--line); position:sticky; top:64px; z-index:2; background:rgba(255,255,255,.94); backdrop-filter:blur(10px); }.detail-nav a { padding:18px 0; font-size:14px; font-weight:700; color:#70757e; border-bottom:2px solid transparent; transition:color .2s ease, border-color .2s ease; }.detail-nav a:hover { color:var(--ink); }.detail-nav a.active { color:var(--ink); border-bottom-color:var(--ink); }.detail-section { padding:40px 42px; border-bottom:1px solid var(--line); scroll-margin-top:130px; }.detail-section:last-child { border-bottom:0; }.section-heading span { color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.16em; }.section-heading h2 { margin:5px 0 22px; font-size:24px; }.detail-copy { white-space:pre-wrap; color:#525965; line-height:2; font-size:14px; max-width:900px; }.parameter-grid { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line); }.parameter-grid div { min-height:62px; padding:12px 15px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:5px; }.parameter-grid span { color:#969aa1; font-size:11px; }.parameter-grid b { font-size:13px; font-weight:600; }.service-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }.service-grid div { padding:18px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-grid b { font-size:14px; }.service-grid p { color:#777; line-height:1.7; font-size:12px; margin:8px 0 0; }
 .mobile-buybar { display:none; }
 @media (max-width:900px) { .product-shell { grid-template-columns:1fr; gap:24px; padding:16px; }.gallery-main { max-height:none; }.buy-column { padding:0; }.detail-section { padding:30px 24px; }.parameter-grid { grid-template-columns:repeat(2,1fr); }.service-grid { grid-template-columns:1fr; } }
 @media (max-width:600px) { .product-page { padding:0 12px 82px; }.crumbs { padding:8px 2px 12px; font-size:12px; }.product-shell { border-radius:14px; padding:10px; border-left:0; border-right:0; box-shadow:none; margin:0 -12px; }.buy-column h1 { font-size:23px; }.price-line strong { font-size:32px; }.trust-row { grid-template-columns:repeat(2,1fr); gap:12px; }.action-row { display:none; }.detail-shell { margin-top:14px; border-radius:14px; }.detail-nav { gap:20px; padding:0 18px; overflow:auto; }.detail-nav a { white-space:nowrap; }.detail-section { padding:26px 18px; }.parameter-grid { grid-template-columns:1fr; }.mobile-buybar { display:flex; position:fixed; z-index:20; left:0; right:0; bottom:0; padding:9px 12px calc(9px + env(safe-area-inset-bottom)); background:rgba(255,255,255,.97); backdrop-filter:blur(12px); border-top:1px solid var(--line); align-items:center; gap:8px; box-shadow:0 -5px 20px rgba(0,0,0,.08); }.mobile-buybar > div { flex:1; display:flex; flex-direction:column; }.mobile-buybar small { color:#8a8d93; font-size:10px; }.mobile-buybar strong { color:var(--red); font-size:18px; }.mobile-buybar .cart-btn,.mobile-buybar .buy-btn { min-width:72px; height:40px; }.mobile-buybar .buy-btn { color:#fff; } }

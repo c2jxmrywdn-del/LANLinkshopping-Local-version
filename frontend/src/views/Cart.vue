@@ -10,7 +10,15 @@
       <a-table :data-source="cart.items" :columns="cols" row-key="cartId" :pagination="false" :scroll="{x:760}">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'check'"><a-checkbox :checked="Boolean(record.checked)" @change="e=>cart.setChecked(record.cartId,e.target.checked)"/></template>
-          <template v-else-if="column.key === 'prod'"><a @click="$router.push('/product/' + record.prodId)"><span class="prod-title">{{ record.title }}</span></a></template>
+          <template v-else-if="column.key === 'prod'">
+            <a class="prod-cell" @click="$router.push('/product/' + record.prodId)">
+              <span class="prod-thumb ll-img-zoom">
+                <img v-if="record.coverUrl" :src="record.coverUrl" :alt="record.title" loading="lazy" decoding="async" />
+                <span v-else class="prod-thumb-fallback">{{ (record.title || '商').slice(0, 1) }}</span>
+              </span>
+              <span class="prod-title">{{ record.title }}</span>
+            </a>
+          </template>
           <template v-else-if="column.key === 'price'">¥{{ Number(record.price||0).toFixed(2) }}</template>
           <template v-else-if="column.key === 'qty'"><a-input-number :value="record.quantity" :min="1" :max="record.stock" @change="v=>cart.setQty(record.cartId,v)"/></template>
           <template v-else-if="column.key === 'sub'"><b>¥{{ Number(record.subtotal||0).toFixed(2) }}</b></template>
@@ -40,5 +48,14 @@ onMounted(()=>cart.load())
 </script>
 
 <style scoped>
-.cart-page{max-width:1080px;margin:0 auto}.head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px}.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}h2{margin:5px 0}.head p{margin:0;color:var(--ll-muted)}.cart-card{border-radius:18px}.select-bar{display:flex;align-items:center;gap:16px;padding:0 0 14px;border-bottom:1px solid var(--ll-border,#e5e7eb);color:var(--ll-muted);font-size:13px}.select-bar span{flex:1}.prod-title{color:var(--ll-ink);font-weight:600}.summary{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:18px;padding:16px 0 2px;border-top:1px solid #eceae5}.summary small{display:block;color:var(--ll-muted);margin-top:3px}.summary-right{display:flex;align-items:center;gap:14px}.summary-right strong{font-size:25px;color:#9b2d20}@media(max-width:640px){.head{flex-direction:column}.select-bar{align-items:flex-start}.summary{flex-direction:column;align-items:stretch}.summary-right{justify-content:space-between}}
+.cart-page{max-width:1080px;margin:0 auto}.head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:18px}.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}h2{margin:5px 0}.head p{margin:0;color:var(--ll-muted)}.cart-card{border-radius:var(--ll-radius-xl,18px)}.select-bar{display:flex;align-items:center;gap:16px;padding:0 0 14px;border-bottom:1px solid var(--ll-border,#e5e7eb);color:var(--ll-muted);font-size:13px}.select-bar span{flex:1}
+/* 商品单元格：缩略图 + 标题，悬停图片轻微缩放 */
+.prod-cell{display:flex;align-items:center;gap:12px}
+.prod-thumb{flex:0 0 56px;width:56px;height:56px;border-radius:var(--ll-radius-sm,8px);background:var(--ll-thumb-bg,#eef1f6);display:grid;place-items:center;overflow:hidden}
+.prod-thumb img{width:100%;height:100%;object-fit:cover}
+.prod-thumb-fallback{color:var(--ll-thumb-fg,#b9c3d4);font-size:20px;font-weight:700}
+.prod-title{color:var(--ll-ink);font-weight:600;transition:color .2s ease}
+.prod-cell:hover .prod-title{color:var(--ll-primary)}
+.summary{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:18px;padding:16px 0 2px;border-top:1px solid var(--ll-border,#eceae5)}.summary small{display:block;color:var(--ll-muted);margin-top:3px}.summary-right{display:flex;align-items:center;gap:14px}.summary-right strong{font-size:25px;color:var(--ll-price,#9b2d20);letter-spacing:-.02em}
+@media(max-width:640px){.head{flex-direction:column}.select-bar{align-items:flex-start}.summary{flex-direction:column;align-items:stretch}.summary-right{justify-content:space-between}.prod-thumb{flex-basis:44px;width:44px;height:44px}}
 </style>

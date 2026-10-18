@@ -39,8 +39,8 @@ public class PaymentProperties {
 
     @Data
     public static class Alipay {
-        /** 网关：正式 https://openapi.alipay.com/gateway.do 沙箱 https://openapi-sandbox.dl.alipaydev.com/gateway.do */
-        private String gatewayUrl = "https://openapi.alipay.com/gateway.do";
+        /** 网关：本地兜底指向沙箱；生产部署请通过配置显式指定正式网关 https://openapi.alipay.com/gateway.do */
+        private String gatewayUrl = "https://openapi-sandbox.dl.alipaydev.com/gateway.do";
         private String appId = "";
         /** 应用私钥（RSA2，PKCS8 base64，切勿入库） */
         private String privateKey = "";

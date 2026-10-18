@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ============================================================
+     LANLink 会员勋章标准模板 · 白银会员 (silver / LEVEL 2)
+     规格：260×54 胶囊母版；导出 112/190/300/364/520 宽
+     状态：locked 灰度静止 / earned 原样 / current 叠加等级色辉光
+     ============================================================ -->
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="108" viewBox="0 0 260 54" fill="none">
+  <style>
+    .b { transform-origin: center center; }
+    .b1 { animation: a1 5s infinite } .b2 { animation: a2 5s infinite }
+    .b3 { animation: a3 5s infinite } .b4 { animation: a4 5s infinite }
+    .b5 { animation: a5 5s infinite } .b6 { animation: a6 5s infinite }
+    .b7 { animation: a7 5s infinite } .b8 { animation: a8 5s infinite }
+    @keyframes a1 { 0%,100% { transform: rotate(0deg) } 50% { transform: rotate(10deg) } }
+    @keyframes a2 { 0%,100% { transform: rotate(10deg) } 50% { transform: rotate(20deg) } }
+    @keyframes a3 { 0%,100% { transform: rotate(20deg) } 50% { transform: rotate(30deg) } }
+    @keyframes a4 { 0%,100% { transform: rotate(30deg) } 50% { transform: rotate(40deg) } }
+    @keyframes a5 { 0%,100% { transform: rotate(40deg) } 50% { transform: rotate(50deg) } }
+    @keyframes a6 { 0%,100% { transform: rotate(50deg) } 50% { transform: rotate(60deg) } }
+    @keyframes a7 { 0%,100% { transform: rotate(60deg) } 50% { transform: rotate(70deg) } }
+    @keyframes a8 { 0%,100% { transform: rotate(90deg) } 50% { transform: rotate(100deg) } }
+    @media (prefers-reduced-motion: reduce) { .b { animation: none !important } }
+  </style>
+  <defs>
+    <filter id="blur"><feGaussianBlur in="SourceGraphic" stdDeviation="3" /></filter>
+    <mask id="badgeMask"><rect width="260" height="54" fill="#fff" rx="10" /></mask>
+    <linearGradient id="mark" x1="6" y1="4" x2="42" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C3CCD6" /><stop offset="1" stop-color="#8C99A8" />
+    </linearGradient>
+  </defs>
+
+  <rect width="260" height="54" rx="10" fill="#dddddd" />
+  <rect x="4" y="4" width="252" height="46" rx="8" fill="none" stroke="#7a808a" stroke-opacity=".5" />
+
+  <text x="48" y="20" font-family="Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="9" font-weight="700" letter-spacing=".08em" fill="#8f959d">LEVEL 2 · LANLINK MEMBERSHIP</text>
+  <text x="48" y="41" font-family="Helvetica, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+        font-size="16" font-weight="800" fill="#4e545c">白银会员</text>
+
+  <!-- 等级徽记：盾星 -->
+  <g transform="translate(8,9) scale(0.72)">
+    <circle cx="24" cy="24" r="21" stroke="url(#mark)" stroke-width="2.2" fill="#fff" fill-opacity=".5" />
+    <circle cx="24" cy="24" r="17" fill="none" stroke="#C3CCD6" stroke-opacity=".45" stroke-width=".9" />
+    <path fill="url(#mark)" fill-rule="evenodd" d="M24 12l9 4v8c0 6-4 10.5-9 12-5-1.5-9-6-9-12v-8l9-4Zm0 6.5l-2.2 4.6-5 .7 3.6 3.5-.9 5 4.5-2.4 4.5 2.4-.9-5 3.6-3.5-5-.7L24 18.5Z" />
+  </g>
+
+  <g mask="url(#badgeMask)" style="mix-blend-mode: overlay">
+    <g class="b b1"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(358,100%,62%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b2"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(30,100%,50%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b3"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(60,100%,50%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b4"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(96,100%,50%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b5"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(233,85%,47%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b6"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(271,85%,47%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b7"><polygon points="0,0 260,54 260,0 0,54" fill="hsl(300,20%,35%)" filter="url(#blur)" opacity=".5" /></g>
+    <g class="b b8"><polygon points="0,0 260,54 260,0 0,54" fill="#ffffff" filter="url(#blur)" opacity=".5" /></g>
+  </g>
+</svg>

@@ -16,14 +16,15 @@
     "lighthouse": "node scripts/lighthouse-check.mjs"
   },
   "dependencies": {
+    "@amplitude/unified": "^1",
+    "@rolldown/binding-win32-x64-msvc": "^1.2.14",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.7.7",
     "pinia": "^2.2.4",
     "qrcode": "^1.5.4",
     "swiper": "^14.2.0",
     "vue": "^3.5.12",
-    "vue-router": "^4.4.5",
-    "@amplitude/unified": "^1"
+    "vue-router": "^4.4.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",

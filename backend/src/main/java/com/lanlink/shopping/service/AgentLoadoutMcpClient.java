@@ -40,7 +40,7 @@ public class AgentLoadoutMcpClient {
     private final AtomicInteger rpcSequence = new AtomicInteger(1);
 
     public AgentLoadoutMcpClient(
-            @Value("${AGENT_LOADOUT_MCP_URL:https://agent-loadout.com/api/mcp}") String endpoint,
+            @Value("${AGENT_LOADOUT_MCP_URL:http://localhost:18090/api/mcp}") String endpoint,
             @Value("${AGENT_LOADOUT_API_KEY:}") String apiKey,
             @Value("${AGENT_LOADOUT_INBOX_ID:}") String inboxId) {
         this.endpoint = validateEndpoint(endpoint);

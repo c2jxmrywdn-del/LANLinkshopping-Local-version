@@ -55,7 +55,13 @@ public class SupportController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(R.<Map<String, Object>>fail(403, fallback));
         }
-        if (!guard.allowRequest(request.getHeader("X-Support-Client-IP"))) {
+        // 客户端 IP：优先可信代理注入的 X-Support-Client-IP，缺失时回退 socket 远端地址兜底，
+        // 避免代理链路偶发丢头导致所有请求被限流拒绝。
+        String clientIp = request.getHeader("X-Support-Client-IP");
+        if (clientIp == null || clientIp.isBlank()) {
+            clientIp = request.getRemoteAddr();
+        }
+        if (!guard.allowRequest(clientIp)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(R.<Map<String, Object>>fail(429, fallback));
         }

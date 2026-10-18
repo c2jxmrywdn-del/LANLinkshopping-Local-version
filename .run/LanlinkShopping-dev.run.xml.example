@@ -7,11 +7,12 @@
     <option name="PROGRAM_PARAMETERS" value="--server.port=8080 --lanlink.crypto.secret=替换为你的强随机密钥并长期保持不变" />
     <option name="WORKING_DIRECTORY" value="file://$ProjectFileDir$/backend" />
     <envs>
-      <!-- 邮箱验证码 SMTP：留空则自动回退演示模式(直接回 devCode)。QQ 邮箱用「授权码」而非登录密码。 -->
-      <env name="MAIL_HOST" value="smtp.qq.com" />
-      <env name="MAIL_PORT" value="465" />
-      <env name="MAIL_USERNAME" value="你的邮箱@qq.com" />
-      <env name="MAIL_PASSWORD" value="你的SMTP授权码" />
+      <!-- 邮箱验证码 SMTP：本地运行模式指向 Mailpit（docker-compose.local.yml，SMTP :1025）。
+           如需切换真实 QQ 邮箱：MAIL_HOST=smtp.qq.com / MAIL_PORT=465 / MAIL_SMTP_SSL=true 并填授权码。 -->
+      <env name="MAIL_HOST" value="localhost" />
+      <env name="MAIL_PORT" value="1025" />
+      <env name="MAIL_USERNAME" value="lanlink@local.dev" />
+      <env name="MAIL_PASSWORD" value="lanlink-local" />
     </envs>
     <method v="2">
       <option name="Make" enabled="true" />

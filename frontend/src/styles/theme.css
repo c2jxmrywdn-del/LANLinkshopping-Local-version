@@ -104,6 +104,92 @@
   --ll-slide1: linear-gradient(120deg, #1f3864, #3f6fb5);
   --ll-slide2: linear-gradient(120deg, #0f6b5c, #39b58f);
   --ll-slide3: linear-gradient(120deg, #8a4b1f, #d98e3a);
+
+  /* =====================================================
+     Design Token Scale v2 · 间距 / 圆角 / 阴影 / 字号
+     全站统一刻度，页面样式优先读取令牌而非硬编码数值。
+     ===================================================== */
+  /* 间距刻度（8pt 网格） */
+  --ll-space-1: 4px;
+  --ll-space-2: 8px;
+  --ll-space-3: 12px;
+  --ll-space-4: 16px;
+  --ll-space-5: 20px;
+  --ll-space-6: 24px;
+  --ll-space-8: 32px;
+  --ll-space-10: 40px;
+  --ll-space-12: 48px;
+
+  /* 圆角刻度 */
+  --ll-radius-sm: 8px;
+  --ll-radius-md: 10px;
+  --ll-radius-lg: 14px;
+  --ll-radius-xl: 18px;
+  --ll-radius-2xl: 24px;
+  --ll-radius-full: 999px;
+
+  /* 阴影刻度（浅色模式） */
+  --ll-shadow-xs: 0 1px 2px rgba(19, 35, 58, 0.05);
+  --ll-shadow-sm: 0 2px 8px rgba(19, 35, 58, 0.07);
+  --ll-shadow-md: 0 8px 28px rgba(19, 35, 58, 0.10);
+  --ll-shadow-lg: 0 16px 48px rgba(19, 35, 58, 0.14);
+  --ll-shadow-xl: 0 24px 70px rgba(19, 35, 58, 0.18);
+
+  /* 字号刻度 */
+  --ll-text-xs: 12px;
+  --ll-text-sm: 13px;
+  --ll-text-base: 14px;
+  --ll-text-md: 16px;
+  --ll-text-lg: 18px;
+  --ll-text-xl: 22px;
+  --ll-text-2xl: 28px;
+  --ll-leading-tight: 1.25;
+  --ll-leading-normal: 1.6;
+  --ll-leading-relaxed: 1.9;
+
+  /* 边框 / 表面（组件以 fallback 方式引用，深色模式自动翻转） */
+  --ll-border: #e5e7eb;
+  --ll-border-strong: #d5dae2;
+  --ll-card: #ffffff;
+  --ll-card-soft: #fbfcfe;
+
+  /* 焦点环（键盘可达性，全站统一） */
+  --ll-focus-ring: 0 0 0 3px rgba(30, 110, 184, 0.28);
+
+  /* 缓动曲线（与 motion.css 同源） */
+  --ll-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ll-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* =====================================================
+   深色模式令牌覆盖（settings store 在 <html> 上设置 data-theme）
+   仅翻转"表面/文字/边框/阴影"类令牌；品牌色与渐变保持不变。
+   重艺术方向页面（AboutUs / ProductDetail 纸感区块）保留刻意
+   的浅色表面，作为深色底上的"画布"层次。
+   ===================================================== */
+[data-theme='dark'] {
+  --ll-page: #0d1420;
+  --ll-white: #16202e;
+  --ll-card: #16202e;
+  --ll-card-soft: #1a2536;
+  --ll-ink: #e8edf5;
+  --ll-muted: #8fa0b5;
+  --ll-gray: #9aa7b8;
+  --ll-gray2: #8fa0b5;
+  --ll-border: #263349;
+  --ll-border-strong: #31405a;
+  --ll-thumb-bg: #1c2839;
+  --ll-thumb-fg: #3d4d66;
+  /* 深色底上价格红提亮，保证 ≥4.5:1 */
+  --ll-price: #ff7161;
+
+  --ll-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --ll-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --ll-shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --ll-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --ll-shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.55);
+
+  --ll-focus-ring: 0 0 0 3px rgba(56, 189, 248, 0.32);
 }
 
 /* 品牌字标统一规范：首页、登录、后台、启动过渡共用同一字标效果。 */

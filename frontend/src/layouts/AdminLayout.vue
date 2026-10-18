@@ -23,6 +23,7 @@
       <a-layout-header class="admin-header">
         <span class="title"><span class="ll-wordmark ll-wordmark-on-light"><span class="ll-lan">LAN</span><span class="ll-link">Link</span><span class="ll-shopping">shopping</span></span> 管理后台</span>
         <a-space>
+          <LanguageSwitcher variant="light" />
           <UserAvatar
             :src="user.user?.avatar || ''"
             :name="user.user?.nickname || '管理员'"
@@ -48,6 +49,7 @@ import { ref, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '../store/user'
 import UserAvatar from '../components/ui/UserAvatar.vue'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
 const router = useRouter()
 const route = useRoute()

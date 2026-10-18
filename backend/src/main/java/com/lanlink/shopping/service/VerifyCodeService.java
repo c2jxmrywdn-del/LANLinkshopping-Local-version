@@ -38,7 +38,8 @@ public class VerifyCodeService {
     private static final long TTL_MS = 5 * 60 * 1000L;
     private static final long COOLDOWN_MS = 60 * 1000L;
     private static final String MAIL_SUBJECT = "【LANLink 商城】邮箱验证码";
-    private static final String DEFAULT_RESEND_API_URL = "https://api.resend.com/emails";
+    /** 本地兜底指向本地邮件 API；使用 Resend 时请通过配置显式指定 https://api.resend.com/emails */
+    private static final String DEFAULT_RESEND_API_URL = "http://localhost:18091/emails";
     private static final Set<String> SUPPORTED_PROVIDERS = Set.of("auto", "smtp", "resend", "agent-loadout");
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
@@ -73,7 +74,7 @@ public class VerifyCodeService {
             @Value("${spring.mail.password:}") String mailPassword,
             @Value("${MAIL_PROVIDER:auto}") String mailProvider,
             @Value("${RESEND_API_KEY:}") String resendApiKey,
-            @Value("${lanlink.mail.resend.api-url:https://api.resend.com/emails}") String resendApiUrl,
+            @Value("${lanlink.mail.resend.api-url:http://localhost:18091/emails}") String resendApiUrl,
             @Value("${lanlink.verify-code.demo-mode:false}") boolean demoMode,
             AgentLoadoutMcpClient agentLoadoutMcpClient) {
         this.mailSender = mailSender;

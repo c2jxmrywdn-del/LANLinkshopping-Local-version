@@ -8,7 +8,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 /**
  * 认证/用户微服务入口（8101）。
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.lanlink.cloud.common", "com.lanlink.cloud.auth"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.lanlink.cloud.api")
 public class AuthServiceApplication {

@@ -8,7 +8,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 /**
  * 商品微服务入口（8103）。
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.lanlink.cloud.common", "com.lanlink.cloud.product"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.lanlink.cloud.api")
 public class ProductServiceApplication {

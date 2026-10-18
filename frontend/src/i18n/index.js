@@ -468,7 +468,9 @@ function _observeDom(){
 
 export function initI18nDom(){
   if(typeof window==='undefined') return
-  const saved=localStorage.getItem('ll_locale')
+  // localStorage 在隐私模式/禁用 Cookie/配额满时会抛异常，必须容错，否则应用启动即崩
+  let saved=null
+  try{ saved=localStorage.getItem('ll_locale') }catch(e){ saved=null }
   if(saved && dicts[saved]) locale.value=saved
   applyDomLocale()
 }

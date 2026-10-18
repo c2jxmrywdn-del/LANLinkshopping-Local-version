@@ -11,12 +11,17 @@
       </div>
       <BrandSymbol class="brand-orbit" size="410px" />
     </section>
-    <div class="brand-promise"><span>01</span><b>DISCOVER</b><em>→</em><span>02</span><b>TRANSACT</b><em>→</em><span>03</span><b>GROW</b></div>
+    <div class="brand-promise" data-reveal="fade-up"><span>01</span><b>DISCOVER</b><em>→</em><span>02</span><b>TRANSACT</b><em>→</em><span>03</span><b>GROW</b></div>
     <BannerCarousel />
 
-    <h2 class="sec"><span>01</span> 行业解决方案</h2>
-    <a-row :gutter="16">
-      <a-col :span="6" v-for="ind in industries" :key="ind.indId">
+    <h2 class="sec" data-reveal><span>01</span> 行业解决方案</h2>
+    <a-row v-if="loadingIndustries" :gutter="[16, 16]">
+      <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
+        <div class="ll-skeleton ind-skeleton"></div>
+      </a-col>
+    </a-row>
+    <a-row v-else :gutter="[16, 16]">
+      <a-col v-for="(ind, i) in industries" :key="ind.indId" :xs="12" :sm="12" :md="8" :lg="6" :data-reveal="'fade-up'" :data-delay="i * 60">
         <a-card hoverable class="ind-card" @click="$router.push({ name: 'mall', query: { indId: ind.indId } })">
           <div class="ind-name" :title="ind.name">{{ ind.name }}</div>
           <div class="ind-desc" :title="'查看'+ind.name+'专区商品'">查看{{ ind.name }}专区商品 →</div>
@@ -24,9 +29,20 @@
       </a-col>
     </a-row>
 
-    <div class="section-head"><h2 class="sec"><span>02</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
-    <a-row :gutter="16">
-      <a-col :span="6" v-for="p in hot" :key="p.prodId">
+    <div class="section-head"><h2 class="sec" data-reveal><span>02</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
+    <a-row v-if="loadingHot" :gutter="[16, 20]">
+      <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
+        <div class="ll-skeleton-card home-skeleton-card" aria-hidden="true">
+          <div class="ll-skeleton ll-skeleton-card__img"></div>
+          <div class="ll-skeleton-card__body">
+            <div class="ll-skeleton ll-skeleton-card__line"></div>
+            <div class="ll-skeleton ll-skeleton-card__line ll-skeleton-card__line--short"></div>
+          </div>
+        </div>
+      </a-col>
+    </a-row>
+    <a-row v-else :gutter="[16, 20]">
+      <a-col v-for="(p, i) in hot" :key="p.prodId" :xs="12" :sm="12" :md="8" :lg="6" :data-reveal="'fade-up'" :data-delay="i * 70">
         <InteractiveProductCard
           :image-url="p.coverUrl || ''"
           :title="p.title"
@@ -52,9 +68,13 @@ import BrandSymbol from '../components/BrandSymbol.vue'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
 const industries = ref([])
 const hot = ref([])
+const loadingIndustries = ref(true)
+const loadingHot = ref(true)
 onMounted(async () => {
-  industries.value = await homeApi.industries()
-  hot.value = await homeApi.hot(8)
+  try { industries.value = await homeApi.industries() }
+  finally { loadingIndustries.value = false }
+  try { hot.value = await homeApi.hot(8) }
+  finally { loadingHot.value = false }
 })
 </script>
 
@@ -62,8 +82,13 @@ onMounted(async () => {
 .sec { margin: 24px 0 12px; }
 .ind-card { text-align: center; height: 116px; margin-bottom: 16px; }
 .ind-card :deep(.ant-card-body) { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 16px; }
-.ind-name { font-size: 18px; font-weight: 700; color: var(--ll-navy); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ind-name { font-size: 18px; font-weight: 700; color: var(--ll-ink); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ind-desc { color: var(--ll-muted); font-size: 13px; margin-top: 6px; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 行业卡骨架：与真实卡片同高，避免加载完成时布局跳动 */
+.ind-skeleton { height: 116px; margin-bottom: 16px; border-radius: var(--ll-radius-lg, 14px); }
+/* 热销卡骨架：贴近 3:4 商品卡比例 */
+.home-skeleton-card { min-height: 320px; display: flex; flex-direction: column; margin-bottom: 16px; }
+.home-skeleton-card .ll-skeleton-card__img { aspect-ratio: auto; flex: 1; }
 .home-page :deep(.interactive-product-card) { margin-bottom: 16px; }
 .thumb { height: 120px; background: var(--ll-thumb-bg); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 40px; color: var(--ll-thumb-fg); margin-bottom: 8px; overflow: hidden; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
@@ -79,6 +104,9 @@ onMounted(async () => {
 .brand-orbit{position:absolute;right:45px;top:10px}
 .brand-promise{display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 34px;padding:13px 16px;border:1px solid #D9D3C7;border-radius:14px;background:rgba(251,249,241,.82);color:#667085;font-size:10px;letter-spacing:.13em;backdrop-filter:blur(14px)}.brand-promise span{color:var(--ll-brand-red);font-weight:800}.brand-promise b{color:var(--ll-brand-base)}.brand-promise em{font-style:normal;color:var(--ll-brand-gold);margin:0 8px}.sec span{font-size:10px;color:var(--ll-brand-gold);letter-spacing:.12em;margin-right:8px;vertical-align:middle}.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px}.section-link{border:0;background:transparent;color:var(--ll-brand-blue);font:inherit;font-size:12px;cursor:pointer}.home-page :deep(.product-card-meta){color:rgba(255,255,255,.84);font-size:12px;line-height:1.5;text-shadow:0 1px 8px rgba(0,0,0,.2)}
 @keyframes ambientFloat{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-18px,18px,0) scale(1.06)}}
+/* 深色模式：承诺条表面翻转，保持可读性 */
+[data-theme='dark'] .brand-promise{background:rgba(22,32,46,.72);border-color:var(--ll-border);color:var(--ll-muted)}
+[data-theme='dark'] .brand-promise b{color:var(--ll-ink)}
 @media(max-width:1000px){.brand-hero{padding:48px 42px}.brand-orbit{right:-100px;opacity:.38}}@media(max-width:640px){.brand-hero{min-height:500px;border-radius:20px;padding:34px 24px;align-items:flex-start}.brand-hero h1{font-size:34px}.brand-orbit{right:-80px;top:auto;bottom:-70px;transform:scale(.683);transform-origin:right bottom}.brand-promise{justify-content:flex-start;overflow-x:auto;white-space:nowrap}.brand-actions{flex-wrap:wrap}.section-head{align-items:flex-end}}
 @media(prefers-reduced-motion:reduce){.ambient-a,.ambient-b,.orbit-dot{animation:none}}
 </style>

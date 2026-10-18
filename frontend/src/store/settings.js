@@ -76,6 +76,31 @@ export const useSettingsStore = defineStore('settings', {
       this.applyAppearance()
       return data
     },
+    /**
+     * 切换语言（供顶栏"中/EN"按钮调用）。
+     * 与 update() 的关键差异：语言是纯本地偏好，持久化失败【不回滚】已切换的语言，
+     * 否则未登录用户点击后会被回滚逻辑立即弹回中文（表现为"按钮无法使用"）。
+     * 正常流程：本地立即生效 → 尝试持久化（登录态）→ 失败仅提示，不回退。
+     */
+    setLanguage(lang) {
+      const next = lang === 'en-US' ? 'en-US' : 'zh-CN'
+      // 1. 本地立即生效（无论是否登录）
+      this.settings = deepMerge(this.settings || {}, { appearance: { language: next } })
+      setLocale(next)
+      // 2. 登录态才持久化；失败不回滚语言（fire-and-forget）
+      if (!this.loaded) return Promise.resolve(next)
+      return userApi.putSettings({ appearance: { language: next } })
+        .then((data) => {
+          this.settings = data
+          setCache('settings', data, 24 * 60 * 60 * 1000)
+          // 不再 applyAppearance() 重设语言，避免与已生效语言竞争
+          return next
+        })
+        .catch((e) => {
+          console.warn('[settings] persist language failed (kept local):', e)
+          return next
+        })
+    },
     /** 登出后清空并回到默认外观 */
     clear() {
       this.settings = null

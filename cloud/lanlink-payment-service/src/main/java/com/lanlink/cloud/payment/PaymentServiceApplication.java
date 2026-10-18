@@ -8,7 +8,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 /**
  * 支付微服务入口（8106）。
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.lanlink.cloud.common", "com.lanlink.cloud.payment"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.lanlink.cloud.api")
 public class PaymentServiceApplication {

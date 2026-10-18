@@ -150,12 +150,13 @@ onMounted(load)
 .ch { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }
 .rf { font-size: 12px; color: #7c3aed; margin-top: 2px; }
 .pay-amount { font-size: 15px; margin-bottom: 14px; color: var(--ll-gray, #4b5563); }
-.pay-amount b { color: #e4393c; font-size: 22px; margin-left: 6px; }
+.pay-amount b { color: var(--ll-price, #e4393c); font-size: 22px; margin-left: 6px; letter-spacing: -.02em; }
 .pay-list { display: flex; flex-direction: column; gap: 10px; }
 .pay-item { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-            border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; cursor: pointer;
-            transition: border-color .2s ease, background-color .2s ease; }
-.pay-item:hover:not(.disabled) { border-color: var(--ll-primary, #1e6eb8); background: rgba(30, 110, 184, .04); }
+            border: 1.5px solid var(--ll-border, #e5e7eb); border-radius: var(--ll-radius-md, 10px); padding: 12px 14px; cursor: pointer;
+            transition: border-color .2s ease, background-color .2s ease, transform .2s var(--ll-ease-out, ease); }
+.pay-item:hover:not(.disabled) { border-color: var(--ll-primary, #1e6eb8); background: rgba(30, 110, 184, .04); transform: translateY(-1px); }
+.pay-item:active:not(.disabled) { transform: scale(0.99); }
 .pay-item.disabled { opacity: .55; cursor: not-allowed; }
 .pay-name { font-weight: 600; }
 .pay-sub { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }

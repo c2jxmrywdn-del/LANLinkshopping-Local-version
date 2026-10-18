@@ -38,9 +38,8 @@ lanlink:
 
     # -------------------- 支付宝（电脑网站支付） --------------------
     alipay:
-      # 网关：正式 https://openapi.alipay.com/gateway.do
-      #      沙箱 https://openapi-sandbox.dl.alipaydev.com/gateway.do
-      gateway-url: https://openapi.alipay.com/gateway.do
+      # 本地运行模式默认指向沙箱；生产部署改用正式网关 https://openapi.alipay.com/gateway.do
+      gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do
       # 支付宝应用 AppID：开放平台 → 我的应用 → 应用详情
       app-id: ""
       # 应用私钥（RSA2，PKCS8 的 base64 字符串，单行）。用"支付宝密钥生成工具"生成，

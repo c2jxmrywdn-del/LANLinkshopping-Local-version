@@ -1,0 +1,310 @@
+/* =====================================================
+   LANLinkshopping 动效与微交互体系（motion.css）
+   与 theme.css 互补：滚动进场 / 卡片浮层 / 骨架屏 / 表单反馈。
+   21st.dev 风格：克制、自然、ease-out 曲线为主。
+   ===================================================== */
+
+/* ---------- 滚动进场动效（scrollReveal.js 驱动） ---------- */
+.ll-reveal-armed {
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.ll-reveal-armed[data-reveal="fade-up"],
+.ll-reveal-armed:not([data-reveal="fade-right"]):not([data-reveal="fade-left"]):not([data-reveal="scale"]) {
+  transform: translateY(22px);
+}
+.ll-reveal-armed[data-reveal="fade-right"] { transform: translateX(-28px); }
+.ll-reveal-armed[data-reveal="fade-left"]  { transform: translateX(28px); }
+.ll-reveal-armed[data-reveal="scale"]      { transform: scale(0.94); }
+
+.ll-revealed {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ll-reveal-armed { opacity: 1; transform: none; }
+  .ll-revealed { transition: none; }
+}
+
+/* ---------- 卡片浮层体系（全站通用类 .ll-card） ---------- */
+.ll-card {
+  background: var(--ll-card, #fff);
+  border-radius: var(--ll-radius-xl, 18px);
+  border: 1px solid var(--ll-border, rgba(31, 56, 100, 0.07));
+  box-shadow: var(--ll-shadow-xs);
+  transition:
+    transform 0.28s var(--ll-ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    box-shadow 0.28s var(--ll-ease-out, cubic-bezier(0.22, 1, 0.36, 1)),
+    border-color 0.28s ease;
+}
+.ll-card-hover:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--ll-shadow-lg);
+  border-color: rgba(30, 110, 184, 0.22);
+}
+.ll-card-hover:active {
+  transform: translateY(-1px);
+  box-shadow: var(--ll-shadow-md);
+}
+
+/* ---------- 按钮微交互：悬停轻微上浮 + 按压回弹 ---------- */
+.ant-btn:not(:disabled) {
+  transition:
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.18s ease,
+    filter 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease !important;
+}
+.ant-btn-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(30, 110, 184, 0.32);
+}
+.ant-btn-primary:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: 0 2px 8px rgba(30, 110, 184, 0.24);
+}
+
+/* ---------- 表单控件焦点动效（柔和描边 + 轻投影） ---------- */
+.ant-input:not(:disabled):focus,
+.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-disabled):focus-within,
+.ant-select-focused .ant-select-selector,
+.ant-picker-focused {
+  box-shadow: 0 0 0 3px rgba(30, 110, 184, 0.14) !important;
+}
+.ant-input:hover:not(:disabled),
+.ant-input-affix-wrapper:hover:not(.ant-input-affix-wrapper-disabled) {
+  border-color: var(--ll-primary, #1E6EB8) !important;
+}
+
+/* ---------- 骨架屏（加载占位，替代生硬 loading） ---------- */
+.ll-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--ll-thumb-bg, #eef1f6) 25%,
+    var(--ll-card-soft, #f6f8fb) 37%,
+    var(--ll-thumb-bg, #eef1f6) 63%
+  );
+  background-size: 400% 100%;
+  animation: ll-skeleton-shimmer 1.35s ease-in-out infinite;
+  border-radius: var(--ll-radius-md, 10px);
+}
+@keyframes ll-skeleton-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ---------- 商品卡骨架（商城/首页加载态专用组合） ---------- */
+.ll-skeleton-card {
+  border-radius: var(--ll-radius-2xl, 24px);
+  border: 1px solid var(--ll-border, #e5e7eb);
+  background: var(--ll-card, #fff);
+  overflow: hidden;
+}
+.ll-skeleton-card .ll-skeleton { border-radius: 0; }
+.ll-skeleton-card__img { aspect-ratio: 3 / 2; }
+.ll-skeleton-card__body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.ll-skeleton-card__line { height: 13px; }
+.ll-skeleton-card__line--short { width: 55%; }
+.ll-skeleton-card__btn { height: 34px; margin-top: 2px; }
+
+/* ---------- 提示气泡进场（Popover/Tooltip 更轻盈） ---------- */
+.ant-popover.zoom-big-appear .ant-popover-inner,
+.ant-tooltip .ant-tooltip-inner {
+  animation: ll-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes ll-pop-in {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ---------- 消息提示（message）统一动效 ---------- */
+.ant-message-notice-content {
+  animation: ll-msg-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(19, 35, 58, 0.16);
+}
+@keyframes ll-msg-in {
+  from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---------- 数字滚动强调（价格/统计变化时可加 .ll-num-pop） ---------- */
+.ll-num-pop {
+  animation: ll-num-pop 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  display: inline-block;
+}
+@keyframes ll-num-pop {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- 图片悬停缩放（商品图/头像，hover 才生效，触屏无副作用） ---------- */
+.ll-img-zoom {
+  overflow: hidden;
+}
+.ll-img-zoom img {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ll-img-zoom:hover img {
+  transform: scale(1.06);
+}
+
+/* ---------- 输入错误抖动反馈（表单校验失败时加 .ll-shake） ---------- */
+.ll-shake {
+  animation: ll-shake 0.38s ease;
+}
+@keyframes ll-shake {
+  0%, 100% { transform: translateX(0); }
+  22%      { transform: translateX(-6px); }
+  44%      { transform: translateX(5px); }
+  66%      { transform: translateX(-3px); }
+  88%      { transform: translateX(2px); }
+}
+
+/* ---------- 状态提示条（成功/警告/错误，统一入场） ---------- */
+.ant-alert {
+  animation: ll-fade-slide 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes ll-fade-slide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- 链接下划线滑入（导航/文字链接增强） ---------- */
+.ll-underline-link {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0% 1.5px;
+  transition: background-size 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.ll-underline-link:hover {
+  background-size: 100% 1.5px;
+}
+
+/* ---------- 全局键盘焦点环（可达性：仅键盘聚焦时显示） ---------- */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ll-focus-ring, 0 0 0 3px rgba(30, 110, 184, 0.28));
+  border-radius: var(--ll-radius-sm, 8px);
+}
+.ant-btn:focus-visible {
+  box-shadow: var(--ll-focus-ring, 0 0 0 3px rgba(30, 110, 184, 0.28));
+}
+
+/* ---------- 文本选区颜色（品牌天蓝） ---------- */
+::selection {
+  background: rgba(30, 110, 184, 0.22);
+  color: inherit;
+}
+[data-theme='dark'] ::selection {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+/* ---------- 滚动条（WebKit 细滚动条 + Firefox 协调色） ---------- */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.38);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(100, 116, 139, 0.6); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- 徽标数字弹跳（购物车/消息数量变化时加 .ll-badge-bounce） ---------- */
+.ll-badge-bounce .ant-badge-count,
+.ll-badge-bounce.ant-badge .ant-badge-count {
+  animation: ll-badge-pop 0.5s var(--ll-ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+}
+@keyframes ll-badge-pop {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- 返回顶部按钮（BackToTop.vue） ---------- */
+.ll-backtop {
+  position: fixed;
+  right: 22px;
+  bottom: 34px;
+  z-index: var(--ll-z-backtop, 90);
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ll-border, #e5e7eb);
+  border-radius: var(--ll-radius-full, 999px);
+  background: color-mix(in srgb, var(--ll-card, #fff) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--ll-shadow-md);
+  color: var(--ll-primary, #1E6EB8);
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(12px) scale(0.9);
+  pointer-events: none;
+  transition:
+    opacity 0.28s var(--ll-ease-out),
+    transform 0.28s var(--ll-ease-out),
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
+.ll-backtop.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.ll-backtop:hover {
+  border-color: rgba(30, 110, 184, 0.4);
+  transform: translateY(-2px) scale(1.04);
+}
+.ll-backtop:active { transform: scale(0.94); }
+
+/* ---------- 空状态柔化（a-empty 默认偏生硬） ---------- */
+.ant-empty {
+  padding: 28px 0;
+}
+.ant-empty .ant-empty-image {
+  opacity: 0.85;
+}
+.ant-empty .ant-empty-description {
+  color: var(--ll-muted, #64748b);
+}
+
+/* ---------- 抽屉/模态进场增强（移动端抽屉自底部滑入更顺滑） ---------- */
+.ant-modal-mask {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+.ant-modal .ant-modal-content {
+  border-radius: var(--ll-radius-xl, 18px);
+  box-shadow: var(--ll-shadow-xl);
+}
+
+/* ---------- 表格行悬停反馈（订单/购物车等列表页） ---------- */
+.ant-table-tbody > tr {
+  transition: background-color 0.18s ease;
+}
+
+/* ---------- 全局减少动效兜底 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .ll-skeleton { animation: none; background: var(--ll-thumb-bg, #eef1f6); }
+  .ll-card, .ll-card-hover:hover { transform: none; transition: none; }
+  .ant-btn:not(:disabled):hover, .ant-btn:not(:disabled):active { transform: none; }
+  .ll-backtop { transition: opacity 0.2s ease; transform: none; }
+  .ll-badge-bounce .ant-badge-count { animation: none; }
+}

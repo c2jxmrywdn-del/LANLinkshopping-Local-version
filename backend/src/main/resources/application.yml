@@ -6,16 +6,16 @@ server:
       charset: UTF-8
       force: true
       enabled: true
-    # Vercel 前端与 Railway API 为跨站请求，必须允许跨站 Session Cookie
+    # 本地运行模式：同源（Vite 代理）+ HTTP，Session Cookie 放开 secure/same-site 限制
     session:
       cookie:
         http-only: true
-        secure: true
-        same-site: none
+        secure: false
+        same-site: lax
 
 spring:
   profiles:
-    default: prod
+    default: dev
   config:
     import: optional:classpath:application-payment.yml
   application:
@@ -27,21 +27,21 @@ spring:
     multipart:
       max-file-size: 5MB
       max-request-size: 6MB
-  # 邮箱验证码支持 SMTP 和 HTTPS 邮件 API。QQ 邮箱 SMTP 默认使用 SSL 465。
-  # MAIL_FROM 可覆盖登录账号；HTTPS API 一般要求已验证的发件域名。
+  # 邮箱验证码：本地运行模式默认指向 Mailpit（localhost:1025）。
+  # 需要真实 QQ 邮箱 SMTP 时：MAIL_HOST=smtp.qq.com / MAIL_PORT=465 / MAIL_SMTP_SSL=true 并填授权码。
   mail:
-    host: ${MAIL_HOST:}
-    port: ${MAIL_PORT:465}
+    host: ${MAIL_HOST:localhost}
+    port: ${MAIL_PORT:1025}
     protocol: smtp
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    username: ${MAIL_USERNAME:lanlink@local.dev}
+    password: ${MAIL_PASSWORD:lanlink-local}
     default-encoding: UTF-8
     properties:
       mail:
         smtp:
-          auth: true
+          auth: false
           ssl:
-            enable: ${MAIL_SMTP_SSL:true}
+            enable: ${MAIL_SMTP_SSL:false}
           starttls:
             enable: ${MAIL_SMTP_STARTTLS:false}
             required: ${MAIL_SMTP_STARTTLS_REQUIRED:false}

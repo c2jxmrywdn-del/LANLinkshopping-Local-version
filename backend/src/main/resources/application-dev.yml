@@ -58,3 +58,9 @@ lanlink:
     demo-mode: true
   demo-data:
     enabled: true
+
+# 本地客服代理密钥：与 frontend/vite.config.js 的 LOCAL_DEV_PROXY_SECRET 对应。
+# 本地 Vite 代理会注入 X-Support-Proxy-Secret / X-Support-Client-IP（生产由 Vercel 代理函数注入）。
+# 生产环境使用 application-prod.yml 的 ${SUPPORT_PROXY_SECRET}，禁止复用此开发默认值。
+support:
+  proxy-secret: ${SUPPORT_PROXY_SECRET:local-dev-support-proxy-secret-000000000000}

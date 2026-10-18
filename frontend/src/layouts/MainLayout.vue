@@ -1,6 +1,6 @@
 <template>
   <a-layout style="min-height: 100vh">
-    <a-layout-header class="header">
+    <a-layout-header class="header" :class="{ 'is-scrolled': scrolled }">
       <div class="header-inner">
         <div class="logo" @click="$router.push('/')">
           <img src="/logo-256.png" alt="LANLinkshopping" class="logo-img" />
@@ -42,10 +42,11 @@
           <span class="nav-indicator" :style="indicatorStyle" aria-hidden="true"></span>
         </div>
         <div class="right">
+          <LanguageSwitcher variant="dark" />
           <a-badge v-if="user.logged" :count="user.unread" :overflow-count="99">
             <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages">🔔 消息</a-button>
           </a-badge>
-          <a-badge :count="cart.count" :overflow-count="99">
+          <a-badge :count="cart.count" :overflow-count="99" :class="{ 'll-badge-bounce': cartBounce }">
             <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart">🛒 购物车</a-button>
           </a-badge>
           <template v-if="user.logged">
@@ -108,6 +109,7 @@
       </div>
     </a-layout-footer>
     <SupportChat />
+    <BackToTop />
   </a-layout>
 </template>
 
@@ -123,6 +125,8 @@ import AuthorCard from '../components/AuthorCard.vue'
 import UserAvatar from '../components/ui/UserAvatar.vue'
 import MembershipIcon from '../components/ui/MembershipIcon.vue'
 import SupportChat from '../components/SupportChat.vue'
+import BackToTop from '../components/BackToTop.vue'
+import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -211,10 +215,39 @@ onMounted(() => {
   if (user.logged) cart.load()
   nextTick(updateIndicator)
   window.addEventListener('resize', updateIndicator)
+  window.addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateIndicator)
+  window.removeEventListener('scroll', onScroll)
   if (mallCloseTimer) clearTimeout(mallCloseTimer)
+})
+
+// 顶栏滚动状态：下滑后加深投影，强化层级感（rAF 节流）
+const scrolled = ref(false)
+let scrollTicking = false
+function onScroll() {
+  if (scrollTicking) return
+  scrollTicking = true
+  requestAnimationFrame(() => {
+    scrolled.value = window.scrollY > 8
+    scrollTicking = false
+  })
+}
+
+// 购物车数量增加时徽标弹跳反馈（减少动效偏好下由 CSS 兜底关闭）
+const cartBounce = ref(false)
+let bounceTimer = null
+watch(() => cart.count, (next, prev) => {
+  if (next <= prev) return
+  cartBounce.value = false
+  // 强制重启动画：先移除类名，下一帧再加回
+  requestAnimationFrame(() => {
+    cartBounce.value = true
+    clearTimeout(bounceTimer)
+    bounceTimer = setTimeout(() => { cartBounce.value = false }, 600)
+  })
 })
 
 function goMessages() {
@@ -258,7 +291,8 @@ function secretTap() {
 </script>
 
 <style scoped>
-.header { background: var(--ll-navy); padding: 0; position: sticky; top: 0; z-index: 100; }
+.header { background: var(--ll-navy); padding: 0; position: sticky; top: 0; z-index: 100; transition: box-shadow 0.25s ease; }
+.header.is-scrolled { box-shadow: 0 6px 24px rgba(8, 15, 30, 0.28); }
 .header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; height: 64px; }
 .logo { display: flex; align-items: center; gap: 9px; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; margin-right: 32px; white-space: nowrap; }
 .logo-img { width: 36px; height: 36px; border-radius: 8px; display: block; }
@@ -295,7 +329,7 @@ function secretTap() {
 .id-scope { font-size: 12px; color: var(--ll-gray, #4b5563); line-height: 1.6; white-space: normal; }
 .id-scope b { color: var(--ll-ink, #0f172a); }
 .content { max-width: 1200px; margin: 0 auto; width: 100%; padding: 24px 16px; }
-.footer{padding:0 16px!important;color:#4b5563!important;background:var(--ll-page);border-top:1px solid #D9D3C7}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-navy)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-navy)}.footer-brand p{margin:9px 0 4px;color:var(--ll-navy);font-size:13px;font-weight:700}.footer-brand small{color:#7B8492;font-size:9px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:#667085;cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-navy);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:#667085;font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
+.footer{padding:0 16px!important;color:var(--ll-muted,#4b5563)!important;background:var(--ll-page);border-top:1px solid var(--ll-border,#D9D3C7)}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-ink)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-ink)}.footer-brand p{margin:9px 0 4px;color:var(--ll-ink);font-size:13px;font-weight:700}.footer-brand small{color:var(--ll-muted,#7B8492);font-size:9px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:var(--ll-muted,#667085);cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-ink);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:var(--ll-muted,#667085);font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
 
 /* 响应式：平板/移动端收紧间距与字号，导航色变与滑动指示条在各尺寸均生效 */
 @media (max-width: 991px) {

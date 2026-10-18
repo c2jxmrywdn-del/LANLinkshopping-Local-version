@@ -1,11 +1,11 @@
 <template>
-  <div>
+  <div class="mall-page">
     <div v-if="promos.length" class="promo-bar">
       <span class="promo-title">🔥 促销进行中</span>
       <span v-for="p in promos" :key="p.promoId" class="promo-item">{{ p.title }}</span>
     </div>
     <div class="toolbar">
-      <a-input-search v-model:value="keyword" placeholder="搜索商品名称" style="width:320px"
+      <a-input-search v-model:value="keyword" placeholder="搜索商品名称" class="toolbar-search"
                       allow-clear @search="reload" />
       <a-select v-model:value="indId" style="width:160px" placeholder="全部行业" allow-clear @change="onIndustryChange">
         <a-select-option v-for="i in industries" :key="i.indId" :value="i.indId">{{ i.name }}</a-select-option>
@@ -16,31 +16,50 @@
         <a-select-option value="priceAsc">价格升序</a-select-option>
         <a-select-option value="priceDesc">价格降序</a-select-option>
       </a-select>
+      <span v-if="!loading && total > 0" class="toolbar-count">共 {{ total }} 件商品</span>
     </div>
 
-    <a-spin :spinning="loading">
-      <a-row :gutter="16">
-        <a-col :span="6" v-for="p in list" :key="p.prodId">
-          <InteractiveProductCard
-            :image-url="p.coverUrl || ''"
-            :title="p.title"
-            :description="p.brand || 'B2B 供应商精选'"
-            :price="'¥' + p.price"
-            @click="$router.push('/product/' + p.prodId)"
-          >
-            <template #footer>
-              <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
-              <div v-if="user.hasPerm('vip:discount')" class="product-card-vip">VIP 价 ¥{{ (p.price * 0.95).toFixed(2) }}</div>
-              <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
-              <a-button v-else size="small" block type="default" @click.stop="$router.push('/login')">登录后购买</a-button>
-            </template>
-          </InteractiveProductCard>
-        </a-col>
-      </a-row>
-      <a-empty v-if="!loading && list.length === 0" description="暂无商品" />
-    </a-spin>
+    <!-- 加载态：骨架屏卡片（首次加载与翻页均展示，替代遮罩式 loading） -->
+    <a-row v-if="loading" :gutter="[16, 20]" aria-busy="true">
+      <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
+        <div class="ll-skeleton-card mall-skeleton-card" aria-hidden="true">
+          <div class="ll-skeleton ll-skeleton-card__img"></div>
+          <div class="ll-skeleton-card__body">
+            <div class="ll-skeleton ll-skeleton-card__line"></div>
+            <div class="ll-skeleton ll-skeleton-card__line ll-skeleton-card__line--short"></div>
+            <div class="ll-skeleton ll-skeleton-card__btn"></div>
+          </div>
+        </div>
+      </a-col>
+    </a-row>
 
-    <div class="pager">
+    <a-row v-else-if="list.length" :gutter="[16, 20]">
+      <a-col v-for="(p, i) in list" :key="p.prodId" :xs="12" :sm="12" :md="8" :lg="6" :data-reveal="'fade-up'" :data-delay="i * 50">
+        <InteractiveProductCard
+          :image-url="p.coverUrl || ''"
+          :title="p.title"
+          :description="p.brand || 'B2B 供应商精选'"
+          :price="'¥' + p.price"
+          @click="$router.push('/product/' + p.prodId)"
+        >
+          <template #footer>
+            <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
+            <div v-if="user.hasPerm('vip:discount')" class="product-card-vip">VIP 价 ¥{{ (p.price * 0.95).toFixed(2) }}</div>
+            <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
+            <a-button v-else size="small" block type="default" @click.stop="$router.push('/login')">登录后购买</a-button>
+          </template>
+        </InteractiveProductCard>
+      </a-col>
+    </a-row>
+
+    <div v-else class="empty-wrap">
+      <a-empty description="没有找到相关商品">
+        <template #image><span class="empty-icon">🔍</span></template>
+        <a-button type="primary" @click="resetFilters">清空筛选条件</a-button>
+      </a-empty>
+    </div>
+
+    <div v-if="total > size" class="pager">
       <a-pagination v-model:current="current" :total="total" :page-size="size" @change="reload" />
     </div>
   </div>
@@ -91,6 +110,14 @@ function onIndustryChange() {
   current.value = 1
   reload()
 }
+function resetFilters() {
+  keyword.value = ''
+  indId.value = undefined
+  catId.value = undefined
+  sort.value = ''
+  current.value = 1
+  reload()
+}
 onMounted(async () => {
   industries.value = await homeApi.industries()
   promotionApi.list().then(d => { promos.value = d || [] }).catch(() => {})
@@ -118,11 +145,32 @@ watch(
 <style scoped>
 .promo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
              background: linear-gradient(90deg, rgba(245,158,11,.12), rgba(232,121,249,.08));
-             border: 1px solid rgba(245,158,11,.35); border-radius: 8px;
-             padding: 8px 14px; margin-bottom: 14px; font-size: 13px; }
+             border: 1px solid rgba(245,158,11,.35); border-radius: var(--ll-radius-lg, 14px);
+             padding: 10px 16px; margin-bottom: 16px; font-size: 13px;
+             animation: ll-fade-slide 0.3s var(--ll-ease-out, cubic-bezier(0.22, 1, 0.36, 1)); }
 .promo-title { font-weight: 700; color: #b45309; }
 .promo-item { color: var(--ll-gray, #4b5563); }
-.toolbar { display: flex; gap: 12px; margin-bottom: 16px; }
+/* 工具栏：容器化 + 粘性，浏览长列表时随时可调整筛选 */
+.toolbar { position: sticky; top: 64px; z-index: 10; display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: center;
+           padding: 12px 14px; background: color-mix(in srgb, var(--ll-card, #fff) 92%, transparent);
+           backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+           border: 1px solid var(--ll-border, #e5e7eb); border-radius: var(--ll-radius-lg, 14px);
+           box-shadow: var(--ll-shadow-xs); }
+.toolbar-search { width: 320px; max-width: 100%; }
+.toolbar-count { margin-left: auto; color: var(--ll-muted, #64748b); font-size: 12px; }
+/* 骨架卡与真实商品卡同比例，避免加载完成时跳动 */
+.mall-skeleton-card { min-height: 330px; display: flex; flex-direction: column; margin-bottom: 16px; }
+.mall-skeleton-card .ll-skeleton-card__img { aspect-ratio: auto; flex: 1; }
+/* 空状态 */
+.empty-wrap { padding: 48px 0; text-align: center; }
+.empty-icon { font-size: 52px; display: inline-block; }
+/* 平板/手机：工具栏竖向流动，控件占满宽度；粘性顶部贴合移动端双行头部 */
+@media (max-width: 768px) {
+  .toolbar { flex-direction: column; align-items: stretch; gap: 10px; top: 0; }
+  .toolbar-search,
+  .toolbar :deep(.ant-select) { width: 100% !important; }
+  .toolbar-count { margin-left: 0; }
+}
 .prod-card { margin-bottom: 16px; }
 :deep(.interactive-product-card) { margin-bottom: 16px; }
 .thumb { height: 120px; background: var(--ll-thumb-bg); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 40px; color: var(--ll-thumb-fg); margin-bottom: 8px; overflow: hidden; }
@@ -134,5 +182,5 @@ watch(
 :deep(.product-card-meta) { color: rgba(255,255,255,.84); font-size: 12px; line-height: 1.45; text-shadow: 0 1px 8px rgba(0,0,0,.2); }
 :deep(.product-card-vip) { color: #F7D894; font-size: 12px; font-weight: 750; }
 :deep(.interactive-product-card .ant-btn) { min-height: 34px; border-radius: 9px; font-weight: 700; }
-.pager { text-align: center; margin: 24px 0; }
+.pager { text-align: center; margin: 28px 0 8px; }
 </style>

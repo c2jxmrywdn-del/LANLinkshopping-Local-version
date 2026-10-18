@@ -1,0 +1,41 @@
+# LANLink AI 网关沙盒：OpenAI 兼容网关 + 本地大模型(Ollama) + 本地知识库
+# 一键启动：docker compose -f ai-gateway/docker-compose.yml up -d --build
+services:
+  ollama:
+    image: docker.m.daocloud.io/ollama/ollama:latest
+    container_name: lanlink-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - lanlink-ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  ai-gateway:
+    build: .
+    image: lanlink-ai-gateway:latest
+    container_name: lanlink-ai-gateway
+    ports:
+      - "8090:8090"
+    environment:
+      PORT: "8090"
+      OLLAMA_BASE_URL: http://ollama:11434
+      LLM_MODEL: qwen2.5:0.5b
+      KB_PATH: /app/kb_data/ecommerce_kb.json
+    depends_on:
+      - ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health',timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  lanlink-ollama-models:
+    # 复用已下载的模型权重卷（qwen2.5:0.5b），避免换卷后重复拉取
+    external: true

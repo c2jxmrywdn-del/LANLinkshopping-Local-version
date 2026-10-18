@@ -14,10 +14,12 @@ export const supportApi = {
         body: JSON.stringify({ action: 'ask', question, visitorToken, persistConversation }),
         signal: controller.signal
       })
-      if (!response.ok) return { answer: unavailable, unavailable: true, visitorToken }
       const body = await response.json().catch(() => null)
-      const answer = body?.data?.answer || body?.message
-      if (typeof answer !== 'string' || !answer) return { answer: unavailable, unavailable: true, visitorToken }
+      // 优先展示后端返回的真实文案（如知识库范围说明），仅在后端无应答时才用通用兜底提示
+      const serverAnswer = body?.data?.answer || body?.message
+      const answer = (typeof serverAnswer === 'string' && serverAnswer) ? serverAnswer : unavailable
+      if (!response.ok) return { answer, unavailable: true, visitorToken }
+      if (answer === unavailable) return { answer, unavailable: true, visitorToken }
       return {
         answer,
         unavailable: false,
@@ -275,4 +277,31 @@ export const membershipApi = {
   my: () => request.get('/membership/my'),
   // 积分抵现试算：返回 { points 实际抵扣积分, amount 抵扣金额, maxAmount 本单上限, balance 积分余额 }
   redeemQuote: (points, orderAmount) => request.get('/membership/redeem-quote', { params: { points, orderAmount } })
+}
+
+// ===== 设计工具对接中台（微服务 lanlink-design-service，经网关 /api/design/**）=====
+// 统一适配器模型：tool 取值 figma / canva / mock；token 经 X-Design-Token 头携带 OAuth 令牌
+export const designApi = {
+  // 适配器能力矩阵
+  tools: () => request.get('/design/tools'),
+  // OAuth 2.0 授权
+  authUrl: (tool, state) => request.get(`/design/auth/${tool}/url`, { params: { state } }),
+  exchangeToken: (tool, code) => request.post(`/design/auth/${tool}/token`, { code }),
+  refreshToken: (tool, refreshToken) => request.post(`/design/auth/${tool}/refresh`, { refreshToken }),
+  // 设计文件 / 组件 / 令牌 / 预览 / 增量同步（≤3s）
+  designFile: (tool, fileKey, token) => request.get(`/design/${tool}/files/${fileKey}`, { headers: { 'X-Design-Token': token } }),
+  components: (tool, fileKey, token, componentIds = []) => request.post(`/design/${tool}/files/${fileKey}/components`, { componentIds }, { headers: { 'X-Design-Token': token } }),
+  tokens: (tool, fileKey, token) => request.get(`/design/${tool}/files/${fileKey}/tokens`, { headers: { 'X-Design-Token': token } }),
+  preview: (tool, fileKey, token, nodeId) => request.get(`/design/${tool}/files/${fileKey}/preview`, { params: { nodeId }, headers: { 'X-Design-Token': token } }),
+  sync: (tool, fileKey, token, sinceVersion) => request.get(`/design/${tool}/files/${fileKey}/sync`, { params: { sinceVersion }, headers: { 'X-Design-Token': token } }),
+  // Canva 模板库 / 编辑器嵌入 / 成果回传（闭环）
+  templates: (tool, token, query = {}) => request.post(`/design/${tool}/templates`, query, { headers: { 'X-Design-Token': token } }),
+  embed: (tool, token, designId) => request.post(`/design/${tool}/embed`, { designId }, { headers: { 'X-Design-Token': token } }),
+  callback: (tool, token, designId, exportUrl) => request.post(`/design/${tool}/callback`, { designId, exportUrl }, { headers: { 'X-Design-Token': token } }),
+  // 前端作品资源库（21st.dev 风格精选）：多维组合筛选 + 关键词检索
+  gallerySearch: (query = {}) => request.post('/design/gallery/search', query),
+  galleryDetail: (caseId) => request.get(`/design/gallery/${caseId}`),
+  galleryFacets: () => request.get('/design/gallery/facets'),
+  // 多格式代码导出（REACT/VUE/HTML/CSS）+ 设计令牌自动映射
+  exportCode: (tool, fileKey, componentId, token, format) => request.post('/design/code/export', { tool, fileKey, componentId, token, format })
 }

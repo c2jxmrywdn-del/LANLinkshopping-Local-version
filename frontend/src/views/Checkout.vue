@@ -250,17 +250,17 @@ async function submit() {
 
 <style scoped>
 .wrap { display: flex; gap: 24px; align-items: flex-start; }
-.left { flex: 1; } .right { width: 360px; }
+.left { flex: 1; border-radius: var(--ll-radius-xl, 18px); } .right { width: 360px; border-radius: var(--ll-radius-xl, 18px); }
 .row { display: flex; justify-content: space-between; padding: 6px 0; }
-.total b { color: #e4393c; font-size: 20px; }
+.total b { color: var(--ll-price, #e4393c); font-size: 20px; letter-spacing: -.02em; }
 /* 地址选择区 */
 .addr-section { margin-bottom: 20px; }
 .addr-title { font-weight: 600; margin-bottom: 10px; }
 .addr-sub { font-size: 12px; font-weight: 400; color: var(--ll-muted, #64748b); margin-left: 8px; }
 .addr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.addr-card { border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; cursor: pointer;
-             transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease; }
-.addr-card:hover { border-color: var(--ll-skyblue-border, #5b8fb5); }
+.addr-card { border: 1.5px solid var(--ll-border, #e5e7eb); border-radius: var(--ll-radius-md, 10px); padding: 10px 12px; cursor: pointer;
+             transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, transform .2s var(--ll-ease-out, ease); }
+.addr-card:hover { border-color: var(--ll-skyblue-border, #5b8fb5); transform: translateY(-1px); }
 .addr-card.active { border-color: var(--ll-primary, #1e6eb8); background: rgba(30, 110, 184, .06);
                     box-shadow: 0 0 0 1px var(--ll-primary, #1e6eb8) inset; }
 .addr-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
@@ -285,4 +285,9 @@ async function submit() {
 .wallet-tip { font-size: 12px; color: var(--ll-muted, #64748b); }
 .wallet-warn { margin-top: 6px; font-size: 12px; color: #b45309; }
 .wallet-warn a { color: var(--ll-primary, #1e6eb8); cursor: pointer; }
+/* 响应式：平板/手机改为单列，订单商品卡自适应宽度 */
+@media (max-width: 900px) {
+  .wrap { flex-direction: column; }
+  .right { width: 100%; }
+}
 </style>

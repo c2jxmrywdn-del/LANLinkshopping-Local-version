@@ -35,7 +35,7 @@ public class MarketingEmailUnsubscribeService {
             UserProfileMapper userProfileMapper,
             UserSettingsService userSettingsService,
             @Value("${MARKETING_UNSUBSCRIBE_SECRET:}") String secret,
-            @Value("${LANLINK_PUBLIC_API_URL:https://lanlinkshopping-production.up.railway.app/api}") String publicApiBaseUrl) {
+            @Value("${LANLINK_PUBLIC_API_URL:http://localhost:8080/api}") String publicApiBaseUrl) {
         this.userProfileMapper = userProfileMapper;
         this.userSettingsService = userSettingsService;
         this.secret = secret == null ? "" : secret.trim();
