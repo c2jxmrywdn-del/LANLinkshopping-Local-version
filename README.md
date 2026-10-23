@@ -222,13 +222,11 @@ the Free Software Foundation, either version 3 of the License, or
 ```
 
 - 完整许可证全文见根目录 [LICENSE](./LICENSE) 文件（GNU GPL v3.0 官方原文）
-- 你可以自由地使用、修改、分发本软件，但**衍生作品必须以相同 GPL-3.0 条款开源**（copyleft）
 - 本软件不提供任何明示或默示的担保，详见许可证第 15-17 节
 
 ## 🙏 致谢
 
 - [Spring Boot](https://spring.io/projects/spring-boot) · [Vue.js](https://vuejs.org/) · [Ant Design Vue](https://antdv.com/) · [MyBatis-Plus](https://baomidou.com/)
-- 前端动效与组件设计参考 [21st.dev](https://21st.dev)（相关组件已标注来源与许可证）
 
 ---
 
