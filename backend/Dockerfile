@@ -8,7 +8,7 @@ COPY src ./src
 RUN mvn -B -DskipTests clean package
 
 # Run as an unprivileged user.
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 
 RUN apt-get update \
