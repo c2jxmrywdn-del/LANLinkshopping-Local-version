@@ -10,7 +10,7 @@
     "web": "workflow web"
   },
   "dependencies": {
-    "next": "^15.3.1",
+    "next": "^16.4.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "workflow": "^5.2.3"
