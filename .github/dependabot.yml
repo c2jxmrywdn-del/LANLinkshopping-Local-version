@@ -1,11 +1,72 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+# Dependabot 配置：按仓库实际依赖清单目录逐生态声明。
+# 原文仅有一条 package-ecosystem:"" 的空配置，等于版本自动更新从未生效。
+# 文档：https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
-  - package-ecosystem: "" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    schedule:
-      interval: "weekly"
+  # ---- 前端与工作流子应用（npm + lockfile）----
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: "chore(deps)" }
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/workflow"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: "chore(deps)" }
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # ---- 后端主服务（Maven）----
+  - package-ecosystem: "maven"
+    directory: "/backend"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: "chore(deps)" }
+
+  # ---- cloud/ 多模块微服务（Maven reactor，父 pom 覆盖全部子模块）----
+  - package-ecosystem: "maven"
+    directory: "/cloud"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: "chore(deps)" }
+
+  # ---- AI 网关（Python）----
+  - package-ecosystem: "pip"
+    directory: "/ai-gateway"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 10
+    commit-message: { prefix: "chore(deps)" }
+
+  # ---- 基础镜像（Docker）----
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule: { interval: "monthly" }
+    commit-message: { prefix: "chore(deps)" }
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule: { interval: "monthly" }
+    commit-message: { prefix: "chore(deps)" }
+  - package-ecosystem: "docker"
+    directory: "/ai-gateway"
+    schedule: { interval: "monthly" }
+    commit-message: { prefix: "chore(deps)" }
+  - package-ecosystem: "docker"
+    directory: "/support-learning-sandbox"
+    schedule: { interval: "monthly" }
+    commit-message: { prefix: "chore(deps)" }
+
+  # ---- GitHub Actions 工作流本身 ----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly", day: "monday", time: "09:00" }
+    open-pull-requests-limit: 5
+    commit-message: { prefix: "chore(ci)" }
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
