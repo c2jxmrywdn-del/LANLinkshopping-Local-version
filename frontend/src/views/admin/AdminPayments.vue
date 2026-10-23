@@ -36,7 +36,7 @@
         </template>
         <template v-else-if="column.key === 'time'">{{ (record.payTime || record.createTime || '').replace('T', ' ') }}</template>
         <template v-else-if="column.key === 'op'">
-          <a-space>
+          <a-space wrap>
             <a-button size="small" @click="$router.push('/admin/payments/' + record.orderNo)">详情</a-button>
             <a-button v-if="record.payStatus === 1 && record.refundStatus !== 'success'"
                       size="small" danger @click="openRefund(record)">退款</a-button>
@@ -120,7 +120,7 @@ const cols = [
   { title: '订单状态', key: 'status', width: 100 },
   { title: '退款', key: 'refund', width: 150 },
   { title: '支付/下单时间', key: 'time', width: 165 },
-  { title: '操作', key: 'op', width: 90 }
+  { title: '操作', key: 'op', width: 220 }
 ]
 
 const pager = computed(() => ({

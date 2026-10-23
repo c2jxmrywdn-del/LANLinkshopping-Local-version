@@ -16,7 +16,7 @@
             @click="onNav"
           >
             <a-menu-item key="home">首页</a-menu-item>
-            <a-menu-item key="mall" @mouseenter="openMallMenu">商城</a-menu-item>
+            <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true">▾</i></a-menu-item>
             <a-menu-item key="promotions">优惠</a-menu-item>
             <a-menu-item v-if="user.hasPerm('credit:view')" key="credit-term">账期</a-menu-item>
             <a-menu-item v-if="user.hasPerm('order:view')" key="orders">我的订单</a-menu-item>
@@ -44,10 +44,10 @@
         <div class="right">
           <LanguageSwitcher variant="dark" />
           <a-badge v-if="user.logged" :count="user.unread" :overflow-count="99">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages">🔔 消息</a-button>
+            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages">🔔<span class="nav-action-label"> 消息</span></a-button>
           </a-badge>
           <a-badge :count="cart.count" :overflow-count="99" :class="{ 'll-badge-bounce': cartBounce }">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart">🛒 购物车</a-button>
+            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart">🛒<span class="nav-action-label"> 购物车</span></a-button>
           </a-badge>
           <template v-if="user.logged">
             <a-dropdown>
@@ -163,9 +163,18 @@ function openMallMenu() {
 
 function scheduleCloseMallMenu() {
   if (mallCloseTimer) clearTimeout(mallCloseTimer)
+  // 140ms 容错：既能在鼠标划出商城区域后自动收起，也不会因指针短暂掠过间隙而误关
   mallCloseTimer = window.setTimeout(() => {
     mallMenuOpen.value = false
-  }, 90)
+  }, 140)
+}
+
+function closeMallMenu() {
+  if (mallCloseTimer) {
+    clearTimeout(mallCloseTimer)
+    mallCloseTimer = null
+  }
+  mallMenuOpen.value = false
 }
 
 function openMallAll() {
@@ -210,17 +219,32 @@ function updateIndicator() {
 }
 watch(selectedKeys, () => nextTick(updateIndicator))
 
+// 商城弹层收起策略：鼠标离开导航/面板、点击页面空白、按 Esc、切换路由都会自动收起
+function onDocumentPointerDown(e) {
+  if (!mallMenuOpen.value) return
+  if (navShell.value && navShell.value.contains(e.target)) return
+  closeMallMenu()
+}
+function onDocumentKeydown(e) {
+  if (e.key === 'Escape') closeMallMenu()
+}
+watch(() => route.fullPath, () => closeMallMenu())
+
 onMounted(() => {
   if (!user.user) user.fetchMe()
   if (user.logged) cart.load()
   nextTick(updateIndicator)
   window.addEventListener('resize', updateIndicator)
   window.addEventListener('scroll', onScroll, { passive: true })
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  document.addEventListener('keydown', onDocumentKeydown)
   onScroll()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateIndicator)
   window.removeEventListener('scroll', onScroll)
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  document.removeEventListener('keydown', onDocumentKeydown)
   if (mallCloseTimer) clearTimeout(mallCloseTimer)
   // 购物车弹跳反馈定时器：卸载时清理，避免回调持有组件实例导致内存泄漏
   clearTimeout(bounceTimer)
@@ -262,6 +286,7 @@ function goCart() {
 }
 
 function onNav({ key }) {
+  closeMallMenu()
   if (key === 'home') router.push('/')
   else router.push('/' + key)
 }
@@ -317,6 +342,19 @@ function secretTap() {
   pointer-events: none;
   transition: left 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.28s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
 }
+/* 商城主入口的展开指示箭头：比纯文字更显眼，面板展开时翻转 */
+.nav-mall .mall-caret {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1;
+  vertical-align: 1px;
+  opacity: .72;
+  transition: transform .2s ease, opacity .2s ease;
+}
+.nav-mall:hover .mall-caret { opacity: 1; }
+.nav-mall .mall-caret.is-open { opacity: 1; transform: rotate(180deg); }
 .right { display: flex; align-items: center; gap: 16px; }
 .user-trigger { display: inline-flex; align-items: center; gap: 7px; }
 .header-avatar { vertical-align: middle; }
@@ -333,6 +371,11 @@ function secretTap() {
 .content { max-width: 1200px; margin: 0 auto; width: 100%; padding: 24px 16px; }
 .footer{padding:0 16px!important;color:var(--ll-muted,#4b5563)!important;background:var(--ll-page);border-top:1px solid var(--ll-border,#D9D3C7)}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-ink)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-ink)}.footer-brand p{margin:9px 0 4px;color:var(--ll-ink);font-size:13px;font-weight:700}.footer-brand small{color:var(--ll-muted,#7B8492);font-size:9px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:var(--ll-muted,#667085);cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-ink);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:var(--ll-muted,#667085);font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
 
+/* 宽屏：顶栏不再跟随 1200px 内容区居中，改为贴近浏览器左右边缘，让品牌与导航整体左移 */
+@media (min-width: 1400px) {
+  .header-inner { max-width: none; padding-inline: clamp(24px, 5.5vw, 120px); }
+}
+
 /* 响应式：平板/移动端收紧间距与字号，导航色变与滑动指示条在各尺寸均生效 */
 @media (max-width: 991px) {
   .logo { margin-right: 16px; }
@@ -341,14 +384,19 @@ function secretTap() {
 @media (max-width: 767px) {
   /* 移动端：头部两行布局——品牌+操作区在上，导航独占一行可横向滑动（防 flex 压缩塌缩为 0） */
   .header { height: auto; }
-  .header-inner { flex-wrap: wrap; height: auto; padding: 6px 12px; }
-  .nav-shell { flex-basis: 100%; order: 3; overflow-x: auto; scrollbar-width: none; }
+  .header-inner { flex-wrap: wrap; height: auto; padding: 6px 10px; }
+  .nav-shell { flex-basis: 100%; order: 3; overflow-x: auto; scrollbar-width: none; margin-inline: -10px; padding-inline: 10px; }
   .nav-shell::-webkit-scrollbar { display: none; }
   .nav { white-space: nowrap; }
   .logo { margin-right: 10px; }
   .logo-text { display: none; }
-  .header :deep(.ant-menu-horizontal .ant-menu-item) { font-size: 14px; padding-inline: 12px; }
-   .right { gap: 10px; }
-  .footer-inner{grid-template-columns:1fr;gap:18px;padding:24px 0}.footer-links{justify-content:flex-start}.footer-meta{text-align:left;grid-column:auto}
+  .header :deep(.ant-menu-horizontal .ant-menu-item) { font-size: 13px; padding-inline: 10px; }
+  .right { gap: 6px; margin-left: auto; }
+  /* 窄屏只保留图标，避免消息/购物车/用户名把顶栏挤爆 */
+  .nav-action-label { display: none; }
+  .header-user-name { display: none; }
+  .id-badge { display: none; }
+  .content { padding: 16px 10px 28px; }
+  .footer-inner{grid-template-columns:1fr;gap:18px;padding:22px 0 18px}.footer-links{justify-content:flex-start}.footer-meta{text-align:left;grid-column:auto}
 }
 </style>

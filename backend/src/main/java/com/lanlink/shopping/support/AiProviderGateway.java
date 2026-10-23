@@ -21,7 +21,7 @@ public class AiProviderGateway {
         if (!isConfigured(baseUrl, apiKey)) throw new IllegalArgumentException("AI provider is not configured");
         String body = "{\"model\":\"" + escape(model) + "\",\"messages\":[{\"role\":\"user\",\"content\":\"" + escape(prompt) + "\"}]}";
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(baseUrl.replaceAll("/+$", "") + "/v1/chat/completions"))
+            HttpRequest req = HttpRequest.newBuilder(URI.create(OutboundModelConfigService.chatCompletionsEndpoint(baseUrl)))
                     .timeout(Duration.ofSeconds(8)).header("Authorization", "Bearer " + apiKey)
                     .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build();
             HttpResponse<String> response = client.send(req, HttpResponse.BodyHandlers.ofString());

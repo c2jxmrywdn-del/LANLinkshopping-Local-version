@@ -1,6 +1,7 @@
 // 轻量 i18n：locale ref + t('a.b') 取值，取不到回退中文再回退 key
 import { ref } from 'vue'
 import { LOCALE_STORAGE_KEY, detectLocale } from '../utils/localeDetect'
+import { UI_ZH_EN_EXTRA, ZH_EN_PATTERNS } from './zh-en-extra'
 
 export const locale = ref('zh-CN')
 
@@ -423,6 +424,28 @@ const UI_ZH_EN = {
   '聚合 · 连接 · 一体多元解决方案':'Aggregate · Connect · Integrated Multi-Solution','关于 LANLinkshopping':'About LANLinkshopping','查看详情':'View Details',
   '行业':'Industry','行业列表':'Industry List','全部行业':'All Industries','行业数据暂时无法更新':'Industry data is temporarily unavailable','自动同步':'Auto Sync','同步中…':'Syncing…','该行业暂无细分分类':'No subcategories in this industry yet','行业已自动接入，等待商品分类配置。':'This industry is connected automatically and is waiting for category configuration.','综合商品中心':'All-Industry Product Center','覆盖平台当前全部行业采购供给。':'Covers procurement supply across all industries on the platform.','采购入口':'Procurement','热销采购':'Best-Selling Procurement','查看全平台供给':'View platform-wide supply','按销量快速筛选':'Quickly filter by sales','采购优惠':'Procurement Offers','满减与行业折扣':'Threshold discounts and industry offers','类':'categories','进入':'Enter',
   '待审核':'Pending Review','已通过':'Approved','已驳回':'Rejected','审核通过':'Approve','审核完成':'Review Completed','资质核验':'Qualification Check','提交申请':'Application Submitted','材料':'Materials','已入驻':'Onboarded','原因':'Reason','工商信息':'Business Registration','主体类型':'Entity Type','注册资本':'Registered Capital','入驻方式':'Onboarding Method','企业ID':'Enterprise ID','商户ID':'Merchant ID','纳税申报':'Tax Filing','证照材料':'Licensing Documents','申请时间':'Application Time','营业执照':'Business License','查看原件':'View Original','近期纳税记录':'Recent Tax Records','税务登记号':'Tax Registration No.','纳税记录材料':'Tax Record Documents','记录':'Record','已具备资质':'Existing Qualifications','驳回原因':'Rejection Reason','操作':'Actions','快速查看':'Quick View','档案':'Profile','通过':'Approve','驳回':'Reject','商户档案详情':'Merchant Profile Details','驳回入驻申请':'Reject Onboarding Application','驳回原因（必填，将展示给商户用于整改）':'Rejection reason (required; shown to the merchant for remediation)','请输入驳回原因':'Please enter a rejection reason','确认通过':'Confirm Approval','审核通过该商户入驻申请':'Approve this merchant onboarding application',
+  // 入驻证照：示例照片与图片回退（CertSampleHint / CertImage）
+  '示例':'Sample',
+  '营业执照示例照片':'Business license sample','完税凭证示例照片':'Tax payment certificate sample','危险化学品经营许可证示例照片':'Hazardous Chemicals Business License sample',
+  '红色边框、国徽、统一社会信用代码与发照机关公章需完整入镜，四角不裁切。':'Include the red border, national emblem, unified social credit code and issuing-authority seal; do not crop the corners.',
+  '电子税务局完税证明或纳税记录，需含纳税人识别号、税款所属期与税务机关印章。':'E-tax bureau payment certificate or tax record showing the taxpayer ID, tax period and tax-authority seal.',
+  '真实《危险化学品经营许可证》（副本）：需含许可证编号、经营方式、许可范围、有效期与发证机关印章；示例中编号、统一社会信用代码、企业名称、住所、法定代表人及二维码已打码。':'A real Hazardous Chemicals Business License (duplicate): include the license number, business mode, permitted scope, validity period and issuing-authority seal; in this sample the number, unified social credit code, company name, address, legal representative and QR code are masked.',
+  '原件未上传':'Original not uploaded','原件加载失败':'Original failed to load','上传中':'Uploading','加载失败':'Load failed',
+  '营业执照图片加载失败，请重新上传':'Failed to load the business license image; please upload again',
+  '许可证图片加载失败，请重新上传':'Failed to load the permit image; please upload again',
+  '原件图片加载失败，请点击右上角「新窗口打开原图」核验':'Failed to load the original; use “Open original in new window” at the top right to review it',
+  '商户暂未上传营业执照原件':'The merchant has not uploaded the business license','查看原图 ↗':'View original ↗',
+  // 完税记录季度/月度口径
+  '已上传':'Uploaded','待上传':'Pending upload','上报':'Submit','补报':'Submit late','重报':'Resubmit','企业所得税':'Corporate Income Tax',
+  '企业所得税完税凭证示例照片':'Corporate income tax certificate sample',
+  '税务登记号及本季度完税记录':'Tax Registration No. & Quarterly Tax Records',
+  '本季度应报月份：':'Months due this quarter:','按季度提交：':'Submit quarterly:',
+  '各 1 份《企业所得税》完税凭证（PDF/JPG/PNG，共 3 份）':'one corporate income tax certificate per month (PDF/JPG/PNG; 3 files in total)',
+  '季度完税材料：':'Quarterly tax records:','完税记录月度上报':'Monthly Tax Record Reporting',
+  '入驻首季按季度提交近 3 个月（共 3 份）；之后每月上报上一自然月记录，次月 15 日前完成，最多延期 15 天。':'Submit 3 months of records (3 files) in the first quarter; afterwards report the previous calendar month by the 15th of the following month, with a grace period of up to 15 days.',
+  '本期所属：':'Current period:','（企业所得税）':'(Corporate Income Tax)',
+  '完税记录上报情况 · 逾期未报将影响商铺经营评级':'Tax record reporting · overdue submissions affect your merchant rating',
+  '真实《税收完税证明》：需含企业所得税税种、税款所属期、入（退）库日期与税务机关印章；票证号、纳税人识别号、金额已打码。':'A real Tax Payment Certificate showing the corporate income tax type, tax period, treasury entry date and tax authority seal; voucher no., taxpayer ID and amounts are masked.',
   '平台运营 13800000000':'Platform Ops 13800000000','采购方':'Buyer','商户/供应商':'Merchant / Supplier','注册身份':'Registration Role','邮箱（选填）':'Email (optional)','11 位手机号':'11-digit phone number','至少 8 位，含字母与数字':'At least 8 characters, including letters and numbers','两次输入的密码不一致':'The passwords do not match','密码强度不足，至少 8 位且含字母与数字':'Password is too weak; use at least 8 characters with letters and numbers','演示账号（密码均 123456）':'Demo accounts (all passwords are 123456)','演示: 13900000001':'Demo: 13900000001','演示密码: 123456':'Demo password: 123456','动态验证码':'One-Time Code','验证并登录':'Verify & Sign In','返回重新登录':'Back to Sign In','去登录':'Go to Sign In','注册账号':'Create Account','请填写 6 位动态验证码':'Enter the 6-digit one-time code','验证码错误或未获取':'Invalid or missing verification code',
   '必要 Cookie 用于登录、会话和安全功能；可选 Cookie 用于记住偏好、分析平台使用情况及改善营销体验。':'Necessary cookies support sign-in, sessions and security; optional cookies remember preferences, analyze usage and improve marketing experiences.','你可以接受全部，也可以仅启用必要 Cookie。':'You can accept all cookies or enable only necessary cookies.','必要 Cookie 用于身份认证、会话保持、CSRF 防护和核心交易流程，无法关闭。':'Necessary cookies support authentication, sessions, CSRF protection and core transaction flows and cannot be disabled.','当前状态：尚未选择':'Current status: Not selected','当前：':'Current:','更新时间：':'Updated:','管理必要、偏好、分析和营销 Cookie。必要 Cookie 始终启用。':'Manage necessary, preference, analytics and marketing cookies. Necessary cookies are always enabled.','当前平台默认不启用第三方广告追踪':'Third-party ad tracking is disabled by default on this platform',
   '扫码登录':'Scan to Sign In','扫码登录二维码':'Sign-in QR code','扫码支付二维码':'Payment QR code',
@@ -440,7 +463,8 @@ const UI_ZH_EN = {
   '登录未配置，请在 application-social.yml 中填写凭证后启用':'sign-in is not configured; fill in application-social.yml to enable it',
   '未配置':'Not configured',
   '社交登录已取消或授权失败':'Social sign-in was cancelled or failed',
-  '无法确定授权渠道，请重新发起社交登录':'Could not determine the provider; please start social sign-in again'
+  '无法确定授权渠道，请重新发起社交登录':'Could not determine the provider; please start social sign-in again',
+  ...UI_ZH_EN_EXTRA
 }
 
 const _zhOrder = Object.keys(UI_ZH_EN).sort((a,b)=>b.length-a.length)
@@ -455,6 +479,23 @@ let _domApplying = false
 
 function _translateString(value, toEn) {
   if (!value || !toEn || !/[\u4e00-\u9fff]/.test(value)) return value
+
+  // 1) 整句词条（保留原有首尾空白，避免布局文本粘连）
+  const lead = value.match(/^\s*/)[0]
+  const tail = value.match(/\s*$/)[0]
+  const core = value.trim()
+  const exact = UI_ZH_EN[core]
+  if (exact !== undefined) return lead + exact + tail
+
+  // 2) 动态句式：数字/状态插值的整句翻译
+  for (const [re, repl] of ZH_EN_PATTERNS) {
+    const m = re.exec(core)
+    if (m) {
+      const out = typeof repl === 'function' ? repl(m) : core.replace(re, repl)
+      if (out !== core) return lead + out + tail
+    }
+  }
+
   const MARK = '\u0001'
   let out = value.replace(_zhPattern, (m) => (UI_ZH_EN[m] ?? m) + MARK)
   // 中文原文无空格，多个词条连译会粘连成 "Please enterReceiverName"；
@@ -467,12 +508,23 @@ function _translateString(value, toEn) {
   return /[\u4e00-\u9fff]/.test(out) ? value : out
 }
 
-function _isIgnoredNode(node) {
+/**
+ * 翻译业务数据中的可译文案（如昵称、头像 alt），供组件在渲染前直接使用，
+ * 避免中文缩写或 "张三 的头像" 之类拼接串残留。
+ */
+export function translateDataText(value) {
+  if (locale.value !== 'en-US') return value
+  return _translateString(value, true)
+}
+
+function _isIgnoredNode(node, forAttr = false) {
   if (!node) return true
   const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement
   if (!el) return true
   const tag = el.tagName
-  if (tag === 'FONT' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') return true
+  if (tag === 'FONT' || tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT') return true
+  // textarea 的正文不翻译（用户输入），但它的 placeholder 属于界面文案，需要翻译
+  if (!forAttr && tag === 'TEXTAREA') return true
   return Boolean(el.closest?.('.skiptranslate, [data-no-translate]'))
 }
 
@@ -494,18 +546,22 @@ function _walkAndTranslate(root=document.body) {
     if(next!==node.nodeValue) node.nodeValue=next
   }
   const attrs=['placeholder','title','aria-label','alt']
-  root.querySelectorAll?.('*').forEach(el=>{
-    if (_isIgnoredNode(el)) return
+  // 新增子树时 root 自身的属性也必须处理：Vue 常把 title/aria-label 直接写在
+  // 新插入的根节点上（如社交登录按钮、商品卡片），只遍历子孙会漏译。
+  const attrRoots=[]
+  if (root.nodeType === Node.ELEMENT_NODE) attrRoots.push(root)
+  if (root.querySelectorAll) root.querySelectorAll('*').forEach(el=>attrRoots.push(el))
+  for(const el of attrRoots){
+    if (_isIgnoredNode(el, true)) continue
     for(const attr of attrs){
       if(!el.hasAttribute(attr)) continue
-      const key=el
-      let cache=_attrSources.get(key)
-      if(!cache){cache={};_attrSources.set(key,cache)}
+      let cache=_attrSources.get(el)
+      if(!cache){cache={};_attrSources.set(el,cache)}
       if(cache[attr]===undefined) cache[attr]=el.getAttribute(attr)
       const next=_translateString(cache[attr],true)
       if(next!==el.getAttribute(attr)) el.setAttribute(attr,next)
     }
-  })
+  }
 }
 
 function _restoreChinese(root=document.body) {
@@ -545,6 +601,19 @@ let _mutationCount = 0
 let _mutationWindowStart = 0
 const MAX_MUTATIONS_PER_SEC = 60
 
+// 大批量渲染（表格/后台仪表盘）会在一秒内产生上百条 DOM 变更。
+// 此时不做逐条处理，合并为一次全量扫描，既避免卡顿，也不会漏译后续渲染的内容。
+let _pendingFullScan = null
+function _scheduleFullScan(){
+  if (_pendingFullScan) return
+  _pendingFullScan = setTimeout(() => {
+    _pendingFullScan = null
+    if (locale.value !== 'en-US' || !document.body) return
+    _domApplying = true
+    try { _walkAndTranslate(document.body) } finally { _domApplying = false }
+  }, 150)
+}
+
 function _observeDom(){
   if(typeof MutationObserver==='undefined' || !document.body) return
   if(_observer) _observer.disconnect()
@@ -559,8 +628,8 @@ function _observeDom(){
     }
     _mutationCount += mutations.length
     if (_mutationCount > MAX_MUTATIONS_PER_SEC) {
-      console.warn('[i18n] Runaway DOM mutation detected; disconnecting observer to prevent UI lockup.')
-      _observer.disconnect()
+      _mutationCount = 0
+      _scheduleFullScan()
       return
     }
 
@@ -594,7 +663,7 @@ function _observeDom(){
           })
         } else if(m.type==='attributes'){
           const el=m.target
-          if(_isIgnoredNode(el)) continue
+          if(_isIgnoredNode(el, true)) continue
           const attr=m.attributeName
           if(['placeholder','title','aria-label','alt'].includes(attr)){
             let cache=_attrSources.get(el); if(!cache){cache={};_attrSources.set(el,cache)}

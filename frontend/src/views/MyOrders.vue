@@ -18,7 +18,7 @@
           <div v-else-if="record.refundStatus === 'success'" class="rf">已全额退款 ¥{{ record.refundAmount }}</div>
         </template>
         <template v-else-if="column.key === 'op'">
-          <a-space>
+          <a-space wrap>
             <a @click="$router.push('/orders/' + record.orderNo)">详情</a>
             <a v-if="record.payStatus === 0 && record.orderStatus === 0 && record.payType !== 'term'" @click="openPay(record)">支付</a>
             <a v-if="canRefund(record)" @click="openRefund(record)">申请退款</a>
@@ -110,7 +110,7 @@ const cols = [
   { title: '支付方式', dataIndex: 'payType', key: 'payType', width: 120 },
   { title: '支付状态', key: 'pay', width: 110 },
   { title: '订单状态', key: 'status', width: 130 },
-  { title: '操作', key: 'op', width: 120 }
+  { title: '操作', key: 'op', width: 220 }
 ]
 
 // ===== 支付弹窗 =====

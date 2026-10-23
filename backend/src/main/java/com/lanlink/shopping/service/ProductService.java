@@ -5,13 +5,30 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.entity.AuditLog;
+import com.lanlink.shopping.entity.Category;
+import com.lanlink.shopping.entity.Enterprise;
+import com.lanlink.shopping.entity.Industry;
+import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.entity.Product;
+import com.lanlink.shopping.mapper.AuditLogMapper;
+import com.lanlink.shopping.mapper.CategoryMapper;
+import com.lanlink.shopping.mapper.EnterpriseMapper;
+import com.lanlink.shopping.mapper.IndustryMapper;
+import com.lanlink.shopping.mapper.MerchantMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 商城与商品服务
@@ -20,9 +37,32 @@ import java.time.LocalDateTime;
 public class ProductService {
 
     private final ProductMapper productMapper;
+    private final MerchantMapper merchantMapper;
+    private final EnterpriseMapper enterpriseMapper;
+    private final CategoryMapper categoryMapper;
+    private final IndustryMapper industryMapper;
+    private final AuditLogMapper auditLogMapper;
+    private final AuditService auditService;
+
+    @Autowired
+    public ProductService(ProductMapper productMapper,
+                          @Autowired(required = false) MerchantMapper merchantMapper,
+                          @Autowired(required = false) EnterpriseMapper enterpriseMapper,
+                          @Autowired(required = false) CategoryMapper categoryMapper,
+                          @Autowired(required = false) IndustryMapper industryMapper,
+                          @Autowired(required = false) AuditLogMapper auditLogMapper,
+                          @Autowired(required = false) AuditService auditService) {
+        this.productMapper = productMapper;
+        this.merchantMapper = merchantMapper;
+        this.enterpriseMapper = enterpriseMapper;
+        this.categoryMapper = categoryMapper;
+        this.industryMapper = industryMapper;
+        this.auditLogMapper = auditLogMapper;
+        this.auditService = auditService;
+    }
 
     public ProductService(ProductMapper productMapper) {
-        this.productMapper = productMapper;
+        this(productMapper, null, null, null, null, null, null);
     }
 
     /** 分页查询(前台): 关键词/分类/行业/排序 */
@@ -127,11 +167,104 @@ public class ProductService {
 
     /** 管理后台: 全量商品分页(含已下架), 可按状态/关键词筛选 */
     public IPage<Product> adminPage(long current, long size, Integer status, String keyword) {
+        return adminPage(current, size, status, null, null, null, keyword);
+    }
+
+    /** 管理后台: 多维组合筛选商品分页（状态/审核状态/行业/分类/关键词） */
+    public IPage<Product> adminPage(long current, long size, Integer status, Integer reviewStatus, Long indId, Long catId, String keyword) {
         return productMapper.selectPage(new Page<>(current, size),
                 Wrappers.<Product>lambdaQuery()
                         .eq(status != null, Product::getStatus, status)
+                        .eq(reviewStatus != null, Product::getReviewStatus, reviewStatus)
+                        .eq(indId != null, Product::getIndId, indId)
+                        .eq(catId != null, Product::getCatId, catId)
                         .like(StringUtils.hasText(keyword), Product::getTitle, keyword)
                         .orderByDesc(Product::getCreateTime));
+    }
+
+    /** 管理后台: 商品审核统计看板 */
+    public Map<String, Object> adminStats() {
+        List<Product> all = productMapper.selectList(null);
+        long total = all.size();
+        long pending = all.stream().filter(p -> p.getReviewStatus() != null && p.getReviewStatus() == 0).count();
+        long approved = all.stream().filter(p -> p.getReviewStatus() != null && p.getReviewStatus() == 1).count();
+        long rejected = all.stream().filter(p -> p.getReviewStatus() != null && p.getReviewStatus() == 2).count();
+        long onSale = all.stream().filter(p -> p.getStatus() != null && p.getStatus() == 1).count();
+        long offShelf = all.stream().filter(p -> p.getStatus() != null && p.getStatus() == 0).count();
+        double passRate = total > 0 ? (double) approved / total * 100.0 : 0.0;
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("total", total);
+        out.put("pending", pending);
+        out.put("approved", approved);
+        out.put("rejected", rejected);
+        out.put("onSale", onSale);
+        out.put("offShelf", offShelf);
+        out.put("passRate", Math.round(passRate * 10.0) / 10.0);
+        return out;
+    }
+
+    /** 管理后台: 商品审核全景详情与合规初筛校验报告 */
+    public Map<String, Object> adminDetail(Long prodId) {
+        Product p = productMapper.selectById(prodId);
+        if (p == null) throw new BusinessException("商品不存在");
+
+        Merchant m = merchantMapper != null && p.getMerId() != null ? merchantMapper.selectById(p.getMerId()) : null;
+        Enterprise ent = enterpriseMapper != null && m != null && m.getEntId() != null ? enterpriseMapper.selectById(m.getEntId()) : null;
+        Category cat = categoryMapper != null && p.getCatId() != null ? categoryMapper.selectById(p.getCatId()) : null;
+        Industry ind = industryMapper != null && p.getIndId() != null ? industryMapper.selectById(p.getIndId()) : null;
+
+        // 广告法违禁词合规初筛扫描
+        List<String> bannedHits = new ArrayList<>();
+        String[] bannedWords = {"最优质", "全网第一", "顶级", "国家级", "垄断", "绝无仅有", "包治百病", "万能", "绝对", "首家", "极品"};
+        String textToScan = (p.getTitle() != null ? p.getTitle() : "") + " " + (p.getDetail() != null ? p.getDetail() : "");
+        for (String w : bannedWords) {
+            if (textToScan.contains(w)) bannedHits.add(w);
+        }
+
+        Map<String, Object> compliance = new LinkedHashMap<>();
+        compliance.put("hasBannedWords", !bannedHits.isEmpty());
+        compliance.put("bannedWordsHit", bannedHits);
+        compliance.put("priceValid", p.getPrice() != null && p.getPrice().compareTo(BigDecimal.ZERO) > 0);
+        compliance.put("stockValid", p.getStock() != null && p.getStock() > 0);
+        compliance.put("hasCover", StringUtils.hasText(p.getCoverUrl()));
+        compliance.put("merchantApproved", m != null && m.getReviewStatus() != null && m.getReviewStatus() == 1);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("product", p);
+        out.put("merchant", m);
+        out.put("enterpriseName", ent != null ? ent.getName() : "华晨建材");
+        out.put("categoryName", cat != null ? cat.getName() : "通用类目");
+        out.put("industryName", ind != null ? ind.getName() : "工业制造");
+        out.put("compliance", compliance);
+        return out;
+    }
+
+    /** 管理后台: 批量审核商品 */
+    @Transactional
+    public Map<String, Object> batchReview(List<Long> prodIds, Integer reviewStatus, String reason, Long adminUserId, HttpServletRequest request) {
+        if (prodIds == null || prodIds.isEmpty()) throw new BusinessException("请选择要批量审核的商品");
+        int success = 0;
+        for (Long id : prodIds) {
+            try {
+                review(id, reviewStatus, reason);
+                success++;
+            } catch (Exception ignored) {}
+        }
+        if (auditService != null) {
+            auditService.record(adminUserId, "PRODUCT_BATCH_REVIEW",
+                    "批量审核商品共 " + success + "/" + prodIds.size() + " 条，状态=" + reviewStatus + "，原因=" + (reason != null ? reason : "无"), request);
+        }
+        return Map.of("total", prodIds.size(), "success", success);
+    }
+
+    /** 管理后台: 获取商品审核流转审计历史 */
+    public List<AuditLog> auditLogs(Long prodId) {
+        if (auditLogMapper == null) return List.of();
+        return auditLogMapper.selectList(Wrappers.<AuditLog>lambdaQuery()
+                .like(AuditLog::getDetail, "商品 #" + prodId)
+                .or().like(AuditLog::getDetail, "「" + prodId + "」")
+                .orderByDesc(AuditLog::getCreateTime));
     }
 
     /** 管理后台: 上架/下架 */

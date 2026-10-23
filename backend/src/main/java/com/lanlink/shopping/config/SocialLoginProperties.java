@@ -26,6 +26,9 @@ public class SocialLoginProperties {
     /** 授权完成后回跳的前端地址，需与各平台后台登记的 redirect_uri 一致 */
     private String redirectBase = "http://localhost:5173/login";
 
+    /** 是否启用沙箱/本地模拟登录模式（开发/演示环境无公网凭证时允许快速体验） */
+    private boolean sandboxEnabled = false;
+
     private Map<String, Provider> providers = new LinkedHashMap<>();
 
     @Data

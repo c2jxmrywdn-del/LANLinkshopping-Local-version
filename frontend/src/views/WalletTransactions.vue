@@ -24,7 +24,7 @@ import {ref,computed,onMounted} from 'vue'
 import {walletApi} from '../api'
 const logs=ref([]),type=ref(),keyword=ref('')
 const labels={recharge:'充值',pay:'消费',refund:'退款入账'},colors={recharge:'blue',pay:'orange',refund:'green'}
-const cols=[{title:'类型',key:'type',width:110},{title:'金额（元）',key:'amount',width:140},{title:'余额',dataIndex:'balanceAfter',width:130},{title:'关联订单',dataIndex:'refOrderNo',width:180},{title:'备注',dataIndex:'remark'},{title:'时间',key:'time',width:170},{title:'',key:'detail',width:90}]
+const cols=[{title:'类型',key:'type',width:110},{title:'金额（元）',key:'amount',width:140},{title:'余额',dataIndex:'balanceAfter',width:130},{title:'关联订单',dataIndex:'refOrderNo',width:180},{title:'备注',dataIndex:'remark'},{title:'时间',key:'time',width:170},{title:'',key:'detail',width:100}]
 const filtered=computed(()=>logs.value.filter(x=>(!type.value||x.changeType===type.value)&&(!keyword.value||[x.refOrderNo,x.remark].some(v=>String(v||'').toLowerCase().includes(keyword.value.toLowerCase())))))
 onMounted(async()=>{try{logs.value=(await walletApi.my())?.logs||[]}catch(e){}})
 </script>

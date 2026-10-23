@@ -30,7 +30,8 @@ class MerchantEndpointPermTest {
     @Test
     void taxProofUploadRequiresMerchantPerm() throws Exception {
         assertPerm(MerchantController.class.getMethod("uploadTaxProof",
-                org.springframework.web.multipart.MultipartFile.class, jakarta.servlet.http.HttpServletRequest.class),
+                org.springframework.web.multipart.MultipartFile.class, String.class,
+                jakarta.servlet.http.HttpServletRequest.class),
                 "POST /merchant/tax-proof");
     }
 
@@ -39,5 +40,37 @@ class MerchantEndpointPermTest {
         assertPerm(MerchantController.class.getMethod("taxQuery",
                 String.class, jakarta.servlet.http.HttpServletRequest.class),
                 "GET /merchant/tax-query");
+    }
+
+    @Test
+    void taxProofPeriodParameterIsOptionalAndPathStable() throws Exception {
+        Method m = MerchantController.class.getMethod("uploadTaxProof",
+                org.springframework.web.multipart.MultipartFile.class, String.class,
+                jakarta.servlet.http.HttpServletRequest.class);
+        assertPerm(m, "POST /merchant/tax-proof");
+
+        org.springframework.web.bind.annotation.RequestParam period =
+                m.getParameters()[1].getAnnotation(org.springframework.web.bind.annotation.RequestParam.class);
+        assertNotNull(period, "period 必须通过 @RequestParam 绑定");
+        assertFalse(period.required(), "period 为可选所属期，不能强制必填");
+
+        org.springframework.web.bind.annotation.PostMapping mapping =
+                m.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+        assertNotNull(mapping, "缺少 @PostMapping 注解");
+        assertArrayEquals(new String[]{"/tax-proof"}, mapping.value(), "税务证明上传路径不得变更");
+    }
+
+    @Test
+    void applyUploadStaysLoginOnlyAndSeparateFromMerchantPerm() throws Exception {
+        Method m = MerchantController.class.getMethod("applyUpload",
+                org.springframework.web.multipart.MultipartFile.class, String.class,
+                jakarta.servlet.http.HttpServletRequest.class);
+        assertNull(m.getAnnotation(RequirePerm.class),
+                "申请阶段上传仅需登录，不得要求 merchant:manage");
+
+        org.springframework.web.bind.annotation.PostMapping mapping =
+                m.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+        assertNotNull(mapping, "缺少 @PostMapping 注解");
+        assertArrayEquals(new String[]{"/apply-upload"}, mapping.value(), "申请阶段上传路径不得变更");
     }
 }

@@ -27,6 +27,7 @@ class MembershipRedeemTest {
     private MemberCardMapper cardMapper;
     private MemberLevelMapper levelMapper;
     private MemberPointLogMapper logMapper;
+    private SubscriptionService subscriptionService;
     private MembershipService service;
 
     private MemberCard card(int points) {
@@ -41,7 +42,8 @@ class MembershipRedeemTest {
         cardMapper = mock(MemberCardMapper.class);
         levelMapper = mock(MemberLevelMapper.class);
         logMapper = mock(MemberPointLogMapper.class);
-        service = new MembershipService(cardMapper, levelMapper, logMapper);
+        subscriptionService = mock(SubscriptionService.class);
+        service = new MembershipService(cardMapper, levelMapper, logMapper, subscriptionService);
     }
 
     // ===== MemberRule 基础换算 =====

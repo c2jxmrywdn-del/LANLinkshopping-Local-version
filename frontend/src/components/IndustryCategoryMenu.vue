@@ -278,7 +278,7 @@ onBeforeUnmount(() => {
   top: 58px;
   width: min(1040px, calc(100vw - 40px));
   display: grid;
-  grid-template-columns: 290px minmax(420px, 1fr) 250px;
+  grid-template-columns: 300px minmax(420px, 1fr) 250px;
   background: rgba(255,255,255,.975);
   border: 1px solid rgba(148,163,184,.22);
   border-radius: 0 0 20px 20px;
@@ -286,6 +286,9 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(22px) saturate(125%);
   overflow: hidden;
   z-index: 120;
+  /* 顶栏 .ant-layout-header 的 line-height 会继承下来（约 76px），必须重置，
+     否则单列行业项会被撑到 90px 以上、弹层异常拉高 */
+  line-height: 1.5;
   animation: industryMegaIn .16s ease-out;
 }
 
@@ -383,9 +386,10 @@ onBeforeUnmount(() => {
 
 .industry-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* 单列排布：行业名称更长时也不会被挤压，滚动查看剩余行业 */
+  grid-template-columns: 1fr;
   gap: 4px;
-  max-height: 345px;
+  max-height: 392px;
   overflow: auto;
   padding-right: 3px;
   scrollbar-width: thin;
@@ -588,7 +592,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1100px) {
-  .industry-mega { width: min(940px, calc(100vw - 28px)); grid-template-columns: 260px minmax(380px,1fr) 220px; }
+  .industry-mega { width: min(940px, calc(100vw - 28px)); grid-template-columns: 280px minmax(380px,1fr) 220px; }
 }
 
 @media (max-width: 767px) {

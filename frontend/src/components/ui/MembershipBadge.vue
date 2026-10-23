@@ -11,7 +11,7 @@
     :style="{ '--mb-delay': delay + 'ms' }"
     :role="link ? 'link' : 'button'"
     :tabindex="0"
-    :aria-label="`${eyebrow} ${title}（${stateText}），点击查看详情`"
+    :aria-label="resolvedAria"
     @pointerenter="onEnter"
     @pointermove="onMove"
     @pointerleave="onLeave"
@@ -51,7 +51,7 @@
           <path v-if="tier === 'regular'" :fill="markFill" fill-rule="evenodd" d="M15 30c-3-4-3-10 1-14 1 5 3 8 6 10-4-1-6 1-7 4Zm18 0c3-4 3-10-1-14-1 5-3 8-6 10 4-1 6 1 7 4Zm-9 3c-2 0-3.4-1.4-3.4-3.2 0-2.4 1.6-5.8 3.4-8.8 1.8 3 3.4 6.4 3.4 8.8 0 1.8-1.4 3.2-3.4 3.2Z" />
           <path v-else-if="tier === 'silver'" :fill="markFill" fill-rule="evenodd" d="M24 12l9 4v8c0 6-4 10.5-9 12-5-1.5-9-6-9-12v-8l9-4Zm0 6.5l-2.2 4.6-5 .7 3.6 3.5-.9 5 4.5-2.4 4.5 2.4-.9-5 3.6-3.5-5-.7L24 18.5Z" />
           <path v-else-if="tier === 'gold'" :fill="markFill" d="M12 30l2-12 7 6 3-9 3 9 7-6 2 12H12Zm1 3h22v3H13v-3Z" />
-          <path v-else-if="tier === 'diamond'" :fill="markFill" fill-rule="evenodd" d="M16 14h16l6 8-14 14L10 22l6-8Zm1.8 3l-3.4 4.6h6l-2.6-4.6Zm5 0l2.6 4.6h-5.2l2.6-4.6Zm7.4 0l3.4 4.6h-6l2.6-4.6Z" />
+          <path v-else-if="tier === 'diamond' || tier === 'black-diamond'" :fill="markFill" fill-rule="evenodd" d="M16 14h16l6 8-14 14L10 22l6-8Zm1.8 3l-3.4 4.6h6l-2.6-4.6Zm5 0l2.6 4.6h-5.2l2.6-4.6Zm7.4 0l3.4 4.6h-6l2.6-4.6Z" />
           <path v-else :fill="markFill" d="M24 10l3.6 8.6 9.4.8-7.1 6.2 2.1 9.2-8-4.9-8 4.9 2.1-9.2-7.1-6.2 9.4-.8L24 10Z" />
         </g>
 
@@ -83,9 +83,10 @@
 // 以及进/离场的「反向矩阵」弹簧编排。tier/state/size/delay/burst/link 为会员体系适配层。
 import { useId, ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { locale, translateDataText } from '../../i18n'
 
 const props = defineProps({
-  // 等级维度：regular/silver/gold/diamond；成就维度通用色：azure
+  // 等级维度：regular/silver/gold/platinum/diamond/black-diamond；成就维度通用色：azure
   tier: { type: String, default: 'gold' },
   eyebrow: { type: String, default: 'LANLINK MEMBERSHIP' },
   title: { type: String, required: true },
@@ -107,6 +108,14 @@ const rootRef = ref(null)
 const stateText = computed(() =>
   props.state === 'locked' ? '未解锁' : props.state === 'current' ? '当前等级' : '已获得'
 )
+// 英文模式下直接生成完整 aria-label，覆盖六档等级与全部成就状态
+const resolvedAria = computed(() => {
+  if (locale.value === 'en-US') {
+    const state = props.state === 'locked' ? 'Locked' : props.state === 'current' ? 'Current tier' : 'Earned'
+    return `${translateDataText(props.eyebrow)} ${translateDataText(props.title)} (${state}), click for details`
+  }
+  return `${props.eyebrow} ${props.title}（${stateText.value}），点击查看详情`
+})
 
 /* ---------- 彩虹层：源码 10 层中去掉 2 层透明层（视觉等价，省 20% 模糊开销） ---------- */
 const BANDS = [
@@ -319,7 +328,11 @@ function activate() {
 .mb-badge.mb-regular { --mb-base: #e7ebef; --mb-mark-0: #a8bccd; --mb-mark-1: #6f8ba3; }
 .mb-badge.mb-silver { --mb-base: #dddddd; --mb-mark-0: #c3ccd6; --mb-mark-1: #8c99a8; }
 .mb-badge.mb-gold { --mb-base: #f3e3ac; --mb-mark-0: #f2d489; --mb-mark-1: #b98a3c; }
+.mb-badge.mb-platinum { --mb-base: #e6e8ea; --mb-mark-0: #f7f8f9; --mb-mark-1: #8f9aa4; }
 .mb-badge.mb-diamond { --mb-base: #d7e6f7; --mb-mark-0: #bfe0ff; --mb-mark-1: #5f9ada; }
+.mb-badge.mb-black-diamond { --mb-base: #23272e; --mb-mark-0: #d6dee7; --mb-mark-1: #66717e; }
+.mb-badge.mb-black-diamond .mb-title-text { fill: #f4f6f8; }
+.mb-badge.mb-black-diamond .mb-eyebrow-text { fill: #b9c0c8; }
 .mb-badge.mb-azure { --mb-base: #d9e8fb; --mb-mark-0: #b6d8f5; --mb-mark-1: #3f86c9; }
 .mb-size-sm { max-width: 190px; }
 .mb-size-md { max-width: 300px; }
@@ -410,7 +423,9 @@ function activate() {
 [data-theme='dark'] .mb-badge.mb-regular { --mb-base: #333b45; --mb-mark-0: #b9cada; --mb-mark-1: #7d97ae; }
 [data-theme='dark'] .mb-badge.mb-silver { --mb-base: #3a4048; --mb-mark-0: #d8e0e8; --mb-mark-1: #9daab9; }
 [data-theme='dark'] .mb-badge.mb-gold { --mb-base: #4a4230; --mb-mark-0: #f6d38a; --mb-mark-1: #c8a45c; }
+[data-theme='dark'] .mb-badge.mb-platinum { --mb-base: #3f454c; --mb-mark-0: #eef1f4; --mb-mark-1: #a3adb7; }
 [data-theme='dark'] .mb-badge.mb-diamond { --mb-base: #2f3f52; --mb-mark-0: #bfe0ff; --mb-mark-1: #6ba6e4; }
+[data-theme='dark'] .mb-badge.mb-black-diamond { --mb-base: #121519; --mb-mark-0: #d6dee7; --mb-mark-1: #77828f; }
 [data-theme='dark'] .mb-badge.mb-azure { --mb-base: #2c3f55; --mb-mark-0: #b6d8f5; --mb-mark-1: #4f92d3; }
 [data-theme='dark'] .mb-chip { background: #c8a45c; }
 

@@ -82,7 +82,7 @@ public class ExternalIntentClient {
 
     private String callChannels(String question) {
         for (OutboundModelConfigService.ChannelConfig channel : configService.activeChannels()) {
-            String url = channel.baseUrl().replaceAll("/+$", "") + "/v1/chat/completions";
+            String url = OutboundModelConfigService.chatCompletionsEndpoint(channel.baseUrl());
             String r = chat(url, channel.apiKey(), channel.modelName(), question);
             if (r != null) return r;
         }
@@ -92,7 +92,7 @@ public class ExternalIntentClient {
     private String chat(String url, String apiKey, String model, String question) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("model", model != null && !model.isBlank() ? model : "deepseek-chat");
+            body.put("model", model != null && !model.isBlank() ? model : "deepseek-flash");
             body.put("temperature", 0);
             body.put("max_tokens", 16);
             var messages = body.putArray("messages");

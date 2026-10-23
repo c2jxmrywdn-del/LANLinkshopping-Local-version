@@ -16,14 +16,17 @@
     "lighthouse": "node scripts/lighthouse-check.mjs"
   },
   "dependencies": {
+    "@ai-sdk/deepseek": "^3.0.70",
     "@amplitude/unified": "^1",
+    "ai": "^7.0.148",
     "ant-design-vue": "^4.2.6",
     "axios": "^1.7.7",
     "pinia": "^2.2.4",
     "qrcode": "^1.5.4",
     "swiper": "^14.2.0",
     "vue": "^3.5.12",
-    "vue-router": "^4.4.5"
+    "vue-router": "^4.4.5",
+    "workflow": "^5.2.3"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.4",

@@ -68,14 +68,20 @@ export const authApi = {
 
 // ===== 社交登录（微信 / 支付宝 / Apple / Google，公开接口）=====
 export const socialApi = {
-  // 渠道可用性：未配置也返回，前端据此渲染品牌入口并区分「已配置 / 未配置」
+  // 渠道可用性：未配置也返回，前端据此渲染品牌入口并区分「已配置 / 未配置 / 沙箱可用」
   providers: () => request.get('/auth/social/providers'),
   // 取平台授权地址（未配置时后端返回明确错误，不伪造登录）
   authorize: (provider, state) => request.get(`/auth/social/authorize/${provider}`, { params: { state } }),
   // 授权回调：平台回跳带回 code/state，前端交给后端换取身份并建立会话
   callback: (provider, code, state) => request.post(`/auth/social/callback/${provider}`, { code, state }),
   // 已登录用户绑定第三方账号（账号设置 → 第三方授权）
-  bind: (provider, code, state) => request.post(`/auth/social/bind/${provider}`, { code, state })
+  bind: (provider, code, state) => request.post(`/auth/social/bind/${provider}`, { code, state }),
+  // 沙箱模拟登录（用于在开发/评审/无外网密钥环境下体验 Google / Apple 登录）
+  sandboxLogin: (payload) => request.post('/auth/social/sandbox-login', payload),
+  // 获取当前用户已绑定的第三方账号列表
+  myBindings: () => request.get('/auth/social/my-bindings'),
+  // 解绑指定渠道第三方账号
+  unbind: (provider) => request.post(`/auth/social/unbind/${provider}`)
 }
 
 export const homeApi = {
@@ -95,6 +101,10 @@ export const productApi = {
   }),
   // 管理后台专用
   adminList: (params) => request.get('/product/admin/list', { params }),
+  adminStats: () => request.get('/product/admin/stats'),
+  adminDetail: (prodId) => request.get(`/product/admin/detail/${prodId}`),
+  adminBatchReview: (payload) => request.post('/product/admin/batch-review', payload),
+  adminAuditLogs: (prodId) => request.get(`/product/admin/audit-logs/${prodId}`),
   adminStatus: (prodId, status) => request.post(`/product/admin/status/${prodId}`, null, { params: { status } }),
   adminReview: (prodId, reviewStatus, reason) => request.post(`/product/admin/review/${prodId}`, null, { params: { reviewStatus, reason } })
 }
@@ -149,9 +159,16 @@ export const creditTermApi = {
   bills: () => request.get('/credit-term/bills'),
   detail: (id) => request.get(`/credit-term/bills/${id}`),
   repayments: (id) => request.get(`/credit-term/bills/${id}/repayments`),
-  repay: (id, amount, method = 'wallet') => request.post(`/credit-term/bills/${id}/repay`, { amount, method }),
+  repay: (id, amount, method = 'wallet', referenceNo = '') => request.post(`/credit-term/bills/${id}/repay`, { amount, method, referenceNo }),
+  adjustments: () => request.get('/credit-term/adjustments'),
+  applyAdjust: (d) => request.post('/credit-term/adjust', d),
+  withdrawAdjust: (id) => request.post(`/credit-term/adjustments/${id}/withdraw`),
   adminAccounts: (status) => request.get('/credit-term/admin/accounts', { params: { status } }),
-  review: (id, d) => request.post(`/credit-term/admin/accounts/${id}/review`, d)
+  review: (id, d) => request.post(`/credit-term/admin/accounts/${id}/review`, d),
+  adminAdjustments: (status) => request.get('/credit-term/admin/adjustments', { params: { status } }),
+  reviewAdjust: (id, d) => request.post(`/credit-term/admin/adjustments/${id}/review`, d),
+  adminRepayments: (status) => request.get('/credit-term/admin/repayments', { params: { status } }),
+  confirmRepayment: (id, d) => request.post(`/credit-term/admin/repayments/${id}/confirm`, d)
 }
 
 // ===== 物流模块（运单/轨迹/服务商/模板/告警/售后/结算） =====
@@ -252,11 +269,25 @@ export const merchantApi = {
   uploadTaxProof: (formData) => request.post('/merchant/tax-proof', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
+  // 已入驻商户：月度完税记录上报（带所属期，后端写入文件名以精确归属）
+  submitTaxProof: (file, period, onProgress) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return request.post('/merchant/tax-proof', fd, {
+      params: { period },
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => { if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100)) }
+    })
+  },
   // 税务登记号查询近 3 个月缴纳记录（返回 { records, totalAmount }）
   taxQuery: (taxRegNo) => request.get('/merchant/tax-query', { params: { taxRegNo } }),
   // 管理后台专用
   adminList: (reviewStatus) => request.get('/merchant/admin/list', { params: { reviewStatus } }),
+  adminStats: () => request.get('/merchant/admin/stats'),
   adminDetail: (merId) => request.get(`/merchant/admin/detail/${merId}`),
+  adminSensitive: (merId) => request.get(`/merchant/admin/sensitive/${merId}`),
+  adminBatchReview: (payload) => request.post('/merchant/admin/batch-review', payload),
+  adminAuditLogs: (merId) => request.get(`/merchant/admin/audit-logs/${merId}`),
   adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } })
 }
 
@@ -310,6 +341,7 @@ export const adminApi = {
   outboundModelConfigUpsert: (payload) => request.post('/admin/outbound-model-config', payload),
   outboundModelConfigToggle: (key, on) => request.post('/admin/outbound-model-config/toggle', { key, on }),
   outboundModelConfigTest: (payload) => request.post('/admin/outbound-model-config/test', payload),
+  outboundModelInvoke: (payload) => request.post('/admin/outbound-model-config/invoke', payload),
   outboundModelAiSuggest: (question) => request.post('/admin/outbound-model-config/ai-suggest', { question }),
   aiApiKeysList: () => request.get('/admin/ai-api-keys'),
   aiApiKeyCreate: (payload) => request.post('/admin/ai-api-keys', payload),
@@ -339,6 +371,18 @@ export const membershipApi = {
   redeemQuote: (points, orderAmount) => request.get('/membership/redeem-quote', { params: { points, orderAmount } })
 }
 
+// ===== 会员订阅（订阅计划 / 购买 / 我的订阅 / 取消） =====
+export const subscriptionApi = {
+  // 订阅计划列表：[{planId, planName, planCode, priceCents, durationDays, autoRenew, discountLabel, sort}]
+  plans: () => request.get('/subscription/plans'),
+  // 购买订阅：{planId} → {subId, planId, startTime, endTime, status}
+  purchase: (planId) => request.post('/subscription/purchase', { planId }),
+  // 我的当前订阅：{subId, planId, startTime, endTime, status, autoRenew} | null
+  my: () => request.get('/subscription/my'),
+  // 取消订阅（到期后不再自动续费）
+  cancel: () => request.post('/subscription/cancel')
+}
+
 // ===== 设计工具对接中台（微服务 lanlink-design-service，经网关 /api/design/**）=====
 // 统一适配器模型：tool 取值 figma / canva / mock；token 经 X-Design-Token 头携带 OAuth 令牌
 export const designApi = {
@@ -364,4 +408,25 @@ export const designApi = {
   galleryFacets: () => request.get('/design/gallery/facets'),
   // 多格式代码导出（REACT/VUE/HTML/CSS）+ 设计令牌自动映射
   exportCode: (tool, fileKey, componentId, token, format) => request.post('/design/code/export', { tool, fileKey, componentId, token, format })
+}
+
+// ===== Vercel Workflow 服务（商品批量导入等长任务）=====
+// 独立 Next.js 应用（仓库内 workflow/ 子目录），基址由 VITE_WORKFLOW_URL 配置。
+// 该服务用浏览器原生 fetch 调用，不复用 Spring Boot 的 axios request（不同域、无 Cookie）。
+const WORKFLOW_BASE = import.meta.env.VITE_WORKFLOW_URL || 'http://localhost:3000'
+export const workflowApi = {
+  // 启动商品批量导入工作流：payload = { format: 'json' | 'csv', data: 数组 或 CSV 文本 }
+  startProductImport: async (payload) => {
+    const res = await fetch(`${WORKFLOW_BASE}/api/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    return res.json()
+  },
+  // 查询工作流运行状态：{ runId, status, result?, error? }
+  importStatus: async (runId) => {
+    const res = await fetch(`${WORKFLOW_BASE}/api/import/${encodeURIComponent(runId)}`)
+    return res.json()
+  },
 }

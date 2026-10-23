@@ -120,6 +120,28 @@ function go(s) {
 .content h2 { font-size: 30px; margin: 0 0 8px; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,.35); }
 .content p { font-size: 15px; margin: 0 0 14px; opacity: .92; }
 .cta { font-size: 14px; font-weight: 600; color: var(--ll-brand-gold-soft, #F6D38A); }
+
+/* 手机竖屏：轮播整体按比例缩小，图片高度、标题与内边距同步收紧 */
+@media (max-width: 767px) {
+  .banner-wrap { margin-bottom: 18px; border-radius: 12px; }
+  .slide { height: 190px; }
+  .content { max-width: 90%; padding: 0 18px; }
+  .content h2 {
+    font-size: 18px;
+    line-height: 1.3;
+    margin: 0 0 4px;
+  }
+  .content p {
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0 0 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .cta { font-size: 12px; }
+}
 </style>
 
 <style>
@@ -130,24 +152,32 @@ function go(s) {
 .banner-swiper .swiper-pagination-bullet { background: #cbd5e1; opacity: .8; }
 .banner-swiper .swiper-pagination-bullet-active { background: #0ea5e9; opacity: 1; }
 
-/* 箭头：深色玻璃底衬 + 白色图标，保证在任意幻灯片（含浅色渐变）上均 ≥3:1 */
+/* 箭头：移除圆形底衬，采用通透箭头并配柔和阴影确保辨识度 */
 .banner-swiper .swiper-button-next,
 .banner-swiper .swiper-button-prev {
-  width: 40px; height: 40px; margin-top: 0; border-radius: 50%;
+  width: auto; height: auto; margin-top: 0; border-radius: 0;
   top: 50%;
-  background: rgba(15, 23, 42, .62); box-shadow: 0 6px 18px rgba(15, 23, 42, .26); backdrop-filter: blur(6px);
-  color: #fff;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  color: rgba(255, 255, 255, 0.88);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.65));
   opacity: 0; pointer-events: none;
-  transition: opacity .25s ease, transform .25s ease, background-color .2s ease;
+  transition: opacity .25s ease, transform .25s ease, color .2s ease;
 }
-.banner-swiper .swiper-button-prev { left: 16px; transform: translateY(-50%) translateX(-12px); }
-.banner-swiper .swiper-button-next { right: 16px; transform: translateY(-50%) translateX(12px); }
+.banner-swiper .swiper-button-prev { left: 20px; transform: translateY(-50%) translateX(-10px); }
+.banner-swiper .swiper-button-next { right: 20px; transform: translateY(-50%) translateX(10px); }
 .banner-swiper:hover .swiper-button-next,
 .banner-swiper:hover .swiper-button-prev { opacity: 1; pointer-events: auto; }
 .banner-swiper:hover .swiper-button-prev { transform: translateY(-50%) translateX(0); }
 .banner-swiper:hover .swiper-button-next { transform: translateY(-50%) translateX(0); }
 .banner-swiper .swiper-button-next:hover,
-.banner-swiper .swiper-button-prev:hover { color: rgba(255, 255, 255, .95); background: rgba(15, 23, 42, .78); }
+.banner-swiper .swiper-button-prev:hover {
+  color: #ffffff;
+  background: transparent;
+  filter: drop-shadow(0 2px 12px rgba(0, 0, 0, 0.9));
+  transform: translateY(-50%) scale(1.12);
+}
 .banner-swiper .swiper-button-next:after,
-.banner-swiper .swiper-button-prev:after { font-size: 17px; font-weight: 900; }
+.banner-swiper .swiper-button-prev:after { font-size: 26px; font-weight: 700; }
 </style>

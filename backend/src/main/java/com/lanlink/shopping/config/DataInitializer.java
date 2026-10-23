@@ -100,8 +100,25 @@ public class DataInitializer implements CommandLineRunner {
             m.setEntId(ent.getEntId()); m.setUserId(uMer.getUserId());
             m.setRegType("公司"); m.setRegCapital(new BigDecimal("5000000"));
             m.setTaxStatus(1); m.setJoinType("邀约"); m.setReviewStatus(1);
+            m.setLegalPerson("张建国");
+            m.setLegalIdCard("110101198503151234");
+            m.setBankAccount("6222021001123456789");
+            m.setBankName("招商银行股份有限公司北京建国门支行");
+            m.setContactPhone("13700000002");
+            m.setContactEmail("zhangjg@huachen-group.cn");
+            m.setBusinessAddress("北京市海淀区中关村南大街1号科技大厦8层801");
             m.setCreateTime(LocalDateTime.now()); m.setUpdateTime(LocalDateTime.now());
             merchantMapper.insert(m);
+        } else if (m.getLegalPerson() == null) {
+            m.setLegalPerson("张建国");
+            m.setLegalIdCard("110101198503151234");
+            m.setBankAccount("6222021001123456789");
+            m.setBankName("招商银行股份有限公司北京建国门支行");
+            m.setContactPhone("13700000002");
+            m.setContactEmail("zhangjg@huachen-group.cn");
+            m.setBusinessAddress("北京市海淀区中关村南大街1号科技大厦8层801");
+            m.setUpdateTime(LocalDateTime.now());
+            merchantMapper.updateById(m);
         }
 
         // 4. 演示商品（幂等：商品表为空时补齐）

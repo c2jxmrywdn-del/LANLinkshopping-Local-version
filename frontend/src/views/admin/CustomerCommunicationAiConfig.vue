@@ -30,8 +30,21 @@
           <a-divider style="margin: 18px 0;" />
 
           <div class="table-header">
-            <h3><CloudServerOutlined /> 外部模型渠道列表</h3>
-            <span class="muted small">支持主流兼容 OpenAI 格式的大语言模型接口</span>
+            <div>
+              <h3><CloudServerOutlined /> 外部模型渠道列表</h3>
+              <span class="muted small">支持主流兼容 OpenAI 格式的大语言模型接口（DeepSeek、小米 MiMo、通义千问 Qwen 等）</span>
+            </div>
+            <a-space wrap>
+              <a-button size="small" type="primary" ghost @click="openCreateChannelModal('mimo')">
+                <template #icon><PlusOutlined /></template>加入 MIMO (小米)
+              </a-button>
+              <a-button size="small" type="primary" ghost @click="openCreateChannelModal('qwen')">
+                <template #icon><PlusOutlined /></template>加入 Qwen (通义千问)
+              </a-button>
+              <a-button size="small" type="primary" @click="openCreateChannelModal('custom')">
+                <template #icon><PlusOutlined /></template>配置新模型渠道
+              </a-button>
+            </a-space>
           </div>
 
           <a-table :data-source="channels" :columns="channelColumns" row-key="channel" :loading="loading" :pagination="false">
@@ -65,20 +78,21 @@
 
               <template v-else-if="column.key === 'testResult'">
                 <span v-if="testResults[record.channel]">
-                  <a-tag :color="testResults[record.channel].reachable ? 'success' : 'error'">
-                    {{ testResults[record.channel].reachable ? (testResults[record.channel].latencyMs + ' ms 正常') : '连接异常' }}
+                  <a-tag :color="(testResults[record.channel].success || testResults[record.channel].reachable) ? 'success' : 'error'"
+                         :title="testResults[record.channel].error || ''">
+                    {{ (testResults[record.channel].success || testResults[record.channel].reachable) ? ((testResults[record.channel].latencyMs || 0) + ' ms 正常') : '连接异常' }}
                   </a-tag>
                 </span>
                 <span v-else class="muted small">未测试</span>
               </template>
 
               <template v-else-if="column.key === 'action'">
-                <a-space>
+                <a-space wrap>
                   <a-button size="small" type="primary" ghost :loading="testingChannels[record.channel]" @click="testChannel(record)">
                     <template #icon><ThunderboltOutlined /></template>测试连接
                   </a-button>
-                  <a-button size="small" @click="openEditChannel(record)">
-                    <template #icon><EditOutlined /></template>配置
+                  <a-button size="small" :type="record.apiKeyPrefix ? 'default' : 'primary'" @click="openEditChannel(record)">
+                    <template #icon><EditOutlined /></template>{{ record.apiKeyPrefix ? '配置' : '设置密钥' }}
                   </a-button>
                 </a-space>
               </template>
@@ -271,41 +285,45 @@
       </a-tab-pane>
     </a-tabs>
 
-    <!-- Modal 1: 编辑渠道配置 -->
-    <a-modal v-model:open="editChannelVisible" title="配置外部模型渠道" @ok="handleSaveChannel" :confirm-loading="savingChannel" ok-text="保存配置" cancel-text="取消" width="620px">
+    <!-- Modal 1: 编辑/配置渠道配置 -->
+    <a-modal v-model:open="editChannelVisible" :title="isEditingExisting ? ('配置 ' + channelDisplayName(channelForm.channel) + ' 渠道') : '加入外部大模型渠道'" @ok="handleSaveChannel" :confirm-loading="savingChannel" ok-text="保存配置" cancel-text="取消" width="640px">
       <a-form layout="vertical" class="mt-3">
-        <a-form-item label="渠道名称" required>
-          <a-select v-model:value="channelForm.channel" disabled>
-            <a-select-option value="deepseek">DeepSeek (深度求索)</a-select-option>
-            <a-select-option value="openai">OpenAI</a-select-option>
+        <a-form-item label="渠道名称与服务商" required extra="选择或切换所需的大模型平台">
+          <a-select v-model:value="channelForm.channel" :disabled="isEditingExisting" @change="applyPreset">
+            <a-select-option value="mimo">小米 MiMo (小米开放平台)</a-select-option>
             <a-select-option value="qwen">通义千问 (DashScope)</a-select-option>
+            <a-select-option value="deepseek">DeepSeek (深度求索)</a-select-option>
+            <a-select-option value="bailian">阿里百炼 (DashScope)</a-select-option>
+            <a-select-option value="openai">OpenAI (官方)</a-select-option>
             <a-select-option value="chatglm">智谱 GLM (BigModel)</a-select-option>
-            <a-select-option value="mimosa">Mimosa 内部网关</a-select-option>
             <a-select-option value="ollama">Ollama 本地服务</a-select-option>
+            <a-select-option value="mimosa">Mimosa 内部网关</a-select-option>
             <a-select-option value="custom">自定义兼容服务</a-select-option>
           </a-select>
         </a-form-item>
 
-        <a-form-item label="预设快速填充">
+        <a-form-item label="快捷填充预设">
           <a-space wrap>
-            <a-button size="small" @click="applyPreset('deepseek')">DeepSeek 官方</a-button>
-            <a-button size="small" @click="applyPreset('openai')">OpenAI 官方</a-button>
-            <a-button size="small" @click="applyPreset('qwen')">阿里百炼通义</a-button>
-            <a-button size="small" @click="applyPreset('chatglm')">智谱 AI</a-button>
-            <a-button size="small" @click="applyPreset('ollama')">本地 Ollama</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('mimo')">小米 MiMo</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('qwen')">通义千问 Qwen</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('deepseek')">DeepSeek 官方</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('bailian')">阿里百炼</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('openai')">OpenAI 官方</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('chatglm')">智谱 AI</a-button>
+            <a-button size="small" type="dashed" @click="applyPreset('ollama')">本地 Ollama</a-button>
           </a-space>
         </a-form-item>
 
-        <a-form-item label="服务端点 Base URL" required extra="需支持 OpenAI Chat Completions 规范协议">
-          <a-input v-model:value="channelForm.baseUrl" placeholder="https://api.deepseek.com/v1" />
+        <a-form-item label="服务端点 Base URL" required extra="支持 OpenAI Chat Completions 规范协议；填服务根地址或带 /v1 均可，系统自动解析 /chat/completions">
+          <a-input v-model:value="channelForm.baseUrl" :placeholder="channelBaseUrlPlaceholder(channelForm.channel)" />
         </a-form-item>
 
         <a-form-item label="模型名称 Model Name" extra="调用接口时使用的具体模型 ID">
-          <a-input v-model:value="channelForm.modelName" placeholder="例如 deepseek-chat 或 gpt-4o-mini" />
+          <a-input v-model:value="channelForm.modelName" :placeholder="defaultModelName(channelForm.channel)" />
         </a-form-item>
 
-        <a-form-item label="API Key 访问密钥" extra="留空表示保留现有已配置的密钥；输入新密钥将替换原密钥并加密存储">
-          <a-input-password v-model:value="channelForm.apiKey" placeholder="sk-..." />
+        <a-form-item label="API Key 访问密钥" :extra="channelKeyHint(channelForm.channel)">
+          <a-input-password v-model:value="channelForm.apiKey" :placeholder="channelKeyPlaceholder(channelForm.channel)" />
         </a-form-item>
 
         <a-form-item label="启用此渠道">
@@ -316,10 +334,10 @@
           <a-button size="small" type="dashed" :loading="testingInline" @click="handleTestInline">
             <template #icon><ThunderboltOutlined /></template>测试当前输入连接
           </a-button>
-          <span v-if="inlineTestResult" class="inline-test-msg">
-            <a-tag :color="inlineTestResult.reachable ? 'success' : 'error'">
-              {{ inlineTestResult.reachable ? `连接成功 (${inlineTestResult.latencyMs} ms)` : `连接失败: ${inlineTestResult.error || '状态码 ' + inlineTestResult.statusCode}` }}
-            </a-tag>
+          <span v-if="inlineTestResult" class="inline-test-msg" :class="(inlineTestResult.success || inlineTestResult.reachable) ? 'ok' : 'err'">
+            {{ (inlineTestResult.success || inlineTestResult.reachable)
+              ? `连接成功 (${inlineTestResult.latencyMs || 0} ms)`
+              : `连接失败: ${inlineTestResult.error || (inlineTestResult.statusCode ? ('HTTP ' + inlineTestResult.statusCode) : '网络连接超时或上游未响应')}` }}
           </span>
         </div>
       </a-form>
@@ -411,7 +429,7 @@ const channelColumns = [
   { title: 'API Key', key: 'apiKeyPrefix', width: 160 },
   { title: '状态', key: 'status', width: 110 },
   { title: '最近连接测试', key: 'testResult', width: 140 },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' }
+  { title: '操作', key: 'action', width: 200, fixed: 'right' }
 ]
 
 // 平台密钥表头
@@ -440,6 +458,7 @@ const suggestResult = ref(null)
 
 // 模态框控制
 const editChannelVisible = ref(false)
+const isEditingExisting = ref(false)
 const savingChannel = ref(false)
 const testingInline = ref(false)
 const inlineTestResult = ref(null)
@@ -487,6 +506,8 @@ function channelDisplayName(c) {
     openai: 'OpenAI (官方)',
     qwen: '通义千问 (DashScope)',
     chatglm: '智谱 GLM (BigModel)',
+    mimo: '小米 MiMo (小米开放平台)',
+    bailian: '阿里百炼 (DashScope)',
     mimosa: 'Mimosa 内部网关',
     ollama: 'Ollama 本地服务',
     custom: '自定义兼容接口'
@@ -500,6 +521,8 @@ function channelBadgeColor(c) {
     openai: 'green',
     qwen: 'purple',
     chatglm: 'orange',
+    mimo: 'magenta',
+    bailian: 'gold',
     mimosa: 'cyan',
     ollama: 'geekblue',
     custom: 'default'
@@ -509,15 +532,54 @@ function channelBadgeColor(c) {
 
 function defaultModelName(c) {
   const map = {
-    deepseek: 'deepseek-chat',
+    deepseek: 'deepseek-flash',
     openai: 'gpt-4o-mini',
     qwen: 'qwen-plus',
     chatglm: 'glm-4-flash',
+    mimo: 'mimo-v2.6-flash',
+    bailian: 'qwen-plus',
     mimosa: 'mimosa-chat',
     ollama: 'qwen2.5:7b',
     custom: 'gpt-3.5-turbo'
   }
   return map[c] || 'default'
+}
+
+function defaultBaseUrl(c) {
+  const map = {
+    mimo: 'https://api.xiaomimimo.com/v1',
+    qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    bailian: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    deepseek: 'https://api.deepseek.com/v1',
+    openai: 'https://api.openai.com/v1',
+    chatglm: 'https://open.bigmodel.cn/api/paas/v4',
+    ollama: 'http://localhost:11434/v1',
+    mimosa: 'http://localhost:8090/v1'
+  }
+  return map[c] || ''
+}
+
+function channelBaseUrlPlaceholder(c) {
+  return defaultBaseUrl(c) || 'https://...'
+}
+
+function channelKeyHint(c) {
+  if (c === 'mimo') {
+    return '留空表示保留现有密钥；可前往小米开放平台控制台（https://api.xiaomimimo.com）创建并获取 API Key'
+  }
+  if (c === 'qwen' || c === 'bailian') {
+    return '留空表示保留现有密钥；可前往阿里云百炼 DashScope 控制台（https://dashscope.console.aliyun.com）获取 API-KEY'
+  }
+  if (c === 'deepseek') {
+    return '留空表示保留现有密钥；可前往 DeepSeek 开放平台（https://platform.deepseek.com）获取 API Key'
+  }
+  return '留空表示保留现有已配置的密钥；输入新密钥将替换原密钥并加密存储'
+}
+
+function channelKeyPlaceholder(c) {
+  if (c === 'mimo') return '请输入小米 MiMo API Key (sk-...)'
+  if (c === 'qwen' || c === 'bailian') return '请输入通义千问 / DashScope API Key (sk-...)'
+  return 'sk-...'
 }
 
 function intentTagColor(i) {
@@ -557,11 +619,39 @@ async function refreshAll() {
   }
 }
 
-// 加载渠道
+// 加载渠道（合并常用标准预设渠道，确保 MIMO 与 Qwen 等开箱即见、一键配置与测试）
 async function loadChannels() {
   try {
     const res = await adminApi.outboundModelConfigList()
-    channels.value = res?.channels || []
+    const rawChannels = res?.channels || []
+
+    const standardPresets = [
+      { channel: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', modelName: 'deepseek-flash' },
+      { channel: 'mimo', baseUrl: 'https://api.xiaomimimo.com/v1', modelName: 'mimo-v2.6-flash' },
+      { channel: 'qwen', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'qwen-plus' },
+      { channel: 'bailian', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'qwen-plus' },
+      { channel: 'openai', baseUrl: 'https://api.openai.com/v1', modelName: 'gpt-4o-mini' },
+      { channel: 'chatglm', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', modelName: 'glm-4-flash' },
+      { channel: 'ollama', baseUrl: 'http://localhost:11434/v1', modelName: 'qwen2.5:7b' }
+    ]
+
+    const channelMap = new Map()
+    for (const item of rawChannels) {
+      channelMap.set(item.channel, { ...item, isConfigured: true })
+    }
+    for (const preset of standardPresets) {
+      if (!channelMap.has(preset.channel)) {
+        channelMap.set(preset.channel, {
+          channel: preset.channel,
+          baseUrl: preset.baseUrl,
+          modelName: preset.modelName,
+          apiKeyPrefix: null,
+          enabled: false,
+          isConfigured: false
+        })
+      }
+    }
+    channels.value = Array.from(channelMap.values())
     intentExternalEnabled.value = Boolean(res?.intentExternalEnabled)
   } catch (e) {
     message.error('加载外部模型渠道配置失败：' + (e?.message || '未知错误'))
@@ -593,10 +683,11 @@ async function testChannel(record) {
       modelName: record.modelName
     })
     testResults[record.channel] = res
-    if (res?.reachable) {
-      message.success(`${channelDisplayName(record.channel)} 连通正常，响应耗时 ${res.latencyMs} ms`)
+    if (res?.success || res?.reachable) {
+      message.success(`${channelDisplayName(record.channel)} 连通正常，响应耗时 ${res.latencyMs || 0} ms`)
     } else {
-      message.warning(`${channelDisplayName(record.channel)} 连接异常：${res?.error || '状态码 ' + res?.statusCode}`)
+      const errDetail = res?.error || (res?.statusCode ? `HTTP ${res.statusCode}` : '网络连接超时或上游未响应')
+      message.warning(`${channelDisplayName(record.channel)} 连接异常：${errDetail}`)
     }
   } catch (e) {
     message.error('测试请求异常：' + (e?.message || '网络错误'))
@@ -605,14 +696,26 @@ async function testChannel(record) {
   }
 }
 
-// 打开编辑渠道
+// 打开编辑已配置渠道
 function openEditChannel(record) {
+  isEditingExisting.value = true
   channelForm.channel = record.channel
-  channelForm.baseUrl = record.baseUrl || ''
+  channelForm.baseUrl = record.baseUrl || defaultBaseUrl(record.channel)
   channelForm.modelName = record.modelName || defaultModelName(record.channel)
   channelForm.apiKey = ''
   channelForm.enabled = record.enabled !== false
   inlineTestResult.value = null
+  editChannelVisible.value = true
+}
+
+// 打开添加/配置新渠道弹窗（可预先指定渠道，如 mimo 或 qwen）
+function openCreateChannelModal(presetChannel = 'mimo') {
+  isEditingExisting.value = false
+  channelForm.channel = presetChannel
+  channelForm.apiKey = ''
+  channelForm.enabled = true
+  inlineTestResult.value = null
+  applyPreset(presetChannel)
   editChannelVisible.value = true
 }
 
@@ -621,13 +724,19 @@ function applyPreset(p) {
   channelForm.channel = p
   if (p === 'deepseek') {
     channelForm.baseUrl = 'https://api.deepseek.com/v1'
-    channelForm.modelName = 'deepseek-chat'
-  } else if (p === 'openai') {
-    channelForm.baseUrl = 'https://api.openai.com/v1'
-    channelForm.modelName = 'gpt-4o-mini'
+    channelForm.modelName = 'deepseek-flash'
+  } else if (p === 'mimo') {
+    channelForm.baseUrl = 'https://api.xiaomimimo.com/v1'
+    channelForm.modelName = 'mimo-v2.6-flash'
   } else if (p === 'qwen') {
     channelForm.baseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     channelForm.modelName = 'qwen-plus'
+  } else if (p === 'bailian') {
+    channelForm.baseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    channelForm.modelName = 'qwen-plus'
+  } else if (p === 'openai') {
+    channelForm.baseUrl = 'https://api.openai.com/v1'
+    channelForm.modelName = 'gpt-4o-mini'
   } else if (p === 'chatglm') {
     channelForm.baseUrl = 'https://open.bigmodel.cn/api/paas/v4'
     channelForm.modelName = 'glm-4-flash'
@@ -649,7 +758,12 @@ async function handleTestInline() {
     })
     inlineTestResult.value = res
   } catch (e) {
-    inlineTestResult.value = { reachable: false, error: e?.message || '请求失败' }
+    inlineTestResult.value = {
+      success: false,
+      reachable: false,
+      statusCode: e?.response?.status || 500,
+      error: e?.message || '请求失败'
+    }
   } finally {
     testingInline.value = false
   }
@@ -850,8 +964,10 @@ onMounted(() => {
 .mono-text { font-family: monospace; font-size: 12px; color: #344054; word-break: break-all; }
 .key-prefix-tag { font-family: monospace; font-size: 12px; background: #f6ffed; padding: 2px 6px; border-radius: 4px; border: 1px solid #b7eb8f; }
 .key-prefix-code { font-family: monospace; font-size: 12px; color: #027a48; background: #ecfdf3; padding: 2px 6px; border-radius: 4px; }
-.test-inline-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 6px; display: flex; align-items: center; gap: 12px; }
-.inline-test-msg { font-size: 12px; }
+.test-inline-box { margin-top: 12px; padding: 10px; background: #f8fafc; border-radius: 6px; display: flex; align-items: flex-start; gap: 12px; }
+.inline-test-msg { flex: 1; min-width: 0; font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.inline-test-msg.ok { color: #067647; }
+.inline-test-msg.err { color: #b42318; }
 .secret-display-box { margin: 18px 0; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px dashed #d0d5dd; }
 .secret-label { font-size: 12px; color: #667085; margin-bottom: 6px; }
 .secret-value { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

@@ -1,3 +1,5 @@
+-- 与 schema.sql 一致：显式声明客户端字符集，避免 docker-entrypoint 用 latin1 执行时写入乱码。
+SET NAMES utf8mb4;
 -- =====================================================
 -- LANLinkshopping 账号中心扩展脚本（个人信息 + 系统设置）
 -- 与 schema.sql 相辅相成：schema.sql 建电商核心 11 张表，本脚本建账号中心相关表。

@@ -68,6 +68,18 @@ public class OutboundModelConfigController {
         return R.ok(service.generateAiDraft(body.question()));
     }
 
+    /** 通用外部大模型调用（后台调试 / 业务接入验证），未填密钥时回退已保存渠道 */
+    @PostMapping("/invoke")
+    @RequirePerm("admin:all")
+    public R<Map<String, Object>> invoke(@RequestBody InvokeRequest body, HttpServletRequest request) {
+        if (body == null || body.prompt() == null || body.prompt().isBlank()) {
+            return R.fail(400, "prompt 不能为空");
+        }
+        return R.ok(service.invoke(body.channel(), body.baseUrl(), body.apiKey(), body.modelName(),
+                body.prompt(), body.temperature(), body.maxTokens(),
+                UserContext.currentUserId(request), request));
+    }
+
     /** 功能开关（如 intent_external_enabled：外部模型可选意图增强） */
     @PostMapping("/toggle")
     @RequirePerm("admin:all")
@@ -86,6 +98,8 @@ public class OutboundModelConfigController {
         }
     }
     public record TestRequest(String channel, String baseUrl, String apiKey, String modelName) {}
+    public record InvokeRequest(String channel, String baseUrl, String apiKey, String modelName,
+                                String prompt, Double temperature, Integer maxTokens) {}
     public record SuggestRequest(String question) {}
     public record ToggleRequest(String key, Boolean on) {}
 }

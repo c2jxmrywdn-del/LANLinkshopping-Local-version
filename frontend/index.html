@@ -3,6 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 移动端适配器首屏标记：CSS 加载前确定 mobile/desktop，避免样式闪变 -->
+    <script>
+      (function () {
+        try {
+          var mq = window.matchMedia('(max-width: 767px)')
+          document.documentElement.dataset.viewport = mq.matches ? 'mobile' : 'desktop'
+        } catch (e) { /* 极旧浏览器忽略 */ }
+      })()
+    </script>
     <meta name="google" content="notranslate" />
     <meta name="robots" content="notranslate" />
     <!-- 站点图标：现代浏览器优先采用矢量 SVG（任意缩放清晰、体积更小）；

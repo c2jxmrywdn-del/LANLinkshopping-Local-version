@@ -4,6 +4,7 @@
       <template #extra>
         <a-space>
           <a-button @click="load">刷新</a-button>
+          <a-button @click="$router.push('/merchant/products/import')">批量导入</a-button>
           <a-button type="primary" @click="publishOpen = true">＋ 发布商品</a-button>
         </a-space>
       </template>

@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SupportAnswerServiceTest {
@@ -36,6 +37,28 @@ class SupportAnswerServiceTest {
     void cartCheckoutQuestionReturnsExactKnowledgeBaseAnswer() {
         assertEquals("您好！购物车和结算功能需要先登录。登录后可在商城或商品详情中使用购物车，再从“购物车”进入结算页面。",
                 answers.answer("购物车怎么结算？"));
+    }
+
+    /**
+     * 契约固化：未命中知识库时 matchedEntryId 返回空字符串而非 null。
+     * SupportController 的自动学习判定必须用 StringUtils.hasText 判断——
+     * 早期写成 `== null` 会让条件恒为假，导致自动沉淀永不触发（运行时缺陷，已修复）。
+     */
+    @Test
+    void matchedEntryIdIsEmptyStringWhenUnmatched() {
+        String matched = answers.matchedEntryId("你们有哪些产品分类");
+        assertNotNull(matched, "matchedEntryId 不应返回 null（未命中返回空字符串）");
+        assertTrue(matched.isEmpty(), "未命中知识库应返回空字符串");
+        assertTrue(answers.isEligibleForKnowledgeLearning("你们有哪些产品分类"),
+                "该问题含学习域信号且未被阻塞，应可作为自动学习候选");
+    }
+
+    @Test
+    void unmatchedButIneligibleQuestionIsExcludedFromLearning() {
+        // 含阻塞词（发货属未支持业务信号）→ 不进入学习候选
+        assertFalse(answers.isEligibleForKnowledgeLearning("结算后多久能发货"));
+        // 无学习域信号 → 同样排除
+        assertFalse(answers.isEligibleForKnowledgeLearning("今天天气怎么样"));
     }
 
     @Test

@@ -23,6 +23,13 @@
           <div class="support-message-label">
             <SupportAgentAvatar v-if="item.role !== 'user'" :size="16" />
             <span>{{ item.role === 'user' ? '你' : '专属客服' }}</span>
+            <button v-if="item.role !== 'user'" type="button" class="support-tts"
+              :class="{ 'is-on': ttsKey === 'msg-' + index }"
+              :aria-label="ttsKey === 'msg-' + index ? '停止语音播报' : '语音播报'"
+              :title="ttsKey === 'msg-' + index ? '停止语音播报' : '语音播报'"
+              @click.stop="toggleSpeak('msg-' + index, item.text)">
+              <span aria-hidden="true">{{ ttsKey === 'msg-' + index ? '⏹' : '🔊' }}</span>
+            </button>
           </div>
           <p>{{ item.text }}</p>
         </div>
@@ -66,6 +73,8 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { supportApi } from '../api'
 import SupportAgentAvatar from './ui/SupportAgentAvatar.vue'
+import { translateDataText } from '../i18n'
+import { speakText, stopSpeaking } from '../utils/tts'
 
 const FALLBACK = '您好！感谢您的咨询。当前客服仅能解答 LANLinkshopping 专属知识库已收录的电商相关问题，可咨询账号注册与登录、商品浏览、购物车与订单、商户入驻、钱包与账期、会员与活动、站内消息及 Cookie 设置；其他问题暂不在可答范围内，敬请谅解。'
 const WELCOME = '您好，我是 LANLinkshopping 专属客服。请咨询平台账号注册与登录、商品浏览、购物车与订单、商户入驻、钱包与账期、会员与活动、站内消息或 Cookie 设置等已收录问题。'
@@ -97,7 +106,21 @@ const visitorToken = ref(createToken())
 const persistConversation = ref(false)
 const lastHistoryMessageId = ref(0)
 const messages = ref([{ role: 'assistant', text: WELCOME }])
+const ttsKey = ref('')
 let pollTimer = null
+
+/** 播放/停止单条客服回复的语音播报 */
+function toggleSpeak(key, text) {
+  if (ttsKey.value === key) {
+    stopSpeaking()
+    ttsKey.value = ''
+    return
+  }
+  const ok = speakText(translateDataText(text), {
+    onEnd: () => { if (ttsKey.value === key) ttsKey.value = '' }
+  })
+  ttsKey.value = ok ? key : ''
+}
 
 function toggle() { visible.value = !visible.value }
 function askSuggested(question) {
@@ -122,6 +145,7 @@ onBeforeUnmount(stopPolling)
 function stopPolling() {
   if (pollTimer) window.clearInterval(pollTimer)
   pollTimer = null
+  stopSpeaking()
 }
 async function syncHistory() {
   if (!visible.value || loading.value) return
@@ -183,6 +207,9 @@ async function send() {
 .support-message.from-user { align-self: flex-end; border-color: #d6e4f5; background: #eef5ff; }
 .support-message.from-support { align-self: flex-start; }
 .support-message-label { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; color: #667085; font-size: 10px; font-weight: 700; }
+.support-tts { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 1px solid #e4e7ec; border-radius: 7px; background: #fff; color: #667085; font-size: 11px; line-height: 1; cursor: pointer; transition: background .16s ease, border-color .16s ease, color .16s ease; }
+.support-tts:hover { border-color: #b8c6d8; color: #344054; background: #f5f8fc; }
+.support-tts.is-on { border-color: #9fc0e8; color: #1e6eb8; background: #eef5ff; }
 .support-message p { margin: 0; color: #182230; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
 .support-compose { padding: 11px 12px 9px; border-top: 1px solid #e4e7ec; background: #fff; }
 .support-compose textarea { display: block; box-sizing: border-box; width: 100%; resize: none; border: 1px solid #d0d5dd; border-radius: 10px; padding: 10px; outline: none; color: #182230; background: #fff; font: inherit; font-size: 12px; line-height: 1.6; }

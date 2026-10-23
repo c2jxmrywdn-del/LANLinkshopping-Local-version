@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lanlink.shopping.common.BusinessException;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -26,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Component
 public class AgentLoadoutMcpClient {
+    private static final Logger log = LoggerFactory.getLogger(AgentLoadoutMcpClient.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -50,6 +54,19 @@ public class AgentLoadoutMcpClient {
 
     public boolean isConfigured() {
         return !apiKey.isBlank() && !inboxId.isBlank();
+    }
+
+    /**
+     * 生产误配兜底告警：已配置发信凭据（apiKey+inboxId）却仍指向本地回环端点时，
+     * 多半是忘了设置 AGENT_LOADOUT_MCP_URL，真实发信会连不存在的 localhost:18090 而失败。
+     * 仅告警不抛异常——该通道为可选，回环地址在本地开发/测试中是合法的。
+     */
+    @PostConstruct
+    void warnIfLoopbackEndpoint() {
+        if (isConfigured() && endpoint.getHost() != null && isLoopback(endpoint.getHost())) {
+            log.warn("[agent-loadout] 已配置发信凭据但 MCP 端点仍为本地回环({})；"
+                    + "生产环境请显式设置 AGENT_LOADOUT_MCP_URL 指向真实服务，否则发信将失败。", endpoint);
+        }
     }
 
     /**

@@ -25,6 +25,7 @@ class MembershipServiceTest {
     private MemberCardMapper cardMapper;
     private MemberLevelMapper levelMapper;
     private MemberPointLogMapper logMapper;
+    private SubscriptionService subscriptionService;
     private MembershipService service;
 
     private MemberLevel base() {
@@ -39,7 +40,10 @@ class MembershipServiceTest {
         cardMapper = mock(MemberCardMapper.class);
         levelMapper = mock(MemberLevelMapper.class);
         logMapper = mock(MemberPointLogMapper.class);
-        service = new MembershipService(cardMapper, levelMapper, logMapper);
+        subscriptionService = mock(SubscriptionService.class);
+        // 默认视为持有生效订阅，使成长值→等级的既有判定口径保持不变
+        when(subscriptionService.hasActiveSubscription(any())).thenReturn(true);
+        service = new MembershipService(cardMapper, levelMapper, logMapper, subscriptionService);
         when(levelMapper.selectOne(any())).thenReturn(base());
     }
 
@@ -61,9 +65,16 @@ class MembershipServiceTest {
                 level(2L, "白银会员", 1000),
                 level(1L, "普通会员", 0));
         when(levelMapper.selectList(any())).thenReturn(levels);
-        assertEquals(3L, service.levelForGrowth(6000), "成长值6000 → 黄金");
-        assertEquals(2L, service.levelForGrowth(1500), "成长值1500 → 白银");
-        assertEquals(1L, service.levelForGrowth(300), "成长值300 → 普通");
+        assertEquals(3L, service.levelForGrowth(6000, 2L), "成长值6000 → 黄金");
+        assertEquals(2L, service.levelForGrowth(1500, 2L), "成长值1500 → 白银");
+        assertEquals(1L, service.levelForGrowth(300, 2L), "成长值300 → 普通");
+    }
+
+    @Test
+    void noActiveSubscriptionFallsBackToBaseLevel() {
+        // 无生效订阅：即便成长值达黄金门槛，也一律回落为普通会员(等级1)
+        when(subscriptionService.hasActiveSubscription(any())).thenReturn(false);
+        assertEquals(1L, service.levelForGrowth(6000, 2L), "无生效订阅 → 普通会员");
     }
 
     @Test

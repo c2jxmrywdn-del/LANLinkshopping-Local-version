@@ -19,5 +19,9 @@ public class CreditRepayment {
     private String method;
     private String referenceNo;
     private String remark;
+    /** PENDING待确认 CONFIRMED已入账 REJECTED已驳回 */
+    private String status;
+    private LocalDateTime confirmedTime;
+    private String confirmRemark;
     private LocalDateTime createTime;
 }

@@ -56,6 +56,17 @@
             <version>8.4.0</version>
         </dependency>
 
+        <!-- Redis（服务端热点数据缓存后端，配合 spring.cache.type=redis 使用） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- Spring Cache 抽象（@EnableCaching / @Cacheable 的自动配置支持） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
         <!-- BCrypt 密码加密（仅用 crypto，不引入整套 Security） -->
         <dependency>
             <groupId>org.springframework.security</groupId>

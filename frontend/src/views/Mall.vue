@@ -13,8 +13,9 @@
       <a-select v-model:value="sort" style="width:160px" @change="reload">
         <a-select-option value="">综合排序</a-select-option>
         <a-select-option value="sales">销量优先</a-select-option>
-        <a-select-option value="priceAsc">价格升序</a-select-option>
-        <a-select-option value="priceDesc">价格降序</a-select-option>
+        <!-- 语义与后端排序一致：价格最高 = 从高到低（priceDesc），价格最低 = 从低到高（priceAsc） -->
+        <a-select-option value="priceDesc">价格最高</a-select-option>
+        <a-select-option value="priceAsc">价格最低</a-select-option>
       </a-select>
       <span v-if="!loading && total > 0" class="toolbar-count">共 {{ total }} 件商品</span>
     </div>

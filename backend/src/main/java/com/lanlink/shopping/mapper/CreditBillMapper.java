@@ -8,4 +8,7 @@ import org.apache.ibatis.annotations.Select;
 public interface CreditBillMapper extends BaseMapper<CreditBill> {
     @Select("SELECT * FROM t_credit_bill WHERE id=#{id} AND user_id=#{userId} FOR UPDATE")
     CreditBill selectForUpdate(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Select("SELECT * FROM t_credit_bill WHERE id=#{id} FOR UPDATE")
+    CreditBill selectByIdForUpdate(@Param("id") Long id);
 }

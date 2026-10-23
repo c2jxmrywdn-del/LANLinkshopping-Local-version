@@ -65,6 +65,11 @@ public class UserService {
         return userMapper.selectById(userId);
     }
 
+    public User findByPhone(String phone) {
+        if (!StringUtils.hasText(phone)) return null;
+        return userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getPhone, phone.trim()));
+    }
+
     /**
      * 修改密码：原密码校验 + 强规则（8-20 位，含大小写字母、数字、特殊字符）
      */

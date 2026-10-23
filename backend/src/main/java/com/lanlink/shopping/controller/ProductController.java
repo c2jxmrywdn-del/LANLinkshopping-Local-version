@@ -113,13 +113,47 @@ public class ProductController {
         return R.ok(Map.of("url", "/api/uploads/products/" + name));
     }
 
-    /** 管理后台: 全量商品列表(含已下架) */
+    /** 管理后台: 全量商品列表(含已下架), 支持多维筛选 */
     @GetMapping("/admin/list")
     public R<IPage<Product>> adminList(@RequestParam(defaultValue = "1") long current,
                                        @RequestParam(defaultValue = "20") long size,
                                        @RequestParam(required = false) Integer status,
+                                       @RequestParam(required = false) Integer reviewStatus,
+                                       @RequestParam(required = false) Long indId,
+                                       @RequestParam(required = false) Long catId,
                                        @RequestParam(required = false) String keyword) {
-        return R.ok(productService.adminPage(current, size, status, keyword));
+        return R.ok(productService.adminPage(current, size, status, reviewStatus, indId, catId, keyword));
+    }
+
+    /** 管理后台: 商品审核统计看板 (总数/待审核/已通过/已驳回/已下架/通过率) */
+    @GetMapping("/admin/stats")
+    public R<Map<String, Object>> adminStats() {
+        return R.ok(productService.adminStats());
+    }
+
+    /** 管理后台: 商品审核全景详情与合规初筛校验报告 */
+    @GetMapping("/admin/detail/{prodId}")
+    public R<Map<String, Object>> adminDetail(@PathVariable Long prodId) {
+        return R.ok(productService.adminDetail(prodId));
+    }
+
+    /** 管理后台: 批量审核商品（批量通过/批量驳回） */
+    @PostMapping("/admin/batch-review")
+    public R<Map<String, Object>> adminBatchReview(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        Long adminUserId = UserContext.currentUserId(request);
+        @SuppressWarnings("unchecked")
+        java.util.List<Integer> rawIds = (java.util.List<Integer>) body.get("prodIds");
+        if (rawIds == null) throw new IllegalArgumentException("请选择商品");
+        java.util.List<Long> prodIds = rawIds.stream().map(Integer::longValue).toList();
+        Integer reviewStatus = (Integer) body.get("reviewStatus");
+        String reason = (String) body.get("reason");
+        return R.ok(productService.batchReview(prodIds, reviewStatus, reason, adminUserId, request));
+    }
+
+    /** 管理后台: 获取商品审核流转审计历史 */
+    @GetMapping("/admin/audit-logs/{prodId}")
+    public R<java.util.List<com.lanlink.shopping.entity.AuditLog>> adminAuditLogs(@PathVariable Long prodId) {
+        return R.ok(productService.auditLogs(prodId));
     }
 
     /** 管理后台: 上架/下架 (status 1上架 0下架) */

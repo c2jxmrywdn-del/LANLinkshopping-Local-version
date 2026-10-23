@@ -30,12 +30,14 @@ public class MembershipService {
     private final MemberCardMapper cardMapper;
     private final MemberLevelMapper levelMapper;
     private final MemberPointLogMapper pointLogMapper;
+    private final SubscriptionService subscriptionService;
 
     public MembershipService(MemberCardMapper cardMapper, MemberLevelMapper levelMapper,
-                             MemberPointLogMapper pointLogMapper) {
+                             MemberPointLogMapper pointLogMapper, SubscriptionService subscriptionService) {
         this.cardMapper = cardMapper;
         this.levelMapper = levelMapper;
         this.pointLogMapper = pointLogMapper;
+        this.subscriptionService = subscriptionService;
     }
 
     /** 获取或创建用户会员卡（user_id 唯一） */
@@ -66,7 +68,7 @@ public class MembershipService {
         int points = orderAmount == null ? 0 : orderAmount.intValue() * Math.max(1, multiplier);
         card.setGrowth(card.getGrowth() == null ? 0 : card.getGrowth() + growth);
         card.setPoints(card.getPoints() == null ? 0 : card.getPoints() + points);
-        card.setLevelId(levelForGrowth(card.getGrowth()));
+        card.setLevelId(levelForGrowth(card.getGrowth(), userId));
         card.setUpdateTime(LocalDateTime.now());
         cardMapper.updateById(card);
 
@@ -219,8 +221,14 @@ public class MembershipService {
         return points;
     }
 
-    /** 依据成长值匹配最高等级 */
-    public Long levelForGrowth(int growth) {
+    /**
+     * 依据成长值匹配最高等级。
+     * 会员等级解锁采用「有效订阅 + 成长值」双重条件：无生效订阅时一律回落为普通会员（等级 1），
+     * 有生效订阅时才按成长值取最高等级。
+     */
+    public Long levelForGrowth(int growth, Long userId) {
+        // 无生效订阅 → 普通会员（等级1），不论成长值
+        if (!subscriptionService.hasActiveSubscription(userId)) return 1L;
         List<MemberLevel> levels = levelMapper.selectList(Wrappers.<MemberLevel>lambdaQuery()
                 .orderByDesc(MemberLevel::getMinGrowth));
         for (MemberLevel l : levels) {
@@ -246,6 +254,7 @@ public class MembershipService {
         out.put("card", card);
         out.put("level", level);
         out.put("levels", levels);
+        out.put("subscription", subscriptionService.mySubscription(userId));
         // 积分规则（前端展示：获取比例 / 抵现比例 / 单笔上限 / VIP 倍数）
         Map<String, Object> rule = new LinkedHashMap<>();
         rule.put("pointsPerYuanEarn", MemberRule.POINTS_PER_YUAN_EARN);

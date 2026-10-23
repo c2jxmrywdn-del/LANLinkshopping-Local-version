@@ -4,9 +4,11 @@ server:
     context-path: /api
     session:
       cookie:
-        secure: ${SESSION_COOKIE_SECURE:false}
+        # 生产默认安全（fail-secure）：Secure + SameSite=None 组合，跨站携带必须配 Secure。
+        # 仅当确需 HTTP 内网直连等非常规部署时，才用环境变量显式下调；ProdConfigGuard 会在启动期拦截误配。
+        secure: ${SESSION_COOKIE_SECURE:true}
         http-only: true
-        same-site: ${SESSION_COOKIE_SAMESITE:lax}
+        same-site: ${SESSION_COOKIE_SAMESITE:none}
 
 spring:
   datasource:
@@ -32,7 +34,22 @@ spring:
     init:
       mode: never
 
-# Production defaults are fail-closed, with configurable env overrides
+  # 生产邮件：不继承 application.yml 的 localhost Mailpit 默认值，强制显式配置真实 SMTP。
+  # 未设 MAIL_HOST 时发送会失败（而非静默发到本地占位），避免生产验证码/通知石沉大海。
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: ${MAIL_SMTP_SSL:true}
+
+# Production settings are fail-secure (cookie Secure/SameSite=None, real SMTP, mock/demo off),
+# with explicit env overrides only for non-standard deployments; ProdConfigGuard enforces the cookie at startup.
 lanlink:
   payment:
     mock: ${LANLINK_PAYMENT_MOCK:false}

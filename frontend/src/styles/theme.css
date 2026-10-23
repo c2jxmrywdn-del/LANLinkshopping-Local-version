@@ -203,7 +203,7 @@
 }
 .ll-wordmark .ll-lan { color: #fff; }
 .ll-wordmark .ll-link { color: var(--ll-amber); font-weight: 700; }
-.ll-wordmark .ll-shopping { color: inherit; font-weight: 700; }
+.ll-wordmark .ll-shopping { color: #ffffff; font-weight: 700; }
 .ll-wordmark-on-light .ll-lan { color: var(--ll-ink); }
 .ll-wordmark-on-light .ll-shopping { color: var(--ll-ink); }
 
@@ -337,3 +337,126 @@ a:active { color: var(--ll-skyblue-active); }
   transform: scale(0.9);
   background-color: rgba(255, 255, 255, 0.16);
 }
+
+/* =====================================================
+   Apple-style 数据表格（全站统一）
+   目标：竖线加深到清晰可辨（扫描宽表不串列）、提高表头/正文对比度、
+   修正操作列按钮拥挤重叠。参考 Apple HIG 的克制配色、清晰层级与圆角分隔风格。
+   ===================================================== */
+#app .ant-table-wrapper .ant-table {
+  background: #ffffff;
+  color: #1d1d1f;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 14px;
+  font-variant-numeric: tabular-nums;
+}
+#app .ant-table-wrapper .ant-table-container { border-radius: 14px; overflow: hidden; }
+#app .ant-table-wrapper .ant-table-thead > tr > th {
+  background: #f5f5f7;
+  color: #1d1d1f;
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: .01em;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.22);
+  border-inline-end: 1px solid rgba(15, 23, 42, 0.20);
+  padding-top: 13px;
+  padding-bottom: 13px;
+}
+#app .ant-table-wrapper .ant-table-thead > tr > th:last-child { border-inline-end: 0; }
+#app .ant-table-wrapper .ant-table-thead > tr > th::before { display: none; }
+#app .ant-table-wrapper .ant-table-tbody > tr > td {
+  color: #1d1d1f;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.12);
+  border-inline-end: 1px solid rgba(15, 23, 42, 0.15);
+  padding-top: 14px;
+  padding-bottom: 14px;
+  vertical-align: middle;
+}
+#app .ant-table-wrapper .ant-table-tbody > tr:last-child > td { border-bottom: 0; }
+#app .ant-table-wrapper .ant-table-tbody > tr > td:last-child { border-inline-end: 0; }
+#app .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
+#app .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: #f5f5f7;
+}
+#app .ant-table-wrapper .ant-table-column-sort { background: #fafafa; }
+#app .ant-table-wrapper .ant-table-column-sorter { color: rgba(29, 29, 31, 0.38); }
+#app .ant-table-wrapper .ant-table-column-sorter-up.active,
+#app .ant-table-wrapper .ant-table-column-sorter-down.active { color: #1d1d1f; }
+#app .ant-table-wrapper .ant-table-placeholder > td { background: #ffffff; }
+#app .ant-table-wrapper .ant-table-cell-fix-right { background: #ffffff; }
+#app .ant-table-wrapper .ant-table-thead .ant-table-cell-fix-right { background: #f5f5f7; }
+#app .ant-table-wrapper .ant-table-cell-fix-right-first::after {
+  box-shadow: inset -12px 0 12px -10px rgba(15, 23, 42, 0.18);
+}
+
+/* 操作列：按钮不换行、不重叠，统一间距与触控尺寸 */
+#app .ant-table-wrapper .ant-table-tbody > tr > td:has(.ant-btn) {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+#app .ant-table-wrapper .ant-table-tbody > tr > td .ant-btn + .ant-btn { margin-inline-start: 6px; }
+#app .ant-table-wrapper .ant-table-tbody > tr > td .ant-space { flex-wrap: wrap; row-gap: 6px; }
+#app .ant-table-wrapper .ant-table-tbody > tr > td .ant-btn-link {
+  height: 28px;
+  padding-inline: 7px;
+  border-radius: 8px;
+}
+#app .ant-table-wrapper .ant-table-tbody > tr > td .ant-btn-link:hover {
+  background: rgba(15, 23, 42, 0.05);
+}
+.action-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+/* 分页：Apple 风格中性胶囊 */
+#app .ant-table-wrapper .ant-pagination .ant-pagination-item,
+#app .ant-table-wrapper .ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+#app .ant-table-wrapper .ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  border: 0;
+  border-radius: 9px;
+  background: #f5f5f7;
+}
+#app .ant-table-wrapper .ant-pagination .ant-pagination-item a { color: #1d1d1f; }
+#app .ant-table-wrapper .ant-pagination .ant-pagination-item-active,
+#app .ant-table-wrapper .ant-pagination .ant-pagination-item-active:hover {
+  background: #1d1d1f;
+  border-color: #1d1d1f;
+}
+#app .ant-table-wrapper .ant-pagination .ant-pagination-item-active a { color: #ffffff; }
+
+/* 深色模式：保持同等层级与对比度 */
+[data-theme='dark'] #app .ant-table-wrapper .ant-table {
+  background: #121a26;
+  color: #f5f5f7;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-thead > tr > th {
+  background: #1a2331;
+  color: #f5f5f7;
+  border-bottom-color: rgba(255, 255, 255, 0.26);
+  border-inline-end-color: rgba(255, 255, 255, 0.24);
+}
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-tbody > tr > td {
+  color: #f5f5f7;
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+  border-inline-end-color: rgba(255, 255, 255, 0.17);
+}
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-tbody > tr > td.ant-table-cell-row-hover {
+  background: #1e2938;
+}
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-column-sort { background: #182231; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-cell-fix-right { background: #161f2c; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-thead .ant-table-cell-fix-right { background: #1a2331; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-table-placeholder > td { background: #121a26; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item,
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-prev .ant-pagination-item-link,
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-next .ant-pagination-item-link {
+  background: #1a2331;
+}
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item a { color: #f5f5f7; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item-active { background: #f5f5f7; }
+[data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item-active a { color: #1d1d1f; }

@@ -1,0 +1,210 @@
+/* ============================================================
+   全站移动端样式（由 mobileAdapter 打标控制）
+   仅在 <html data-viewport="mobile"> 时生效：
+   - PC Web 完全不加覆盖，保持原版；
+   - 手机端统一使用小号字体、紧凑间距，并兜底防止横向溢出。
+   目标宽度：375–430px 主流手机竖屏。
+   ============================================================ */
+
+html[data-viewport='mobile'] {
+  -webkit-text-size-adjust: 100%;
+}
+
+html[data-viewport='mobile'] body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  font-size: 13px;
+  overflow-wrap: break-word;
+}
+
+/* 媒体元素不得撑破容器；LOGO 单独限制尺寸 */
+html[data-viewport='mobile'] img,
+html[data-viewport='mobile'] video {
+  max-width: 100%;
+  height: auto;
+}
+html[data-viewport='mobile'] .logo-img {
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 7px !important;
+}
+html[data-viewport='mobile'] .logo {
+  flex: none;
+  margin-right: 6px !important;
+}
+html[data-viewport='mobile'] .ll-wordmark {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+html[data-viewport='mobile'] .footer-wordmark { font-size: 20px !important; }
+html[data-viewport='mobile'] .brand-txt { font-size: 18px !important; }
+
+/* 手机端字号整体下调一档，标题不再按桌面尺寸渲染 */
+html[data-viewport='mobile'] h1 { font-size: 22px !important; line-height: 1.35 !important; }
+html[data-viewport='mobile'] h2 { font-size: 20px !important; line-height: 1.4 !important; }
+html[data-viewport='mobile'] h3 { font-size: 17px !important; line-height: 1.45 !important; }
+html[data-viewport='mobile'] h4 { font-size: 15px !important; line-height: 1.5 !important; }
+html[data-viewport='mobile'] h5 { font-size: 14px !important; }
+html[data-viewport='mobile'] .ant-btn,
+html[data-viewport='mobile'] .ant-input,
+html[data-viewport='mobile'] .ant-input-number,
+html[data-viewport='mobile'] .ant-select,
+html[data-viewport='mobile'] .ant-form-item-label > label,
+html[data-viewport='mobile'] .ant-card,
+html[data-viewport='mobile'] .ant-menu-item,
+html[data-viewport='mobile'] .ant-dropdown-menu-item,
+html[data-viewport='mobile'] .ant-tabs-tab-btn,
+html[data-viewport='mobile'] .ant-tag,
+html[data-viewport='mobile'] .ant-table {
+  font-size: 13px !important;
+}
+
+/* 前台头部：品牌 + 操作区一行，导航独占一行横向滑动 */
+html[data-viewport='mobile'] .header-inner {
+  flex-wrap: wrap !important;
+  height: auto !important;
+  padding: 6px 10px !important;
+}
+html[data-viewport='mobile'] .nav-shell {
+  flex-basis: 100% !important;
+  order: 3 !important;
+  overflow-x: auto !important;
+  scrollbar-width: none;
+  margin-inline: -10px !important;
+  padding-inline: 10px !important;
+}
+html[data-viewport='mobile'] .nav-shell::-webkit-scrollbar { display: none; }
+html[data-viewport='mobile'] .nav { white-space: nowrap; }
+html[data-viewport='mobile'] .header .right {
+  gap: 6px !important;
+  margin-left: auto !important;
+  flex-wrap: nowrap;
+}
+html[data-viewport='mobile'] .nav-action-label,
+html[data-viewport='mobile'] .header-user-name,
+html[data-viewport='mobile'] .id-badge {
+  display: none !important;
+}
+html[data-viewport='mobile'] .ant-layout-content.content {
+  padding: 16px 10px 28px !important;
+}
+html[data-viewport='mobile'] .footer-inner {
+  grid-template-columns: 1fr !important;
+  gap: 18px !important;
+  padding: 22px 0 18px !important;
+}
+html[data-viewport='mobile'] .footer-links { justify-content: flex-start !important; }
+
+/* Ant Design 通用组件：窄屏下不再按桌面尺寸硬撑 */
+html[data-viewport='mobile'] .ant-modal {
+  max-width: calc(100vw - 20px);
+  margin: 10px auto;
+  top: 16px;
+  padding-bottom: 16px;
+}
+html[data-viewport='mobile'] .ant-modal-content { padding: 16px; }
+html[data-viewport='mobile'] .ant-modal-body {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+html[data-viewport='mobile'] .ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+html[data-viewport='mobile'] .ant-drawer-content-wrapper { max-width: 100vw; }
+html[data-viewport='mobile'] .ant-card-body { padding: 14px; }
+html[data-viewport='mobile'] .ant-form-item { margin-bottom: 14px; }
+html[data-viewport='mobile'] .ant-form-item-label > label {
+  white-space: normal;
+  height: auto;
+}
+html[data-viewport='mobile'] .ant-tabs-tab { padding: 8px 0; }
+html[data-viewport='mobile'] .ant-pagination { flex-wrap: wrap; row-gap: 8px; }
+html[data-viewport='mobile'] .ant-message,
+html[data-viewport='mobile'] .ant-notification { max-width: calc(100vw - 24px); }
+
+/* 提示条带操作按钮时在窄屏改为上下排列，避免按钮挤压描述文字 */
+html[data-viewport='mobile'] .ant-alert {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+html[data-viewport='mobile'] .ant-alert .ant-alert-content { min-width: 0; }
+html[data-viewport='mobile'] .ant-alert .ant-alert-action {
+  width: 100%;
+  margin-inline-start: 0 !important;
+  margin-top: 8px;
+}
+html[data-viewport='mobile'] .ant-alert .ant-alert-action .ant-btn { width: 100%; }
+
+/* 表格：桌面固定列宽较多，窄屏统一允许横向滑动查看 */
+html[data-viewport='mobile'] .ant-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+html[data-viewport='mobile'] .ant-table-content,
+html[data-viewport='mobile'] .ant-table-body {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+html[data-viewport='mobile'] .ant-table-thead > tr > th,
+html[data-viewport='mobile'] .ant-table-tbody > tr > td {
+  padding: 9px 10px !important;
+  white-space: nowrap;
+}
+
+/* 描述列表与步骤条 */
+html[data-viewport='mobile'] .ant-descriptions-item-label,
+html[data-viewport='mobile'] .ant-descriptions-item-content {
+  padding: 8px 10px !important;
+  font-size: 12px !important;
+}
+html[data-viewport='mobile'] .ant-steps-item-title,
+html[data-viewport='mobile'] .ant-steps-item-description { font-size: 12px !important; }
+
+/* 弹层类组件不超出视口 */
+html[data-viewport='mobile'] .ant-picker-dropdown,
+html[data-viewport='mobile'] .ant-select-dropdown,
+html[data-viewport='mobile'] .ant-dropdown-menu {
+  max-width: calc(100vw - 16px);
+}
+
+/* 后台常用指标/图表栅格：桌面 4–5 列在手机上压缩成 2 列或单列 */
+html[data-viewport='mobile'] .kpi-grid,
+html[data-viewport='mobile'] .metrics-grid,
+html[data-viewport='mobile'] .tax-overview-bar,
+html[data-viewport='mobile'] .pricing-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+html[data-viewport='mobile'] .radar-grid,
+html[data-viewport='mobile'] .security-tools-grid,
+html[data-viewport='mobile'] .detail-grid,
+html[data-viewport='mobile'] .dual-screen-grid {
+  grid-template-columns: 1fr !important;
+  gap: 12px !important;
+}
+
+/* 列表页筛选工具栏：桌面常把搜索框写死 280px，窄屏统一换行铺满 */
+html[data-viewport='mobile'] .toolbar-card {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 10px !important;
+  padding: 12px !important;
+}
+html[data-viewport='mobile'] .toolbar-left {
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+html[data-viewport='mobile'] .toolbar-right {
+  width: 100% !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+html[data-viewport='mobile'] .toolbar-right > * { min-width: 0 !important; }
+html[data-viewport='mobile'] .toolbar-right .ant-input-search,
+html[data-viewport='mobile'] .toolbar-right .ant-select {
+  flex: 1 1 100%;
+  width: 100% !important;
+}

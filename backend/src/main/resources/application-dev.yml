@@ -71,6 +71,10 @@ support:
   fallback:
     deepseek-api-key: ${DEEPSEEK_API_KEY:}
     deepseek-base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    mimo-api-key: ${MIMO_API_KEY:}
+    mimo-base-url: ${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}
+    qwen-api-key: ${QWEN_API_KEY:${DASHSCOPE_API_KEY:}}
+    qwen-base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
     mimosa-api-key: ${MIMOSA_API_KEY:}
     mimosa-base-url: ${MIMOSA_BASE_URL:}
 

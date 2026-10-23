@@ -64,3 +64,11 @@ cloud/logs/
 Thumbs.db
 desktop.ini
 *.swp
+
+# AI 助手工具目录（非业务代码，不入库）
+.codebuddy/
+.claude/
+.agents/
+.deepsec/
+.trae/
+skills-lock.json

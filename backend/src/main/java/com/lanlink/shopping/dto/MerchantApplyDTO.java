@@ -21,11 +21,27 @@ public class MerchantApplyDTO {
     @NotNull(message = "请选择是否有稳定纳税记录")
     private Integer taxStatus;       // 1稳定 0无
     private String joinType = "入驻"; // 加盟/入驻/邀约
+    private String joinCode;         // 平台邀约码 / 特约加盟码
+    private String inviteCode;       // 平台邀约码别名
+    private String franchiseCode;    // 特约加盟码别名
     private String qNames;           // 已具备资质名称,逗号分隔(可选)
-    // 证照材料（营业执照/税务证明/税务登记号）由入驻审核通过后的商户
-    // 通过 merchant:manage 权限保护的 /merchant/license、/merchant/tax-proof、/merchant/tax-query 上传绑定，
-    // 申请阶段无需前置提交，此处仅作向后兼容的可选字段。
-    private String licenseUrl;       // 营业执照图片URL(入驻后由商户补传)
-    private List<String> taxProofUrls; // 近3个月税务缴纳证明URL(入驻后由商户补传)
-    private String taxRegNo;         // 税务登记号(入驻后由商户绑定)
+
+    // ===== 商户重要敏感信息（入驻阶段提交，后端 AES-256 加密落库） =====
+    private String legalPerson;      // 法人姓名
+    private String legalIdCard;      // 法人身份证号
+    private String bankAccount;      // 对公银行账号
+    private String bankName;         // 开户银行
+    private String contactPhone;     // 负责人联系电话
+    private String contactEmail;     // 负责人联系邮箱
+    private String businessAddress;  // 经营场所/注册地址
+
+    // ===== 资质证照与纳税证明 =====
+    private String licenseUrl;       // 营业执照图片URL
+    private List<String> taxProofUrls; // 近3个月税务缴纳证明URL
+    private String taxRegNo;         // 税务登记号
+
+    // ===== 特殊经营许可证 =====
+    private Boolean hasSpecialPermit; // 是否有特殊经营许可证
+    private String specialPermitName; // 特殊经营许可证名称
+    private String specialPermitUrl;  // 特殊经营许可证附件URL
 }

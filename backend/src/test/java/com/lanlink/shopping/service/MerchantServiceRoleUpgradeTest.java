@@ -1,9 +1,11 @@
 package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
+import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.dto.MerchantApplyDTO;
 import com.lanlink.shopping.entity.Enterprise;
 import com.lanlink.shopping.entity.Merchant;
+import com.lanlink.shopping.entity.Qualification;
 import com.lanlink.shopping.entity.User;
 import com.lanlink.shopping.mapper.EnterpriseMapper;
 import com.lanlink.shopping.mapper.MerchantMapper;
@@ -126,5 +128,100 @@ class MerchantServiceRoleUpgradeTest {
 
         assertEquals(1L, user.getRoleId(), "人工审核驳回后，若角色为商户应重置为买家 (1)");
         verify(userMapper).updateById(user);
+    }
+
+    @Test
+    void applyWithInviteRequiresInviteCode() {
+        Long userId = 40L;
+        when(merchantMapper.selectCount(any())).thenReturn(0L);
+
+        MerchantApplyDTO dto = new MerchantApplyDTO();
+        dto.setEntName("邀约入驻企业");
+        dto.setRegType("公司");
+        dto.setRegCapital(new BigDecimal("1000000"));
+        dto.setTaxStatus(1);
+        dto.setJoinType("邀约");
+        // 没有邀约码
+        assertThrows(BusinessException.class, () -> service.apply(userId, null, dto));
+
+        // 填入邀约码
+        dto.setInviteCode("INV-2026888");
+        doAnswer(invocation -> {
+            Enterprise ent = invocation.getArgument(0);
+            ent.setEntId(101L);
+            return 1;
+        }).when(enterpriseMapper).insert(any(Enterprise.class));
+        User user = new User();
+        user.setUserId(userId);
+        user.setRoleId(1L);
+        when(userMapper.selectById(userId)).thenReturn(user);
+
+        Merchant m = service.apply(userId, null, dto);
+        assertEquals("INV-2026888", m.getJoinCode());
+    }
+
+    @Test
+    void applyWithFranchiseRequiresFranchiseCode() {
+        Long userId = 50L;
+        when(merchantMapper.selectCount(any())).thenReturn(0L);
+
+        MerchantApplyDTO dto = new MerchantApplyDTO();
+        dto.setEntName("加盟企业");
+        dto.setRegType("公司");
+        dto.setRegCapital(new BigDecimal("1000000"));
+        dto.setTaxStatus(1);
+        dto.setJoinType("加盟");
+        // 没有加盟码
+        assertThrows(BusinessException.class, () -> service.apply(userId, null, dto));
+
+        // 填入加盟码
+        dto.setFranchiseCode("JM-666666");
+        doAnswer(invocation -> {
+            Enterprise ent = invocation.getArgument(0);
+            ent.setEntId(102L);
+            return 1;
+        }).when(enterpriseMapper).insert(any(Enterprise.class));
+        User user = new User();
+        user.setUserId(userId);
+        user.setRoleId(1L);
+        when(userMapper.selectById(userId)).thenReturn(user);
+
+        Merchant m = service.apply(userId, null, dto);
+        assertEquals("JM-666666", m.getJoinCode());
+    }
+
+    @Test
+    void applyWithSpecialPermitRequiresUploadAndInsertsQualification() {
+        Long userId = 60L;
+        when(merchantMapper.selectCount(any())).thenReturn(0L);
+
+        MerchantApplyDTO dto = new MerchantApplyDTO();
+        dto.setEntName("危化品经营企业");
+        dto.setRegType("公司");
+        dto.setRegCapital(new BigDecimal("2000000"));
+        dto.setTaxStatus(1);
+        dto.setJoinType("入驻");
+        dto.setHasSpecialPermit(true);
+        // 未上传附件
+        assertThrows(BusinessException.class, () -> service.apply(userId, null, dto));
+
+        // 提供名称与附件
+        dto.setSpecialPermitName("危险化学品经营许可证");
+        dto.setSpecialPermitUrl("/uploads/special-permits/whp_permit.png");
+        doAnswer(invocation -> {
+            Enterprise ent = invocation.getArgument(0);
+            ent.setEntId(103L);
+            return 1;
+        }).when(enterpriseMapper).insert(any(Enterprise.class));
+        User user = new User();
+        user.setUserId(userId);
+        user.setRoleId(1L);
+        when(userMapper.selectById(userId)).thenReturn(user);
+
+        Merchant m = service.apply(userId, null, dto);
+        assertEquals(1, m.getHasSpecialPermit());
+        assertEquals("危险化学品经营许可证", m.getSpecialPermitName());
+        assertEquals("/uploads/special-permits/whp_permit.png", m.getSpecialPermitUrl());
+        verify(qualificationMapper).insert((Qualification) argThat(q -> q instanceof Qualification && "特殊经营许可".equals(((Qualification) q).getQType()) && "危险化学品经营许可证".equals(((Qualification) q).getQName())));
     }
 }

@@ -22,6 +22,23 @@ services:
       - "127.0.0.1:8081:8025"
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    # requirepass 从环境变量注入（不落镜像/仓库）；appendonly yes 开启 AOF 持久化到数据卷。
+    command: ["sh", "-c", "redis-server --requirepass \"$${REDIS_PASSWORD}\" --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -36,6 +53,10 @@ services:
       MAIL_PORT: 1025
       MAIL_USERNAME: lanlink@local.dev
       MAIL_PASSWORD: lanlink-local
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      LANLINK_CACHE_TYPE: redis
       SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
       SUPPORT_SANDBOX_URL: http://support-learning-sandbox:8080
       SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in .env}
@@ -45,8 +66,13 @@ services:
       LANLINK_PAYMENT_MOCK: "true"
     ports:
       - "127.0.0.1:8080:8080"
+    # 上传文件（营业执照/完税凭证/特殊许可/头像）持久化，避免容器重建后丢失
+    volumes:
+      - backend-uploads:/app/uploads
     depends_on:
       mysql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       mailpit:
         condition: service_started
@@ -106,3 +132,5 @@ services:
 
 volumes:
   mysql-data:
+  backend-uploads:
+  redis-data:

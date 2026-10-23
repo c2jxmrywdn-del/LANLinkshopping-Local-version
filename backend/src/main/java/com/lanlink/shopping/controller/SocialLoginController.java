@@ -76,4 +76,34 @@ public class SocialLoginController {
         String state = body == null ? null : body.get("state");
         return R.ok("绑定成功", service.bindIdentity(me.getUserId(), provider, code, state));
     }
+
+    /**
+     * 沙箱模拟登录：在未配置海外 OAuth 密钥时，提供高拟真 Google / Apple 登录闭环体验
+     */
+    @PostMapping("/sandbox-login")
+    public R<Map<String, Object>> sandboxLogin(@RequestBody Map<String, String> body,
+                                              HttpServletRequest request) {
+        String provider = body == null ? null : body.get("provider");
+        String sub = body == null ? null : body.get("sub");
+        String email = body == null ? null : body.get("email");
+        String name = body == null ? null : body.get("name");
+        String avatar = body == null ? null : body.get("avatar");
+        User u = service.sandboxLogin(provider, sub, email, name, avatar);
+        return R.ok(provider + " 授权登录成功", authController.establishSessionAndView(u, provider + " 沙箱登录", request));
+    }
+
+    /** 查询当前用户已绑定的第三方社交账号 */
+    @GetMapping("/my-bindings")
+    public R<List<Map<String, Object>>> myBindings(HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok(service.userBindings(userId));
+    }
+
+    /** 解绑第三方社交账号 */
+    @PostMapping("/unbind/{provider}")
+    public R<Boolean> unbind(@PathVariable String provider, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        boolean ok = service.unbindProvider(userId, provider);
+        return ok ? R.ok("解绑成功", true) : R.fail("未找到绑定的该渠道账号");
+    }
 }

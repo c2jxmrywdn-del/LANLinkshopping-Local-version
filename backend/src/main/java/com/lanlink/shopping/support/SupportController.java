@@ -119,7 +119,8 @@ public class SupportController {
             // 自主学习：未命中知识库的合格提问自动沉淀为待审核候选（不自动发布）；
             // 异步执行且吞异常，绝不影响回答主链路
             try {
-                if (answers.matchedEntryId(question) == null
+                // matchedEntryId 未命中时返回空字符串（非 null），须用 hasText 判断
+                if (!StringUtils.hasText(answers.matchedEntryId(question))
                         && answers.isEligibleForKnowledgeLearning(question)
                         && FallbackPolicyGuard.classify(question) != FallbackPolicyGuard.Intent.PROHIBITED) {
                     final String learnQuestion = question;

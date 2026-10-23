@@ -24,6 +24,7 @@
 import { computed, ref, watch } from 'vue'
 import avatarSprite from '../../assets/avatars/user-avatar-sprite.webp'
 import { avatarGradientOf, initialsOf } from '../../utils/avatarIdentity'
+import { locale, translateDataText } from '../../i18n'
 
 const props = defineProps({
   src: { type: String, default: '' },
@@ -54,9 +55,15 @@ const fallbackPosition = computed(() => {
   return '0% 50%'
 })
 const useUploadedPhoto = computed(() => Boolean(props.src && !imageError.value))
-const resolvedAlt = computed(() => props.alt || (props.name ? `${props.name} 的头像` : 'LANLinkshopping 用户头像'))
+// 英文模式下昵称按词表翻译后再取缩写，避免头像仍显示「理员」等中文字符
+const displayName = computed(() => locale.value === 'en-US' ? translateDataText(props.name) : props.name)
+const resolvedAlt = computed(() => {
+  if (props.alt) return locale.value === 'en-US' ? translateDataText(props.alt) : props.alt
+  if (displayName.value) return `${displayName.value}${locale.value === 'en-US' ? "'s avatar" : ' 的头像'}`
+  return locale.value === 'en-US' ? 'LANLinkshopping user avatar' : 'LANLinkshopping 用户头像'
+})
 // 21st.dev 头像规范：缩写 + 由姓名确定性推导的配色（同一用户各处颜色一致）
-const initials = computed(() => initialsOf(props.name))
+const initials = computed(() => initialsOf(displayName.value))
 const initialsGradient = computed(() =>
   avatarGradientOf(props.name || props.alt || 'LANLinkshopping').css)
 const avatarStyle = computed(() => ({

@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { userApi } from '../api'
 import { getCache, setCache } from '../utils/idb'
 import { setLocale } from '../i18n'
+import { LOCALE_STORAGE_KEY } from '../utils/localeDetect'
 
 const DEFAULT_APPEARANCE = { theme: 'system', language: 'zh-CN', fontSize: 'standard' }
 
@@ -122,8 +123,12 @@ export const useSettingsStore = defineStore('settings', {
       // 字号（基准 16px 的 120% / 80%）
       document.documentElement.style.fontSize =
         ap.fontSize === 'large' ? '19.2px' : ap.fontSize === 'small' ? '12.8px' : ''
-      // 语言
-      const lang = ap.language || 'zh-CN'
+      // 语言：用户在本机显式选择过（ll_locale）时优先于服务端默认值。
+      // 登录后 settings.load() 会用服务端 appearance.language（默认 zh-CN）覆盖本地选择，
+      // 造成"英文模式在登录后被弹回中文"，因此这里必须先读本地显式偏好。
+      let savedLang = null
+      try { savedLang = localStorage.getItem(LOCALE_STORAGE_KEY) } catch (e) { savedLang = null }
+      const lang = (savedLang === 'en-US' || savedLang === 'zh-CN') ? savedLang : (ap.language || 'zh-CN')
       setLocale(lang)
       document.documentElement.lang = lang
     }

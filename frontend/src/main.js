@@ -5,13 +5,19 @@ import 'ant-design-vue/dist/reset.css'
 import './styles/theme.css'
 import './styles/motion.css'
 import './styles/liquidGlass.css'
+import './styles/mobile.css'
 import App from './App.vue'
 import router from './router'
 import { initRipple } from './utils/ripple'
 import { initScrollReveal } from './utils/scrollReveal'
 import { initPerfGovernor } from './utils/perfGovernor'
+import { installMobileAdapter } from './utils/mobileAdapter'
 import { applyAutoLocale, initI18nDom } from './i18n'
 import * as amplitude from '@amplitude/unified'
+
+// 移动端适配器：在挂载前给 <html> 打上 mobile/desktop 标记，
+// 所有移动端样式只在 mobile 标记下生效，PC 端保持原版。
+installMobileAdapter()
 
 const app = createApp(App)
 app.use(createPinia())

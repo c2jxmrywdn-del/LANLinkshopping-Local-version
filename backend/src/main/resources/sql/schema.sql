@@ -1,3 +1,6 @@
+-- 强制客户端以 utf8mb4 通信：MySQL 官方镜像的 docker-entrypoint-initdb.d 执行本脚本时，
+-- 容器内 mysql 客户端默认字符集是 latin1，会把脚本中的中文种子数据写成双重编码乱码。
+SET NAMES utf8mb4;
 -- =====================================================
 -- LANLinkshopping 聚合型B2B电商平台 数据库脚本
 -- 库名: lanlink_shopping  字符集: utf8mb4  排序规则: utf8mb4_general_ci  引擎: InnoDB
@@ -90,6 +93,17 @@ CREATE TABLE IF NOT EXISTS t_merchant (
   license_url   VARCHAR(255) COMMENT '营业执照图片URL(JPG/PNG)',
   tax_proof_urls VARCHAR(1000) COMMENT '近3个月税务缴纳证明URL(逗号分隔,PDF/JPG)',
   tax_reg_no    VARCHAR(32) COMMENT '税务登记号(查询纳税记录用)',
+  legal_person  VARCHAR(255) COMMENT '法人真实姓名(AES密文)',
+  legal_id_card VARCHAR(255) COMMENT '法人身份证号(AES密文)',
+  bank_account  VARCHAR(255) COMMENT '对公银行账号(AES密文)',
+  bank_name     VARCHAR(255) COMMENT '开户银行及支行(AES密文)',
+  contact_phone VARCHAR(255) COMMENT '负责人联系电话(AES密文)',
+  contact_email VARCHAR(255) COMMENT '负责人联系邮箱(AES密文)',
+  business_address VARCHAR(255) COMMENT '经营场所/注册地址(AES密文)',
+  join_code        VARCHAR(64) COMMENT '平台邀约码/特约加盟码',
+  has_special_permit TINYINT DEFAULT 0 COMMENT '是否有特殊经营许可证 0无 1有',
+  special_permit_name VARCHAR(128) COMMENT '特殊经营许可证名称',
+  special_permit_url VARCHAR(255) COMMENT '特殊经营许可证附件URL',
   create_time   DATETIME DEFAULT CURRENT_TIMESTAMP,
   update_time   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted       TINYINT DEFAULT 0
@@ -105,6 +119,46 @@ PREPARE mc_stmt2 FROM @mc2; EXECUTE mc_stmt2; DEALLOCATE PREPARE mc_stmt2;
 SET @mc3 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN tax_reg_no VARCHAR(32) COMMENT ''税务登记号(查询纳税记录用)''', 'SELECT 1')
             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='tax_reg_no');
 PREPARE mc_stmt3 FROM @mc3; EXECUTE mc_stmt3; DEALLOCATE PREPARE mc_stmt3;
+
+-- 幂等升级：t_merchant 补齐商户重要信息加密字段（法人姓名/身份证/对公银行/联系方式/经营地址，列不存在时才 ADD）
+SET @mc4 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN legal_person VARCHAR(255) COMMENT ''法人真实姓名(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='legal_person');
+PREPARE mc_stmt4 FROM @mc4; EXECUTE mc_stmt4; DEALLOCATE PREPARE mc_stmt4;
+SET @mc5 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN legal_id_card VARCHAR(255) COMMENT ''法人身份证号(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='legal_id_card');
+PREPARE mc_stmt5 FROM @mc5; EXECUTE mc_stmt5; DEALLOCATE PREPARE mc_stmt5;
+SET @mc6 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN bank_account VARCHAR(255) COMMENT ''对公银行账号(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='bank_account');
+PREPARE mc_stmt6 FROM @mc6; EXECUTE mc_stmt6; DEALLOCATE PREPARE mc_stmt6;
+SET @mc7 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN bank_name VARCHAR(255) COMMENT ''开户银行及支行(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='bank_name');
+PREPARE mc_stmt7 FROM @mc7; EXECUTE mc_stmt7; DEALLOCATE PREPARE mc_stmt7;
+SET @mc8 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN contact_phone VARCHAR(255) COMMENT ''负责人联系电话(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='contact_phone');
+PREPARE mc_stmt8 FROM @mc8; EXECUTE mc_stmt8; DEALLOCATE PREPARE mc_stmt8;
+SET @mc9 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN contact_email VARCHAR(255) COMMENT ''负责人联系邮箱(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='contact_email');
+PREPARE mc_stmt9 FROM @mc9; EXECUTE mc_stmt9; DEALLOCATE PREPARE mc_stmt9;
+SET @mc10 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN business_address VARCHAR(255) COMMENT ''经营场所/注册地址(AES密文)''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='business_address');
+PREPARE mc_stmt10 FROM @mc10; EXECUTE mc_stmt10; DEALLOCATE PREPARE mc_stmt10;
+
+-- 幂等升级：t_merchant 补齐入驻邀约码/加盟码及特殊经营许可字段
+SET @mc11 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN join_code VARCHAR(64) COMMENT ''平台邀约码/特约加盟码''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='join_code');
+PREPARE mc_stmt11 FROM @mc11; EXECUTE mc_stmt11; DEALLOCATE PREPARE mc_stmt11;
+
+SET @mc12 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN has_special_permit TINYINT DEFAULT 0 COMMENT ''是否有特殊经营许可证 0无 1有''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='has_special_permit');
+PREPARE mc_stmt12 FROM @mc12; EXECUTE mc_stmt12; DEALLOCATE PREPARE mc_stmt12;
+
+SET @mc13 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN special_permit_name VARCHAR(128) COMMENT ''特殊经营许可证名称''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='special_permit_name');
+PREPARE mc_stmt13 FROM @mc13; EXECUTE mc_stmt13; DEALLOCATE PREPARE mc_stmt13;
+
+SET @mc14 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN special_permit_url VARCHAR(255) COMMENT ''特殊经营许可证附件URL''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='special_permit_url');
+PREPARE mc_stmt14 FROM @mc14; EXECUTE mc_stmt14; DEALLOCATE PREPARE mc_stmt14;
 
 -- 资质表
 CREATE TABLE IF NOT EXISTS t_qualification (
@@ -293,12 +347,19 @@ CREATE TABLE IF NOT EXISTS t_member_point_log (
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB COMMENT='会员积分流水';
 
--- 幂等种子：会员等级（存在则跳过）
-INSERT IGNORE INTO t_member_level (level_id, level_name, min_growth, discount_rate, description, sort) VALUES
- (1,'普通会员', 0,     1.000, '基础会员权益', 1),
- (2,'白银会员', 1000,  0.990, '98折 起',      2),
- (3,'黄金会员', 5000,  0.970, '97折 特权',    3),
- (4,'钻石会员', 20000, 0.950, '95折 尊享',    4);
+-- 幂等种子：会员等级（六档；重复执行时按主键更新，确保政策调整能生效）
+-- 门槛为成长值累计（企业级 B2B 量级）：10万 / 50万 / 100万 / 500万 / 1000万 / 2000万；
+-- 升级需「有效订阅 + 成长值达标」双条件，折扣按 0 / 1% / 3% / 5% / 7% / 10% 递增，最高为黑钻会员。
+INSERT INTO t_member_level (level_id, level_name, min_growth, discount_rate, description, sort) VALUES
+ (1,'普通会员', 100000,  1.000, '基础会员权益', 1),
+ (2,'白银会员', 500000,  0.990, '99折 起',      2),
+ (3,'黄金会员', 1000000, 0.970, '97折 特权',    3),
+ (4,'铂金会员', 5000000, 0.950, '95折 尊享',    4),
+ (5,'钻石会员', 10000000,0.930, '93折 尊享',    5),
+ (6,'黑钻会员', 20000000,0.900, '9折 至臻',     6)
+ON DUPLICATE KEY UPDATE
+ level_name=VALUES(level_name), min_growth=VALUES(min_growth),
+ discount_rate=VALUES(discount_rate), description=VALUES(description), sort=VALUES(sort);
 
 -- ==================== 第 3 步 基础字典数据 ====================
 -- 显式主键加 INSERT IGNORE: 重复执行时主键冲突被忽略, 既不报错也不会插出重复行,
@@ -658,10 +719,56 @@ CREATE TABLE IF NOT EXISTS t_credit_repayment (
   method VARCHAR(16) DEFAULT 'wallet' COMMENT 'wallet企业钱包 transfer对公转账',
   reference_no VARCHAR(64),
   remark VARCHAR(255),
+  status VARCHAR(16) NOT NULL DEFAULT 'CONFIRMED' COMMENT 'PENDING待确认 CONFIRMED已入账 REJECTED已驳回',
+  confirmed_time DATETIME,
+  confirm_remark VARCHAR(255),
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
   KEY idx_credit_repayment_bill (bill_id),
+  KEY idx_credit_repayment_bill_status (bill_id,status),
+  KEY idx_credit_repayment_status_time (status,create_time),
   KEY idx_credit_repayment_user (user_id,create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='企业账期还款记录';
+
+-- 调额申请：已生效授信账户可提交调额/调账期申请，审核期间原额度继续可用
+CREATE TABLE IF NOT EXISTS t_credit_adjust_request (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  account_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  requested_limit DECIMAL(14,2) NOT NULL,
+  term_days INT NOT NULL DEFAULT 30,
+  purpose VARCHAR(255),
+  status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待审 APPROVED通过 REJECTED驳回 WITHDRAWN已撤回',
+  approved_limit DECIMAL(14,2),
+  approved_term_days INT,
+  review_remark VARCHAR(255),
+  apply_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  reviewed_time DATETIME,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_credit_adjust_account_status (account_id,status),
+  KEY idx_credit_adjust_user_time (user_id,apply_time),
+  KEY idx_credit_adjust_status_time (status,apply_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='企业账期调额申请';
+
+-- 存量库幂等补列：对公转账待确认核销
+SET @cr1 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_credit_repayment ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT ''CONFIRMED'' COMMENT ''PENDING待确认 CONFIRMED已入账 REJECTED已驳回'' AFTER remark', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_credit_repayment' AND COLUMN_NAME='status');
+PREPARE cr_stmt1 FROM @cr1; EXECUTE cr_stmt1; DEALLOCATE PREPARE cr_stmt1;
+
+SET @cr2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_credit_repayment ADD COLUMN confirmed_time DATETIME NULL AFTER status', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_credit_repayment' AND COLUMN_NAME='confirmed_time');
+PREPARE cr_stmt2 FROM @cr2; EXECUTE cr_stmt2; DEALLOCATE PREPARE cr_stmt2;
+
+SET @cr3 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_credit_repayment ADD COLUMN confirm_remark VARCHAR(255) NULL AFTER confirmed_time', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_credit_repayment' AND COLUMN_NAME='confirm_remark');
+PREPARE cr_stmt3 FROM @cr3; EXECUTE cr_stmt3; DEALLOCATE PREPARE cr_stmt3;
+
+SET @cr4 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_credit_repayment ADD INDEX idx_credit_repayment_bill_status (bill_id,status)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_credit_repayment' AND INDEX_NAME='idx_credit_repayment_bill_status');
+PREPARE cr_stmt4 FROM @cr4; EXECUTE cr_stmt4; DEALLOCATE PREPARE cr_stmt4;
+
+SET @cr5 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_credit_repayment ADD INDEX idx_credit_repayment_status_time (status,create_time)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_credit_repayment' AND INDEX_NAME='idx_credit_repayment_status_time');
+PREPARE cr_stmt5 FROM @cr5; EXECUTE cr_stmt5; DEALLOCATE PREPARE cr_stmt5;
 
 -- ============================================================
 -- 积分抵扣明细：t_order 补积分抵扣字段（幂等补列，历史库可重复执行）
@@ -944,3 +1051,44 @@ CREATE TABLE IF NOT EXISTS t_social_binding (
   UNIQUE KEY uk_social_provider_subject (provider, subject),
   KEY idx_social_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='社交登录绑定';
+
+-- ==================== 营销中台：订阅系统 ====================
+-- 订阅方案：价格以「元」为单位（企业级 B2B 定价）；duration_days 为有效天数；plan_code 全局唯一(幂等种子业务键)。
+CREATE TABLE IF NOT EXISTS t_subscription_plan (
+  plan_id        BIGINT PRIMARY KEY AUTO_INCREMENT,
+  plan_name      VARCHAR(32) NOT NULL COMMENT '方案名称',
+  plan_code      VARCHAR(32) NOT NULL UNIQUE COMMENT '方案编码',
+  price_cents    INT NOT NULL DEFAULT 0 COMMENT '价格(元)',
+  duration_days  INT NOT NULL DEFAULT 0 COMMENT '有效天数',
+  auto_renew     TINYINT DEFAULT 0 COMMENT '0单次 1自动续费',
+  discount_label VARCHAR(32) COMMENT '优惠标签(展示用)',
+  sort           INT DEFAULT 0 COMMENT '展示排序',
+  enabled        TINYINT DEFAULT 1 COMMENT '0下架 1上架',
+  created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB COMMENT='订阅方案';
+
+-- 用户订阅记录：status active 生效 / cancelled 已取消 / expired 已过期；生效口径 status=active 且 end_time>now。
+CREATE TABLE IF NOT EXISTS t_user_subscription (
+  sub_id       BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id      BIGINT NOT NULL COMMENT '用户ID',
+  plan_id      BIGINT COMMENT '订阅方案',
+  start_time   DATETIME COMMENT '生效时间',
+  end_time     DATETIME COMMENT '到期时间',
+  status       VARCHAR(16) DEFAULT 'active' COMMENT 'active/cancelled/expired',
+  auto_renew   TINYINT DEFAULT 0 COMMENT '0单次 1自动续费',
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_sub_user (user_id),
+  KEY idx_sub_status_end (status, end_time)
+) ENGINE=InnoDB COMMENT='用户订阅记录';
+
+-- 幂等种子：订阅方案（重复执行时按唯一键 plan_code 更新，确保价格/天数调整能生效）
+-- 价格以「元」为单位（企业级 B2B 定价，整数无小数）：月度 8888 / 连续包月 8299 / 季度 23999 / 年度 88888。
+INSERT INTO t_subscription_plan (plan_id, plan_name, plan_code, price_cents, duration_days, auto_renew, discount_label, sort, enabled) VALUES
+ (1, '月度订阅', 'monthly',      8888,  30,  0, NULL,      1, 1),
+ (2, '连续包月', 'auto_monthly', 8299,  30,  1, '省7%',    2, 1),
+ (3, '季度订阅', 'quarterly',    23999, 90,  0, '省10%',   3, 1),
+ (4, '年度订阅', 'yearly',       88888, 365, 0, '省17%',   4, 1)
+ON DUPLICATE KEY UPDATE
+ plan_name=VALUES(plan_name), price_cents=VALUES(price_cents), duration_days=VALUES(duration_days),
+ auto_renew=VALUES(auto_renew), discount_label=VALUES(discount_label), sort=VALUES(sort), enabled=VALUES(enabled);

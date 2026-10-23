@@ -21,14 +21,17 @@
         <template #bodyCell="{column,record}">
           <template v-if="column.key==='entry'">
             <a-button type="link" class="entry-link" @click="open(record)">{{ record.entryId }}</a-button>
-            <div class="meta">来源会话 #{{ record.conversationId }}</div>
+            <div class="meta" v-if="record.conversationId">来源会话 #{{ record.conversationId }}</div>
           </template>
           <template v-else-if="column.key==='question'"><div class="question">{{ record.questionText }}</div></template>
+          <template v-else-if="column.key==='source'">
+            <a-tag :color="record.source==='auto' ? 'blue' : 'default'">{{ record.source==='auto' ? '系统自动沉淀' : '人工创建' }}</a-tag>
+          </template>
           <template v-else-if="column.key==='status'"><a-tag :color="stateColor(record.status)">{{ stateLabel(record.status) }}</a-tag></template>
           <template v-else-if="column.key==='reviewer'">{{ record.reviewerName || '尚未审核' }}<div class="meta">{{ record.reviewedAt || '—' }}</div></template>
           <template v-else-if="column.key==='action'"><a-button size="small" type="primary" ghost @click="open(record)">{{ record.status==='pending'?'检查候选':'查看记录' }}</a-button></template>
         </template>
-        <template #emptyText><a-empty description="暂无学习候选"><template #description><span>请先在会话中选择一条客户问题和一条人工客服回答，再创建候选知识。</span></template><a-button type="primary" @click="goInbox">前往会话工作台</a-button></a-empty></template>
+        <template #emptyText><a-empty description="暂无学习候选"><template #description><span>未命中知识库的合格提问会自动沉淀为待审核候选；也可在会话中选择客户问题与人工客服回答手动创建候选知识。</span></template><a-button type="primary" @click="goInbox">前往会话工作台</a-button></a-empty></template>
       </a-table>
     </a-card>
   </div>
@@ -41,7 +44,7 @@ import { ReloadOutlined } from '@ant-design/icons-vue'
 import { adminApi } from '../../api'
 const router=useRouter(),loading=ref(false),records=ref([]),status=ref('pending'),query=ref(''),page=ref(1),size=ref(20),total=ref(0)
 const statusOptions=[{label:'待审核',value:'pending'},{label:'已发布',value:'published'},{label:'已驳回',value:'rejected'},{label:'全部',value:'all'}]
-const columns=[{title:'候选条目',key:'entry',width:200},{title:'客户问题（脱敏）',key:'question',width:300},{title:'状态',key:'status',width:100},{title:'审核人',key:'reviewer',width:140},{title:'创建时间',dataIndex:'createdAt',width:155},{title:'操作',key:'action',width:120,fixed:'right'}]
+const columns=[{title:'候选条目',key:'entry',width:200},{title:'客户问题（脱敏）',key:'question',width:300},{title:'来源',key:'source',width:120},{title:'状态',key:'status',width:100},{title:'审核人',key:'reviewer',width:140},{title:'创建时间',dataIndex:'createdAt',width:155},{title:'操作',key:'action',width:120,fixed:'right'}]
 const pagination=computed(()=>({current:page.value,pageSize:size.value,total:total.value,showSizeChanger:true,pageSizeOptions:['10','20','50'],showTotal:t=>'共 '+t+' 条候选'}))
 function stateLabel(v){return ({pending:'待审核',published:'已发布',rejected:'已驳回'})[v]||'未知'}
 function stateColor(v){return ({pending:'orange',published:'green',rejected:'red'})[v]||'default'}

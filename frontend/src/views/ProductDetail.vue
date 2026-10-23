@@ -13,15 +13,28 @@
         <section class="product-shell">
           <div class="media-column">
             <div class="gallery">
-              <div class="gallery-main">
-                <img v-if="activeImage" :key="activeIndex" :src="activeImage" :alt="p.title" class="gallery-img" decoding="async" />
+              <!-- 京东式主图放大镜：悬停出取景框，右侧同步局部放大图 + 规格文字 -->
+              <div class="gallery-main" :class="{ 'is-zoomable': zoomEnabled }"
+                   @mouseenter="startZoom" @mousemove="onZoomMove" @mouseleave="stopZoom">
+                <img v-if="activeImage" ref="mainImgRef" :key="activeIndex" :src="activeImage" :alt="p.title" class="gallery-img" decoding="async" />
                 <div v-else class="image-placeholder">{{ p.title.slice(0, 2) }}</div>
                 <span v-if="p.stock <= 0" class="sold-out">暂时缺货</span>
+                <div v-if="zooming" class="zoom-lens" :style="lensStyle" aria-hidden="true"></div>
               </div>
+
+              <div v-if="zooming" ref="previewRef" class="zoom-preview" :style="previewStyle" aria-hidden="true">
+                <div class="zoom-preview-img" :style="previewImgStyle"></div>
+                <dl class="zoom-spec">
+                  <div><dt>规格</dt><dd>{{ p.spec || '标准规格' }}</dd></div>
+                  <div><dt>品牌</dt><dd>{{ p.brand || '—' }}</dd></div>
+                  <div><dt>库存</dt><dd>{{ p.stock > 0 ? p.stock + ' 件' : '暂时缺货' }}</dd></div>
+                </dl>
+              </div>
+
               <div v-if="gallery.length > 1" class="thumb-list">
                 <button v-for="(img, i) in gallery" :key="img + i"
                         class="thumb" :class="{ active: activeIndex === i }"
-                        @click="activeIndex = i">
+                        @click="selectImage(i)">
                   <img :src="img" :alt="p.title + '预览图'" loading="lazy" />
                 </button>
               </div>
@@ -39,6 +52,15 @@
             <div class="eyebrow">{{ p.brand || '精选商品' }}</div>
             <h1>{{ p.title }}</h1>
             <p v-if="p.subtitle" class="subtitle">{{ p.subtitle }}</p>
+            <div class="tts-row">
+              <button type="button" class="tts-intro" :class="{ 'is-on': introSpeaking }"
+                :aria-label="introSpeaking ? '停止语音介绍' : '播放语音介绍'"
+                :title="introSpeaking ? '停止语音介绍' : '播放语音介绍'"
+                @click="toggleIntro">
+                <span aria-hidden="true">{{ introSpeaking ? '⏹' : '🔊' }}</span>
+                <span>{{ introSpeaking ? '停止播报' : '语音介绍' }}</span>
+              </button>
+            </div>
 
             <div class="price-card">
               <div class="price-label">到手价</div>
@@ -160,6 +182,8 @@ import { message } from 'ant-design-vue'
 import { productApi, trafficApi } from '../api'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import { translateDataText, locale } from '../i18n'
+import { speakText, stopSpeaking } from '../utils/tts'
 
 const route = useRoute()
 const router = useRouter()
@@ -169,6 +193,26 @@ const p = ref(null)
 const qty = ref(1)
 const loading = ref(true)
 const activeIndex = ref(0)
+const introSpeaking = ref(false)
+
+/** 商品语音介绍：标题 + 品牌 + 规格 + 详情，英文模式下先按词表翻译 */
+function toggleIntro() {
+  if (introSpeaking.value) {
+    stopSpeaking()
+    introSpeaking.value = false
+    return
+  }
+  if (!p.value) return
+  // 逐段翻译后再拼接：整段拼接会被「防中英混杂」护栏整体回退成中文
+  const parts = [p.value.title, p.value.brand, p.value.spec, p.value.subtitle, p.value.detail]
+    .filter(Boolean)
+    .map(part => translateDataText(String(part)))
+  const text = parts.join(locale.value === 'en-US' ? '. ' : '。')
+  introSpeaking.value = speakText(text, {
+    rate: 0.95,
+    onEnd: () => { introSpeaking.value = false }
+  })
+}
 
 // 详情导航滚动联动：IntersectionObserver 追踪当前可见区块
 const activeSection = ref('description')
@@ -195,7 +239,11 @@ function jumpTo(e, id) {
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' })
 }
-onBeforeUnmount(() => { if (sectionObserver) sectionObserver.disconnect() })
+onBeforeUnmount(() => {
+  if (sectionObserver) sectionObserver.disconnect()
+  window.removeEventListener('resize', updateZoomEnabled)
+  stopSpeaking()
+})
 
 const vipRate = computed(() => user.hasPerm('vip:discount') ? 0.95 : 1)
 const gallery = computed(() => {
@@ -204,11 +252,94 @@ const gallery = computed(() => {
 })
 const activeImage = computed(() => gallery.value[activeIndex.value] || '')
 
+// ===== 主图放大镜（京东式）：取景框跟随鼠标，右侧同步放大 + 规格文字 =====
+const mainImgRef = ref(null)
+const previewRef = ref(null)
+const zooming = ref(false)
+const zoomEnabled = ref(false)
+const lensStyle = ref({ opacity: 0 })
+const previewStyle = ref({})
+const previewImgStyle = ref({ opacity: 0 })
+let zoomBox = null
+let zoomRect = null
+
+function updateZoomEnabled() {
+  zoomEnabled.value = !!window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+    && window.innerWidth >= 900
+  if (!zoomEnabled.value) stopZoom()
+}
+
+function startZoom() {
+  const img = mainImgRef.value
+  if (!zoomEnabled.value || !img || !img.naturalWidth) return
+  const rect = img.getBoundingClientRect()
+  if (!rect.width || !rect.height) return
+  // object-fit: contain 下图片实际显示区域小于容器，需按内容尺寸计算，避免放大到留白
+  const scale = Math.min(rect.width / img.naturalWidth, rect.height / img.naturalHeight)
+  const dispW = img.naturalWidth * scale
+  const dispH = img.naturalHeight * scale
+  zoomRect = rect
+  zoomBox = {
+    dispW,
+    dispH,
+    offsetX: (rect.width - dispW) / 2,
+    offsetY: (rect.height - dispH) / 2
+  }
+  previewStyle.value = { '--zoom-ratio': `${dispW} / ${dispH}` }
+  previewImgStyle.value = { opacity: 0 }
+  zooming.value = true
+}
+
+function onZoomMove(e) {
+  if (!zooming.value || !zoomBox || !zoomRect) return
+  const { dispW, dispH, offsetX, offsetY } = zoomBox
+  const lensW = Math.max(96, dispW * 0.32)
+  const lensH = Math.max(96, dispH * 0.32)
+  const mx = e.clientX - zoomRect.left - offsetX
+  const my = e.clientY - zoomRect.top - offsetY
+  // 鼠标落在图片留白区时隐藏取景框与放大图，避免出现无意义空白
+  if (mx < 0 || my < 0 || mx > dispW || my > dispH) {
+    lensStyle.value = { opacity: 0 }
+    previewImgStyle.value = { opacity: 0 }
+    return
+  }
+  const x = Math.min(Math.max(0, mx - lensW / 2), Math.max(0, dispW - lensW))
+  const y = Math.min(Math.max(0, my - lensH / 2), Math.max(0, dispH - lensH))
+  lensStyle.value = {
+    opacity: 1,
+    width: `${lensW}px`,
+    height: `${lensH}px`,
+    transform: `translate(${offsetX + x}px, ${offsetY + y}px)`
+  }
+  // 放大倍数 = 预览区宽度 / 取景框宽度，背景位置按同一比例反向偏移
+  const previewW = previewRef.value?.clientWidth || 420
+  const ratio = previewW / lensW
+  previewImgStyle.value = {
+    opacity: 1,
+    backgroundImage: `url("${activeImage.value}")`,
+    backgroundSize: `${dispW * ratio}px ${dispH * ratio}px`,
+    backgroundPosition: `${-x * ratio}px ${-y * ratio}px`
+  }
+}
+
+function stopZoom() {
+  zooming.value = false
+  zoomBox = null
+  zoomRect = null
+}
+
+function selectImage(i) {
+  stopZoom()
+  activeIndex.value = i
+}
+
 function money(value) {
   return Number(value || 0).toFixed(2)
 }
 
 onMounted(async () => {
+  updateZoomEnabled()
+  window.addEventListener('resize', updateZoomEnabled)
   try {
     p.value = await productApi.detail(route.params.id)
     if (p.value?.merId) {
@@ -269,6 +400,19 @@ async function buyNow() {
 .product-shell { display:grid; grid-template-columns:minmax(0,1.04fr) minmax(420px,.96fr); gap:48px; background:#fff; border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 10px 35px rgba(24,33,47,.05); }
 .gallery-main { position:relative; aspect-ratio:1/1; max-height:570px; border-radius:16px; background:var(--paper); overflow:hidden; display:flex; align-items:center; justify-content:center; }
 .gallery-main img { width:100%; height:100%; object-fit:contain; }.image-placeholder { font-size:80px; color:#a79f90; }
+/* 京东式放大镜：取景框 + 右侧放大预览（含规格文字） */
+.gallery { position:relative; }
+.gallery-main.is-zoomable { cursor:crosshair; }
+.zoom-lens { position:absolute; left:0; top:0; z-index:2; pointer-events:none; border:1px solid rgba(24,33,47,.45); border-radius:3px; background:rgba(255,255,255,.28); box-shadow:inset 0 0 0 1px rgba(255,255,255,.55); will-change:transform,width,height; transition:opacity .12s ease; }
+.zoom-preview { position:absolute; left:calc(100% + 18px); top:0; z-index:6; width:min(420px, 33vw); overflow:hidden; pointer-events:none; background:#fff; border:1px solid var(--line); border-radius:16px; box-shadow:0 26px 60px rgba(24,33,47,.2); animation:zoomIn .14s ease-out; }
+.zoom-preview-img { width:100%; aspect-ratio:var(--zoom-ratio, 1); background-color:var(--paper); background-repeat:no-repeat; transition:opacity .12s ease; }
+.zoom-spec { margin:0; padding:12px 14px; display:grid; gap:7px; border-top:1px solid var(--line); background:#fffdf8; }
+.zoom-spec div { display:flex; align-items:baseline; gap:10px; font-size:12px; line-height:1.5; }
+.zoom-spec dt { flex:0 0 42px; color:#8d8579; }
+.zoom-spec dd { margin:0; min-width:0; color:#303743; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+@keyframes zoomIn { from { opacity:0; transform:translateX(-4px); } to { opacity:1; transform:translateX(0); } }
+@media (max-width:1100px) { .zoom-preview { width:min(340px, 30vw); } }
+@media (max-width:900px) { .zoom-preview, .zoom-lens { display:none; } }
 /* 图集切换：淡入过渡（key 变化触发） */
 .gallery-img { animation: galleryFade .38s cubic-bezier(.22,1,.36,1); }
 @keyframes galleryFade { from { opacity:0; transform:scale(1.015); } to { opacity:1; transform:scale(1); } }
@@ -276,6 +420,10 @@ async function buyNow() {
 .thumb-list { display:flex; gap:10px; margin-top:12px; overflow:auto; }.thumb { flex:0 0 68px; width:68px; height:68px; padding:3px; border:1px solid var(--line); border-radius:10px; background:#fff; cursor:pointer; }.thumb.active { border:2px solid var(--ink); padding:2px; }.thumb img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
 .trust-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:18px; color:#68707c; font-size:12px; }.trust-row span { text-align:center; }.trust-row strong { color:#3f6b4b; margin-right:4px; }
 .buy-column { padding:8px 4px; }.eyebrow { color:var(--gold); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:800; }.buy-column h1 { margin:8px 0 8px; font-size:30px; line-height:1.3; letter-spacing:-.02em; }.subtitle { margin:0 0 18px; color:var(--muted); line-height:1.7; }
+.tts-row { margin:0 0 16px; }
+.tts-intro { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 13px; border:1px solid var(--line, #d9d3c7); border-radius:999px; background:#fff; color:var(--ink, #13233a); font:inherit; font-size:12px; font-weight:600; cursor:pointer; transition:background .18s ease,border-color .18s ease,color .18s ease; }
+.tts-intro:hover { border-color:var(--gold, #c8a45c); background:#fbf7ee; }
+.tts-intro.is-on { border-color:var(--gold, #c8a45c); color:var(--gold, #a97f2d); background:#fdf8ea; }
 .price-card { padding:17px 18px; background:linear-gradient(135deg,#fbf9f1,#f6f1e7); border-radius:14px; }.price-label { color:#4b5563; font-size:12px; }.price-line { display:flex; align-items:baseline; gap:3px; color:var(--red); }.price-line strong { font-size:38px; letter-spacing:-.04em; }.currency { font-size:18px; font-weight:800; }.vip-badge { margin-left:10px; background:#efe4c8; color:#765c25; padding:4px 7px; border-radius:5px; font-size:11px; font-weight:700; }.vip-copy { margin-top:4px; color:#846b35; font-size:12px; }
 .decision-list { margin:20px 0; border-top:1px solid var(--line); }.decision-row { display:flex; gap:18px; padding:13px 0; border-bottom:1px solid var(--line); font-size:13px; }.decision-row .label { flex:0 0 48px; color:#4b5563; }.decision-row .value { color:#303743; font-weight:600; }.decision-row .danger { color:var(--red); }
 .service-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-card div { display:flex; align-items:center; gap:9px; font-size:12px; margin:7px 0; }.service-card b { width:32px; }.service-card span:last-child { color:#4b5563; }.service-icon { color:var(--gold); font-weight:800; }

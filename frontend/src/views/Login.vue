@@ -25,7 +25,7 @@
     <section class="auth__panel">
       <div class="auth__card">
         <!-- 社交优先：品牌入口置顶 + 分隔线 + 账号表单回退 -->
-        <SocialLoginButtons :show-hint="true" />
+        <SocialLoginButtons :show-hint="true" @login-success="afterLoginSuccess" />
         <div class="auth__divider"><i aria-hidden="true"></i><span>或使用账号登录</span><i aria-hidden="true"></i></div>
 
         <a-tabs v-model:activeKey="tab" centered>

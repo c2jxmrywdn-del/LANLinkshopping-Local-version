@@ -27,6 +27,22 @@ spring:
     multipart:
       max-file-size: 5MB
       max-request-size: 6MB
+  # Redis 缓存连接：docker-compose 注入 REDIS_HOST=redis 走容器网络；
+  # 本机直连时默认 localhost:6379。密码来自环境变量，仓库不落任何明文默认值。
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 0
+  # 缓存后端类型：redis（默认，配合上方连接）；无 Redis 环境可设 LANLINK_CACHE_TYPE=simple 回退内存缓存。
+  cache:
+    type: ${LANLINK_CACHE_TYPE:redis}
   # 邮箱验证码：本地运行模式默认指向 Mailpit（localhost:1025）。
   # 需要真实 QQ 邮箱 SMTP 时：MAIL_HOST=smtp.qq.com / MAIL_PORT=465 / MAIL_SMTP_SSL=true 并填授权码。
   mail:

@@ -13,6 +13,8 @@
 # ============================================================
 app:
   social:
+    # 沙箱模拟登录开关：开发/演示环境默认开启，便于在无真实海外公网秘钥时测试谷歌/苹果登录
+    sandbox-enabled: ${SOCIAL_SANDBOX_ENABLED:true}
     # 前端授权完成后回跳的地址（前端页面），需与平台后台登记的 redirect_uri 一致
     redirect-base: ${SOCIAL_REDIRECT_BASE:http://localhost:5173/login}
 

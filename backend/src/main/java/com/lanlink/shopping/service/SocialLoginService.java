@@ -58,24 +58,30 @@ public class SocialLoginService {
         this.userService = userService;
     }
 
-    /** 全部渠道的可用性视图：未配置也返回，前端据此渲染品牌按钮并提示「未配置」 */
+    /** 全部渠道的可用性视图：未配置也返回，前端据此渲染品牌按钮并提示「未配置」或「沙箱可用」 */
     public List<Map<String, Object>> providers() {
         List<Map<String, Object>> out = new ArrayList<>();
         for (String p : SUPPORTED) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("provider", p);
             item.put("name", DISPLAY_NAMES.getOrDefault(p, p));
-            item.put("enabled", props.configured(p));
+            boolean configured = props.configured(p);
+            item.put("enabled", configured || props.isSandboxEnabled());
+            item.put("configured", configured);
+            item.put("sandbox", !configured && props.isSandboxEnabled());
             out.add(item);
         }
         return out;
     }
 
-    /** 构造平台授权地址（真实可用） */
+    /** 构造平台授权地址（真实可用；沙箱模式未配置时返回沙箱模拟授权标记） */
     public String authorizeUrl(String provider, String state) {
         requireSupported(provider);
         SocialLoginProperties.Provider cfg = props.provider(provider);
         if (!props.configured(provider)) {
+            if (props.isSandboxEnabled()) {
+                return props.getRedirectBase() + "?social_sandbox=" + encode(provider) + "&state=" + encode(state);
+            }
             throw new BusinessException(DISPLAY_NAMES.getOrDefault(provider, provider)
                     + "登录未配置：请在 application-social.yml（或环境变量）中填写该渠道的凭证后启用");
         }
@@ -109,6 +115,83 @@ public class SocialLoginService {
                     + "&scope=" + encode("openid email profile")
                     + "&state=" + encode(state);
         };
+    }
+
+    /**
+     * 沙箱模拟登录（供开发测试、评审答辩与无外网秘钥环境下完整体验 Google / Apple 等社交登录）
+     */
+    public User sandboxLogin(String provider, String sub, String email, String name, String avatar) {
+        requireSupported(provider);
+        if (!props.isSandboxEnabled()) {
+            throw new BusinessException("社交登录沙箱模拟模式未启用");
+        }
+        String subject = (sub != null && !sub.isBlank()) ? sub.trim()
+                : ("sandbox_" + provider + "_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 10));
+        String userEmail = (email != null && !email.isBlank()) ? email.trim() : (provider + ".tester@lanlink.com");
+        String displayName = (name != null && !name.isBlank()) ? name.trim() : (DISPLAY_NAMES.getOrDefault(provider, provider) + "用户");
+        String userAvatar = (avatar != null && !avatar.isBlank()) ? avatar.trim() : "";
+
+        SocialBinding binding = bindingService.find(provider, subject);
+        if (binding != null) {
+            User u = userService.findById(binding.getUserId());
+            if (u != null) return u;
+        }
+
+        // 优先关联系统演示买家账号或对应角色账号
+        User targetUser = null;
+        if (userEmail.contains("merchant") || userEmail.contains("137")) {
+            targetUser = userService.findByPhone("13700000002");
+        } else if (userEmail.contains("admin") || userEmail.contains("138")) {
+            targetUser = userService.findByPhone("13800000000");
+        } else {
+            targetUser = userService.findByPhone("13900000001");
+        }
+        if (targetUser == null) {
+            targetUser = userService.findById(1L);
+        }
+        if (targetUser == null) {
+            throw new BusinessException("无法建立测试会话，请确保系统演示账号已初始化");
+        }
+
+        bindingService.bind(targetUser.getUserId(), provider, subject, null, displayName, userAvatar, userEmail);
+        return targetUser;
+    }
+
+    /**
+     * 当前登录用户的第三方绑定列表
+     */
+    public List<Map<String, Object>> userBindings(Long userId) {
+        if (userId == null) return List.of();
+        List<SocialBinding> list = bindingService.listByUser(userId);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (SocialBinding b : list) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", b.getId());
+            m.put("provider", b.getProvider());
+            m.put("name", DISPLAY_NAMES.getOrDefault(b.getProvider(), b.getProvider()));
+            m.put("nickname", b.getNickname());
+            m.put("avatar", b.getAvatar());
+            m.put("email", b.getEmail());
+            m.put("subjectMasked", mask(b.getSubject()));
+            m.put("createTime", b.getCreateTime());
+            out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * 解绑第三方账号
+     */
+    public boolean unbindProvider(Long userId, String provider) {
+        if (userId == null) throw new BusinessException(401, "请先登录");
+        requireSupported(provider);
+        List<SocialBinding> list = bindingService.listByUser(userId);
+        for (SocialBinding b : list) {
+            if (provider.equals(b.getProvider())) {
+                return bindingService.unbind(userId, b.getId());
+            }
+        }
+        return false;
     }
 
     /**

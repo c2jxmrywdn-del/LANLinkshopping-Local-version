@@ -14,7 +14,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 
 /**
- * 外部模型寒暄润色客户端（DeepSeek / Mimosa 兼容 OpenAI 风格 chat 接口）。
+ * 外部模型寒暄润色客户端（OpenAI 兼容 chat 接口：DeepSeek / 小米 MiMo / 阿里百炼 / Mimosa 等）。
  *
  * 【硬性约束】本客户端仅用于「寒暄问候 / 嘘寒问暖」语气润色：
  *  1. 固定 system 提示词限定为客服寒暄语气润色，不接受任何调用方指定的 system/role；
@@ -76,19 +76,20 @@ public class ExternalGreetingClient {
     }
 
     private String callChannel(String userGreeting) {
-        // 运行时取启用渠道（DeepSeek 优先，其次 Mimosa），逐个降级尝试
+        // 运行时取启用渠道，按白名单顺序逐个降级尝试；模型名取渠道自身配置
         for (OutboundModelConfigService.ChannelConfig channel : configService.activeChannels()) {
-            String url = channel.baseUrl().replaceAll("/+$", "") + "/v1/chat/completions";
-            String r = chat(url, channel.apiKey(), userGreeting);
+            String url = OutboundModelConfigService.chatCompletionsEndpoint(channel.baseUrl());
+            String r = chat(url, channel.apiKey(), channel.modelName(), userGreeting);
             if (r != null) return r;
         }
         return null;
     }
 
-    private String chat(String url, String apiKey, String userGreeting) {
+    private String chat(String url, String apiKey, String model, String userGreeting) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("model", "deepseek-chat");
+            // 模型名必须取渠道配置：此前硬编码 deepseek-chat 会让 MiMo/百炼等渠道的请求被上游判为模型不存在
+            body.put("model", model != null && !model.isBlank() ? model : "deepseek-flash");
             body.put("temperature", 0.6);
             body.put("max_tokens", 80);
             var messages = body.putArray("messages");

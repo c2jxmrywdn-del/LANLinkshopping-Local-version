@@ -229,7 +229,9 @@ onMounted(reload)
   .col-right { display: none; }
 }
 @media (max-width: 767px) {
-  .grid { grid-template-columns: 1fr; }
+  /* minmax(0,1fr) + min-width:0：防止卡片内长文本把单列网格撑出视口 */
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .grid > * { min-width: 0; }
   .col-right { display: none; }
 }
 </style>

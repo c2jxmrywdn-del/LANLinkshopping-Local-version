@@ -7,7 +7,7 @@
     :aria-pressed="isEn ? 'true' : 'false'"
     @click="toggle"
   >
-    <span class="locale-switcher__track">
+    <span class="locale-switcher__track" data-no-translate>
       <span class="locale-switcher__thumb" :class="{ 'is-en': isEn }" aria-hidden="true"></span>
       <span class="locale-switcher__opt" :class="{ active: !isEn }">中</span>
       <span class="locale-switcher__opt" :class="{ active: isEn }">EN</span>
