@@ -1133,3 +1133,28 @@ INSERT INTO t_subscription_plan (plan_id, plan_name, plan_code, price_cents, dur
 ON DUPLICATE KEY UPDATE
  plan_name=VALUES(plan_name), price_cents=VALUES(price_cents), duration_days=VALUES(duration_days),
  auto_renew=VALUES(auto_renew), discount_label=VALUES(discount_label), sort=VALUES(sort), enabled=VALUES(enabled);
+
+-- ==================== 关于我们：加入我们（求职 / 渠道合作） ====================
+-- 闭环：用户提交 → PENDING 待审核 → 运营审核（APPROVED/REJECTED + 备注）→ 站内消息通知 → 个人中心查看进度。
+CREATE TABLE IF NOT EXISTS t_join_application (
+  id            BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id       BIGINT NOT NULL COMMENT '申请人用户ID',
+  apply_type    VARCHAR(16) NOT NULL COMMENT 'job 求职 / partner 渠道合作',
+  position      VARCHAR(64) COMMENT '求职：应聘职位',
+  company_name  VARCHAR(128) COMMENT '合作：公司/机构名称',
+  contact_name  VARCHAR(32) NOT NULL COMMENT '联系人姓名',
+  phone         VARCHAR(32) NOT NULL COMMENT '联系电话',
+  email         VARCHAR(128) COMMENT '邮箱',
+  city          VARCHAR(64) COMMENT '城市/意向区域',
+  experience    VARCHAR(32) COMMENT '求职：工作年限',
+  message       VARCHAR(1000) COMMENT '自我介绍/合作说明',
+  status        VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING待审核 APPROVED通过 REJECTED驳回',
+  review_remark VARCHAR(255) COMMENT '审核备注/驳回原因',
+  review_by     BIGINT COMMENT '审核人用户ID',
+  apply_time    DATETIME NOT NULL COMMENT '提交时间',
+  reviewed_time DATETIME COMMENT '审核时间',
+  update_time   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_join_user (user_id, apply_time),
+  KEY idx_join_type_status (apply_type, status, apply_time),
+  KEY idx_join_status (status, apply_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='加入我们申请（求职/渠道合作）';

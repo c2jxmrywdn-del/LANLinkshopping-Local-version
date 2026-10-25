@@ -133,10 +133,110 @@
         </div>
       </section>
 
+      <!-- 加入我们：Apple 风大标题 + 双通道玻璃卡 + 申请弹窗（求职 / 渠道合作） -->
+      <section id="join" class="about-section join-section">
+        <div class="join-head">
+          <span class="section-kicker">04 · JOIN US</span>
+          <h2>下一段旅程，<br /><em>和我们一起写。</em></h2>
+          <p>无论你想成为团队的一员，还是以渠道伙伴身份共同增长——选择一条通道，提交申请，剩下的交给我们。</p>
+        </div>
+
+        <div class="join-grid">
+          <article class="join-card" :class="{ active: joinType === 'job' }" @click="openJoin('job')">
+            <div class="join-card-glow"></div>
+            <span class="join-card-tag">CAREERS</span>
+            <h3>加入团队</h3>
+            <p>产品、工程、设计与运营岗位，远程协作，长期主义。</p>
+            <span class="join-card-link">查看方向并申请 <span>→</span></span>
+          </article>
+          <article class="join-card" :class="{ active: joinType === 'partner' }" @click="openJoin('partner')">
+            <div class="join-card-glow"></div>
+            <span class="join-card-tag">PARTNERSHIP</span>
+            <h3>渠道合作</h3>
+            <p>区域代理、行业渠道与供应链伙伴，共享平台增长红利。</p>
+            <span class="join-card-link">申请成为伙伴 <span>→</span></span>
+          </article>
+        </div>
+
+        <div class="join-actions">
+          <button class="join-cta" type="button" @click="openJoin(joinType)">
+            <span>填写加入申请</span>
+            <span class="join-cta-arrow">→</span>
+          </button>
+          <button v-if="logged" class="join-my" type="button" @click="goMyApplications">查看我的申请</button>
+        </div>
+      </section>
+
+      <!-- 申请弹窗：Apple 风 bottom sheet 式玻璃卡片 -->
+      <a-modal v-model:open="joinOpen" :footer="null" :width="640" :mask-closable="!joinSubmitting"
+               class="join-modal" :destroy-on-close="true" @cancel="closeJoin">
+        <div class="join-sheet">
+          <div class="join-sheet-head">
+            <span class="join-sheet-kicker">JOIN LANLINK</span>
+            <h3>{{ joinType === 'job' ? '加入团队' : '渠道合作' }}</h3>
+            <p>{{ joinType === 'job'
+              ? '告诉我们你想做的事，我们会认真读完每一份申请。'
+              : '告诉我们你的渠道与区域，一起把供给做得更深。' }}</p>
+            <div class="join-switch" role="tablist">
+              <button :class="{ active: joinType === 'job' }" type="button" @click="switchJoinType('job')">求职加入</button>
+              <button :class="{ active: joinType === 'partner' }" type="button" @click="switchJoinType('partner')">渠道合作</button>
+              <span class="join-switch-thumb" :class="{ right: joinType === 'partner' }"></span>
+            </div>
+          </div>
+
+          <a-form layout="vertical" class="join-form" :model="joinForm">
+            <div class="join-form-grid">
+              <template v-if="joinType === 'job'">
+                <a-form-item label="应聘职位" class="span-2">
+                  <a-select v-model:value="joinForm.position" placeholder="选择一个方向">
+                    <a-select-option v-for="p in jobPositions" :key="p" :value="p">{{ p }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+                <a-form-item label="工作年限">
+                  <a-select v-model:value="joinForm.experience" placeholder="选择">
+                    <a-select-option v-for="e in experiences" :key="e" :value="e">{{ e }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </template>
+              <template v-else>
+                <a-form-item label="公司 / 机构名称" class="span-2">
+                  <a-input v-model:value="joinForm.companyName" placeholder="请输入公司全称" allow-clear />
+                </a-form-item>
+                <a-form-item label="意向区域">
+                  <a-input v-model:value="joinForm.city" placeholder="例如：华东 / 上海" allow-clear />
+                </a-form-item>
+              </template>
+
+              <a-form-item label="联系人">
+                <a-input v-model:value="joinForm.contactName" placeholder="您的姓名" allow-clear />
+              </a-form-item>
+              <a-form-item label="联系电话">
+                <a-input v-model:value="joinForm.phone" placeholder="11 位手机号" allow-clear />
+              </a-form-item>
+              <a-form-item label="邮箱（选填）" class="span-2">
+                <a-input v-model:value="joinForm.email" placeholder="name@company.com" allow-clear />
+              </a-form-item>
+              <a-form-item :label="joinType === 'job' ? '为什么想加入（选填）' : '合作说明（选填）'" class="span-2">
+                <a-textarea v-model:value="joinForm.message" :rows="4" :maxlength="1000" show-count
+                            :placeholder="joinType === 'job' ? '介绍一下你的经历、作品或想法' : '介绍一下渠道资源、覆盖区域与合作诉求'" />
+              </a-form-item>
+            </div>
+
+            <div class="join-submit-row">
+              <span class="join-privacy">提交即表示同意平台就本次申请与您联系。</span>
+              <button class="join-submit" type="button" :disabled="joinSubmitting" @click="submitJoin">
+                <span v-if="!joinSubmitting">提交申请</span>
+                <span v-else class="join-spinner"></span>
+              </button>
+            </div>
+          </a-form>
+        </div>
+      </a-modal>
+
       <!-- 项目作者与联系矩阵 -->
       <section id="contact" class="about-section contact-section">
         <div class="contact-intro">
-          <span class="section-kicker">04 · CONTACT</span>
+          <span class="section-kicker">05 · CONTACT</span>
           <h2>项目作者：Jason Ouyang</h2>
           <p>LANLinkshopping 为个人毕业设计项目。这里集中提供作者邮箱、社交平台与交流社区入口，便于项目展示、沟通与学术交流。</p>
           <a-alert type="info" show-icon message="本页面公开的联系方式由项目作者本人提供，仅用于项目展示、交流与联系。" />
@@ -271,22 +371,39 @@
 </template>
 
 <script setup>
-import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import AuthorCard from '../components/AuthorCard.vue'
 import { useRouter, useRoute } from 'vue-router'
+import { joinApi } from '../api'
+import { useUserStore } from '../store/user'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
+const logged = computed(() => userStore.logged)
 const activeSection = ref('company')
 const whatsappQrVisible = ref(false)
 const legalTab = ref(route.query.legal === 'ip' ? 'ip' : 'terms')
 
+// ===== 加入我们（求职 / 渠道合作）=====
+const joinOpen = ref(false)
+const joinType = ref('job')
+const joinSubmitting = ref(false)
+const jobPositions = ['前端 / 全栈工程师', '后端工程师（Java）', '产品经理', 'UI / UX 设计师', '运营与增长', '数据分析']
+const experiences = ['应届 / 1 年内', '1-3 年', '3-5 年', '5 年以上']
+const emptyJoinForm = () => ({
+  position: undefined, companyName: '', contactName: '', phone: '',
+  email: '', city: '', experience: undefined, message: ''
+})
+const joinForm = reactive(emptyJoinForm())
+
 const sections = [
   { key: 'company', index: '01', title: '平台定位' },
-  { key: 'contact', index: '04', title: '联系我们' },
-  { key: 'terms', index: '05', title: '服务条款' },
-  { key: 'ip', index: '06', title: '知识产权' }
+  { key: 'join', index: '04', title: '加入我们' },
+  { key: 'contact', index: '05', title: '联系我们' },
+  { key: 'terms', index: '06', title: '服务条款' },
+  { key: 'ip', index: '07', title: '知识产权' }
 ]
 
 const capabilities = [
@@ -319,7 +436,7 @@ watch(() => route.query.legal, value => {
 })
 
 onMounted(() => {
-  const targets = ['company', 'contact', 'terms'].map(id => document.getElementById(id)).filter(Boolean)
+  const targets = ['company', 'join', 'contact', 'terms'].map(id => document.getElementById(id)).filter(Boolean)
   observer = new IntersectionObserver(entries => {
     const visible = entries
       .filter(entry => entry.isIntersecting)
@@ -329,6 +446,65 @@ onMounted(() => {
   targets.forEach(el => observer.observe(el))
 })
 onBeforeUnmount(() => observer?.disconnect())
+
+function resetJoinForm() {
+  Object.assign(joinForm, emptyJoinForm())
+}
+function openJoin(type) {
+  if (!logged.value) {
+    message.warning('请先登录后再提交申请')
+    router.push({ path: '/login', query: { redirect: '/about' } })
+    return
+  }
+  joinType.value = type
+  joinOpen.value = true
+}
+function closeJoin() {
+  if (!joinSubmitting.value) joinOpen.value = false
+}
+function switchJoinType(type) {
+  joinType.value = type
+}
+function validateJoin() {
+  const name = (joinForm.contactName || '').trim()
+  const phone = (joinForm.phone || '').trim()
+  const email = (joinForm.email || '').trim()
+  if (name.length < 2) return '请填写联系人姓名（至少 2 个字符）'
+  if (!/^1[3-9]\d{9}$/.test(phone)) return '请输入正确的 11 位手机号'
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return '邮箱格式不正确'
+  if (joinType.value === 'job' && !joinForm.position) return '请选择应聘职位'
+  if (joinType.value === 'partner' && !(joinForm.companyName || '').trim()) return '请填写公司 / 机构名称'
+  return ''
+}
+async function submitJoin() {
+  const err = validateJoin()
+  if (err) { message.warning(err); return }
+  joinSubmitting.value = true
+  try {
+    await joinApi.apply({
+      applyType: joinType.value,
+      position: joinType.value === 'job' ? joinForm.position : null,
+      companyName: joinType.value === 'partner' ? joinForm.companyName.trim() : null,
+      contactName: joinForm.contactName.trim(),
+      phone: joinForm.phone.trim(),
+      email: (joinForm.email || '').trim(),
+      city: (joinForm.city || '').trim(),
+      experience: joinType.value === 'job' ? (joinForm.experience || '') : '',
+      message: (joinForm.message || '').trim()
+    })
+    message.success('申请已提交，审核结果将通过站内消息通知你')
+    joinOpen.value = false
+    resetJoinForm()
+    setTimeout(() => goMyApplications(), 700)
+  } catch (e) {
+    // 请求拦截器已统一提示
+  } finally {
+    joinSubmitting.value = false
+  }
+}
+function goMyApplications() {
+  router.push({ path: '/me', query: { tab: 'join' } })
+}
 
 function scrollToSection(id) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -558,5 +734,182 @@ async function copyText(text, label) {
     .social-panel-head { align-items: flex-start; flex-direction: column; }
   .social-grid { grid-template-columns: 1fr; }
   .legal-list li { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ===================== 加入我们（Apple 风） ===================== */
+.join-section {
+  position: relative;
+  padding: 8px 0 4px;
+}
+.join-head { max-width: 720px; }
+.join-head h2 {
+  margin: 14px 0 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.1;
+  letter-spacing: -.04em;
+  font-weight: 750;
+}
+.join-head h2 em {
+  font-style: normal;
+  background: linear-gradient(100deg, var(--ab-gold-strong), var(--ll-brand-blue, #2563EB));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.join-head p { margin: 0; color: var(--ab-muted); font-size: 15px; line-height: 1.85; max-width: 640px; }
+
+.join-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 30px; }
+.join-card {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  padding: 30px 30px 26px;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, .75);
+  background: linear-gradient(155deg, rgba(255,255,255,.92), rgba(255,255,255,.58));
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .07), inset 0 1px 0 rgba(255,255,255,.9);
+  transition: transform .38s cubic-bezier(.22,.61,.36,1), box-shadow .38s ease, border-color .3s ease;
+}
+.join-card:hover { transform: translateY(-6px) scale(1.012); box-shadow: 0 30px 70px rgba(15,23,42,.13), inset 0 1px 0 rgba(255,255,255,.95); }
+.join-card.active { border-color: rgba(200,164,92,.65); }
+.join-card-glow {
+  position: absolute; inset: -40% -30% auto auto;
+  width: 320px; height: 320px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(200,164,92,.35), transparent 62%);
+  opacity: 0; transition: opacity .38s ease; pointer-events: none;
+}
+.join-card:hover .join-card-glow { opacity: 1; }
+.join-card-tag { position: relative; display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: .18em; color: var(--ab-gold-strong); }
+.join-card h3 { position: relative; margin: 10px 0 8px; font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+.join-card p { position: relative; margin: 0 0 20px; color: var(--ab-muted); font-size: 14px; line-height: 1.8; }
+.join-card-link { position: relative; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 650; color: var(--ab-ink); }
+.join-card-link span { transition: transform .3s ease; }
+.join-card:hover .join-card-link span { transform: translateX(4px); }
+
+.join-actions { display: flex; align-items: center; gap: 18px; margin-top: 28px; flex-wrap: wrap; }
+.join-cta {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 28px; border-radius: 999px; cursor: pointer;
+  color: #fff; font-size: 15px; font-weight: 650; letter-spacing: -.01em;
+  border: 1px solid rgba(255,255,255,.18);
+  background: linear-gradient(180deg, #23272f, #0b0f16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 14px 34px rgba(15,23,42,.22);
+  transition: transform .28s cubic-bezier(.22,.61,.36,1), box-shadow .28s ease, filter .28s ease;
+}
+.join-cta:hover { transform: translateY(-2px) scale(1.02); filter: brightness(1.08); box-shadow: inset 0 1px 0 rgba(255,255,255,.34), 0 20px 44px rgba(15,23,42,.28); }
+.join-cta-arrow { transition: transform .3s ease; }
+.join-cta:hover .join-cta-arrow { transform: translateX(4px); }
+.join-my {
+  background: none; border: 0; padding: 6px 2px; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: var(--ab-muted);
+  border-bottom: 1px solid transparent; transition: color .2s ease, border-color .2s ease;
+}
+.join-my:hover { color: var(--ab-ink); border-color: currentColor; }
+
+[data-theme='dark'] .join-card {
+  border-color: rgba(255,255,255,.12);
+  background: linear-gradient(155deg, rgba(30,41,59,.78), rgba(15,23,42,.55));
+  box-shadow: 0 18px 44px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
+}
+[data-theme='dark'] .join-card-link { color: #E2E8F0; }
+[data-theme='dark'] .join-my { color: #94A3B8; }
+
+@media (max-width: 860px) {
+  .join-grid { grid-template-columns: 1fr; }
+  .join-card { padding: 24px; }
+}
+</style>
+
+<!-- 弹窗被 teleport 到 body，用非 scoped 样式覆盖 AntD 结构 -->
+<style>
+.join-modal .ant-modal-content {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, .7);
+  background: rgba(255, 255, 255, .88);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 40px 120px rgba(15, 23, 42, .28);
+}
+.join-modal .ant-modal-close { top: 18px; right: 18px; border-radius: 999px; }
+.join-modal .ant-modal-close:hover { background: rgba(15, 23, 42, .06); }
+
+.join-sheet { padding: 30px 32px 26px; }
+.join-sheet-head { padding-bottom: 6px; }
+.join-sheet-kicker { font-size: 10px; font-weight: 800; letter-spacing: .2em; color: #B08D3F; }
+.join-sheet-head h3 { margin: 8px 0 6px; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif; font-size: 26px; font-weight: 750; letter-spacing: -.03em; color: #0F172A; }
+.join-sheet-head p { margin: 0 0 18px; color: #667085; font-size: 13.5px; line-height: 1.7; }
+
+.join-switch {
+  position: relative;
+  display: grid; grid-template-columns: 1fr 1fr;
+  padding: 4px; margin-bottom: 6px;
+  border-radius: 999px; background: rgba(15, 23, 42, .06);
+}
+.join-switch button {
+  position: relative; z-index: 1;
+  padding: 9px 0; border: 0; background: none; cursor: pointer;
+  font-size: 13.5px; font-weight: 650; color: #667085;
+  transition: color .25s ease;
+}
+.join-switch button.active { color: #0F172A; }
+.join-switch-thumb {
+  position: absolute; top: 4px; left: 4px;
+  width: calc(50% - 4px); height: calc(100% - 8px);
+  border-radius: 999px; background: #fff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .12), inset 0 1px 0 rgba(255,255,255,.9);
+  transition: transform .32s cubic-bezier(.22, .61, .36, 1);
+}
+.join-switch-thumb.right { transform: translateX(100%); }
+
+.join-form { margin-top: 12px; }
+.join-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.join-form-grid .span-2 { grid-column: 1 / -1; }
+.join-form .ant-form-item { margin-bottom: 14px; }
+.join-form .ant-form-item-label > label { font-size: 12.5px; font-weight: 600; color: #475569; }
+.join-form .ant-input, .join-form .ant-select-selector, .join-form textarea.ant-input {
+  border-radius: 12px !important;
+}
+.join-submit-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 6px; flex-wrap: wrap; }
+.join-privacy { font-size: 11.5px; color: #94A3B8; }
+.join-submit {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 132px; height: 44px; padding: 0 24px;
+  border-radius: 999px; border: 1px solid rgba(255,255,255,.18); cursor: pointer;
+  color: #fff; font-size: 14.5px; font-weight: 650;
+  background: linear-gradient(180deg, #23272f, #0b0f16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 12px 28px rgba(15,23,42,.22);
+  transition: transform .25s ease, filter .25s ease;
+}
+.join-submit:hover:not(:disabled) { transform: translateY(-1px) scale(1.02); filter: brightness(1.08); }
+.join-submit:disabled { opacity: .6; cursor: not-allowed; }
+.join-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(255,255,255,.28);
+  border-top-color: #fff; border-radius: 50%;
+  animation: join-spin .8s linear infinite;
+}
+@keyframes join-spin { to { transform: rotate(360deg); } }
+
+[data-theme='dark'] .join-modal .ant-modal-content {
+  border-color: rgba(255,255,255,.12);
+  background: rgba(17, 24, 39, .9);
+  box-shadow: 0 40px 120px rgba(0,0,0,.5);
+}
+[data-theme='dark'] .join-sheet-head h3 { color: #F1F5F9; }
+[data-theme='dark'] .join-sheet-head p { color: #94A3B8; }
+[data-theme='dark'] .join-switch { background: rgba(255,255,255,.08); }
+[data-theme='dark'] .join-switch button { color: #94A3B8; }
+[data-theme='dark'] .join-switch button.active { color: #F8FAFC; }
+[data-theme='dark'] .join-switch-thumb { background: rgba(255,255,255,.14); box-shadow: none; }
+[data-theme='dark'] .join-form .ant-form-item-label > label { color: #CBD5E1; }
+
+@media (max-width: 640px) {
+  .join-form-grid { grid-template-columns: 1fr; }
+  .join-sheet { padding: 24px 20px 20px; }
 }
 </style>

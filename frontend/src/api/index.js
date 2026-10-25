@@ -411,6 +411,18 @@ export const subscriptionApi = {
   cancel: () => request.post('/subscription/cancel')
 }
 
+// ===== 关于我们 · 加入我们（求职 / 渠道合作） =====
+export const joinApi = {
+  // 提交申请：{applyType:'job'|'partner', position, companyName, contactName, phone, email, city, experience, message}
+  apply: (payload) => request.post('/join/apply', payload),
+  // 我的申请（含状态、审核备注）
+  my: () => request.get('/join/my'),
+  // 运营端列表（可按类型/状态筛选）
+  adminList: (params) => request.get('/join/admin/list', { params }),
+  // 运营端审核：{approved, remark}
+  review: (id, payload) => request.post(`/join/admin/review/${id}`, payload)
+}
+
 // ===== 设计工具对接中台（微服务 lanlink-design-service，经网关 /api/design/**）=====
 // 统一适配器模型：tool 取值 figma / canva / mock；token 经 X-Design-Token 头携带 OAuth 令牌
 export const designApi = {

@@ -69,6 +69,9 @@
               <a-tab-pane key="messages" tab="消息中心">
                 <MessagePanel />
               </a-tab-pane>
+              <a-tab-pane key="join" tab="我的申请">
+                <JoinApplicationsPanel />
+              </a-tab-pane>
               <a-tab-pane key="address" tab="收货地址">
                 <AddressPanel />
               </a-tab-pane>
@@ -104,6 +107,7 @@ import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import ProfilePanel from '../components/account/ProfilePanel.vue'
 import UserAvatar from '../components/ui/UserAvatar.vue'
 import MessagePanel from '../components/account/MessagePanel.vue'
+import JoinApplicationsPanel from '../components/account/JoinApplicationsPanel.vue'
 import AddressPanel from '../components/account/AddressPanel.vue'
 import LoginLogPanel from '../components/account/LoginLogPanel.vue'
 import SettingsPanel from '../components/account/SettingsPanel.vue'
@@ -120,7 +124,7 @@ const profile = useProfileStore()
 const settings = useSettingsStore()
 const user = useUserStore()
 
-const VALID_TABS = ['profile', 'messages', 'address', 'loginlog', 'settings']
+const VALID_TABS = ['profile', 'messages', 'join', 'address', 'loginlog', 'settings']
 const activeTab = ref(VALID_TABS.includes(route.query.tab) ? route.query.tab : 'profile')
 const profileRef = ref(null)
 const dirty = ref(false)

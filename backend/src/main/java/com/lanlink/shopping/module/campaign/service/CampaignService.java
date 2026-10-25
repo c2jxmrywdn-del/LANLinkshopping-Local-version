@@ -180,7 +180,7 @@ public class CampaignService {
         m.put("discountRate", c.getDiscountRate());
         m.put("scope", c.getScope());
         m.put("indId", c.getIndId());
-        m.put("indName", indNames.get(c.getIndId()));
+        m.put("indName", c.getIndId() == null ? null : indNames.get(c.getIndId()));
         m.put("rewardPoints", c.getRewardPoints());
         // 领券状态
         if (TYPE_COUPON.equals(c.getType())) {
@@ -272,7 +272,7 @@ public class CampaignService {
                 m.put("benefitAmount", c.getBenefitAmount());
                 m.put("discountRate", c.getDiscountRate());
                 m.put("scope", c.getScope());
-                m.put("indName", indNames.get(c.getIndId()));
+                m.put("indName", c.getIndId() == null ? null : indNames.get(c.getIndId()));
                 m.put("endTime", c.getEndTime());
             }
             // 有效状态：1已使用；0且活动仍生效=可用；0但活动已结束/下架=已过期
@@ -334,7 +334,7 @@ public class CampaignService {
             m.put("benefitAmount", c.getBenefitAmount());
             m.put("discountRate", c.getDiscountRate());
             m.put("scope", c.getScope());
-            m.put("indName", indNames.get(c.getIndId()));
+            m.put("indName", c.getIndId() == null ? null : indNames.get(c.getIndId()));
             m.put("endTime", c.getEndTime());
             boolean applicable = c.effectiveNow(LocalDateTime.now()) && c.applicable(indId)
                     && total.compareTo(c.getThreshold() == null ? BigDecimal.ZERO : c.getThreshold()) >= 0;
@@ -462,7 +462,7 @@ public class CampaignService {
             mv.put("startTime", c.getStartTime());
             mv.put("endTime", c.getEndTime());
             mv.put("scope", c.getScope());
-            mv.put("indName", indNames.get(c.getIndId()));
+            mv.put("indName", c.getIndId() == null ? null : indNames.get(c.getIndId()));
             mv.put("enrolled", enrolled != null);
             if (TYPE_MERCHANT_INCENTIVE.equals(c.getType())) {
                 BigDecimal target = c.getMerTargetAmount() == null ? BigDecimal.ZERO : c.getMerTargetAmount();

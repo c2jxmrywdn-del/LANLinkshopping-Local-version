@@ -57,6 +57,10 @@
           <template #icon><ApiOutlined /></template>
           <span>外部大模型</span>
         </a-menu-item>
+        <a-menu-item key="admin-join-us">
+          <template #icon><UserAddOutlined /></template>
+          <span>加入我们审核</span>
+        </a-menu-item>
         <a-menu-item key="admin-audit">
           <template #icon><FileProtectOutlined /></template>
           <span>审计日志</span>
@@ -172,6 +176,7 @@ import {
   ApiOutlined,
   FileProtectOutlined,
   CommentOutlined,
+  UserAddOutlined,
   LockOutlined,
   ExportOutlined,
   LogoutOutlined,
@@ -220,6 +225,7 @@ const routeNameMap = {
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',
   'admin-ai-models': '外部大模型',
+  'admin-join-us': '加入我们审核',
   'admin-audit': '审计日志',
   'admin-communications': '沟通概览',
   'admin-communications-inbox': '会话工作台',
