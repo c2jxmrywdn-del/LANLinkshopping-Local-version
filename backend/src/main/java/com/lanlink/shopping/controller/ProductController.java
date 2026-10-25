@@ -1,6 +1,7 @@
 package com.lanlink.shopping.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.entity.Product;
@@ -66,16 +67,59 @@ public class ProductController {
         return R.ok("已提交，等待平台审核", productService.publish(merchant.getMerId(), product));
     }
 
-    /** 商户自己的商品列表（含审核状态，实时同步；需 product:publish 权限） */
+    /** 商户自己的商品列表（含审核状态，实时同步；可按关键词/审核状态/可售状态过滤） */
     @GetMapping("/my/list")
     @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
     public R<IPage<Product>> myList(@RequestParam(defaultValue = "1") long current,
                                     @RequestParam(defaultValue = "10") long size,
+                                    @RequestParam(required = false) String keyword,
+                                    @RequestParam(required = false) Integer reviewStatus,
+                                    @RequestParam(required = false) Integer status,
                                     HttpServletRequest request) {
         Long userId = UserContext.currentUserId(request);
         var merchant = merchantService.getByUser(userId);
         if (merchant == null) return R.fail("请先完成商户入驻");
-        return R.ok(productService.myPage(merchant.getMerId(), current, size));
+        return R.ok(productService.myPage(merchant.getMerId(), current, size, keyword, reviewStatus, status));
+    }
+
+    /** 商户自己的商品详情（编辑回显；归属校验） */
+    @GetMapping("/my/detail/{prodId}")
+    @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
+    public R<Product> myDetail(@PathVariable Long prodId, HttpServletRequest request) {
+        var merchant = mustApprovedMerchant(UserContext.currentUserId(request));
+        return R.ok(productService.myDetail(merchant.getMerId(), prodId));
+    }
+
+    /**
+     * 商户编辑自己的商品：仅调库存即时生效；
+     * 修改内容字段（标题/价格/分类/主图/详情等）会重新送审（待审核且不可售）。
+     */
+    @PostMapping("/my/update/{prodId}")
+    @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
+    public R<Product> myUpdate(@PathVariable Long prodId, @RequestBody Product patch,
+                               HttpServletRequest request) {
+        var merchant = mustApprovedMerchant(UserContext.currentUserId(request));
+        return R.ok("保存成功", productService.myUpdate(merchant.getMerId(), prodId, patch));
+    }
+
+    /** 商户自主上架/下架（status 1上架 0下架；仅审核通过的商品可操作） */
+    @PostMapping("/my/status/{prodId}")
+    @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
+    public R<Product> myStatus(@PathVariable Long prodId, @RequestParam Integer status,
+                               HttpServletRequest request) {
+        var merchant = mustApprovedMerchant(UserContext.currentUserId(request));
+        return R.ok(status == 1 ? "商品已上架" : "商品已下架",
+                productService.mySetStatus(merchant.getMerId(), prodId, status));
+    }
+
+    /** 已通过审核的入驻商户（商品管理操作前置条件） */
+    private com.lanlink.shopping.entity.Merchant mustApprovedMerchant(Long userId) {
+        var merchant = merchantService.getByUser(userId);
+        if (merchant == null) throw new BusinessException("请先完成商户入驻");
+        if (merchant.getReviewStatus() == null || merchant.getReviewStatus() != 1) {
+            throw new BusinessException("商户审核未通过，暂不能管理商品");
+        }
+        return merchant;
     }
 
     /** 商品主图上传：JPG/PNG/WebP，魔数校验防伪造，返回 URL 供 publish 引用 */

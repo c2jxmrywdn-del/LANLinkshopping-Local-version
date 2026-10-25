@@ -570,6 +570,7 @@ import {
   FileImageOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
+import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const route = useRoute()
 const router = useRouter()
@@ -617,7 +618,7 @@ function applyReason(text) {
 async function load() {
   loading.value = true
   try {
-    detail.value = await merchantApi.adminDetail(route.params.merId)
+    detail.value = fixMerchantUploadUrls(await merchantApi.adminDetail(route.params.merId))
   } catch (e) {
     message.error('加载商户档案失败')
   } finally {

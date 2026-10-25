@@ -257,6 +257,36 @@ public class MerchantService {
         merchantMapper.updateById(m);
     }
 
+    /** 商户中心：更新负责人联系方式与经营地址（敏感字段经 EncryptTypeHandler 加密落库） */
+    public Merchant updateContact(Long userId, Map<String, String> body) {
+        Merchant m = mustMerchant(userId);
+        String phone = trimOrNull(body.get("contactPhone"));
+        String email = trimOrNull(body.get("contactEmail"));
+        String addr = trimOrNull(body.get("businessAddress"));
+        if (phone == null && email == null && addr == null) {
+            throw new BusinessException("请至少填写一项需要修改的内容");
+        }
+        if (phone != null && !phone.matches("^1[3-9]\\d{9}$|^0\\d{2,3}-?\\d{7,8}$")) {
+            throw new BusinessException("联系电话格式不正确（手机号或座机号）");
+        }
+        if (email != null && !email.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")) {
+            throw new BusinessException("联系邮箱格式不正确");
+        }
+        if (addr != null && addr.length() > 200) {
+            throw new BusinessException("经营地址不能超过 200 个字符");
+        }
+        if (phone != null) m.setContactPhone(phone);
+        if (email != null) m.setContactEmail(email);
+        if (addr != null) m.setBusinessAddress(addr);
+        m.setUpdateTime(java.time.LocalDateTime.now());
+        merchantMapper.updateById(m);
+        return m;
+    }
+
+    private static String trimOrNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
+
     /** 税务登记号格式：15/18/20 位数字或大写字母 */
     private static final java.util.regex.Pattern TAX_REG_NO =
             java.util.regex.Pattern.compile("^[0-9A-Z]{15}$|^[0-9A-Z]{18}$|^[0-9A-Z]{20}$");

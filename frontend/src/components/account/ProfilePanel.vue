@@ -145,7 +145,10 @@ function maskEmail(e) {
 }
 
 // ===== 编辑状态 =====
+// dirty 仅在编辑态下判定：form 初始为空、profile 含昵称等已有值，
+// 不加 editing 前缀会在未进入编辑时恒为 true，导致切页/离开误弹"放弃修改"确认
 const dirty = computed(() =>
+  editing.value &&
   ['realName', 'nickname', 'gender', 'birthday', 'bio'].some((k) => (form[k] ?? '') !== (profile.value[k] ?? ''))
 )
 watch(dirty, (v) => emit('dirty-change', v), { immediate: true })
@@ -165,9 +168,10 @@ function startEdit() {
   editing.value = true
 }
 
-/** 放弃修改：恢复基准数据并清草稿（供父组件在切页/离开确认后调用） */
+/** 放弃修改：退出编辑、表单回到档案基准并清草稿（供父组件在切页/离开确认后调用） */
 function discardChanges() {
   editing.value = false
+  fill(profile.value)
   store.clearDraft()
 }
 defineExpose({ discardChanges, dirty })

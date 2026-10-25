@@ -12,7 +12,7 @@
 ![MySQL](https://img.shields.io/badge/MySQL-8-blue)
 ![License](https://img.shields.io/badge/License-GNU%20GPL%20v3-blue)
 
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [使用说明](#-使用说明) · [贡献指南](#-贡献指南) · [许可证](#-许可证)
+[功能特性](#-功能特性) · [快速开始](#-快速开始) · [使用说明](#-使用说明) · [主编者指南](#-主编者指南) · [许可证](#-许可证)
 
 </div>
 
@@ -213,7 +213,7 @@ cd ai-gateway && python -m unittest discover -s tests
 
 ```
 LANLinkshopping — 聚合型一体多元化解决方案 B2B 电商平台
-Copyright (C) 2026  LANLinkshopping Contributors
+Copyright (C) 2026  LANLinkshopping the sole editor
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -222,13 +222,12 @@ the Free Software Foundation, either version 3 of the License, or
 ```
 
 - 完整许可证全文见根目录 [LICENSE](./LICENSE) 文件（GNU GPL v3.0 官方原文）
-- 你可以自由地使用、修改、分发本软件，但**衍生作品必须以相同 GPL-3.0 条款开源**（copyleft）
+- 你可以自由地使用本软件，但**衍生作品必须以相同 GPL-3.0 条款开源**（copyleft）
 - 本软件不提供任何明示或默示的担保，详见许可证第 15-17 节
 
-## 🙏 致谢
+## 🙏 致谢下午 02:23 2026/10/23
 
 - [Spring Boot](https://spring.io/projects/spring-boot) · [Vue.js](https://vuejs.org/) · [Ant Design Vue](https://antdv.com/) · [MyBatis-Plus](https://baomidou.com/)
-- 前端动效与组件设计参考 [21st.dev](https://21st.dev)（相关组件已标注来源与许可证）
 
 ---
 

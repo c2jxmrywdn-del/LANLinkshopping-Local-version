@@ -140,8 +140,20 @@ public class ProductService {
 
     /** 商户自己的商品列表（含审核状态，供商户端展示） */
     public IPage<Product> myPage(Long merId, long current, long size) {
+        return myPage(merId, current, size, null, null, null);
+    }
+
+    /** 商户自己的商品列表（可按标题关键词/审核状态/可售状态过滤） */
+    public IPage<Product> myPage(Long merId, long current, long size, String keyword,
+                                 Integer reviewStatus, Integer status) {
+        String kw = keyword == null || keyword.isBlank() ? null : keyword.trim();
         return productMapper.selectPage(new Page<>(current, size),
-                Wrappers.<Product>lambdaQuery().eq(Product::getMerId, merId).orderByDesc(Product::getCreateTime));
+                Wrappers.<Product>lambdaQuery()
+                        .eq(Product::getMerId, merId)
+                        .like(kw != null, Product::getTitle, kw)
+                        .eq(reviewStatus != null, Product::getReviewStatus, reviewStatus)
+                        .eq(status != null, Product::getStatus, status)
+                        .orderByDesc(Product::getCreateTime));
     }
 
     /**
@@ -271,6 +283,98 @@ public class ProductService {
     public Product setStatus(Long prodId, Integer status) {
         Product p = productMapper.selectById(prodId);
         if (p == null) throw new BusinessException("商品不存在");
+        p.setStatus(status);
+        p.setUpdateTime(LocalDateTime.now());
+        productMapper.updateById(p);
+        return p;
+    }
+
+    // ===== 商户端：商品编辑与自主上下架（归属校验 + 内容变更重新送审） =====
+
+    /** 商户自己的商品详情（归属校验，不含已逻辑删除商品） */
+    public Product myDetail(Long merId, Long prodId) {
+        Product p = productMapper.selectById(prodId);
+        if (p == null || !merId.equals(p.getMerId())) throw new BusinessException("商品不存在或无权操作");
+        return p;
+    }
+
+    /**
+     * 商户编辑自己的商品：
+     * - 仅调整库存：即时生效，不影响审核状态与可售状态；
+     * - 修改标题/价格/分类/主图/详情等内容字段：重置为「待审核」且不可售，平台复审通过后自动恢复可售。
+     */
+    public Product myUpdate(Long merId, Long prodId, Product patch) {
+        Product p = myDetail(merId, prodId);
+        boolean contentChanged = false;
+        if (patch.getTitle() != null && !patch.getTitle().equals(p.getTitle())) {
+            p.setTitle(patch.getTitle().trim());
+            contentChanged = true;
+        }
+        if (patch.getPrice() != null && (p.getPrice() == null || patch.getPrice().compareTo(p.getPrice()) != 0)) {
+            p.setPrice(patch.getPrice());
+            contentChanged = true;
+        }
+        if (patch.getBrand() != null && !patch.getBrand().equals(p.getBrand())) {
+            p.setBrand(patch.getBrand().trim());
+            contentChanged = true;
+        }
+        if (patch.getSpec() != null && !patch.getSpec().equals(p.getSpec())) {
+            p.setSpec(patch.getSpec().trim());
+            contentChanged = true;
+        }
+        if (patch.getIndId() != null && !patch.getIndId().equals(p.getIndId())) {
+            p.setIndId(patch.getIndId());
+            contentChanged = true;
+        }
+        if (patch.getCatId() != null && !patch.getCatId().equals(p.getCatId())) {
+            p.setCatId(patch.getCatId());
+            contentChanged = true;
+        }
+        if (patch.getCoverUrl() != null && !patch.getCoverUrl().equals(p.getCoverUrl())) {
+            p.setCoverUrl(patch.getCoverUrl());
+            contentChanged = true;
+        }
+        if (patch.getDetail() != null && !patch.getDetail().equals(p.getDetail())) {
+            p.setDetail(patch.getDetail().trim());
+            contentChanged = true;
+        }
+        if (patch.getStock() != null) {
+            if (patch.getStock() < 1 || patch.getStock() > 999999) {
+                throw new BusinessException("库存需为 1 ~ 999999 之间的整数");
+            }
+            p.setStock(patch.getStock());
+        }
+        if (contentChanged) {
+            if (p.getTitle() == null || p.getTitle().length() < 2 || p.getTitle().length() > 100) {
+                throw new BusinessException("商品名称需 2-100 个字符");
+            }
+            if (p.getPrice() == null || p.getPrice().compareTo(BigDecimal.ZERO) <= 0
+                    || p.getPrice().compareTo(new BigDecimal("9999999")) > 0) {
+                throw new BusinessException("价格需为 0.01 ~ 9999999 之间的数值");
+            }
+            if (p.getCatId() == null || p.getIndId() == null) {
+                throw new BusinessException("请选择行业与商品分类");
+            }
+            if (p.getCoverUrl() == null || p.getCoverUrl().isBlank()) {
+                throw new BusinessException("请上传商品主图");
+            }
+            // 内容变更重新送审：下架 + 待审核，复审通过自动恢复可售
+            p.setStatus(0);
+            p.setReviewStatus(0);
+            p.setRejectReason(null);
+        }
+        p.setUpdateTime(LocalDateTime.now());
+        productMapper.updateById(p);
+        return p;
+    }
+
+    /** 商户自主上下架：仅审核通过的商品可操作，可反复上下架 */
+    public Product mySetStatus(Long merId, Long prodId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) throw new BusinessException("商品状态不合法");
+        Product p = myDetail(merId, prodId);
+        if (p.getReviewStatus() == null || p.getReviewStatus() != 1) {
+            throw new BusinessException("仅审核通过的商品可上架/下架");
+        }
         p.setStatus(status);
         p.setUpdateTime(LocalDateTime.now());
         productMapper.updateById(p);

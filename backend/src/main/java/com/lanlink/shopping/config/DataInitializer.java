@@ -3,10 +3,8 @@ package com.lanlink.shopping.config;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.entity.*;
 import com.lanlink.shopping.mapper.*;
-import com.lanlink.shopping.module.activity.entity.Activity;
-import com.lanlink.shopping.module.activity.mapper.ActivityMapper;
-import com.lanlink.shopping.module.promotion.entity.Promotion;
-import com.lanlink.shopping.module.promotion.mapper.PromotionMapper;
+import com.lanlink.shopping.module.campaign.entity.Campaign;
+import com.lanlink.shopping.module.campaign.mapper.CampaignMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -42,23 +40,21 @@ public class DataInitializer implements CommandLineRunner {
     private final CategoryMapper categoryMapper;
     private final ThirdAuthMapper thirdAuthMapper;
     private final MessageMapper messageMapper;
-    private final ActivityMapper activityMapper;
-    private final PromotionMapper promotionMapper;
+    private final CampaignMapper campaignMapper;
     private final PasswordEncoder passwordEncoder;
 
     public DataInitializer(UserMapper userMapper, RoleMapper roleMapper, EnterpriseMapper enterpriseMapper,
                            MerchantMapper merchantMapper, ProductMapper productMapper,
                            CategoryMapper categoryMapper, ThirdAuthMapper thirdAuthMapper,
                            MessageMapper messageMapper,
-                           ActivityMapper activityMapper, PromotionMapper promotionMapper,
+                           CampaignMapper campaignMapper,
                            PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper; this.roleMapper = roleMapper;
         this.enterpriseMapper = enterpriseMapper; this.merchantMapper = merchantMapper;
         this.productMapper = productMapper; this.categoryMapper = categoryMapper;
         this.thirdAuthMapper = thirdAuthMapper;
         this.messageMapper = messageMapper;
-        this.activityMapper = activityMapper;
-        this.promotionMapper = promotionMapper;
+        this.campaignMapper = campaignMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -152,45 +148,71 @@ public class DataInitializer implements CommandLineRunner {
         log.info("==== 演示数据就绪: 演示账号(13800000000/13900000001/13700000002)密码均为 123456 ====");
     }
 
-    /** 营销中台演示数据：活动 + 促销（按标题幂等，重复启动不会叠加） */
+    /** 营销中台演示数据：统一活动体系（领券/满减/折扣/秒杀/激励/商户激励，按标题幂等） */
     private void seedMarketingDemo() {
-        seedActivity("新客注册有礼", "register", "注册即送 100 积分，首单更享专属优惠。");
-        seedActivity("行业采购节·消费有礼", "purchase", "活动期间完成任意订单支付，自动累计积分并参与满减专场。");
-        seedPromotion("全场满 500 减 50", "full_reduce", new BigDecimal("500"), new BigDecimal("50"), null, "all", null);
-        seedPromotion("建材行业 95 折", "discount", new BigDecimal("100"), null, new BigDecimal("0.95"), "ind", 1L);
+        LocalDateTime now = LocalDateTime.now();
+        // 领券活动（用户在活动中心领取，结算时核销）
+        seedCampaign(mkCampaign("新客专享 · 满 200 减 30 券", "coupon", "red",
+                        now.minusDays(1), now.plusDays(30))
+                .setThreshold(new BigDecimal("200")).setBenefitAmount(new BigDecimal("30"))
+                .setPerUserLimit(1).setTotalQuota(1000));
+        seedCampaign(mkCampaign("建材行业 · 满 1000 减 120 券", "coupon", "purple",
+                        now.minusDays(1), now.plusDays(20))
+                .setThreshold(new BigDecimal("1000")).setBenefitAmount(new BigDecimal("120"))
+                .setScope("ind").setIndId(1L).setPerUserLimit(2).setTotalQuota(500));
+        seedCampaign(mkCampaign("全场通用 95 折券（最高减 ¥80）", "coupon", "green",
+                        now.minusDays(1), now.plusDays(15))
+                .setThreshold(new BigDecimal("300")).setDiscountRate(new BigDecimal("0.95"))
+                .setBenefitAmount(new BigDecimal("80")).setPerUserLimit(1).setTotalQuota(2000));
+        // 促销活动（结算自动应用，与会员折扣互斥取优）
+        seedCampaign(mkCampaign("全场满 500 减 50", "full_reduce", "blue",
+                        now.minusDays(1), now.plusDays(30))
+                .setThreshold(new BigDecimal("500")).setBenefitAmount(new BigDecimal("50")));
+        seedCampaign(mkCampaign("建材行业 95 折", "discount", "blue",
+                        now.minusDays(1), now.plusDays(30))
+                .setThreshold(new BigDecimal("100")).setDiscountRate(new BigDecimal("0.95"))
+                .setScope("ind").setIndId(1L));
+        seedCampaign(mkCampaign("午间限时秒杀 · 全场 9 折", "flash_sale", "purple",
+                        now.minusHours(2), now.plusHours(6))
+                .setDiscountRate(new BigDecimal("0.90")).setBenefitAmount(new BigDecimal("200")));
+        // 用户激励活动
+        seedCampaign(mkCampaign("新客注册有礼", "register", "gold",
+                        now.minusDays(1), now.plusDays(30)).setRewardPoints(100));
+        seedCampaign(mkCampaign("行业采购节 · 消费有礼", "purchase", "gold",
+                        now.minusDays(1), now.plusDays(30)).setRewardPoints(100));
+        // 商户激励 + 商户可报名的平台大促
+        seedCampaign(mkCampaign("商户销售冲刺 · 满 ¥50,000 奖 2000 积分", "merchant_incentive", "green",
+                        now.minusDays(1), now.plusDays(30))
+                .setMerTargetAmount(new BigDecimal("50000")).setMerRewardPoints(2000));
+        seedCampaign(mkCampaign("双十一工业品大促 · 商户报名中", "full_reduce", "red",
+                        now.minusDays(1), now.plusDays(15))
+                .setThreshold(new BigDecimal("1000")).setBenefitAmount(new BigDecimal("100")).setJoinable(1));
     }
 
-    private void seedActivity(String title, String type, String desc) {
-        if (activityMapper.selectCount(Wrappers.<Activity>lambdaQuery().eq(Activity::getTitle, title)) > 0) return;
-        Activity a = new Activity();
-        a.setTitle(title);
-        a.setType(type);
-        a.setDescription(desc);
-        a.setStartTime(LocalDateTime.now().minusDays(1));
-        a.setEndTime(LocalDateTime.now().plusDays(30));
-        a.setStatus(1); // 进行中
-        a.setCreateTime(LocalDateTime.now());
-        a.setUpdateTime(LocalDateTime.now());
-        activityMapper.insert(a);
+    private Campaign mkCampaign(String title, String type, String accent,
+                                LocalDateTime start, LocalDateTime end) {
+        Campaign c = new Campaign();
+        c.setTitle(title);
+        c.setType(type);
+        c.setAccent(accent);
+        c.setDescription("活动说明由平台运营在后台维护。");
+        c.setStartTime(start);
+        c.setEndTime(end);
+        c.setStatus(1); // 上架
+        c.setScope("all");
+        c.setThreshold(BigDecimal.ZERO);
+        c.setPerUserLimit(1);
+        c.setTotalQuota(0);
+        c.setClaimedCount(0);
+        c.setJoinable(0);
+        c.setCreateTime(LocalDateTime.now());
+        c.setUpdateTime(LocalDateTime.now());
+        return c;
     }
 
-    private void seedPromotion(String title, String type, BigDecimal threshold, BigDecimal benefit,
-                               BigDecimal rate, String scope, Long indId) {
-        if (promotionMapper.selectCount(Wrappers.<Promotion>lambdaQuery().eq(Promotion::getTitle, title)) > 0) return;
-        Promotion p = new Promotion();
-        p.setTitle(title);
-        p.setType(type);
-        p.setThreshold(threshold);
-        p.setBenefitAmount(benefit);
-        p.setDiscountRate(rate);
-        p.setScope(scope);
-        p.setIndId(indId);
-        p.setStartTime(LocalDateTime.now().minusDays(1));
-        p.setEndTime(LocalDateTime.now().plusDays(30));
-        p.setStatus(1);
-        p.setCreateTime(LocalDateTime.now());
-        p.setUpdateTime(LocalDateTime.now());
-        promotionMapper.insert(p);
+    private void seedCampaign(Campaign c) {
+        if (campaignMapper.selectCount(Wrappers.<Campaign>lambdaQuery().eq(Campaign::getTitle, c.getTitle())) > 0) return;
+        campaignMapper.insert(c);
     }
 
     private User ensureUser(String phone, String nick, Long roleId, Long entId) {

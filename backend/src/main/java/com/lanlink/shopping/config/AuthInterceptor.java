@@ -57,7 +57,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 运营后台鉴权（越权访问记录审计日志）
         if (uri.startsWith("/admin/") || uri.contains("/admin/")) {
             User u = UserContext.current(request);
-            if (u.getRoleId() == null || u.getRoleId() != 3L) {
+            if (!com.lanlink.shopping.common.UserRoles.isAdmin(u.getRoleId())) {
                 auditService.record(u.getUserId(), "ACCESS_DENIED", "越权访问后台: " + uri, request);
                 write(response, R.fail(403, "无权限：仅平台运营可操作"));
                 return false;
@@ -87,6 +87,9 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 商品仅公开浏览(分页/详情)；发布/图片上传/我的列表/审核均需登录
                 || uri.equals("/product/page")
                 || uri.startsWith("/product/detail/")
+                // 活动中心公开浏览（列表/详情）；领券/参与/券包/商户端均需登录
+                || uri.equals("/campaign/list")
+                || uri.startsWith("/campaign/detail/")
                 // 订阅方案列表公开浏览；购买/我的/取消需登录
                 || uri.equals("/subscription/plans")
                 // 支付渠道异步通知与同步回跳：无登录态，公开放行（内部已做签名校验）

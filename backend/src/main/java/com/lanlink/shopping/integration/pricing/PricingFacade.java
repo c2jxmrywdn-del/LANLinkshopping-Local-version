@@ -1,20 +1,28 @@
 package com.lanlink.shopping.integration.pricing;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.lanlink.shopping.entity.Cart;
+import com.lanlink.shopping.entity.Product;
+import com.lanlink.shopping.mapper.CartMapper;
+import com.lanlink.shopping.mapper.ProductMapper;
+import com.lanlink.shopping.module.campaign.service.CampaignService;
 import com.lanlink.shopping.module.membership.service.MembershipService;
-import com.lanlink.shopping.module.promotion.service.PromotionService;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 结算价格编排（营销中台集成 Facade）。
  *
  * 冲突防止策略（明确互斥规则，杜绝叠加套利）：
- *  - 促销优惠（满减/折扣，全场或行业限定）与会员等级折扣 二选一，取对用户更优惠者；
- *  - 两者不叠加；同一类型多规则时取最优（PromotionService 内部已取最大优惠）。
+ *  - 促销优惠（满减/折扣/限时秒杀，全场或行业限定）与会员等级折扣 二选一，取对用户更优惠者；
+ *  - 两者不叠加；同一类型多规则时取最优（CampaignService 内部已取最大优惠）；
+ *  - 优惠券在上述最优价基础上核销（券面值受"券前应付"封顶，保证应付 ≥ 0）。
  *
- * 模块隔离：本 Facade 是唯一同时感知促销模块与会员模块的组件，
+ * 模块隔离：本 Facade 是唯一同时感知活动模块与会员模块的组件，
  * 订单系统只依赖 PricingFacade，不直接触碰任何营销模块。
  */
 @Component
@@ -25,16 +33,21 @@ public class PricingFacade {
     /** 会员折扣来源标识 */
     public static final String SOURCE_MEMBER = "member";
 
-    private final PromotionService promotionService;
+    private final CampaignService campaignService;
     private final MembershipService membershipService;
+    private final CartMapper cartMapper;
+    private final ProductMapper productMapper;
 
-    public PricingFacade(PromotionService promotionService, MembershipService membershipService) {
-        this.promotionService = promotionService;
+    public PricingFacade(CampaignService campaignService, MembershipService membershipService,
+                         CartMapper cartMapper, ProductMapper productMapper) {
+        this.campaignService = campaignService;
         this.membershipService = membershipService;
+        this.cartMapper = cartMapper;
+        this.productMapper = productMapper;
     }
 
     /**
-     * 计算订单应付金额。
+     * 计算订单应付金额（不含优惠券；券在订单事务内由 CampaignService.applyCouponForOrder 核销）。
      * @param userId        用户（会员折扣按等级读取）
      * @param orderAmount   商品原价合计
      * @param orderIndId    订单所属行业（行业限定促销用）
@@ -42,7 +55,7 @@ public class PricingFacade {
      */
     public Quote quote(Long userId, BigDecimal orderAmount, Long orderIndId, boolean memberEligible) {
         BigDecimal amount = orderAmount == null ? BigDecimal.ZERO : orderAmount;
-        BigDecimal promoDiscount = promotionService.calculateDiscount(amount, orderIndId);
+        BigDecimal promoDiscount = campaignService.calculateDiscount(amount, orderIndId);
         BigDecimal memberDiscount = BigDecimal.ZERO;
         if (memberEligible) {
             BigDecimal rate = membershipService.levelDiscountRate(userId);
@@ -52,6 +65,33 @@ public class PricingFacade {
             }
         }
         return pickBest(amount, promoDiscount, memberDiscount);
+    }
+
+    /**
+     * 结算可用券试算：按购物车行服务端重算金额与行业（与下单口径一致，不信任前端金额）。
+     * @param cartIds 结算购物车行ID（空则按"已勾选"口径）
+     */
+    public List<Map<String, Object>> quoteCoupons(Long userId, List<Long> cartIds) {
+        List<Cart> carts = loadCarts(userId, cartIds);
+        if (carts.isEmpty()) return List.of();
+        BigDecimal total = BigDecimal.ZERO;
+        Long indId = null;
+        for (Cart c : carts) {
+            Product p = productMapper.selectById(c.getProdId());
+            if (p == null || p.getPrice() == null || p.getPrice().signum() <= 0) continue;
+            total = total.add(p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity())));
+            if (indId == null) indId = p.getIndId();
+        }
+        return campaignService.quoteCoupons(userId, total, indId);
+    }
+
+    private List<Cart> loadCarts(Long userId, List<Long> cartIds) {
+        if (cartIds != null && !cartIds.isEmpty()) {
+            return cartMapper.selectList(Wrappers.<Cart>lambdaQuery()
+                    .eq(Cart::getUserId, userId).in(Cart::getCartId, cartIds));
+        }
+        return cartMapper.selectList(Wrappers.<Cart>lambdaQuery()
+                .eq(Cart::getUserId, userId).eq(Cart::getChecked, 1));
     }
 
     private Quote pickBest(BigDecimal amount, BigDecimal promoDiscount, BigDecimal memberDiscount) {
@@ -80,6 +120,10 @@ public class PricingFacade {
         public BigDecimal finalAmount() {
             BigDecimal total = original.subtract(promoDiscount).subtract(memberDiscount);
             return total.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : total;
+        }
+        /** 实际生效的优惠金额（促销或会员二者之一） */
+        public BigDecimal appliedDiscount() {
+            return promoDiscount.max(memberDiscount);
         }
         public BigDecimal getOriginal() { return original; }
         public BigDecimal getPromoDiscount() { return promoDiscount; }

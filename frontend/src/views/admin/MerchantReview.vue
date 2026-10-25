@@ -119,6 +119,7 @@
         :columns="cols"
         row-key="merId"
         :loading="loading"
+        :scroll="{ x: 1160 }"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :pagination="{ pageSize: 15, showTotal: t => `共 ${t} 家商户` }"
       >
@@ -776,6 +777,7 @@ import {
   SyncOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
+import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const router = useRouter()
 
@@ -849,7 +851,7 @@ async function load() {
   loading.value = true
   try {
     const list = await merchantApi.adminList(filter.value)
-    rows.value = list || []
+    rows.value = (list || []).map(fixMerchantUploadUrls)
   } finally {
     loading.value = false
   }
@@ -998,7 +1000,7 @@ async function openDetail(record) {
   drawerRejectReason.value = record.rejectReason || ''
   try {
     const res = await merchantApi.adminDetail(record.merId)
-    detail.value = res
+    detail.value = fixMerchantUploadUrls(res)
   } catch (e) {
     message.error('加载商户档案失败')
     detailOpen.value = false

@@ -1,14 +1,56 @@
 package com.lanlink.shopping.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.entity.Order;
+import com.lanlink.shopping.entity.OrderItem;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public interface OrderMapper extends BaseMapper<Order> {
+
+    /** 商户视角 WHERE 片段：订单包含本商户商品（order_item→product 关联） */
+    String MINE_EXISTS =
+            "EXISTS(SELECT 1 FROM t_order_item oi JOIN t_product p ON oi.prod_id = p.prod_id "
+            + "WHERE oi.order_no = o.order_no AND p.mer_id = #{merId} AND p.deleted = 0)";
+
+    /**
+     * 商户订单分页：仅返回包含本商户商品的订单，可按支付状态/订单状态/退款/关键词过滤。
+     * 关键词匹配订单号或本商户商品名。
+     */
+    @Select("<script>SELECT o.* FROM t_order o WHERE " + MINE_EXISTS
+            + "<if test='payStatus != null'> AND o.pay_status = #{payStatus}</if>"
+            + "<if test='orderStatus != null'> AND o.order_status = #{orderStatus}</if>"
+            + "<if test=\"refundFlag == 'applied'\"> AND o.refund_status = 'applied'</if>"
+            + "<if test=\"refundFlag == 'any'\"> AND o.refund_status IS NOT NULL AND o.refund_status != 'none'</if>"
+            + "<if test='keyword != null and keyword != \"\"'> AND (o.order_no LIKE CONCAT('%',#{keyword},'%')"
+            + " OR EXISTS(SELECT 1 FROM t_order_item oi2 JOIN t_product p2 ON oi2.prod_id = p2.prod_id"
+            + " WHERE oi2.order_no = o.order_no AND p2.mer_id = #{merId} AND p2.deleted = 0"
+            + " AND oi2.prod_name LIKE CONCAT('%',#{keyword},'%')))</if>"
+            + " ORDER BY o.create_time DESC</script>")
+    Page<Order> merchantPage(Page<Order> page, @Param("merId") Long merId,
+                             @Param("payStatus") Integer payStatus, @Param("orderStatus") Integer orderStatus,
+                             @Param("refundFlag") String refundFlag, @Param("keyword") String keyword);
+
+    /** 本商户商品在指定订单中的明细（用于「我的金额」小计与订单详情） */
+    @Select("<script>SELECT oi.* FROM t_order_item oi JOIN t_product p ON oi.prod_id = p.prod_id"
+            + " WHERE p.mer_id = #{merId} AND p.deleted = 0 AND oi.order_no IN"
+            + " <foreach collection='orderNos' item='n' open='(' separator=',' close=')'>#{n}</foreach>"
+            + " ORDER BY oi.item_id</script>")
+    List<OrderItem> merchantItems(@Param("merId") Long merId, @Param("orderNos") List<String> orderNos);
+
+    /** 含指定商户商品的全部订单号（运单列表按商户隔离用） */
+    @Select("SELECT DISTINCT oi.order_no FROM t_order_item oi JOIN t_product p ON oi.prod_id = p.prod_id "
+            + "WHERE p.mer_id = #{merId} AND p.deleted = 0")
+    List<String> merchantOrderNos(@Param("merId") Long merId);
+
+    /** 指定买家本人的全部订单号（运单列表按买家隔离用） */
+    @Select("SELECT order_no FROM t_order WHERE user_id = #{userId}")
+    List<String> buyerOrderNos(@Param("userId") Long userId);
 
     /** 用户累计已支付订单金额（pay_status=1） */
     @Select("SELECT COALESCE(SUM(total_amount), 0) FROM t_order " +

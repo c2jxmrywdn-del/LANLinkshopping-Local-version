@@ -236,8 +236,8 @@ const settleCols = [
 const statusText = (s) => ({ pending_ship: '待发货', picked_up: '已揽收', in_transit: '运输中', out_for_delivery: '派件中', delivered: '已签收', exception: '异常', returned: '已退回', lost: '丢失', cancelled: '已取消' }[s] || s)
 const statusColor = (s) => ({ delivered: 'green', exception: 'red', returned: 'orange', lost: 'red', in_transit: 'blue' }[s] || 'default')
 
-async function loadProviders() { providers.value = (await logisticsApi.providers()).data || [] }
-async function loadTemplates() { templates.value = (await logisticsApi.templates()).data || [] }
+async function loadProviders() { providers.value = (await logisticsApi.adminProviders()).data || [] }
+async function loadTemplates() { templates.value = (await logisticsApi.adminTemplates()).data || [] }
 async function loadWaybills(page = 1) {
   waybillPage.value.page = page
   const r = await logisticsApi.waybillList({ page, size: 10 })

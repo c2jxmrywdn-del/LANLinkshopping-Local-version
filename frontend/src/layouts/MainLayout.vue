@@ -17,13 +17,12 @@
           >
             <a-menu-item key="home">首页</a-menu-item>
             <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true">▾</i></a-menu-item>
-            <a-menu-item key="promotions">优惠</a-menu-item>
+            <a-menu-item key="activity">活动</a-menu-item>
             <a-menu-item v-if="user.hasPerm('credit:view')" key="credit-term">账期</a-menu-item>
             <a-menu-item v-if="user.hasPerm('order:view')" key="orders">我的订单</a-menu-item>
             <a-menu-item v-if="user.isAdmin" key="admin/merchants">商户管理</a-menu-item>
             <a-menu-item v-else-if="user.logged && !user.isMerchant" key="merchant">商户入驻</a-menu-item>
-            <a-menu-item v-if="user.hasPerm('merchant:manage')" key="merchant/traffic">流量管理</a-menu-item>
-            <a-menu-item v-if="user.hasPerm('product:publish')" key="merchant/products">我的商品</a-menu-item>
+            <a-menu-item v-else-if="user.hasPerm('merchant:manage') || user.hasPerm('product:publish')" key="merchant/center">商户中心</a-menu-item>
             <a-menu-item key="about">关于我们</a-menu-item>
           </a-menu>
 
@@ -73,6 +72,7 @@
                   </a-menu-item>
                   <a-menu-divider />
                   <a-menu-item @click="$router.push('/wallet')">💰 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')">企业账期</a-menu-item>
+                  <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')">商户中心</a-menu-item>
                   <a-menu-item @click="$router.push('/activity')">🎯 活动中心</a-menu-item>
                   <a-menu-item @click="$router.push('/membership')"><MembershipIcon :size="18" class="membership-menu-icon" /> 会员中心</a-menu-item>
                   <a-menu-item @click="$router.push('/me')">个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')">消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')">收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')">登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')">账户设置</a-menu-item>
@@ -137,11 +137,10 @@ const settings = useSettingsStore()
 const NAV_PATHS = [
   { key: 'home', match: (p) => p === '/' },
   { key: 'mall', match: (p) => p === '/mall' || p.startsWith('/product') },
-  { key: 'promotions', match: (p) => p.startsWith('/promotions') },
+  { key: 'activity', match: (p) => p.startsWith('/activity') || p.startsWith('/promotions') },
   { key: 'credit-term', match: (p) => p.startsWith('/credit-term') },
   { key: 'orders', match: (p) => p.startsWith('/orders') },
-  { key: 'merchant/products', match: (p) => p.startsWith('/merchant/products') },
-  { key: 'merchant/traffic', match: (p) => p.startsWith('/merchant/traffic') },
+  { key: 'merchant/center', match: (p) => p.startsWith('/merchant/center') || p.startsWith('/merchant/products') || p.startsWith('/merchant/traffic') },
   { key: 'merchant', match: (p) => p === '/merchant' },
   { key: 'about', match: (p) => p === '/about' },
 ]
@@ -201,7 +200,7 @@ function openMallCategory(category) {
 function handleMallQuick(action) {
   mallMenuOpen.value = false
   if (action === 'sales') router.push({ name: 'mall', query: { sort: 'sales' } })
-  else if (action === 'promotions') router.push({ name: 'promotions' })
+  else if (action === 'promotions') router.push({ name: 'activity' })
   else router.push({ name: 'mall' })
 }
 

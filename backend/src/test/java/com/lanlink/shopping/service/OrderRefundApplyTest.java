@@ -37,7 +37,8 @@ class OrderRefundApplyTest {
                 mock(UserMapper.class), messageService, mock(IdentityService.class), mock(AuditService.class),
                 mock(PricingFacade.class), mock(ApplicationEventPublisher.class),
                 mock(MembershipService.class), mock(CreditTermService.class),
-                mock(IdempotentService.class), mock(TamperGuardService.class));
+                mock(IdempotentService.class), mock(TamperGuardService.class),
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
     }
 
     private Order paidOrder() {

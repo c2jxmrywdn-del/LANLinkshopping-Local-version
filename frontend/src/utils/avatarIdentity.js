@@ -56,6 +56,51 @@ export function initialsOf(name) {
 }
 
 /**
+ * 企业/店铺名常见组织形式后缀（从尾部循环剥离，长度递减保证先剥长后缀）。
+ */
+const ORG_SUFFIXES = [
+  '股份有限公司', '有限责任公司', '集团有限公司', '有限公司',
+  '集团公司', '控股集团', '实业', '集团', '公司', '厂', '铺', '店', '中心', '部', '行', '社'
+]
+
+/**
+ * 企业名 → 商号短名：循环剥离组织形式后缀。
+ * 「华晨建材集团有限公司」→「华晨建材」；剥空/无后缀时原样返回。
+ * @param {string} name
+ * @returns {string}
+ */
+export function orgShortNameOf(name) {
+  let s = String(name == null ? '' : name).trim()
+  if (!s) return ''
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const suf of ORG_SUFFIXES) {
+      if (s.length > suf.length && s.endsWith(suf)) {
+        s = s.slice(0, -suf.length)
+        changed = true
+        break
+      }
+    }
+  }
+  return s
+}
+
+/**
+ * 企业/店铺头像缩写：取商号前 1–2 字（「华晨建材集团有限公司」→「华晨」），
+ * 与个人名的 initialsOf（取「名」末尾字）区分；拉丁名回退 initialsOf。
+ * @param {string} name
+ * @returns {string}
+ */
+export function orgInitialsOf(name) {
+  const short = orgShortNameOf(name)
+  if (!short) return ''
+  const cjk = short.replace(/[^\u3400-\u9fff\u3040-\u30ff]/g, '')
+  if (!cjk) return initialsOf(short)
+  return cjk.slice(0, 2)
+}
+
+/**
  * 由 seed（姓名/手机号/用户 ID）确定性推导调色板下标。
  * 同一 seed 恒返回同一下标 → 同一用户各处颜色一致。
  * @param {string} seed

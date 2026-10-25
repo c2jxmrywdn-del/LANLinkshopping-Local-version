@@ -1,6 +1,6 @@
 <template>
   <div class="import-page">
-    <a-button type="link" @click="$router.push('/merchant/products')">← 我的商品</a-button>
+    <a-button type="link" @click="$router.push('/merchant/center/products')">← 商品管理</a-button>
     <a-card :bordered="false" class="card">
       <div class="eyebrow">WORKFLOW / BATCH IMPORT</div>
       <h1>商品批量导入</h1>

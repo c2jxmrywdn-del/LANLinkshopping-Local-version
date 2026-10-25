@@ -1,6 +1,7 @@
 package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.entity.LogisticsAlert;
@@ -8,12 +9,14 @@ import com.lanlink.shopping.entity.LogisticsProvider;
 import com.lanlink.shopping.entity.LogisticsTemplate;
 import com.lanlink.shopping.entity.LogisticsTrace;
 import com.lanlink.shopping.entity.LogisticsWaybill;
+import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.entity.Order;
 import com.lanlink.shopping.mapper.LogisticsAlertMapper;
 import com.lanlink.shopping.mapper.LogisticsProviderMapper;
 import com.lanlink.shopping.mapper.LogisticsTemplateMapper;
 import com.lanlink.shopping.mapper.LogisticsTraceMapper;
 import com.lanlink.shopping.mapper.LogisticsWaybillMapper;
+import com.lanlink.shopping.mapper.MerchantMapper;
 import com.lanlink.shopping.mapper.OrderMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +54,10 @@ public class LogisticsWaybillService {
     private final AuditService auditService;
     private final SequenceService sequenceService;
 
+    /** 商户档案（可选注入：发货/签收的归属校验用，缺省环境放行由权限注解兜底） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MerchantMapper merchantMapper;
+
     public LogisticsWaybillService(LogisticsWaybillMapper waybillMapper,
                                    LogisticsTraceMapper traceMapper,
                                    LogisticsAlertMapper alertMapper,
@@ -87,6 +94,8 @@ public class LogisticsWaybillService {
     public LogisticsWaybill ship(ShipRequest req, Long operatorId, jakarta.servlet.http.HttpServletRequest httpReq) {
         Order order = orderMapper.selectById(req.orderNo());
         if (order == null) throw new BusinessException("订单不存在");
+        // 归属校验：商户只能对「包含本商户商品」的订单发货（平台运营代发放行，由权限注解兜底）
+        assertOrderBelongsToOperator(order.getOrderNo(), operatorId, "发货");
         if (order.getPayStatus() == null || order.getPayStatus() != 1) {
             throw new BusinessException("订单未支付，不能发货");
         }
@@ -156,6 +165,8 @@ public class LogisticsWaybillService {
                                     jakarta.servlet.http.HttpServletRequest httpReq) {
         LogisticsWaybill wb = waybillMapper.selectById(waybillId);
         if (wb == null) throw new BusinessException("运单不存在");
+        // 归属校验：商户只能操作「订单含本商户商品」的运单（平台运营放行，由权限注解兜底）
+        assertOrderBelongsToOperator(wb.getOrderNo(), operatorId, "操作该运单");
         if (!LogisticsStateMachine.canTransit(wb.getStatus(), toStatus)) {
             throw new BusinessException("非法状态流转: " + wb.getStatus() + " -> " + toStatus);
         }
@@ -264,19 +275,69 @@ public class LogisticsWaybillService {
         }
     }
 
-    /** 分页查询（管理端/商家侧） */
-    public Page<LogisticsWaybill> page(long page, long size, String status, String orderNo, Long providerId) {
+    /** 分页查询（管理端/商家侧）：按操作者身份隔离——运营看全量、商户看本店、买家看本人订单 */
+    public Page<LogisticsWaybill> page(long page, long size, String status, String orderNo, Long providerId,
+                                       Long operatorUserId, boolean adminView) {
         LambdaQueryWrapper<LogisticsWaybill> qw = new LambdaQueryWrapper<LogisticsWaybill>()
                 .orderByDesc(LogisticsWaybill::getWaybillId);
         if (status != null && !status.isBlank()) qw.eq(LogisticsWaybill::getStatus, status);
         if (orderNo != null && !orderNo.isBlank()) qw.eq(LogisticsWaybill::getOrderNo, orderNo);
         if (providerId != null) qw.eq(LogisticsWaybill::getProviderId, providerId);
+        // 数据隔离：非运营视角按「与操作者相关的订单号」过滤，防跨商户/跨买家读取收货信息。
+        // fail-closed：无法识别操作者（未登录/未来被加白名单）时一律返回空页，而非放行全量
+        if (!adminView) {
+            if (operatorUserId == null) return new Page<>(page, size, 0);
+            List<String> scope = orderNosOfOperator(operatorUserId);
+            if (scope.isEmpty()) return new Page<>(page, size, 0);
+            qw.in(LogisticsWaybill::getOrderNo, scope);
+        }
         return waybillMapper.selectPage(new Page<>(page, size), qw);
+    }
+
+    /**
+     * 发货/签收归属校验：商户操作者仅能操作「订单包含本商户商品」的订单；
+     * 无商户档案的操作者（平台运营代发）放行，由接口权限注解兜底。
+     */
+    private void assertOrderBelongsToOperator(String orderNo, Long operatorUserId, String action) {
+        if (merchantMapper == null || operatorUserId == null) return;
+        Merchant m = merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery()
+                .eq(Merchant::getUserId, operatorUserId));
+        if (m == null) return;
+        if (orderMapper.merchantItems(m.getMerId(), List.of(orderNo)).isEmpty()) {
+            throw new BusinessException("该订单不含您的商品，无权" + action);
+        }
+    }
+
+    /** 操作者可见的订单号集合：商户 → 含本店商品的订单；其他用户 → 本人下的订单 */
+    private List<String> orderNosOfOperator(Long operatorUserId) {
+        if (merchantMapper != null) {
+            Merchant m = merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery()
+                    .eq(Merchant::getUserId, operatorUserId));
+            if (m != null) return orderMapper.merchantOrderNos(m.getMerId());
+        }
+        return orderMapper.buyerOrderNos(operatorUserId);
     }
 
     public List<LogisticsTrace> traces(Long waybillId) {
         return traceMapper.selectList(new LambdaQueryWrapper<LogisticsTrace>()
                 .eq(LogisticsTrace::getWaybillId, waybillId)
                 .orderByAsc(LogisticsTrace::getTraceTime));
+    }
+
+    /** 商户端发货：可用（启用中）物流服务商列表，不暴露密钥等敏感配置 */
+    public List<LogisticsProvider> enabledProviders() {
+        return providerMapper.selectList(new LambdaQueryWrapper<LogisticsProvider>()
+                .eq(LogisticsProvider::getStatus, 1)
+                .orderByAsc(LogisticsProvider::getSort)
+                .orderByAsc(LogisticsProvider::getProviderId));
+    }
+
+    /** 商户端发货：指定服务商下启用中的运费模板（providerId 为空时返回全部启用模板） */
+    public List<LogisticsTemplate> enabledTemplates(Long providerId) {
+        LambdaQueryWrapper<LogisticsTemplate> qw = new LambdaQueryWrapper<LogisticsTemplate>()
+                .eq(LogisticsTemplate::getStatus, 1);
+        if (providerId != null) qw.eq(LogisticsTemplate::getProviderId, providerId);
+        qw.orderByAsc(LogisticsTemplate::getTemplateId);
+        return templateMapper.selectList(qw);
     }
 }

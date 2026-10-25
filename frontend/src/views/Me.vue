@@ -50,8 +50,9 @@
               <a-button block class="touch" @click="$router.push('/wallet')">我的钱包</a-button>
               <a-button block class="touch" @click="$router.push('/membership')">会员中心</a-button>
               <a-button block class="touch" @click="$router.push('/activity')">活动中心</a-button>
-              <!-- 已入驻商户不再显示入驻入口（功能已迁移至商户端各模块） -->
-              <a-button v-if="!user.isMerchant" block class="touch" @click="$router.push('/merchant')">{{ t('acct.card.merchant') }}</a-button>
+              <!-- 已入驻商户不再显示入驻入口（功能已迁移至商户中心） -->
+              <a-button v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" block class="touch" @click="$router.push('/merchant/center')">商户中心</a-button>
+              <a-button v-else-if="!user.isMerchant" block class="touch" @click="$router.push('/merchant')">{{ t('acct.card.merchant') }}</a-button>
             </a-space>
             <a-divider style="margin: 12px 0" />
             <a-button block class="touch" :loading="clearingCache" @click="clearCache">{{ t('acct.card.clearCache') }}</a-button>
@@ -61,7 +62,7 @@
         <!-- 主内容：个人信息 / 系统设置 -->
         <section class="col-main">
           <a-card :bordered="false" class="main-card">
-            <a-tabs v-model:activeKey="activeTab" @change="onTabChange">
+            <a-tabs :active-key="activeTab" @change="onTabChange">
               <a-tab-pane key="profile" :tab="t('acct.nav.profile')">
                 <ProfilePanel ref="profileRef" @dirty-change="dirty = $event" />
               </a-tab-pane>
@@ -147,12 +148,12 @@ function confirmDiscard(nextTab) {
   })
 }
 function onTabChange(key) {
-  if (key !== activeTab.value && dirty.value && key !== 'profile') {
-    // 从个人信息切走且存在未保存修改
-    confirmDiscard(key)
-    if (activeTab.value !== key) activeTab.value = activeTab.value // 未确认则不切换
+  // 受控切换：从「个人信息」切走且存在未保存修改时先确认，取消则停留在原 tab
+  if (dirty.value && activeTab.value === 'profile' && key !== 'profile') {
+    confirmDiscard(key) // onOk 中 discard 后再切换到 nextTab
     return
   }
+  activeTab.value = key
 }
 
 onBeforeRouteLeave(() => {

@@ -29,6 +29,8 @@ public class CheckoutDTO {
     private String payType = "corporate";
     /** 本单使用的积分数（积分抵现，0 或 null 表示不使用；上限受单笔抵扣比例约束） */
     private Integer usePoints;
+    /** 本单使用的用户券ID（t_user_coupon.id；null 表示不使用，核销校验与金额由后端重算） */
+    private Long couponId;
     /**
      * 客户端期望支付金额（防篡改比对：非空时与后端重算总额比对，不一致则告警拒绝）
      */

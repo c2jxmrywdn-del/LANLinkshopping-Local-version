@@ -52,6 +52,39 @@
         <span>{{ i.title }} × {{ i.quantity }}</span><span>¥{{ i.subtotal }}</span>
       </div>
       <a-divider />
+      <!-- 优惠券（活动系统）：服务端按购物车试算，选中后随下单核销 -->
+      <div class="coupon-box" v-if="coupons.length">
+        <div class="coupon-head">
+          <span class="coupon-title">🎟️ 优惠券</span>
+          <span class="coupon-count">{{ usableCoupons.length }} 张可用</span>
+        </div>
+        <div class="coupon-list">
+          <label v-for="cp in coupons" :key="cp.couponId"
+                 class="coupon-opt" :class="{ on: selectedCouponId === cp.couponId, off: !cp.applicable }">
+            <input type="radio" name="coupon" :value="cp.couponId"
+                   :disabled="!cp.applicable" v-model="selectedCouponId" @change="onPickCoupon" />
+            <span class="opt-main">
+              <b class="opt-val" v-if="cp.discountRate">{{ rateText(cp.discountRate) }}折</b>
+              <b class="opt-val" v-else>¥{{ trimZero(cp.benefitAmount) }}</b>
+              <span class="opt-name">{{ cp.title }}</span>
+              <span class="opt-sub">
+                {{ cp.threshold > 0 ? `满¥${trimZero(cp.threshold)}可用` : '无门槛' }}{{ cp.indName ? ' · ' + cp.indName : '' }}
+              </span>
+            </span>
+            <span class="opt-side">
+              <template v-if="cp.applicable"><i class="opt-benefit">-¥{{ trimZero(cp.benefit) }}</i></template>
+              <template v-else><i class="opt-unable">{{ unableReason(cp) }}</i></template>
+            </span>
+          </label>
+          <label class="coupon-opt none" :class="{ on: !selectedCouponId }">
+            <input type="radio" name="coupon" :value="null" v-model="selectedCouponId" @change="onPickCoupon" />
+            <span class="opt-main"><span class="opt-name">不使用优惠券</span></span>
+          </label>
+        </div>
+      </div>
+      <div class="row coupon-deduct" v-if="couponBenefit > 0">
+        <span>优惠券优惠</span><b class="deduct">-¥{{ couponBenefit }}</b>
+      </div>
       <!-- 积分抵现（会员系统）：余额实时试算，合计联动 -->
       <div class="points-box" v-if="pointsLoaded">
         <div class="points-head">
@@ -76,6 +109,9 @@
         <span>积分抵扣（{{ quotePoints }} 积分）</span><b class="deduct">-¥{{ redeemAmount }}</b>
       </div>
       <div class="row total"><span>实付金额</span><b>¥{{ payableTotal }}</b></div>
+      <div class="row pay-note" v-if="couponBenefit > 0 || promoHint">
+        <span>促销/会员折扣以结算结果为准，优惠券优惠已按试算计入</span>
+      </div>
     </a-card>
   </div>
 </template>
@@ -84,7 +120,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi } from '../api'
+import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi, campaignApi } from '../api'
 import { validateCheckoutForm } from '../utils/validationRules'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
@@ -114,8 +150,27 @@ const redeemAmount = ref(0)  // 试算返回的抵扣金额（元，整元）
 const maxPoints = ref(0)     // 本单可抵扣的最大积分（上限金额 × 1000）
 let quoteTimer = null
 
-// 应付合计 = 商品金额 - 积分抵扣（促销/会员折扣以后端结算为准）
-const payableTotal = computed(() => Math.max(0, cart.total - redeemAmount.value).toFixed(2))
+// ===== 优惠券（活动系统）：服务端按购物车试算可用性/优惠额，选中后随下单核销 =====
+const coupons = ref([])
+const selectedCouponId = ref(null)
+const usableCoupons = computed(() => coupons.value.filter(c => c.applicable))
+const selectedCoupon = computed(() => coupons.value.find(c => c.couponId === selectedCouponId.value) || null)
+const couponBenefit = computed(() => {
+  const cp = selectedCoupon.value
+  return cp && cp.applicable ? Number(cp.benefit) || 0 : 0
+})
+const promoHint = ref(false)
+const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const rateText = (r) => trimZero(Number(r) * 10)
+const unableReason = (cp) => {
+  if (cp.applicable) return ''
+  if (cp.threshold > 0 && cart.total < Number(cp.threshold)) return '未满门槛'
+  return '不适用本单'
+}
+function onPickCoupon() { /* 选中态由 v-model 维护，此处仅做触达反馈占位 */ }
+
+// 应付合计 = 商品金额 - 优惠券优惠 - 积分抵扣（促销/会员折扣以后端结算为准）
+const payableTotal = computed(() => Math.max(0, cart.total - couponBenefit.value - redeemAmount.value).toFixed(2))
 
 // 积分输入步进：按 1 元 = 1000 积分整元调整
 const pointsStep = computed(() => rule.value.redeemPointsPerYuan || 1000)
@@ -173,6 +228,14 @@ const creditAvailable = ref(0)
 const termUnavailable = computed(() => creditStatus.value !== 'ACTIVE' || creditAvailable.value < (cart.total - redeemAmount.value))
 
 onMounted(async () => {
+  // 优惠券试算（活动系统）：按当前勾选商品由服务端重算金额/行业后返回可用券
+  try {
+    const cs = await campaignApi.quoteCoupons(cart.checkedItems.map(i => i.cartId))
+    coupons.value = cs || []
+    // 默认选中可用且优惠最大的一张
+    const best = usableCoupons.value.reduce((a, b) => (Number(b.benefit) > Number(a?.benefit || 0) ? b : a), null)
+    if (best && Number(best.benefit) > 0) selectedCouponId.value = best.couponId
+  } catch (e) { coupons.value = [] }
   try {
     addrList.value = (await userApi.addressList()) || []
   } catch (e) {
@@ -231,9 +294,13 @@ async function submit() {
       remark: form.remark, payType: form.payType,
       // 积分抵现：勾选且输入有效时携带（后端按实际应付金额同口径校验）
       usePoints: usePoints.value && pointsInput.value > 0 ? pointsInput.value : null,
+      // 优惠券：服务端校验归属/门槛/有效期并核销（金额不信任前端）
+      couponId: selectedCouponId.value || null,
       idempotentKey: idempotentKey.value
     })
     idempotentKey.value = '' // 下单成功，重置幂等键，允许下一次新结算
+    selectedCouponId.value = null
+    coupons.value = []
     await cart.load()
     if (form.payType === 'term') {
       Modal.info({
@@ -291,6 +358,31 @@ async function submit() {
               background: rgba(180, 83, 9, .1); color: #b45309; font-weight: 600; }
 .points-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
 .points-deduct .deduct { color: #10b981; font-size: 15px; }
+/* 优惠券选择 */
+.coupon-box { background: rgba(155, 45, 32, .04); border: 1px dashed rgba(155, 45, 32, .22);
+              border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+.coupon-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.coupon-title { font-weight: 600; font-size: 13px; }
+.coupon-count { font-size: 12px; color: var(--ll-muted, #64748b); }
+.coupon-list { display: flex; flex-direction: column; gap: 6px; }
+.coupon-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+              border: 1.5px solid var(--ll-border, #e5e7eb); cursor: pointer;
+              transition: border-color .2s, background-color .2s; }
+.coupon-opt:hover:not(.off) { border-color: var(--ll-skyblue-border, #5b8fb5); }
+.coupon-opt.on { border-color: #9b2d20; background: rgba(155, 45, 32, .05); }
+.coupon-opt.off { opacity: .55; cursor: not-allowed; background: var(--ll-soft, rgba(15, 23, 42, .03)); }
+.coupon-opt input { accent-color: #9b2d20; flex-shrink: 0; }
+.opt-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.opt-val { color: #9b2d20; font-size: 15px; letter-spacing: -.01em; }
+.opt-name { font-size: 13px; color: var(--ll-ink, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-sub { font-size: 11.5px; color: var(--ll-muted, #64748b); }
+.opt-side { flex-shrink: 0; }
+.opt-benefit { font-style: normal; color: #10b981; font-weight: 700; font-size: 13.5px; }
+.opt-unable { font-style: normal; color: var(--ll-muted, #64748b); font-size: 11.5px; }
+.coupon-opt.none .opt-name { color: var(--ll-muted, #64748b); }
+.coupon-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
+.coupon-deduct .deduct { color: #10b981; font-size: 15px; }
+.pay-note { font-size: 11.5px; color: var(--ll-muted, #64748b); }
 /* 企业钱包余额提示 */
 .wallet-tip { font-size: 12px; color: var(--ll-muted, #64748b); }
 .wallet-warn { margin-top: 6px; font-size: 12px; color: #b45309; }

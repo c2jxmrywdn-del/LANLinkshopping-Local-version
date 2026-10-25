@@ -63,7 +63,8 @@ class TamperAttackSimulationTest {
                 mock(UserMapper.class), mock(MessageService.class), mock(IdentityService.class),
                 mock(AuditService.class), mock(PricingFacade.class), mock(ApplicationEventPublisher.class),
                 mock(MembershipService.class), mock(CreditTermService.class),
-                idempotentService, tamperGuardService);
+                idempotentService, tamperGuardService,
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
     }
 
     private void assertAlertOn(String fieldName) {

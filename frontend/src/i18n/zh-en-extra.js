@@ -18,6 +18,28 @@ export const UI_ZH_EN_EXTRA = {
   '本机浏览器': 'This browser',
   '欢迎回来': 'Welcome back',
 
+  // ===== 商户中心：导航与门控页 =====
+  '商户中心': 'Merchant Hub',
+  '工作台': 'Dashboard',
+  '商品管理': 'Products',
+  '订单管理': 'Orders',
+  '物流发货': 'Logistics',
+  '资金结算': 'Finance',
+  '店铺设置': 'Store Settings',
+  '商户服务专线': 'Merchant Hotline',
+  '工作日 9:00 - 18:00': 'Weekdays 9:00 - 18:00',
+  '开通您的商户店铺': 'Set Up Your Merchant Store',
+  '开始入驻申请': 'Start Onboarding',
+  '入驻申请审核中': 'Onboarding Under Review',
+  '入驻申请未通过': 'Onboarding Not Approved',
+  '查看站内消息': 'View Messages',
+  '联系客服': 'Contact Support',
+
+  // ===== 订单互通提示（买家订单页 ↔ 商户中心订单页） =====
+  '本页展示您作为买家的采购订单': 'This page lists orders you placed as a buyer',
+  '您店铺的销售订单（买家向您下单）在「商户中心 → 订单管理」中处理：发货、跟踪履约与退款。': 'Sales orders for your store (placed by buyers) are handled in Merchant Hub → Orders: shipping, fulfillment tracking and refunds.',
+  '查看店铺销售订单': 'View Store Sales Orders',
+
   // ===== 首页轮播 =====
   '建筑行业': 'Construction',
   '纺织行业': 'Textiles',
@@ -479,7 +501,6 @@ export const UI_ZH_EN_EXTRA = {
   "沟通概览": "Communication Overview",
   "学习沙盒": "Learning Sandbox",
   "极简纯白（与顶栏及内容区 100% 一致 #FFFFFF）": "Pure White (matches the top bar and content area 100% #FFFFFF)",
-  "低饱和深灰蓝（推荐，柔和护眼、字迹极清 #1B2434）": "Muted Slate Blue (recommended; easy on the eyes, crisp text #1B2434)",
   "经典海军蓝（品牌基准主色 #1F3864）": "Classic Navy (brand primary color #1F3864)",
   "AES-256 数据加密保护中": "AES-256 data encryption active",
   "运营管理工作台": "Operations Console",

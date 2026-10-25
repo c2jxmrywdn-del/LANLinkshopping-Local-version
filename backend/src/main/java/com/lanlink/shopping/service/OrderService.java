@@ -40,12 +40,19 @@ public class OrderService {
     private final CreditTermService creditTermService;
     private final IdempotentService idempotentService;
     private final TamperGuardService tamperGuardService;
+    private final com.lanlink.shopping.module.campaign.service.CampaignService campaignService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AddressMapper addressMapper;
 
     public void setAddressMapper(AddressMapper addressMapper) {
         this.addressMapper = addressMapper;
     }
+
+    /** 商户订单查询所需（可选注入，缺省时商户中心订单功能降级报错） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MerchantMapper merchantMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LogisticsWaybillMapper waybillMapper;
 
     /** 支付方式白名单（需求 1/3：与前端 validationRules.js 同契约，见 ValidationRules） */
     private static final java.util.Set<String> ALLOWED_PAY_TYPES =
@@ -57,7 +64,8 @@ public class OrderService {
                         PricingFacade pricingFacade, ApplicationEventPublisher eventPublisher,
                         com.lanlink.shopping.module.membership.service.MembershipService membershipService,
                         CreditTermService creditTermService, IdempotentService idempotentService,
-                        TamperGuardService tamperGuardService) {
+                        TamperGuardService tamperGuardService,
+                        com.lanlink.shopping.module.campaign.service.CampaignService campaignService) {
         this.cartMapper = cartMapper;
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
@@ -72,6 +80,7 @@ public class OrderService {
         this.creditTermService = creditTermService;
         this.idempotentService = idempotentService;
         this.tamperGuardService = tamperGuardService;
+        this.campaignService = campaignService;
     }
 
     @Transactional
@@ -165,10 +174,21 @@ public class OrderService {
             total = total.add(p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity())));
             if (orderIndId == null) orderIndId = p.getIndId();
         }
-        // 营销中台价格编排：促销满减/折扣 与 会员等级折扣 互斥取优（采购方享有会员折扣）
+        // 营销中台价格编排：促销满减/折扣/秒杀 与 会员等级折扣 互斥取优（采购方享有会员折扣）
         boolean memberEligible = user != null && user.getRoleId() != null && user.getRoleId() == 1L;
         PricingFacade.Quote quote = pricingFacade.quote(userId, total, orderIndId, memberEligible);
         BigDecimal payable = quote.finalAmount();
+        // 活动优惠券核销：在促销/会员最优价基础上抵扣，券面值受"券前应付"封顶（保证应付 ≥ 0）
+        BigDecimal couponDiscount = BigDecimal.ZERO;
+        if (dto.getCouponId() != null) {
+            if (payable.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException("订单已享全额优惠，无需使用优惠券");
+            }
+            couponDiscount = campaignService.applyCouponForOrder(userId, dto.getCouponId(),
+                    total, orderIndId, payable, order.getOrderNo());
+            payable = payable.subtract(couponDiscount);
+            if (payable.compareTo(BigDecimal.ZERO) < 0) payable = BigDecimal.ZERO;
+        }
         // 积分抵现（会员系统）：1000 积分 = 1 元，整元抵扣；抵扣明细记录在订单上供详情展示
         BigDecimal pointDeductAmount = BigDecimal.ZERO;
         int pointDeductPoints = 0;
@@ -181,6 +201,9 @@ public class OrderService {
         }
         order.setPointDeductAmount(pointDeductAmount);
         order.setPointDeductPoints(pointDeductPoints);
+        order.setPromoDiscount(quote.appliedDiscount());
+        order.setCouponDiscount(couponDiscount);
+        order.setCouponId(couponDiscount.signum() >= 0 && dto.getCouponId() != null ? dto.getCouponId() : null);
         order.setTotalAmount(payable);
         // 需求 1+4：防篡改比对（客户端传入 expectedTotal 时与后端重算总额一致性核验，不一致则告警并拒绝）
         if (dto.getExpectedTotal() != null) {
@@ -344,6 +367,12 @@ public class OrderService {
             messageService.send(userId, "order", "积分返还",
                     "订单 " + orderNo + " 已取消，抵扣的 " + refunded + " 积分已返还。", orderNo);
         }
+        // 优惠券回退（本单核销的券回到可用状态，幂等：仅回退本单核销记录）
+        campaignService.releaseCoupon(orderNo);
+        if (o.getCouponDiscount() != null && o.getCouponDiscount().signum() > 0) {
+            messageService.send(userId, "order", "优惠券已退回",
+                    "订单 " + orderNo + " 已取消，使用的优惠券已退回券包。", orderNo);
+        }
         messageService.send(userId, "order", "订单已取消", "订单 " + orderNo + " 已取消，库存已恢复。", orderNo);
     }
 
@@ -422,9 +451,12 @@ public class OrderService {
         orderMapper.updateById(o);
         int earnedBack = membershipService.reverseEarn(o.getUserId(), o.getOrderNo());
         int redeemed = membershipService.refundPoints(o.getUserId(), o.getOrderNo());
+        // 优惠券回退：本单核销的券回到可用状态
+        campaignService.releaseCoupon(o.getOrderNo());
         String detail = "订单 " + o.getOrderNo() + " 已全额退款，退款金额 ¥" + o.getTotalAmount();
         if (earnedBack > 0) detail += "，支付所得 " + earnedBack + " 积分已扣回";
         if (redeemed > 0) detail += "，抵扣积分 " + redeemed + " 已返还";
+        if (o.getCouponDiscount() != null && o.getCouponDiscount().signum() > 0) detail += "，优惠券已退回券包";
         messageService.send(o.getUserId(), "order", "退款成功", detail + "。", o.getOrderNo());
     }
 
@@ -436,6 +468,75 @@ public class OrderService {
                 Wrappers.<Order>lambdaQuery()
                         .eq(payStatus != null, Order::getPayStatus, payStatus)
                         .orderByDesc(Order::getCreateTime));
+    }
+
+    // ===== 商户端：订单管理（仅包含本商户商品的订单，明细只暴露本商户部分） =====
+
+    /** 商户订单分页：附带每单中本商户商品的明细子集与金额小计 */
+    public com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.lanlink.shopping.vo.MerchantOrderVO> merchantOrders(
+            Long userId, long page, long size, Integer payStatus, Integer orderStatus,
+            String refundFlag, String keyword) {
+        Merchant m = mustMerchantForOrders(userId);
+        String kw = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        var po = orderMapper.merchantPage(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size),
+                m.getMerId(), payStatus, orderStatus,
+                refundFlag == null || refundFlag.isBlank() ? null : refundFlag, kw);
+        var out = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.lanlink.shopping.vo.MerchantOrderVO>(
+                po.getCurrent(), po.getSize(), po.getTotal());
+        List<Order> records = po.getRecords();
+        if (records.isEmpty()) {
+            out.setRecords(List.of());
+            return out;
+        }
+        List<String> orderNos = records.stream().map(Order::getOrderNo).toList();
+        var by = merchantItemsGrouped(m.getMerId(), orderNos);
+        List<com.lanlink.shopping.vo.MerchantOrderVO> vos = new java.util.ArrayList<>();
+        for (Order o : records) {
+            com.lanlink.shopping.vo.MerchantOrderVO vo = new com.lanlink.shopping.vo.MerchantOrderVO();
+            vo.setOrder(o);
+            fillMine(vo, by.getOrDefault(o.getOrderNo(), List.of()));
+            vos.add(vo);
+        }
+        out.setRecords(vos);
+        return out;
+    }
+
+    /** 商户订单详情：本商户明细 + 关联运单；订单不含本商户商品时拒绝访问 */
+    public com.lanlink.shopping.vo.MerchantOrderVO merchantOrderDetail(Long userId, String orderNo) {
+        Merchant m = mustMerchantForOrders(userId);
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null) throw new BusinessException("订单不存在");
+        List<OrderItem> items = orderMapper.merchantItems(m.getMerId(), List.of(orderNo));
+        if (items.isEmpty()) throw new BusinessException("无权查看该订单");
+        com.lanlink.shopping.vo.MerchantOrderVO vo = new com.lanlink.shopping.vo.MerchantOrderVO();
+        vo.setOrder(o);
+        fillMine(vo, items);
+        if (waybillMapper != null) {
+            vo.setWaybills(waybillMapper.selectList(Wrappers.<LogisticsWaybill>lambdaQuery()
+                    .eq(LogisticsWaybill::getOrderNo, orderNo)
+                    .orderByDesc(LogisticsWaybill::getCreateTime)));
+        }
+        return vo;
+    }
+
+    private java.util.Map<String, List<OrderItem>> merchantItemsGrouped(Long merId, List<String> orderNos) {
+        List<OrderItem> items = orderMapper.merchantItems(merId, orderNos);
+        return items.stream().collect(java.util.stream.Collectors.groupingBy(OrderItem::getOrderNo));
+    }
+
+    private void fillMine(com.lanlink.shopping.vo.MerchantOrderVO vo, List<OrderItem> items) {
+        vo.setMyItems(items);
+        vo.setMyAmount(items.stream()
+                .map(it -> it.getSubtotal() == null ? BigDecimal.ZERO : it.getSubtotal())
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+    }
+
+    private Merchant mustMerchantForOrders(Long userId) {
+        if (merchantMapper == null) throw new BusinessException("商户订单服务暂不可用");
+        Merchant m = merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery().eq(Merchant::getUserId, userId));
+        if (m == null) throw new BusinessException("仅入驻商户可查看商户订单");
+        return m;
     }
 
     private String genOrderNo() {

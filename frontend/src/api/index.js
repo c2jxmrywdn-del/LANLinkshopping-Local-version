@@ -96,6 +96,10 @@ export const productApi = {
   publish: (d) => request.post('/product/publish', d),
   // 商户端：我的商品列表（含审核状态）/ 商品主图上传
   myList: (params) => request.get('/product/my/list', { params }),
+  // 商户端：商品详情回显 / 编辑（内容变更将重新送审）/ 自主上下架
+  myDetail: (prodId) => request.get(`/product/my/detail/${prodId}`),
+  myUpdate: (prodId, d) => request.post(`/product/my/update/${prodId}`, d),
+  myStatus: (prodId, status) => request.post(`/product/my/status/${prodId}`, null, { params: { status } }),
   uploadImage: (formData) => request.post('/product/image', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
@@ -127,7 +131,10 @@ export const orderApi = {
   applyRefund: (orderNo, reason) => request.post(`/order/refund/apply/${orderNo}`, { reason }),
   adminRejectRefund: (orderNo, reason) => request.post(`/order/admin/refund/reject/${orderNo}`, { reason }),
   // 管理后台：订单分页（交易管理，可按支付状态过滤）
-  adminList: (params) => request.get('/order/admin/list', { params })
+  adminList: (params) => request.get('/order/admin/list', { params }),
+  // 商户端：包含本商户商品的订单（明细只暴露本商户部分）
+  merchantList: (params) => request.get('/order/merchant/list', { params }),
+  merchantDetail: (orderNo) => request.get(`/order/merchant/detail/${orderNo}`)
 }
 
 // ===== 支付系统（多渠道：wallet 钱包 / mock 模拟 / wechat / alipay） =====
@@ -181,12 +188,15 @@ export const logisticsApi = {
   waybillList: (params) => request.get('/logistics/waybill/list', { params }),
   // 运单轨迹
   traces: (waybillId) => request.get(`/logistics/trace/${waybillId}`),
+  // 商户端发货资料：可用物流服务商 / 运费模板（仅启用项）
+  providers: () => request.get('/logistics/providers'),
+  templates: (providerId) => request.get('/logistics/templates', { params: { providerId } }),
   // 轨迹同步（联调/模拟服务商推送）
   syncTrace: (waybillId, nodes) => request.post(`/logistics/trace/sync/${waybillId}`, nodes),
   // ===== 运营后台（/admin/logistics） =====
-  providers: () => request.get('/admin/logistics/provider/list'),
+  adminProviders: () => request.get('/admin/logistics/provider/list'),
   saveProvider: (d) => request.post('/admin/logistics/provider/save', d),
-  templates: (providerId) => request.get('/admin/logistics/template/list', { params: { providerId } }),
+  adminTemplates: (providerId) => request.get('/admin/logistics/template/list', { params: { providerId } }),
   saveTemplate: (d) => request.post('/admin/logistics/template/save', d),
   alerts: (params) => request.get('/admin/logistics/alert/list', { params }),
   handleAlert: (alertId, note) => request.post(`/admin/logistics/alert/handle/${alertId}`, null, { params: { note } }),
@@ -291,6 +301,13 @@ export const merchantApi = {
   adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } })
 }
 
+// ===== 商户中心：工作台汇总 / 资金结算 / 店铺资料 =====
+export const merchantCenterApi = {
+  summary: () => request.get('/merchant/center/summary'),
+  finance: () => request.get('/merchant/center/finance'),
+  updateContact: (d) => request.put('/merchant/center/contact', d)
+}
+
 // ===== 商户端：流量管理（经营数据统计） =====
 export const trafficApi = {
   overview: () => request.get('/merchant/traffic/overview'),
@@ -350,17 +367,28 @@ export const adminApi = {
   supportIntentAnalyze: (payload) => request.post('/support/intent/analyze', payload)
 }
 
-// ===== 营销中台：活动系统 / 促销系统 / 会员系统 =====
-export const activityApi = {
-  list: () => request.get('/activity/list'),
-  detail: (id) => request.get(`/activity/detail/${id}`),
-  join: (id) => request.post(`/activity/${id}/join`),
-  my: () => request.get('/activity/my')
-}
-
-export const promotionApi = {
-  list: () => request.get('/promotion/list'),
-  detail: (id) => request.get(`/promotion/detail/${id}`)
+// ===== 营销中台：统一活动系统（领券/促销/激励/商户报名） =====
+export const campaignApi = {
+  // 用户端
+  list: (tab) => request.get('/campaign/list', { params: tab && tab !== 'all' ? { tab } : {} }),
+  detail: (id) => request.get(`/campaign/detail/${id}`),
+  claim: (id) => request.post(`/campaign/${id}/claim`),
+  join: (id) => request.post(`/campaign/${id}/join`),
+  myCoupons: () => request.get('/campaign/my/coupons'),
+  myParticipations: () => request.get('/campaign/my/participations'),
+  // 结算可用券试算（金额/行业由服务端按购物车重算）
+  quoteCoupons: (cartIds) => request.post('/campaign/coupons/quote', { cartIds }),
+  // 商户端（报名平台活动 + 激励领奖）
+  merchantList: () => request.get('/campaign/merchant/list'),
+  merchantJoin: (id) => request.post(`/campaign/merchant/${id}/join`),
+  merchantClaimReward: (id) => request.post(`/campaign/merchant/${id}/claim-reward`),
+  // 平台管理端（上架/下架/CRUD）
+  adminPage: (params) => request.get('/admin/campaign/page', { params }),
+  adminDetail: (id) => request.get(`/admin/campaign/${id}`),
+  adminCreate: (data) => request.post('/admin/campaign', data),
+  adminUpdate: (id, data) => request.put(`/admin/campaign/${id}`, data),
+  adminToggle: (id, status) => request.post(`/admin/campaign/${id}/status`, null, { params: { status } }),
+  adminDelete: (id) => request.delete(`/admin/campaign/${id}`)
 }
 
 export const membershipApi = {

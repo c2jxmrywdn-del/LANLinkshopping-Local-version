@@ -1,6 +1,6 @@
 <template>
   <a-layout class="admin-root">
-    <!-- 左侧导航栏：低饱和度、高对比度、清晰舒适 (支持品牌低饱和灰蓝 / 极简浅白 / 经典科技蓝) -->
+    <!-- 左侧导航栏：高对比度、清晰舒适 (支持极简浅白 / 经典科技蓝) -->
     <a-layout-sider
       :width="230"
       :theme="siderTheme === 'light' ? 'light' : 'dark'"
@@ -40,6 +40,10 @@
         <a-menu-item key="admin-products">
           <template #icon><AppstoreOutlined /></template>
           <span>商品管理</span>
+        </a-menu-item>
+        <a-menu-item key="admin-campaigns">
+          <template #icon><GiftOutlined /></template>
+          <span>活动管理</span>
         </a-menu-item>
         <a-menu-item key="admin-payments">
           <template #icon><DollarCircleOutlined /></template>
@@ -99,13 +103,6 @@
             <!-- 导航栏配色切换微胶囊 -->
             <div class="sider-theme-picker">
               <span class="stp-label">导航配色:</span>
-              <a-tooltip title="低饱和深灰蓝（推荐，柔和护眼、字迹极清 #1B2434）">
-                <button
-                  class="stp-dot dot-muted"
-                  :class="{ active: siderTheme === 'muted' }"
-                  @click="setSiderTheme('muted')"
-                ></button>
-              </a-tooltip>
               <a-tooltip title="极简纯白（与顶栏及内容区 100% 一致 #FFFFFF）">
                 <button
                   class="stp-dot dot-light"
@@ -169,6 +166,7 @@ import {
   DashboardOutlined,
   ShopOutlined,
   AppstoreOutlined,
+  GiftOutlined,
   DollarCircleOutlined,
   SafetyCertificateOutlined,
   ApiOutlined,
@@ -191,8 +189,10 @@ const openKeys = ref([])
 const mobileNavOpen = ref(false)
 const communicationMenuKey = 'admin-customer-communication'
 
-// 导航栏主题色：muted (低饱和深岩灰蓝 #1B2434) / light (极简浅白 #FFFFFF) / navy (经典海军蓝 #1F3864)
-const siderTheme = ref(localStorage.getItem('ll_admin_sider_theme') || 'muted')
+// 导航栏主题色：light (极简浅白 #FFFFFF) / navy (经典海军蓝 #1F3864，默认)
+// muted (#1B2434 低饱和深灰蓝) 已移除；历史保存值自动回退到 navy。
+const savedSiderTheme = localStorage.getItem('ll_admin_sider_theme')
+const siderTheme = ref(savedSiderTheme === 'light' ? 'light' : 'navy')
 
 function setSiderTheme(theme) {
   siderTheme.value = theme
@@ -216,6 +216,7 @@ const routeNameMap = {
   'admin-merchants': '商户管理',
   'admin-merchant-detail': '商户档案详情',
   'admin-products': '商品管理',
+  'admin-campaigns': '活动管理',
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',
   'admin-ai-models': '外部大模型',
@@ -267,74 +268,7 @@ async function logout() { await user.logout(); router.push('/login') }
 }
 
 /* ========================================================
-   主题风格 1：低饱和深岩灰蓝 (Muted Slate Navy #1B2434) - 默认推荐
-   特点：降低色彩饱和度，告别刺眼荧光青蓝；大幅提高文字对比度，字字清晰
-   ======================================================== */
-.sider-muted {
-  background: #1B2434 !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-.sider-muted .brand-panel {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-.sider-muted :deep(.ant-menu-dark) {
-  background: transparent !important;
-}
-/* 未选中菜单项：浅亮灰蓝 #CBD5E1，清晰无任何辨识负担 */
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item) {
-  color: #CBD5E1 !important;
-  font-weight: 500;
-}
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item .anticon) {
-  color: #94A3B8;
-  font-size: 14px;
-}
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item:hover) {
-  color: #FFFFFF !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item:hover .anticon) {
-  color: #FFFFFF;
-}
-/* 选中项：低饱和柔和雅致灰蓝胶囊，纯白加粗文字，左侧精致小指示条，不晃眼 */
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item-selected) {
-  background: rgba(30, 95, 160, 0.28) !important;
-  color: #FFFFFF !important;
-  font-weight: 600;
-  border-left: 3px solid #38BDF8 !important;
-  border-radius: 6px !important;
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.25);
-}
-.sider-muted :deep(.ant-menu-dark.ant-menu-inline .ant-menu-item-selected .anticon) {
-  color: #38BDF8 !important;
-}
-.sider-muted :deep(.ant-menu-dark .ant-menu-submenu-title) {
-  color: #CBD5E1 !important;
-  font-weight: 500;
-}
-.sider-muted :deep(.ant-menu-dark .ant-menu-submenu-title .anticon) {
-  color: #94A3B8;
-}
-.sider-muted :deep(.ant-menu-dark .ant-menu-submenu-title:hover) {
-  color: #FFFFFF !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-}
-.sider-muted :deep(.ant-menu-dark .ant-menu-sub) {
-  background: #141C2A !important;
-}
-.sider-muted .sider-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-.sider-muted .crypto-seal {
-  background: rgba(255, 255, 255, 0.05);
-  color: #94A3B8;
-}
-.sider-muted .seal-icon {
-  color: #38BDF8;
-}
-
-/* ========================================================
-   主题风格 2：极简纯白 (Light #FFFFFF)
+   主题风格 1：极简纯白 (Light #FFFFFF)
    特点：与后台白底内容区浑然一体
    ======================================================== */
 .sider-light {
@@ -383,7 +317,7 @@ async function logout() { await user.logout(); router.push('/login') }
 }
 
 /* ========================================================
-   主题风格 3：经典海军蓝 (Navy #1F3864)
+   主题风格 2：经典海军蓝 (Navy #1F3864)
    ======================================================== */
 .sider-navy {
   background: #1F3864 !important;
@@ -590,9 +524,6 @@ async function logout() { await user.logout(); router.push('/login') }
   cursor: pointer;
   padding: 0;
   transition: all 0.2s;
-}
-.stp-dot.dot-muted {
-  background: #1B2434;
 }
 .stp-dot.dot-light {
   background: #FFFFFF;

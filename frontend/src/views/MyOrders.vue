@@ -1,7 +1,16 @@
 <template>
   <div>
-    <div class="eyebrow">ORDER CENTER</div><h2>我的订单</h2><p class="sub">查看订单状态、支付进度与履约信息。</p><div class="order-tabs"><a-radio-group v-model:value="filter" button-style="solid"><a-radio-button value="all">全部</a-radio-button><a-radio-button value="unpaid">待支付</a-radio-button><a-radio-button value="paid">已支付</a-radio-button><a-radio-button value="done">已完成</a-radio-button><a-radio-button value="closed">已关闭</a-radio-button></a-radio-group></div>
-    <a-table :data-source="filteredOrders" :columns="cols" row-key="orderNo" :loading="loading">
+    <div class="eyebrow">ORDER CENTER</div><h2>我的订单</h2><p class="sub">查看订单状态、支付进度与履约信息。</p>
+    <!-- 商户身份互通提示：本页是「我买入的」采购订单，店铺销售订单在商户中心 -->
+    <a-alert v-if="isMerchant" type="info" show-icon class="merchant-bridge"
+             message="本页展示您作为买家的采购订单"
+             description="您店铺的销售订单（买家向您下单）在「商户中心 → 订单管理」中处理：发货、跟踪履约与退款。">
+      <template #action>
+        <a-button size="small" type="primary" @click="$router.push('/merchant/center/orders')">查看店铺销售订单</a-button>
+      </template>
+    </a-alert>
+    <div class="order-tabs"><a-radio-group v-model:value="filter" button-style="solid"><a-radio-button value="all">全部</a-radio-button><a-radio-button value="unpaid">待支付</a-radio-button><a-radio-button value="paid">已支付</a-radio-button><a-radio-button value="done">已完成</a-radio-button><a-radio-button value="closed">已关闭</a-radio-button></a-radio-group></div>
+    <a-table :data-source="filteredOrders" :columns="cols" row-key="orderNo" :loading="loading" :scroll="{ x: 1020 }">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'total'">¥{{ record.totalAmount }}</template>
         <template v-else-if="column.key === 'payType'">{{ payTypeText[record.payType] || record.payType || '—' }}</template>
@@ -97,6 +106,9 @@ import { orderApi, paymentApi, walletApi } from '../api'
 import { useUserStore } from '../store/user'
 
 const user = useUserStore()
+// 仅真实商户显示（admin 的 admin:all 是通配权限，会误命中，需排除）
+const isMerchant = computed(() => !user.isAdmin &&
+  (user.hasPerm('merchant:manage') || user.hasPerm('product:publish')))
 const orders = ref([])
 const loading = ref(false)
 const filter = ref('all')
@@ -189,7 +201,7 @@ onMounted(load)
 </script>
 
 <style scoped>
-.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}.sub{margin:-10px 0 12px;color:var(--ll-muted)}.order-tabs{margin-bottom:16px}.order-tabs :deep(.ant-radio-button-wrapper){font-size:12px}
+.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}.sub{margin:-10px 0 12px;color:var(--ll-muted)}.merchant-bridge{margin:0 0 14px;border-radius:12px}.order-tabs{margin-bottom:16px}.order-tabs :deep(.ant-radio-button-wrapper){font-size:12px}
 .ch { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }
 .rf { font-size: 12px; color: #7c3aed; margin-top: 2px; }
 .rf-wait { color: var(--ll-amber-strong, #b45309); }

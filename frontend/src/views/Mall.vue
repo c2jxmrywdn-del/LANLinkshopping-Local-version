@@ -2,7 +2,7 @@
   <div class="mall-page">
     <div v-if="promos.length" class="promo-bar">
       <span class="promo-title">🔥 促销进行中</span>
-      <span v-for="p in promos" :key="p.promoId" class="promo-item">{{ p.title }}</span>
+      <span v-for="p in promos" :key="p.campaignId" class="promo-item" @click="$router.push('/activity/' + p.campaignId)">{{ p.title }}</span>
     </div>
     <div class="toolbar">
       <a-input-search v-model:value="keyword" placeholder="搜索商品名称" class="toolbar-search"
@@ -70,7 +70,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { productApi, homeApi, promotionApi } from '../api'
+import { productApi, homeApi, campaignApi } from '../api'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
@@ -79,7 +79,7 @@ const route = useRoute()
 const cart = useCartStore()
 const user = useUserStore()
 
-// 促销横幅（营销中台·促销系统）
+// 促销横幅（营销中台·活动系统：满减/折扣/秒杀类，点击进入活动详情）
 const promos = ref([])
 
 const industries = ref([])
@@ -121,7 +121,7 @@ function resetFilters() {
 }
 onMounted(async () => {
   industries.value = await homeApi.industries()
-  promotionApi.list().then(d => { promos.value = d || [] }).catch(() => {})
+  campaignApi.list('promo').then(d => { promos.value = d || [] }).catch(() => {})
   reload()
 })
 

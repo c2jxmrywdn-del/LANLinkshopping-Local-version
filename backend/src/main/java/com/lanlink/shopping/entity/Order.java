@@ -19,6 +19,12 @@ public class Order {
     private BigDecimal pointDeductAmount;
     /** 积分抵扣消耗积分数（1000 积分 = 1 元） */
     private Integer pointDeductPoints;
+    /** 促销/会员最优优惠金额（结算自动应用，互斥取优） */
+    private BigDecimal promoDiscount;
+    /** 优惠券优惠金额（用户持券核销） */
+    private BigDecimal couponDiscount;
+    /** 使用的用户券ID（t_user_coupon.id，取消/退款回退依据） */
+    private Long couponId;
     private Integer payStatus;
     private Integer orderStatus;
     private String receiver;

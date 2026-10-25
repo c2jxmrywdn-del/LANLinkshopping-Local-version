@@ -91,4 +91,40 @@ class SecurityRouteGuardInterceptorTest {
         assertEquals(403, response.getStatus());
         assertTrue(response.getContentAsString().contains("非法参数字符"));
     }
+
+    /**
+     * 边界回归：正常业务路径可能包含点号、版本号或常见文件后缀，
+     * 不能因为宽泛的备份/源码探测规则被误伤。
+     */
+    @Test
+    void allowsLegitimateBusinessPathsWithDotsAndExtensions() throws Exception {
+        String[] paths = {
+                "/api/product/8.webp",
+                "/api/orders/20261022170813519896",
+                "/api/logistics/waybill/WB202610220001/traces",
+                "/api/uploads/tax-proof/2026/10/license.jpg",
+                "/api/merchant/tax-query",
+                "/api/admin/ai-models",
+                "/api/support/knowledge/search",
+                "/api/membership/points/log/2026.10",
+                "/api/products/import/template.xlsx",
+                "/api/design/files/logo.fig"
+        };
+
+        for (String path : paths) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+            if ("/api/merchant/tax-query".equals(path)) {
+                request.setQueryString("period=2026Q3");
+            } else if ("/api/admin/ai-models".equals(path)) {
+                request.setQueryString("channel=deepseek");
+            } else if ("/api/support/knowledge/search".equals(path)) {
+                request.setQueryString("keyword=%E9%98%80%E9%97%A8");
+            }
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertTrue(allowed, "合法业务路径不应被拦截: " + path);
+            assertEquals(200, response.getStatus(), "合法业务路径不应返回错误状态: " + path);
+        }
+    }
 }

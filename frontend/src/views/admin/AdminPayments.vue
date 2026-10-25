@@ -9,7 +9,7 @@
       </a-radio-group>
     </template>
     <a-table :data-source="rows" :columns="cols" row-key="orderNo" :loading="loading"
-             :pagination="pager" @change="onPage">
+             :scroll="{ x: 1220 }" :pagination="pager" @change="onPage">
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'total'">¥{{ record.totalAmount }}</template>
         <template v-else-if="column.key === 'pay'">

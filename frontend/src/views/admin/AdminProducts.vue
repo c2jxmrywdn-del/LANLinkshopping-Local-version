@@ -120,6 +120,7 @@
         :columns="cols"
         row-key="prodId"
         :loading="loading"
+        :scroll="{ x: 1160 }"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :pagination="{
           current,

@@ -45,7 +45,8 @@ class OrderDetailAdminTest {
         orderService = new OrderService(cartMapper, productMapper, orderMapper, orderItemMapper,
                 userMapper, messageService, identityService, auditService, pricingFacade,
                 eventPublisher, membershipService, creditTermService,
-                mock(IdempotentService.class), mock(TamperGuardService.class));
+                mock(IdempotentService.class), mock(TamperGuardService.class),
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
     }
 
     @Test

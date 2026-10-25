@@ -46,7 +46,7 @@ public class PaymentController {
     @GetMapping("/query/{orderNo}")
     public R<PayStatusVO> query(@PathVariable String orderNo, HttpServletRequest request) {
         var u = UserContext.current(request);
-        boolean isAdmin = u != null && Long.valueOf(3L).equals(u.getRoleId());
+        boolean isAdmin = com.lanlink.shopping.common.UserRoles.isAdmin(u == null ? null : u.getRoleId());
         return R.ok(paymentService.query(orderNo, UserContext.currentUserId(request), isAdmin));
     }
 

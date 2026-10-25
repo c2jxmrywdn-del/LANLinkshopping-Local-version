@@ -35,7 +35,9 @@ const props = defineProps({
   size: { type: [Number, String], default: 48 },
   ring: { type: Boolean, default: true },
   /** 无上传图片时的回退样式：initials（姓名缩写 + 确定性配色，默认）| sprite（内置卡通精灵图） */
-  fallbackMode: { type: String, default: 'initials' }
+  fallbackMode: { type: String, default: 'initials' },
+  /** 覆盖自动缩写（如企业名场景传商号缩写，避免取到「公司」等组织后缀字）；空则按 name 推导 */
+  initials: { type: String, default: '' }
 })
 
 const imageError = ref(false)
@@ -63,7 +65,7 @@ const resolvedAlt = computed(() => {
   return locale.value === 'en-US' ? 'LANLinkshopping user avatar' : 'LANLinkshopping 用户头像'
 })
 // 21st.dev 头像规范：缩写 + 由姓名确定性推导的配色（同一用户各处颜色一致）
-const initials = computed(() => initialsOf(displayName.value))
+const initials = computed(() => props.initials || initialsOf(displayName.value))
 const initialsGradient = computed(() =>
   avatarGradientOf(props.name || props.alt || 'LANLinkshopping').css)
 const avatarStyle = computed(() => ({

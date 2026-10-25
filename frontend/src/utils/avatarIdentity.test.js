@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AVATAR_GRADIENTS, avatarGradientOf, gradientIndexOf, initialsOf } from './avatarIdentity'
+import { AVATAR_GRADIENTS, avatarGradientOf, gradientIndexOf, initialsOf, orgShortNameOf, orgInitialsOf } from './avatarIdentity'
 
 function channel(c) {
   const s = c / 255
@@ -58,5 +58,37 @@ describe('用户头像身份工具（utils/avatarIdentity）', () => {
       expect(from).toMatch(/^#[0-9A-Fa-f]{6}$/)
       expect(to).toMatch(/^#[0-9A-Fa-f]{6}$/)
     }
+  })
+})
+
+describe('企业名头像缩写（orgShortNameOf / orgInitialsOf）', () => {
+  it('正常：剥离组织形式后缀得到商号', () => {
+    expect(orgShortNameOf('华晨建材集团有限公司')).toBe('华晨建材')
+    expect(orgShortNameOf('阿里云计算有限公司')).toBe('阿里云计算')
+    expect(orgShortNameOf('中国建筑股份有限公司')).toBe('中国建筑')
+    expect(orgShortNameOf('顺丰速运集团')).toBe('顺丰速运')
+  })
+
+  it('正常：无后缀 / 空值原样返回', () => {
+    expect(orgShortNameOf('华晨建材')).toBe('华晨建材')
+    expect(orgShortNameOf('')).toBe('')
+    expect(orgShortNameOf(null)).toBe('')
+  })
+
+  it('边界：纯后缀名不剥成空串（长度保护）', () => {
+    expect(orgShortNameOf('有限公司').length).toBeGreaterThan(0)
+    expect(orgShortNameOf('公司').length).toBeGreaterThan(0)
+  })
+
+  it('缩写：取商号前 2 字，避免「公司」等后缀字', () => {
+    expect(orgInitialsOf('华晨建材集团有限公司')).toBe('华晨')
+    expect(orgInitialsOf('中国建筑股份有限公司')).toBe('中国')
+    expect(orgInitialsOf('顺丰速运集团')).toBe('顺丰')
+    expect(orgInitialsOf('店')).toBe('店')
+  })
+
+  it('缩写：拉丁企业名回退 initialsOf 规则', () => {
+    expect(orgInitialsOf('Acme Corp')).toBe('AC')
+    expect(orgInitialsOf('')).toBe('')
   })
 })

@@ -279,44 +279,67 @@ CREATE TABLE IF NOT EXISTS t_order_item (
   cover_url  VARCHAR(255)
 ) ENGINE=InnoDB COMMENT='订单明细';
 
--- ==================== 营销中台：活动系统 ====================
-CREATE TABLE IF NOT EXISTS t_activity (
-  activity_id  BIGINT PRIMARY KEY AUTO_INCREMENT,
-  title        VARCHAR(100) NOT NULL COMMENT '活动名称',
-  type         VARCHAR(16) COMMENT '活动类型 register注册有礼 purchase消费有礼',
-  description  VARCHAR(500) COMMENT '活动说明',
-  start_time   DATETIME COMMENT '开始时间',
-  end_time     DATETIME COMMENT '结束时间',
-  status       TINYINT DEFAULT 0 COMMENT '0未开始 1进行中 2已结束',
-  create_time  DATETIME DEFAULT CURRENT_TIMESTAMP,
-  update_time  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='活动';
+-- ==================== 营销中台：活动系统（统一促销/领券/激励） ====================
+-- 原 t_activity(注册/消费有礼) 与 t_promotion(满减/折扣) 已统一并入 t_campaign，
+-- 由 type 列区分活动形态；旧表如仍存在不受影响，但业务读写一律走 t_campaign。
+CREATE TABLE IF NOT EXISTS t_campaign (
+  campaign_id   BIGINT PRIMARY KEY AUTO_INCREMENT,
+  title         VARCHAR(100) NOT NULL COMMENT '活动名称',
+  type          VARCHAR(20) NOT NULL COMMENT 'coupon领券 full_reduce满减 discount折扣 flash_sale限时秒杀 register注册有礼 purchase消费有礼 merchant_incentive商户激励',
+  description   VARCHAR(500) COMMENT '活动说明',
+  accent        VARCHAR(16) DEFAULT 'blue' COMMENT '卡片主题色(blue/red/gold/green/purple)',
+  start_time    DATETIME COMMENT '开始时间',
+  end_time      DATETIME COMMENT '结束时间',
+  status        TINYINT DEFAULT 0 COMMENT '0已下架 1已上架(生效=上架且在时间窗内)',
+  -- 促销/领券规则（full_reduce discount flash_sale coupon）
+  threshold       DECIMAL(12,2) DEFAULT 0 COMMENT '门槛金额(满X可用)',
+  benefit_amount  DECIMAL(12,2) COMMENT '优惠金额(满减/满减券)；折扣类为优惠封顶金额',
+  discount_rate   DECIMAL(4,3) COMMENT '折扣率(0.95=95折)',
+  scope           VARCHAR(16) DEFAULT 'all' COMMENT '适用范围 all全场 ind行业',
+  ind_id          BIGINT COMMENT '限定行业(scope=ind时)',
+  -- 领券配置（coupon）
+  per_user_limit  INT DEFAULT 1 COMMENT '每人限领张数',
+  total_quota     INT DEFAULT 0 COMMENT '发放总量(0=不限量)',
+  claimed_count   INT DEFAULT 0 COMMENT '已领取张数',
+  -- 激励配置（register purchase merchant_incentive）
+  reward_points     INT DEFAULT 0 COMMENT '用户参与奖励积分',
+  mer_target_amount DECIMAL(12,2) COMMENT '商户激励目标销售额',
+  mer_reward_points INT DEFAULT 0 COMMENT '商户激励奖励积分',
+  joinable       TINYINT DEFAULT 0 COMMENT '商户可报名(1开放报名)',
+  create_time    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_campaign_type_status (type, status)
+) ENGINE=InnoDB COMMENT='活动(统一营销：促销/领券/激励)';
 
-CREATE TABLE IF NOT EXISTS t_activity_participant (
+CREATE TABLE IF NOT EXISTS t_user_coupon (
+  id           BIGINT PRIMARY KEY AUTO_INCREMENT,
+  campaign_id  BIGINT NOT NULL COMMENT '活动ID',
+  user_id      BIGINT NOT NULL COMMENT '持券用户',
+  status       TINYINT DEFAULT 0 COMMENT '0未使用 1已使用 2已过期',
+  receive_time DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '领取时间',
+  used_time    DATETIME COMMENT '核销时间',
+  order_no     VARCHAR(40) COMMENT '核销订单号',
+  KEY idx_user_coupon_user (user_id, status)
+) ENGINE=InnoDB COMMENT='用户券包';
+
+CREATE TABLE IF NOT EXISTS t_campaign_participant (
   participant_id BIGINT PRIMARY KEY AUTO_INCREMENT,
-  activity_id    BIGINT NOT NULL COMMENT '活动ID',
+  campaign_id    BIGINT NOT NULL COMMENT '活动ID',
   user_id        BIGINT NOT NULL COMMENT '参与用户',
   bonus_points   INT DEFAULT 0 COMMENT '参与奖励积分',
   join_time      DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uk_act_user (activity_id, user_id)
-) ENGINE=InnoDB COMMENT='活动参与记录';
+  KEY idx_cp_user (user_id)
+) ENGINE=InnoDB COMMENT='活动参与记录(激励类)';
 
--- ==================== 营销中台：促销系统 ====================
-CREATE TABLE IF NOT EXISTS t_promotion (
-  promo_id       BIGINT PRIMARY KEY AUTO_INCREMENT,
-  title          VARCHAR(100) NOT NULL COMMENT '促销名称',
-  type           VARCHAR(16) NOT NULL COMMENT '促销类型 full_reduce满减 discount折扣',
-  threshold      DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '满减门槛金额/折扣门槛',
-  benefit_amount DECIMAL(12,2) COMMENT '满减金额(满减时生效)',
-  discount_rate  DECIMAL(4,3) COMMENT '折扣率(折扣时生效, 0.95=95折)',
-  scope          VARCHAR(16) DEFAULT 'all' COMMENT '适用范围 all全场 ind行业',
-  ind_id         BIGINT COMMENT '限定行业(scope=ind时)',
-  start_time     DATETIME,
-  end_time       DATETIME,
-  status         TINYINT DEFAULT 1 COMMENT '0停用 1启用',
-  create_time    DATETIME DEFAULT CURRENT_TIMESTAMP,
-  update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='促销';
+CREATE TABLE IF NOT EXISTS t_campaign_merchant (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  campaign_id BIGINT NOT NULL COMMENT '活动ID',
+  mer_id      BIGINT NOT NULL COMMENT '商户ID',
+  status      TINYINT DEFAULT 1 COMMENT '1已报名',
+  rewarded    TINYINT DEFAULT 0 COMMENT '激励奖励已发放',
+  join_time   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_campaign_mer (campaign_id, mer_id)
+) ENGINE=InnoDB COMMENT='活动商户报名/激励';
 
 -- ==================== 营销中台：会员系统 ====================
 CREATE TABLE IF NOT EXISTS t_member_level (
@@ -782,6 +805,24 @@ PREPARE pt_stmt1 FROM @pt1; EXECUTE pt_stmt1; DEALLOCATE PREPARE pt_stmt1;
 SET @pt2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN point_deduct_points INT NOT NULL DEFAULT 0 COMMENT ''积分抵扣消耗积分数(1000积分=1元)''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='point_deduct_points');
 PREPARE pt_stmt2 FROM @pt2; EXECUTE pt_stmt2; DEALLOCATE PREPARE pt_stmt2;
+
+-- ============================================================
+-- 活动优惠明细：t_order 补促销/优惠券字段（幂等补列，历史库可重复执行）
+--   promo_discount  促销/会员最优优惠金额（结算自动应用）
+--   coupon_discount 优惠券优惠金额（用户持券核销）
+--   coupon_id       使用的用户券ID（t_user_coupon.id，取消/退款回退依据）
+-- ============================================================
+SET @cp1 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN promo_discount DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT ''促销/会员最优优惠金额''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='promo_discount');
+PREPARE cp_stmt1 FROM @cp1; EXECUTE cp_stmt1; DEALLOCATE PREPARE cp_stmt1;
+
+SET @cp2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN coupon_discount DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT ''优惠券优惠金额''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='coupon_discount');
+PREPARE cp_stmt2 FROM @cp2; EXECUTE cp_stmt2; DEALLOCATE PREPARE cp_stmt2;
+
+SET @cp3 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN coupon_id BIGINT NULL COMMENT ''使用的用户券ID(t_user_coupon.id)''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='coupon_id');
+PREPARE cp_stmt3 FROM @cp3; EXECUTE cp_stmt3; DEALLOCATE PREPARE cp_stmt3;
 
 -- ============================================================
 -- 物流模块（logistics）：服务商 / 运费模板 / 运单 / 轨迹 / 告警 / 售后 / 结算

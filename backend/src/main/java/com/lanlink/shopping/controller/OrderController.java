@@ -54,7 +54,7 @@ public class OrderController {
     @GetMapping("/detail/{orderNo}")
     public R<OrderDetailVO> detail(@PathVariable String orderNo, HttpServletRequest request) {
         var u = UserContext.current(request);
-        boolean isAdmin = u != null && Long.valueOf(3L).equals(u.getRoleId());
+        boolean isAdmin = com.lanlink.shopping.common.UserRoles.isAdmin(u == null ? null : u.getRoleId());
         return R.ok(orderService.detail(UserContext.currentUserId(request), orderNo, isAdmin));
     }
 
@@ -90,5 +90,33 @@ public class OrderController {
                                 @RequestBody(required = false) Map<String, String> body) {
         orderService.rejectRefund(orderNo, body == null ? null : body.get("reason"));
         return R.ok("已驳回退款申请", null);
+    }
+
+    // ===== 商户端：订单管理（仅包含本商户商品的订单；明细只暴露本商户部分） =====
+
+    /**
+     * 商户订单分页：过滤 payStatus(0未付/1已付/2已退款)、orderStatus(0待发货/1已发货/…)、
+     * refundFlag(applied=退款申请中 / any=有任何退款记录)、keyword(订单号或我的商品名)。
+     */
+    @GetMapping("/merchant/list")
+    @RequirePerm("merchant:manage")
+    public R<Page<com.lanlink.shopping.vo.MerchantOrderVO>> merchantList(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) Integer payStatus,
+            @RequestParam(required = false) Integer orderStatus,
+            @RequestParam(required = false) String refundFlag,
+            @RequestParam(required = false) String keyword,
+            HttpServletRequest request) {
+        return R.ok(orderService.merchantOrders(UserContext.currentUserId(request),
+                page, size, payStatus, orderStatus, refundFlag, keyword));
+    }
+
+    /** 商户订单详情：我的商品明细 + 金额小计 + 收货信息 + 关联运单 */
+    @GetMapping("/merchant/detail/{orderNo}")
+    @RequirePerm("merchant:manage")
+    public R<com.lanlink.shopping.vo.MerchantOrderVO> merchantDetail(@PathVariable String orderNo,
+                                                                     HttpServletRequest request) {
+        return R.ok(orderService.merchantOrderDetail(UserContext.currentUserId(request), orderNo));
     }
 }
