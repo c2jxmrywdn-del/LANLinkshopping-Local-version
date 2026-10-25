@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -353,5 +354,40 @@ class CampaignServiceTest {
         when(userCouponMapper.selectCount(any())).thenReturn(3L);
         assertThrows(BusinessException.class, () -> service.adminDelete(1L));
         verify(campaignMapper, never()).deleteById(anyLong());
+    }
+
+    // ===== 回归：活动未配置行业（indId=null）时，券包/试算不得因 Map.of().get(null) 抛 NPE =====
+    // 旧实现直接 indNames.get(c.getIndId())，industryNames 返回 Map.of()（不可变空 map）时
+    // ImmutableCollections$MapN.get(null) 会 Objects.requireNonNull 抛 NPE。
+
+    @Test
+    void myCouponsHandlesNullIndustryIdWithoutNpe() {
+        UserCoupon uc = myCoupon(0);
+        when(userCouponMapper.selectList(any())).thenReturn(List.of(uc));
+        Campaign noIndustry = campaign("coupon", "all", null,
+                new BigDecimal("100"), new BigDecimal("10"), null).setCampaignId(1L);
+        when(campaignMapper.selectBatchIds(any())).thenReturn(List.of(noIndustry));
+
+        List<Map<String, Object>> rows = assertDoesNotThrow(() -> service.myCoupons(7L));
+
+        assertEquals(1, rows.size());
+        assertNull(rows.get(0).get("indName"));
+        assertEquals("usable", rows.get(0).get("state"));
+    }
+
+    @Test
+    void quoteCouponsHandlesNullIndustryIdWithoutNpe() {
+        UserCoupon uc = myCoupon(0);
+        when(userCouponMapper.selectList(any())).thenReturn(List.of(uc));
+        Campaign noIndustry = campaign("coupon", "all", null,
+                new BigDecimal("100"), new BigDecimal("10"), null).setCampaignId(1L);
+        when(campaignMapper.selectBatchIds(any())).thenReturn(List.of(noIndustry));
+
+        List<Map<String, Object>> rows = assertDoesNotThrow(
+                () -> service.quoteCoupons(7L, new BigDecimal("200"), 1L));
+
+        assertEquals(1, rows.size());
+        assertNull(rows.get(0).get("indName"));
+        assertEquals(0, new BigDecimal("10.00").compareTo((BigDecimal) rows.get(0).get("benefit")));
     }
 }

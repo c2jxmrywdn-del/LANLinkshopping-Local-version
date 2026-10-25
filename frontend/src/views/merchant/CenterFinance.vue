@@ -152,10 +152,12 @@ onMounted(load)
 .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
 .kpi-card { background: var(--mc-card, #fff); border: 1px solid var(--mc-border, #e8e6e1); border-radius: 16px; padding: 16px 17px; min-height: 106px; position: relative; overflow: hidden; box-shadow: 0 2px 14px rgba(20, 24, 34, .04); }
 .kpi-card:after { content: ""; position: absolute; right: -20px; bottom: -24px; width: 66px; height: 66px; border-radius: 50%; background: var(--mc-decor, #f5f0e8); }
-.kpi-card.main { background: linear-gradient(135deg, #0ea5e9, #0369a1); border-color: transparent; }
-.kpi-card.main:after { background: rgba(255, 255, 255, .1); }
-.kpi-card.main .kpi-top, .kpi-card.main .kpi-value, .kpi-card.main .kpi-foot { color: #fff; }
-.kpi-card.main .kpi-foot { color: rgba(255, 255, 255, .72); }
+/* 主卡：柔和天蓝浅底 + 常规深色文字（低对比、Apple 卡片风），避免高饱和渐变 + 白字的生硬对比 */
+.kpi-card.main { background: linear-gradient(135deg, #e0f2fe, #bae6fd); border-color: rgba(14, 165, 233, .22); }
+.kpi-card.main:after { background: rgba(255, 255, 255, .5); }
+.kpi-card.main .kpi-ico { color: #0284c7; }
+[data-theme='dark'] .kpi-card.main { background: linear-gradient(135deg, rgba(14, 165, 233, .20), rgba(2, 132, 199, .30)); border-color: rgba(56, 189, 248, .35); }
+[data-theme='dark'] .kpi-card.main:after { background: rgba(255, 255, 255, .06); }
 .kpi-top { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--mc-muted, #6e6e73); }
 .kpi-ico { color: var(--mc-accent, #9b2d20); font-size: 15px; }
 .kpi-value { font-size: 22px; font-weight: 750; letter-spacing: -.02em; color: var(--mc-ink, #1d1d1f); margin: 10px 0 6px; }

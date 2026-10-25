@@ -189,8 +189,10 @@ defineExpose({ merchant, reload: loadGate })
   --mc-bar: #13233a;
   --mc-select-bg: rgba(14, 165, 233, .10);
   --mc-select-ink: var(--ll-navy, #13233a);
-  --mc-chart-grad: linear-gradient(180deg, #4fc3f7 0%, #0ea5e9 100%);
-  --mc-chart-solid: #0ea5e9;
+  /* 图表用色取柔和天蓝（sky-300→400），避免高饱和深蓝带来的生硬对比 */
+  --mc-chart-grad: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+  --mc-chart-solid: #38bdf8;
+  --mc-chart-muted: #9db4cc;
 }
 [data-theme='dark'] .mc-wrap {
   --mc-card: #16202e;
@@ -208,8 +210,9 @@ defineExpose({ merchant, reload: loadGate })
   --mc-bar: #5b7089;
   --mc-select-bg: rgba(14, 165, 233, .18);
   --mc-select-ink: #7dd3fc;
-  --mc-chart-grad: linear-gradient(180deg, #38bdf8 0%, #0369a1 100%);
+  --mc-chart-grad: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
   --mc-chart-solid: #38bdf8;
+  --mc-chart-muted: #3d5a78;
 }
 </style>
 

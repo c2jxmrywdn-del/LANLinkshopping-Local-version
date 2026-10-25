@@ -61,11 +61,13 @@
         <div class="coupon-list">
           <label v-for="cp in coupons" :key="cp.couponId"
                  class="coupon-opt" :class="{ on: selectedCouponId === cp.couponId, off: !cp.applicable }">
-            <input type="radio" name="coupon" :value="cp.couponId"
+            <input type="radio" name="coupon" class="opt-radio" :value="cp.couponId"
                    :disabled="!cp.applicable" v-model="selectedCouponId" @change="onPickCoupon" />
+            <span class="opt-face">
+              <template v-if="cp.discountRate"><b>{{ rateText(cp.discountRate) }}</b><i>折</i></template>
+              <template v-else><i>¥</i><b>{{ trimZero(cp.benefitAmount) }}</b></template>
+            </span>
             <span class="opt-main">
-              <b class="opt-val" v-if="cp.discountRate">{{ rateText(cp.discountRate) }}折</b>
-              <b class="opt-val" v-else>¥{{ trimZero(cp.benefitAmount) }}</b>
               <span class="opt-name">{{ cp.title }}</span>
               <span class="opt-sub">
                 {{ cp.threshold > 0 ? `满¥${trimZero(cp.threshold)}可用` : '无门槛' }}{{ cp.indName ? ' · ' + cp.indName : '' }}
@@ -77,7 +79,7 @@
             </span>
           </label>
           <label class="coupon-opt none" :class="{ on: !selectedCouponId }">
-            <input type="radio" name="coupon" :value="null" v-model="selectedCouponId" @change="onPickCoupon" />
+            <input type="radio" name="coupon" class="opt-radio" :value="null" v-model="selectedCouponId" @change="onPickCoupon" />
             <span class="opt-main"><span class="opt-name">不使用优惠券</span></span>
           </label>
         </div>
@@ -358,27 +360,34 @@ async function submit() {
               background: rgba(180, 83, 9, .1); color: #b45309; font-weight: 600; }
 .points-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
 .points-deduct .deduct { color: #10b981; font-size: 15px; }
-/* 优惠券选择 */
+/* 优惠券选择：mini 票券 */
 .coupon-box { background: rgba(155, 45, 32, .04); border: 1px dashed rgba(155, 45, 32, .22);
-              border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-.coupon-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+              border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
+.coupon-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
 .coupon-title { font-weight: 600; font-size: 13px; }
 .coupon-count { font-size: 12px; color: var(--ll-muted, #64748b); }
-.coupon-list { display: flex; flex-direction: column; gap: 6px; }
-.coupon-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px;
+.coupon-list { display: flex; flex-direction: column; gap: 7px; }
+.coupon-opt { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 12px;
               border: 1.5px solid var(--ll-border, #e5e7eb); cursor: pointer;
-              transition: border-color .2s, background-color .2s; }
-.coupon-opt:hover:not(.off) { border-color: var(--ll-skyblue-border, #5b8fb5); }
-.coupon-opt.on { border-color: #9b2d20; background: rgba(155, 45, 32, .05); }
+              transition: border-color .2s, background-color .2s, transform .2s; }
+.coupon-opt:hover:not(.off) { border-color: var(--ll-skyblue-border, #5b8fb5); transform: translateY(-1px); }
+.coupon-opt.on { border-color: #9b2d20; background: rgba(155, 45, 32, .05);
+                 box-shadow: 0 2px 10px rgba(155, 45, 32, .1); }
 .coupon-opt.off { opacity: .55; cursor: not-allowed; background: var(--ll-soft, rgba(15, 23, 42, .03)); }
-.coupon-opt input { accent-color: #9b2d20; flex-shrink: 0; }
-.opt-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.opt-val { color: #9b2d20; font-size: 15px; letter-spacing: -.01em; }
-.opt-name { font-size: 13px; color: var(--ll-ink, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-radio { position: absolute; opacity: 0; pointer-events: none; }
+/* mini 票券面值块 */
+.opt-face { display: flex; align-items: baseline; justify-content: center; gap: 1px; flex-shrink: 0;
+            width: 74px; padding: 10px 4px; border-radius: 9px; color: #fff;
+            background: linear-gradient(150deg, #f0566a, #c22a3e); }
+.opt-face b { font-size: 19px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+.opt-face i { font-style: normal; font-size: 11px; font-weight: 600; }
+.opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.opt-name { font-size: 13px; font-weight: 500; color: var(--ll-ink, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt-sub { font-size: 11.5px; color: var(--ll-muted, #64748b); }
 .opt-side { flex-shrink: 0; }
-.opt-benefit { font-style: normal; color: #10b981; font-weight: 700; font-size: 13.5px; }
+.opt-benefit { font-style: normal; color: #10b981; font-weight: 700; font-size: 14px; }
 .opt-unable { font-style: normal; color: var(--ll-muted, #64748b); font-size: 11.5px; }
+.coupon-opt.none { padding-left: 12px; }
 .coupon-opt.none .opt-name { color: var(--ll-muted, #64748b); }
 .coupon-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
 .coupon-deduct .deduct { color: #10b981; font-size: 15px; }

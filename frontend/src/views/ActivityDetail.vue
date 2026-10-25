@@ -1,84 +1,99 @@
 <template>
   <div class="cd-page" v-if="c">
-    <button type="button" class="cd-back" @click="$router.back()">← 返回活动中心</button>
+    <button type="button" class="cd-back" @click="$router.push('/activity')">‹ 活动中心</button>
 
-    <div class="cd-hero" :class="accent(c.accent)">
-      <div class="cd-hero-body">
-        <div class="cd-chips">
-          <span class="cd-type">{{ typeLabel(c.type) }}</span>
-          <span class="cd-scope">{{ c.indName ? c.indName + '行业专享' : '全场通用' }}</span>
-        </div>
-        <h1>{{ c.title }}</h1>
-        <p v-if="c.description">{{ c.description }}</p>
-        <!-- 券面 / 优惠摘要 -->
-        <div class="cd-value" v-if="c.type === 'coupon'">
-          <template v-if="c.discountRate"><b>{{ rateText(c.discountRate) }}</b>折<small v-if="c.benefitAmount">，最高减 ¥{{ trimZero(c.benefitAmount) }}</small></template>
-          <template v-else><small>¥</small><b>{{ trimZero(c.benefitAmount) }}</b></template>
-          <span class="cd-th">{{ c.threshold > 0 ? `满 ¥${trimZero(c.threshold)} 可用` : '无门槛' }}</span>
-        </div>
-        <div class="cd-value" v-else-if="['full_reduce','discount','flash_sale'].includes(c.type)">
-          <template v-if="c.type === 'full_reduce'"><b>减 ¥{{ trimZero(c.benefitAmount) }}</b><span class="cd-th">满 ¥{{ trimZero(c.threshold) }} 可享</span></template>
-          <template v-else><b>{{ rateText(c.discountRate) }} 折</b><span class="cd-th">满 ¥{{ trimZero(c.threshold || 0) }} 可享<small v-if="c.benefitAmount">，最高减 ¥{{ trimZero(c.benefitAmount) }}</small></span></template>
-        </div>
-        <div class="cd-value" v-else>
-          <b class="cd-pts">+{{ c.rewardPoints }}</b><span class="cd-th">参与奖励积分</span>
-        </div>
+    <!-- Apple 产品页式 Hero -->
+    <header class="cd-hero">
+      <div class="cd-chips">
+        <span class="cd-type">{{ typeLabel(c.type) }}</span>
+        <span class="cd-scope">{{ c.indName ? c.indName + '行业专享' : '全场通用' }}</span>
       </div>
-      <!-- 倒计时（秒杀醒目展示） -->
-      <div class="cd-countdown" v-if="c.endTime">
-        <span class="cd-cd-label">{{ remainMs > 0 ? '距活动结束' : '活动已结束' }}</span>
-        <b v-if="remainMs > 0" class="cd-cd-time" :class="{ flash: c.type === 'flash_sale' }">{{ remainText }}</b>
-      </div>
-    </div>
+      <h1>{{ c.title }}</h1>
+      <p v-if="c.description">{{ c.description }}</p>
+    </header>
 
     <div class="cd-cols">
-      <!-- 规则说明 -->
-      <div class="cd-panel">
-        <h2>活动规则</h2>
-        <ul class="cd-rules">
-          <li v-for="(r, i) in rules(c)" :key="i">{{ r }}</li>
-        </ul>
-        <div class="cd-meta">
-          <div><span>开始时间</span><b>{{ fmt(c.startTime) || '—' }}</b></div>
-          <div><span>结束时间</span><b>{{ fmt(c.endTime) || '长期有效' }}</b></div>
-          <div v-if="c.type === 'coupon'"><span>每人限领</span><b>{{ c.perUserLimit || 1 }} 张</b></div>
-          <div v-if="c.type === 'coupon' && c.totalQuota > 0"><span>发放总量</span><b>{{ c.claimedCount || 0 }} / {{ c.totalQuota }} 张</b></div>
-          <div v-if="c.type === 'coupon'"><span>我的已领</span><b>{{ c.myCouponCount || 0 }} 张</b></div>
+      <!-- 左列：票券预览 + 规格 -->
+      <div class="cd-main">
+        <!-- 券面 / 优惠横幅 -->
+        <div class="cd-face" v-if="c.type === 'coupon'">
+          <div class="face-stub">
+            <span class="face-kind">{{ c.discountRate ? '折扣' : '满减券' }}</span>
+            <div class="face-value">
+              <template v-if="c.discountRate"><b>{{ rateText(c.discountRate) }}</b><i>折</i></template>
+              <template v-else><i>¥</i><b>{{ trimZero(c.benefitAmount) }}</b></template>
+            </div>
+            <span class="face-th">{{ c.threshold > 0 ? `满${trimZero(c.threshold)}可用` : '无门槛' }}</span>
+          </div>
+          <div class="face-body">
+            <span class="face-scope">{{ c.indName ? c.indName + '专享' : '全场通用' }}</span>
+            <b class="face-title">{{ c.title }}</b>
+            <i class="face-barcode" aria-hidden="true"></i>
+          </div>
+        </div>
+        <div class="cd-banner" v-else-if="['full_reduce','discount','flash_sale'].includes(c.type)">
+          <template v-if="c.type === 'full_reduce'">
+            <small>满 ¥{{ trimZero(c.threshold) }}</small><b>减 ¥{{ trimZero(c.benefitAmount) }}</b>
+          </template>
+          <template v-else>
+            <b>{{ rateText(c.discountRate) }}<i>折</i></b>
+            <small>满 ¥{{ trimZero(c.threshold || 0) }} 可享<template v-if="c.benefitAmount">，最高减 ¥{{ trimZero(c.benefitAmount) }}</template></small>
+          </template>
+        </div>
+        <div class="cd-banner" v-else>
+          <b class="cd-pts">+{{ c.rewardPoints }}</b><small>参与奖励积分</small>
+        </div>
+        <!-- 秒杀倒计时条 -->
+        <div class="cd-flashbar" v-if="c.type === 'flash_sale' && remainMs > 0">
+          ⚡ 距结束 <b class="cd-cd">{{ remainText }}</b>
+        </div>
+
+        <!-- 规格：Apple tech-specs 行 -->
+        <div class="cd-specs">
+          <h2>活动规则</h2>
+          <div v-for="(r, i) in rules(c)" :key="i" class="spec-row">
+            <span>{{ r[0] }}</span><b>{{ r[1] }}</b>
+          </div>
+          <ul class="cd-notes">
+            <li v-for="(n, i) in notes(c)" :key="'n' + i">{{ n }}</li>
+          </ul>
         </div>
       </div>
 
-      <!-- 行动区 -->
-      <div class="cd-panel cd-act">
+      <!-- 右列：行动卡（毛玻璃） -->
+      <aside class="cd-act">
+        <div class="act-count" v-if="c.endTime && remainMs > 0">
+          <span>距活动结束</span>
+          <b>{{ remainText }}</b>
+        </div>
         <template v-if="c.type === 'coupon'">
-          <button type="button" class="cd-btn" :class="accent(c.accent)" :disabled="!c.canClaim" @click="claim">
+          <button type="button" class="act-btn" :disabled="!c.canClaim" @click="claim">
             {{ c.limitReached ? '已达限领上限' : (c.remainQuota === 0 ? '已抢完' : '立即领取') }}
           </button>
-          <p class="cd-hint">领取后进入"我的券包"，结算下单时选用核销。</p>
-          <button type="button" class="cd-btn ghost" @click="$router.push('/activity/my')">查看我的券包</button>
+          <p class="act-hint">领取后进入"我的券包"，结算下单时选用核销。</p>
+          <button type="button" class="act-btn ghost" @click="$router.push('/activity/my')">查看我的券包</button>
         </template>
         <template v-else-if="c.type === 'register'">
-          <button type="button" class="cd-btn" :class="accent(c.accent)" :disabled="c.joined" @click="join">
-            {{ c.joined ? '已参与' : '立即参与' }}
-          </button>
-          <p class="cd-hint">参与成功后积分即时到账，可在会员中心查看积分流水。</p>
-          <button type="button" class="cd-btn ghost" @click="$router.push('/membership/points')">查看积分</button>
+          <button type="button" class="act-btn" :disabled="c.joined" @click="join">{{ c.joined ? '已参与' : '立即参与' }}</button>
+          <p class="act-hint">参与成功后积分即时到账，可在会员中心查看流水。</p>
+          <button type="button" class="act-btn ghost" @click="$router.push('/membership/points')">查看积分</button>
         </template>
         <template v-else-if="c.type === 'purchase'">
-          <button type="button" class="cd-btn" :class="accent(c.accent)" @click="$router.push('/mall')">去下单</button>
-          <p class="cd-hint">活动期间完成任意订单支付，系统自动记录参与并发放积分。</p>
+          <button type="button" class="act-btn" @click="$router.push('/mall')">去下单</button>
+          <p class="act-hint">活动期间完成任意订单支付，自动参与并发放积分。</p>
         </template>
         <template v-else>
-          <button type="button" class="cd-btn" :class="accent(c.accent)" @click="$router.push('/mall')">去下单享优惠</button>
-          <p class="cd-hint">满足门槛后结算时自动享受，与会员等级折扣互斥取最优。</p>
+          <button type="button" class="act-btn" @click="$router.push('/mall')">去下单享优惠</button>
+          <p class="act-hint">满足门槛后结算时自动享受，与会员折扣互斥取最优。</p>
         </template>
-      </div>
+      </aside>
     </div>
   </div>
 
   <div v-else class="cd-empty">
-    <a-empty description="活动不存在或已结束">
-      <a-button type="primary" @click="$router.push('/activity')">返回活动中心</a-button>
-    </a-empty>
+    <div class="cd-empty-ico">🎟️</div>
+    <p>活动不存在或已结束</p>
+    <button type="button" class="cd-back-btn" @click="$router.push('/activity')">返回活动中心</button>
   </div>
 </template>
 
@@ -103,10 +118,10 @@ const remainText = computed(() => {
   if (ms <= 0) return '00:00:00'
   const s = Math.floor(ms / 1000)
   const d = Math.floor(s / 86400)
-  const h = String(Math.floor((s % 86400) / 3600)).padStart(2, '0')
-  const m = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
+  const hh = String(Math.floor((s % 86400) / 3600)).padStart(2, '0')
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0')
   const ss = String(s % 60).padStart(2, '0')
-  return d > 0 ? `${d} 天 ${h}:${m}:${ss}` : `${h}:${m}:${ss}`
+  return d > 0 ? `${d} 天 ${hh}:${mm}:${ss}` : `${hh}:${mm}:${ss}`
 })
 
 async function load() {
@@ -135,31 +150,39 @@ async function join() {
 }
 
 // ===== 展示口径 =====
-const ACCENTS = ['blue', 'red', 'gold', 'green', 'purple']
-const accent = (a) => 'ac-' + (ACCENTS.includes(a) ? a : 'blue')
 const typeLabel = (t) => ({ coupon: '领券活动', full_reduce: '满减促销', discount: '折扣促销', flash_sale: '限时秒杀', register: '注册有礼', purchase: '消费有礼' }[t] || '平台活动')
 const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
 const rateText = (r) => trimZero(Number(r) * 10)
 const fmt = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : ''
+// [label, value] 规格行
 function rules(cm) {
-  const base = [
-    `活动时间：${fmt(cm.startTime) || '即日起'} 至 ${fmt(cm.endTime) || '长期有效'}`,
-    cm.indName ? `适用范围：${cm.indName}行业商品订单` : '适用范围：全场商品订单'
+  const rows = [
+    ['活动时间', `${fmt(cm.startTime) || '即日起'} 至 ${fmt(cm.endTime) || '长期有效'}`],
+    ['适用范围', cm.indName ? `${cm.indName}行业商品订单` : '全场商品订单']
   ]
   if (cm.type === 'coupon') {
-    base.push(cm.threshold > 0 ? `使用门槛：订单金额满 ¥${trimZero(cm.threshold)}` : '使用门槛：无门槛')
-    if (cm.discountRate) base.push(`优惠方式：订单金额按 ${rateText(cm.discountRate)} 折结算${cm.benefitAmount ? `，最高优惠 ¥${trimZero(cm.benefitAmount)}` : ''}`)
-    else base.push(`优惠方式：下单立减 ¥${trimZero(cm.benefitAmount)}`)
-    base.push(`每人限领 ${cm.perUserLimit || 1} 张，数量有限先到先得`, '优惠券在提交订单时选用，逾期未使用自动作废', '订单取消或全额退款时，优惠券自动退回券包')
+    rows.push(['使用门槛', cm.threshold > 0 ? `订单满 ¥${trimZero(cm.threshold)}` : '无门槛'])
+    rows.push(['优惠方式', cm.discountRate
+      ? `按 ${rateText(cm.discountRate)} 折结算${cm.benefitAmount ? `，最高优惠 ¥${trimZero(cm.benefitAmount)}` : ''}`
+      : `下单立减 ¥${trimZero(cm.benefitAmount)}`])
+    rows.push(['领取限制', `每人限领 ${cm.perUserLimit || 1} 张${cm.totalQuota > 0 ? `，共 ${cm.totalQuota} 张` : '，不限总量'}`])
   } else if (['full_reduce', 'discount', 'flash_sale'].includes(cm.type)) {
-    base.push('结算时满足门槛自动享受，无需领取', '促销优惠与会员等级折扣互斥，系统自动取对您更优的一种')
-    if (cm.type === 'flash_sale') base.push('限时秒杀逾时自动恢复原价，以下单结算时间为准')
+    rows.push(['享受方式', '结算时满足门槛自动享受，无需领取'])
+    rows.push(['叠加规则', '与会员等级折扣互斥，系统自动取更优'])
   } else if (cm.type === 'register') {
-    base.push(`参与奖励：${cm.rewardPoints} 积分，参与后即时到账`, '同一活动每位用户仅可参与一次')
+    rows.push(['参与奖励', `${cm.rewardPoints} 积分，参与后即时到账`])
+    rows.push(['参与限制', '同一活动每位用户仅可参与一次'])
   } else if (cm.type === 'purchase') {
-    base.push(`参与奖励：${cm.rewardPoints} 积分`, '活动期间完成任意订单支付即自动参与，无需手动报名', '积分在订单支付成功后发放，可在会员中心查看流水')
+    rows.push(['参与奖励', `${cm.rewardPoints} 积分`])
+    rows.push(['享受方式', '订单支付成功后自动参与并发放'])
   }
-  return base
+  return rows
+}
+function notes(cm) {
+  if (cm.type === 'coupon') return ['数量有限，先到先得，抢完即止', '优惠券在提交订单时选用，逾期未使用自动作废', '订单取消或全额退款时，优惠券自动退回券包']
+  if (cm.type === 'flash_sale') return ['限时秒杀逾时自动恢复原价，以下单结算时间为准']
+  if (cm.type === 'purchase') return ['积分在订单支付成功后发放，可在会员中心查看流水']
+  return []
 }
 
 onMounted(() => {
@@ -170,74 +193,113 @@ onUnmounted(() => clearInterval(timer))
 </script>
 
 <style scoped>
-.cd-page { max-width: 920px; margin: 0 auto; }
+.cd-page { max-width: 960px; margin: 0 auto; }
 .cd-back { border: none; background: none; cursor: pointer; color: var(--ll-primary, #1E6EB8);
-  font-size: 13.5px; padding: 4px 0; margin-bottom: 12px; }
-.cd-back:hover { opacity: .8; }
+  font-size: 14px; font-weight: 500; padding: 4px 0; margin-bottom: 14px; }
+.cd-back:hover { opacity: .75; }
 
-.cd-hero { display: flex; justify-content: space-between; align-items: center; gap: 20px;
-  border-radius: 24px; padding: 32px 34px; margin-bottom: 18px; position: relative; overflow: hidden;
-  background: var(--ll-card, #fff); box-shadow: var(--ll-shadow-sm, 0 1px 2px rgba(16,24,40,.06)); }
-.cd-hero::after { content: ''; position: absolute; right: -60px; top: -80px; width: 300px; height: 300px;
-  border-radius: 50%; opacity: .12; pointer-events: none; }
-.ac-blue.cd-hero::after { background: var(--ll-primary, #1E6EB8); }
-.ac-red.cd-hero::after { background: #e0354b; }
-.ac-gold.cd-hero::after { background: #b45309; }
-.ac-green.cd-hero::after { background: #047857; }
-.ac-purple.cd-hero::after { background: #6d28d9; }
-.cd-hero-body { position: relative; flex: 1; min-width: 0; }
-.cd-chips { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-.cd-type { color: #fff; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; }
-.ac-blue .cd-type { background: linear-gradient(135deg, #1E6EB8, #38bdf8); }
-.ac-red .cd-type { background: linear-gradient(135deg, #e0354b, #ff7a59); }
-.ac-gold .cd-type { background: linear-gradient(135deg, #b45309, #f2b544); }
-.ac-green .cd-type { background: linear-gradient(135deg, #047857, #34d399); }
-.ac-purple .cd-type { background: linear-gradient(135deg, #6d28d9, #c084fc); }
-.cd-scope { font-size: 12px; color: var(--ll-muted, #64748B); background: var(--ll-soft, rgba(15,23,42,.06));
-  padding: 4px 10px; border-radius: 999px; }
-.cd-hero h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -.02em; color: var(--ll-ink, #0F172A); }
-.cd-hero p { margin: 0 0 4px; color: var(--ll-muted, #64748B); font-size: 14px; max-width: 520px; }
-.cd-value { margin-top: 14px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.cd-value b { font-size: 40px; letter-spacing: -.03em; color: var(--ll-ink, #0F172A); line-height: 1; }
-.cd-value small { font-size: 14px; color: var(--ll-muted, #64748B); }
-.cd-value .cd-th { font-size: 13px; color: var(--ll-muted, #64748B); }
-.cd-pts { color: #b45309; }
+/* ===== Hero ===== */
+.cd-hero { padding: 6px 4px 22px; }
+.cd-chips { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.cd-type { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; color: #fff; padding: 4px 13px; border-radius: 999px;
+  background: var(--ll-primary, #1E6EB8); }
+.cd-scope { font-size: 12px; font-weight: 500; color: var(--ll-ink, #1d1d1f);
+  background: rgba(120, 120, 128, .12); padding: 4px 12px; border-radius: 999px; }
+.cd-hero h1 { margin: 0 0 10px; font-size: clamp(28px, 4.2vw, 42px); font-weight: 700;
+  letter-spacing: -.028em; line-height: 1.12; color: var(--ll-ink, #1d1d1f); }
+.cd-hero p { margin: 0; font-size: 16px; line-height: 1.55; color: var(--ll-muted, #6e6e73); max-width: 620px; }
 
-.cd-countdown { text-align: center; position: relative; }
-.cd-cd-label { display: block; font-size: 12px; color: var(--ll-muted, #64748B); margin-bottom: 6px; }
-.cd-cd-time { font-variant-numeric: tabular-nums; font-size: 26px; letter-spacing: -.02em; color: var(--ll-ink, #0F172A); }
-.cd-cd-time.flash { color: #d93025; }
+.cd-cols { display: grid; grid-template-columns: 1.65fr 1fr; gap: 20px; align-items: start; }
+.cd-main { min-width: 0; }
 
-.cd-cols { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; align-items: start; }
-.cd-panel { background: var(--ll-card, #fff); border-radius: 20px; padding: 22px 24px;
-  box-shadow: var(--ll-shadow-sm, 0 1px 2px rgba(16,24,40,.06)); }
-.cd-panel h2 { margin: 0 0 12px; font-size: 16px; color: var(--ll-ink, #0F172A); }
-.cd-rules { margin: 0; padding-left: 18px; color: var(--ll-muted, #64748B); font-size: 13.5px; line-height: 2; }
-.cd-meta { margin-top: 16px; border-top: 1px solid var(--ll-border, #e5e7eb); padding-top: 14px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
-.cd-meta span { display: block; font-size: 12px; color: var(--ll-muted, #64748B); margin-bottom: 3px; }
-.cd-meta b { font-size: 14px; color: var(--ll-ink, #0F172A); font-weight: 600; }
+/* ===== 券面预览（真票券） ===== */
+.cd-face { position: relative; display: grid; grid-template-columns: 150px 1fr; border-radius: 22px;
+  background: var(--ll-card, #fff); margin-bottom: 16px;
+  --notch: 13px; --cut: 138px;
+  -webkit-mask: radial-gradient(var(--notch) at var(--cut) 0, transparent 98%, #000),
+                radial-gradient(var(--notch) at var(--cut) 100%, transparent 98%, #000);
+  -webkit-mask-composite: source-in;
+  mask: radial-gradient(var(--notch) at var(--cut) 0, transparent 98%, #000),
+        radial-gradient(var(--notch) at var(--cut) 100%, transparent 98%, #000);
+  mask-composite: intersect;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .05)) drop-shadow(0 14px 32px rgba(0, 0, 0, .08)); }
+.face-stub { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px;
+  color: #fff; padding: 30px 12px; border-radius: 22px 0 0 22px;
+  background: linear-gradient(160deg, #2b7fd4, #1E6EB8 55%, #16609f); }
+.face-kind { font-size: 11px; letter-spacing: .22em; opacity: .8; }
+.face-value { display: flex; align-items: baseline; gap: 2px; line-height: 1; }
+.face-value i { font-style: normal; font-size: 17px; font-weight: 600; }
+.face-value b { font-size: 44px; font-weight: 700; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.face-th { font-size: 12px; opacity: .85; }
+.face-body { position: relative; padding: 22px 24px 20px 26px; display: flex; flex-direction: column; gap: 10px;
+  border-left: 2px dashed var(--ll-border, #e5e5ea); }
+.face-scope { align-self: flex-start; font-size: 11.5px; font-weight: 600; color: var(--ll-primary, #1E6EB8);
+  background: rgba(30, 110, 184, .08); padding: 4px 12px; border-radius: 999px; }
+.face-title { font-size: 16.5px; font-weight: 700; letter-spacing: -.01em; color: var(--ll-ink, #1d1d1f); }
+.face-barcode { display: block; height: 34px; max-width: 300px; border-radius: 4px; opacity: .75; margin-top: auto;
+  background: repeating-linear-gradient(90deg,
+    var(--ll-ink, #1d1d1f) 0 2px, transparent 2px 5px,
+    var(--ll-ink, #1d1d1f) 5px 6px, transparent 6px 9px,
+    var(--ll-ink, #1d1d1f) 9px 12px, transparent 12px 15px); }
 
-.cd-act { display: flex; flex-direction: column; gap: 10px; }
-.cd-btn { border: none; cursor: pointer; width: 100%; padding: 13px 0; border-radius: 14px;
-  font-size: 15px; font-weight: 700; color: #fff; transition: transform .2s, box-shadow .2s, opacity .2s; }
-.cd-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(16,24,40,.16); }
-.cd-btn:disabled { cursor: not-allowed; opacity: .45; }
-.cd-btn.ghost { background: var(--ll-soft, rgba(15,23,42,.06)); color: var(--ll-ink, #0F172A);
-  box-shadow: inset 0 0 0 1px var(--ll-border, #e5e7eb); }
-.ac-blue.cd-btn:not(.ghost) { background: linear-gradient(135deg, #1E6EB8, #38bdf8); }
-.ac-red.cd-btn:not(.ghost) { background: linear-gradient(135deg, #e0354b, #ff7a59); }
-.ac-gold.cd-btn:not(.ghost) { background: linear-gradient(135deg, #b45309, #f2b544); }
-.ac-green.cd-btn:not(.ghost) { background: linear-gradient(135deg, #047857, #34d399); }
-.ac-purple.cd-btn:not(.ghost) { background: linear-gradient(135deg, #6d28d9, #c084fc); }
-.cd-hint { margin: 0; font-size: 12.5px; color: var(--ll-muted, #64748B); line-height: 1.7; text-align: center; }
+/* 促销 / 激励横幅 */
+.cd-banner { display: flex; align-items: baseline; gap: 12px; border-radius: 22px; padding: 28px 30px; margin-bottom: 16px;
+  background: var(--ll-card, #fff); box-shadow: 0 1px 1px rgba(0,0,0,.04), 0 10px 30px rgba(0,0,0,.06); }
+.cd-banner b { font-size: 46px; font-weight: 700; letter-spacing: -.04em; line-height: 1; color: var(--ll-ink, #1d1d1f); }
+.cd-banner i { font-style: normal; font-size: 19px; font-weight: 600; }
+.cd-banner small { font-size: 14.5px; color: var(--ll-muted, #6e6e73); }
+.cd-pts { color: #c97e12; }
+.cd-flashbar { display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px;
+  background: linear-gradient(100deg, #fff3e2, #ffe8ee); font-size: 13.5px; font-weight: 600; color: #b45309; }
+[data-theme='dark'] .cd-flashbar { background: linear-gradient(100deg, #2a2318, #2b1a1f); color: #ffb340; }
+.cd-cd { font-variant-numeric: tabular-nums; font-size: 15px; }
 
-.cd-empty { max-width: 400px; margin: 80px auto; }
+/* ===== 规格表：Apple tech-specs ===== */
+.cd-specs { border-radius: 22px; padding: 24px 26px; background: var(--ll-card, #fff);
+  box-shadow: 0 1px 1px rgba(0,0,0,.04), 0 8px 28px rgba(0,0,0,.06); }
+.cd-specs h2 { margin: 0 0 6px; font-size: 19px; font-weight: 700; letter-spacing: -.02em; color: var(--ll-ink, #1d1d1f); }
+.spec-row { display: grid; grid-template-columns: 96px 1fr; gap: 14px; padding: 13px 0;
+  border-bottom: 1px solid var(--ll-border, #e5e5ea); }
+.spec-row span { font-size: 13px; color: var(--ll-muted, #6e6e73); }
+.spec-row b { font-size: 14px; font-weight: 500; color: var(--ll-ink, #1d1d1f); line-height: 1.5; }
+.cd-notes { margin: 14px 0 0; padding-left: 18px; color: var(--ll-muted, #6e6e73); font-size: 12.5px; line-height: 2; }
 
-@media (max-width: 760px) {
-  .cd-hero { flex-direction: column; align-items: flex-start; padding: 24px 20px; }
-  .cd-value b { font-size: 32px; }
+/* ===== 行动卡 ===== */
+.cd-act { position: sticky; top: 84px; display: flex; flex-direction: column; gap: 12px;
+  border-radius: 22px; padding: 24px;
+  background: color-mix(in srgb, var(--ll-card, #fff) 78%, transparent);
+  backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06), 0 10px 30px rgba(0, 0, 0, .07); }
+[data-theme='dark'] .cd-act { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1), 0 10px 30px rgba(0, 0, 0, .35); }
+.act-count { text-align: center; padding-bottom: 14px; border-bottom: 1px solid var(--ll-border, #e5e5ea); }
+.act-count span { display: block; font-size: 12px; color: var(--ll-muted, #6e6e73); margin-bottom: 4px; }
+.act-count b { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  color: var(--ll-ink, #1d1d1f); }
+.act-btn { border: none; cursor: pointer; width: 100%; padding: 14px 0; border-radius: 980px;
+  font-size: 15px; font-weight: 600; color: #fff; background: var(--ll-primary, #1E6EB8);
+  transition: transform .25s var(--ll-ease-out, ease), box-shadow .25s, opacity .25s; }
+.act-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(30, 110, 184, .35); }
+.act-btn:active:not(:disabled) { transform: scale(.98); }
+.act-btn:disabled { cursor: not-allowed; opacity: .4; }
+.act-btn.ghost { background: transparent; color: var(--ll-primary, #1E6EB8);
+  box-shadow: inset 0 0 0 1px var(--ll-border-strong, #d2d2d7); }
+.act-hint { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--ll-muted, #6e6e73); text-align: center; }
+
+/* ===== 空态 ===== */
+.cd-empty { max-width: 360px; margin: 90px auto; text-align: center; }
+.cd-empty-ico { font-size: 50px; margin-bottom: 12px; }
+.cd-empty p { margin: 0 0 18px; font-size: 15px; color: var(--ll-muted, #6e6e73); }
+.cd-back-btn { border: none; cursor: pointer; padding: 10px 22px; border-radius: 980px; font-size: 14px;
+  font-weight: 500; background: var(--ll-primary, #1E6EB8); color: #fff; }
+
+/* ===== 响应式 ===== */
+@media (max-width: 820px) {
   .cd-cols { grid-template-columns: 1fr; }
-  .cd-countdown { text-align: left; }
+  .cd-act { position: static; }
+}
+@media (max-width: 560px) {
+  .cd-face { grid-template-columns: 112px 1fr; --cut: 100px; }
+  .face-value b { font-size: 34px; }
+  .spec-row { grid-template-columns: 84px 1fr; }
 }
 </style>
