@@ -125,7 +125,15 @@
             <span class="matrix-badge">DEMO PLATFORM</span>
           </div>
           <div class="matrix-grid">
-            <div v-for="item in modules" :key="item.title" class="module-card">
+            <BorderBeamPanel
+              v-for="item in modules"
+              :key="item.title"
+              class="module-card"
+              :radius="24"
+              :thickness="2"
+              :beams="2"
+              glow
+            >
               <span class="module-number">{{ item.number }}</span>
               <div class="module-icon">{{ item.icon }}</div>
               <h3>{{ item.title }}</h3>
@@ -133,7 +141,7 @@
               <div class="module-tags">
                 <span v-for="tag in item.tags" :key="tag">{{ tag }}</span>
               </div>
-            </div>
+            </BorderBeamPanel>
           </div>
         </div>
       </section>
@@ -379,6 +387,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import AuthorCard from '../components/AuthorCard.vue'
+import BorderBeamPanel from '../components/ui/BorderBeamPanel.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { joinApi } from '../api'
 import { useUserStore } from '../store/user'
@@ -843,13 +852,13 @@ async function copyText(text, label) {
    1px 发丝边、16–20px 玻璃模糊、160–220ms ease-out 动效。
    ============================================================ */
 .about-page {
-  --ab-ink: #1D1D1F;
-  --ab-muted: #6E6E73;
+  --ab-ink: #1B2434;
+  --ab-muted: #6B6F76;
   --ab-paper: #F5F5F7;
   --ab-paper2: #FAFAFC;
-  --ab-line: rgba(0, 0, 0, .08);
-  --ab-gold-strong: #8C6A1F;
-  --ab-navy: #131A2A;
+  --ab-line: rgba(19, 35, 58, .09);
+  --ab-gold-strong: #80601F;
+  --ab-navy: #13233A;
   padding-bottom: 8px;
 }
 [data-theme='dark'] .about-page {
@@ -861,67 +870,84 @@ async function copyText(text, label) {
   --ab-navy: #E8EDF5;
 }
 
-/* ---------- Hero：暗色产品舞台 + 数据胶囊 ---------- */
+/* ---------- Hero：品牌极光舞台（与首页同源，暖金+蓝+红，非纯黑） ---------- */
 .about-hero {
-  min-height: 560px;
-  padding: 72px 76px;
-  border-radius: 36px;
-  background: radial-gradient(120% 120% at 12% 0%, #22304A 0%, #101725 55%, #0A0E17 100%);
-  box-shadow: 0 40px 100px rgba(10, 15, 26, .28);
+  min-height: 520px;
+  padding: 68px 72px;
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  background:
+    radial-gradient(720px 440px at 92% 6%, rgba(246, 211, 138, .3), transparent 64%),
+    radial-gradient(840px 540px at 108% 102%, rgba(30, 110, 184, .34), transparent 66%),
+    linear-gradient(135deg, #101B2D 0%, #16294A 55%, #1E3A5F 100%);
+  box-shadow: 0 26px 70px rgba(19, 35, 58, .2), inset 0 -1px 0 rgba(246, 211, 138, .3);
   align-items: center;
 }
 .about-hero::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, .045) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, .045) 1px, transparent 1px);
-  background-size: 56px 56px;
-  -webkit-mask-image: radial-gradient(80% 70% at 30% 40%, #000 20%, transparent 100%);
-  mask-image: radial-gradient(80% 70% at 30% 40%, #000 20%, transparent 100%);
+  z-index: 0;
+  background: radial-gradient(52% 46% at 74% 24%, rgba(246, 211, 138, .1), transparent 72%);
   pointer-events: none;
 }
-.hero-copy { max-width: 760px; }
+.about-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, .06) 1px, transparent 1px);
+  background-size: 52px 52px;
+  -webkit-mask-image: linear-gradient(90deg, #000, transparent 78%);
+  mask-image: linear-gradient(90deg, #000, transparent 78%);
+  opacity: .55;
+}
+.hero-copy { position: relative; z-index: 3; max-width: 760px; }
+.hero-orbit { z-index: 2; }
 .hero-copy h1 {
   margin: 20px 0 22px;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
-  font-size: clamp(44px, 5.6vw, 76px);
-  line-height: .98;
-  letter-spacing: -.045em;
-  font-weight: 700;
+  font-size: clamp(40px, 4.8vw, 64px);
+  line-height: 1.06;
+  letter-spacing: -.04em;
+  font-weight: 650;
 }
 .hero-copy h1 em {
-  background: linear-gradient(100deg, #F6D38A, #C8A45C 55%, #8FB3FF);
+  background: linear-gradient(100deg, #F6D38A, #E8C67A 55%, #9FC3F0);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
-.hero-copy p { max-width: 620px; font-size: 17px; line-height: 1.85; color: rgba(255, 255, 255, .66); }
+.hero-copy p { max-width: 620px; font-size: 16.5px; line-height: 1.85; color: rgba(255, 255, 255, .74); }
 .eyebrow { font-size: 11px; letter-spacing: .22em; color: rgba(246, 211, 138, .92); }
 .eyebrow::before { width: 32px; background: rgba(246, 211, 138, .5); }
-.hero-actions { margin-top: 32px; gap: 14px; }
-.hero-primary, .hero-secondary { height: 46px; padding: 0 24px; border-radius: 999px; font-size: 14.5px; }
+.hero-actions { margin-top: 30px; gap: 12px; }
+.hero-primary, .hero-secondary { height: 45px; padding: 0 24px; border-radius: 999px; font-size: 14.5px; }
 .hero-primary {
-  background: #F5F5F7;
-  color: #0B0F16;
-  font-weight: 650;
-  box-shadow: 0 10px 30px rgba(255, 255, 255, .14);
-  transition: transform .18s ease-out, background .18s ease-out;
+  border: 0;
+  background: linear-gradient(100deg, var(--ll-brand-gold), #F0BC62);
+  color: var(--ll-brand-base);
+  font-weight: 700;
+  box-shadow: 0 12px 30px rgba(200, 164, 92, .28);
+  transition: transform .18s ease-out, filter .18s ease-out;
 }
-.hero-primary:hover { background: #fff; color: #0B0F16; transform: translateY(-1px); }
-.hero-secondary { color: #fff; border: 1px solid rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .08); backdrop-filter: blur(16px) saturate(140%); }
-.hero-stats { display: flex; gap: 10px; margin-top: 40px; flex-wrap: wrap; }
+.hero-primary:hover { color: var(--ll-brand-base); filter: brightness(1.06); transform: translateY(-1px); }
+.hero-secondary { color: #fff; border: 1px solid rgba(255, 255, 255, .26); background: rgba(255, 255, 255, .07); backdrop-filter: blur(14px) saturate(140%); }
+.hero-secondary:hover { color: #fff; background: rgba(255, 255, 255, .13); border-color: rgba(255, 255, 255, .5); }
+.hero-stats { display: flex; gap: 10px; margin-top: 36px; flex-wrap: wrap; }
 .hero-stat {
   display: flex; flex-direction: column; gap: 2px;
-  padding: 12px 18px; border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, .14);
-  background: rgba(255, 255, 255, .07);
-  backdrop-filter: blur(16px) saturate(140%);
+  padding: 11px 17px; border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: rgba(255, 255, 255, .08);
+  backdrop-filter: blur(14px) saturate(140%);
 }
-.hero-stat b { font-size: 20px; letter-spacing: -.02em; color: #fff; }
-.hero-stat span { font-size: 9px; letter-spacing: .16em; color: rgba(255, 255, 255, .55); }
-.hero-orbit { right: 40px; top: 50%; transform: translateY(-50%) scale(.92); opacity: .9; }
+.hero-stat b { font-size: 19px; letter-spacing: -.02em; color: #F6D38A; }
+.hero-stat span { font-size: 9px; letter-spacing: .16em; color: rgba(255, 255, 255, .6); }
+.hero-orbit { right: 40px; top: 50%; transform: translateY(-50%) scale(.92); opacity: .85; }
 .hero-glow { filter: blur(70px); opacity: .22; }
 
 /* ---------- 页内导航：Apple 分段胶囊 ---------- */
@@ -949,54 +975,96 @@ async function copyText(text, label) {
 .section-heading h2, .contact-intro h2, .legal-title h2, .matrix-head h2 {
   margin: 14px 0;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
-  font-size: clamp(32px, 4vw, 52px);
-  line-height: 1.06;
-  letter-spacing: -.035em;
-  font-weight: 700;
-  color: var(--ab-ink);
+  font-size: clamp(28px, 3.4vw, 42px);
+  line-height: 1.14;
+  letter-spacing: -.03em;
+  font-weight: 650;
+  color: var(--ll-brand-base);
 }
 .section-heading p, .contact-intro p { max-width: 680px; font-size: 16px; line-height: 1.75; color: var(--ab-muted); }
 
-/* ---------- 01 Bento：首卡深色主推 + 宽卡收尾 ---------- */
-.capability-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+/* ---------- 01 Bento：品牌深海军蓝主推 + 暖纸卡片 ---------- */
+.capability-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .capability-card {
-  min-height: 250px; padding: 32px;
-  border-radius: 28px; border: 1px solid var(--ab-line);
-  background: #fff;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .05);
-  transition: transform .2s ease-out, box-shadow .2s ease-out;
+  min-height: 216px; padding: 30px;
+  border-radius: 28px;
+  border: 1px solid rgba(19, 35, 58, .08);
+  background: linear-gradient(165deg, #FFFDF9, #F8F3E9);
+  box-shadow: 0 12px 36px rgba(19, 35, 58, .05);
+  transition: transform .2s ease-out, box-shadow .2s ease-out, border-color .2s ease-out;
+  overflow: hidden;
 }
-.capability-card:hover { transform: translateY(-2px); box-shadow: 0 24px 60px rgba(0, 0, 0, .1); }
+.capability-card::after {
+  content: '';
+  position: absolute;
+  width: 220px; height: 220px;
+  right: -70px; bottom: -96px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(200, 164, 92, .16), transparent 66%);
+  pointer-events: none;
+}
+.capability-card:nth-child(3)::after { background: radial-gradient(circle, rgba(30, 110, 184, .14), transparent 66%); }
+.capability-card:nth-child(4)::after { background: radial-gradient(circle, rgba(155, 45, 32, .12), transparent 66%); }
+.capability-card .card-index {
+  position: absolute; right: 26px; bottom: 16px;
+  font-size: 46px; font-weight: 700; letter-spacing: -.04em; line-height: 1;
+  color: rgba(19, 35, 58, .06);
+}
+.capability-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(200, 164, 92, .5), transparent);
+  opacity: .7;
+}
+.capability-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(200, 164, 92, .4);
+  box-shadow: 0 22px 54px rgba(19, 35, 58, .09);
+}
 .capability-card:first-child {
-  grid-column: span 2; min-height: 230px;
-  background: linear-gradient(135deg, #1B2334, #0D1220);
-  border-color: rgba(255, 255, 255, .08);
+  grid-column: span 2; min-height: 224px;
+  border-color: rgba(255, 255, 255, .1);
+  background:
+    radial-gradient(620px 300px at 86% 0%, rgba(246, 211, 138, .2), transparent 62%),
+    linear-gradient(135deg, #1B2B44, #233F5F);
+  box-shadow: 0 20px 50px rgba(19, 35, 58, .18);
 }
-.capability-card:first-child h3 { color: #fff; font-size: 30px; letter-spacing: -.03em; }
-.capability-card:first-child p { max-width: 620px; color: rgba(255, 255, 255, .62); font-size: 14.5px; }
-.capability-card:first-child .card-index { color: #F6D38A; }
-.capability-card:first-child .capability-icon { background: rgba(255, 255, 255, .1); color: #F6D38A; }
-.capability-card:first-child .card-arrow { color: rgba(255, 255, 255, .5); }
+.capability-card:first-child::before { background: linear-gradient(90deg, transparent, rgba(246, 211, 138, .55), transparent); }
+.capability-card:first-child h3 { color: #fff; font-size: 28px; letter-spacing: -.025em; }
+.capability-card:first-child p { max-width: 620px; color: rgba(255, 255, 255, .74); font-size: 14.5px; }
+.capability-card:first-child .card-index { color: rgba(246, 211, 138, .22); }
+.capability-card:first-child .capability-icon { background: rgba(255, 255, 255, .12); color: #F6D38A; }
+.capability-card:first-child .card-arrow { color: rgba(255, 255, 255, .55); }
 .capability-card:nth-child(4) { grid-column: span 2; }
 .capability-icon { width: 48px; height: 48px; border-radius: 14px; background: var(--ab-paper); color: var(--ab-ink); font-size: 22px; margin-bottom: 28px; }
-.capability-card h3 { margin: 8px 0; font-size: 22px; letter-spacing: -.02em; color: var(--ab-ink); }
+.capability-card:nth-child(2) .capability-icon { background: #FBF2DE; color: #80601F; }
+.capability-card:nth-child(3) .capability-icon { background: #EAF2FB; color: #1E6EB8; }
+.capability-card:nth-child(4) .capability-icon { background: #F9EDEA; color: #9B2D20; }
+.capability-card h3 { margin: 8px 0; font-size: 21px; letter-spacing: -.02em; color: var(--ll-brand-base); }
 .capability-card p { font-size: 14px; line-height: 1.7; color: var(--ab-muted); }
 .card-index { color: var(--ab-gold-strong); letter-spacing: .16em; }
-.card-arrow { right: 26px; top: 26px; }
-[data-theme='dark'] .capability-card { background: #1C1F26; }
-[data-theme='dark'] .capability-card:first-child { background: linear-gradient(135deg, #202A3E, #0D1220); }
+.card-arrow { right: 26px; top: 26px; color: #A8A29A; }
+[data-theme='dark'] .capability-card { background: #1C1F26; border-color: rgba(255, 255, 255, .08); }
+[data-theme='dark'] .capability-card:first-child { background: radial-gradient(620px 300px at 86% 0%, rgba(246, 211, 138, .14), transparent 62%), linear-gradient(135deg, #1B2B44, #233F5F); }
+[data-theme='dark'] .capability-card h3 { color: #F1F5F9; }
 
 /* ---------- 02 身份：深色舞台 + Apple 列表 ---------- */
 .identity-layout { grid-template-columns: 1fr 1fr; gap: 24px; }
 .identity-visual {
   min-height: 440px; border-radius: 32px;
-  background: radial-gradient(120% 100% at 30% 20%, #1E2A44, #0C111C 70%);
-  box-shadow: 0 24px 60px rgba(10, 15, 26, .24);
+  border: 1px solid rgba(255, 255, 255, .1);
+  background:
+    radial-gradient(520px 320px at 78% 10%, rgba(246, 211, 138, .22), transparent 62%),
+    radial-gradient(460px 300px at 6% 96%, rgba(155, 45, 32, .18), transparent 60%),
+    linear-gradient(135deg, #1B2B44, #233F5F);
+  box-shadow: 0 22px 54px rgba(19, 35, 58, .2);
 }
 .identity-list {
   display: grid; gap: 0;
-  border: 1px solid var(--ab-line); border-radius: 24px;
-  background: #fff; overflow: hidden;
+  border: 1px solid rgba(19, 35, 58, .08); border-radius: 24px;
+  background: linear-gradient(180deg, #FFFDF9, #FAF6EE); overflow: hidden;
 }
 .identity-row {
   min-height: 76px; padding: 12px 20px;
@@ -1005,8 +1073,13 @@ async function copyText(text, label) {
   transition: background .12s ease-out;
 }
 .identity-row:last-child { border-bottom: 0; }
-.identity-row:hover { background: rgba(0, 0, 0, .035); }
+.identity-row:hover { background: rgba(200, 164, 92, .07); }
 .identity-tag { width: 38px; height: 38px; border-radius: 50%; background: var(--ab-paper); color: var(--ab-ink); font-size: 13px; }
+.identity-row:nth-child(1) .identity-tag { background: #FBF2DE; color: #80601F; }
+.identity-row:nth-child(2) .identity-tag { background: #EAF2FB; color: #1E6EB8; }
+.identity-row:nth-child(3) .identity-tag { background: #F9EDEA; color: #9B2D20; }
+.identity-row:nth-child(4) .identity-tag { background: #EDF3EE; color: #2F6B46; }
+.identity-row:nth-child(5) .identity-tag { background: #EEF0F5; color: #13233A; }
 .identity-copy strong { font-size: 15px; color: var(--ab-ink); }
 .identity-copy span { font-size: 13px; color: var(--ab-muted); }
 .identity-status { font-size: 11px; letter-spacing: .06em; color: var(--ab-gold-strong); }
@@ -1015,22 +1088,31 @@ async function copyText(text, label) {
 [data-theme='dark'] .identity-tag { background: #242830; }
 
 /* ---------- 03 能力矩阵：浅灰大片 + Spotlight 卡片 ---------- */
-.matrix-card { padding: 40px; border-radius: 32px; background: var(--ab-paper); border: 1px solid var(--ab-line); }
+.matrix-card {
+  padding: 40px; border-radius: 32px;
+  background: linear-gradient(180deg, #FBF8F1, #F4EFE4);
+  border: 1px solid rgba(19, 35, 58, .07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8);
+}
 .matrix-grid { gap: 16px; }
 .module-card {
   min-height: 240px; padding: 28px;
-  border-radius: 24px; background: #fff; border: 1px solid var(--ab-line);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, .04);
+  border-radius: 24px; background: #FFFDF9; border: 1px solid rgba(19, 35, 58, .07);
+  box-shadow: 0 10px 26px rgba(19, 35, 58, .04);
   transition: transform .18s ease-out, box-shadow .18s ease-out;
 }
-.module-card:hover { transform: translateY(-2px); box-shadow: 0 20px 50px rgba(0, 0, 0, .09); }
-.module-number { font-size: 40px; letter-spacing: -.04em; color: rgba(0, 0, 0, .08); }
+.module-card:hover { transform: translateY(-2px); box-shadow: 0 20px 44px rgba(19, 35, 58, .09); }
+.module-number { font-size: 40px; letter-spacing: -.04em; color: rgba(19, 35, 58, .1); }
 .module-icon { width: 44px; height: 44px; border-radius: 13px; background: var(--ab-paper); color: var(--ab-ink); }
-.module-card h3 { margin: 20px 0 6px; font-size: 21px; letter-spacing: -.02em; color: var(--ab-ink); }
+.module-card:nth-child(1) .module-icon { background: #FBF2DE; color: #80601F; }
+.module-card:nth-child(2) .module-icon { background: #EAF2FB; color: #1E6EB8; }
+.module-card:nth-child(3) .module-icon { background: #F9EDEA; color: #9B2D20; }
+.module-card h3 { margin: 20px 0 6px; font-size: 20px; letter-spacing: -.02em; color: var(--ll-brand-base); }
 .module-card p { font-size: 13.5px; color: var(--ab-muted); }
-.module-tags span { padding: 5px 10px; border-radius: 999px; background: var(--ab-paper); color: var(--ab-muted); font-size: 10.5px; }
-.matrix-badge { border-radius: 999px; border-color: var(--ab-line); color: var(--ab-muted); font-size: 9.5px; }
+.module-tags span { padding: 5px 10px; border-radius: 999px; background: #F6F1E7; color: #6B6F76; font-size: 10.5px; }
+.matrix-badge { border-radius: 999px; border-color: rgba(19, 35, 58, .12); color: var(--ab-muted); font-size: 9.5px; background: rgba(255, 255, 255, .5); }
 [data-theme='dark'] .module-card { background: #1C1F26; }
+[data-theme='dark'] .matrix-card { background: linear-gradient(180deg, #171A20, #12151A); border-color: rgba(255, 255, 255, .08); box-shadow: none; }
 [data-theme='dark'] .module-number { color: rgba(255, 255, 255, .12); }
 
 /* ---------- 05 联系：整宽叙事 + 三张图标卡 ---------- */
@@ -1040,12 +1122,16 @@ async function copyText(text, label) {
 .contact-grid { grid-template-columns: repeat(3, 1fr); gap: 16px; }
 .contact-card {
   min-height: 250px; padding: 28px;
-  border-radius: 26px; border: 1px solid var(--ab-line);
-  background: #fff; box-shadow: 0 12px 40px rgba(0, 0, 0, .05);
-  transition: transform .2s ease-out, box-shadow .2s ease-out;
+  border-radius: 26px; border: 1px solid rgba(19, 35, 58, .08);
+  background: linear-gradient(165deg, #FFFDF9, #F8F3E9);
+  box-shadow: 0 12px 34px rgba(19, 35, 58, .05);
+  transition: transform .2s ease-out, box-shadow .2s ease-out, border-color .2s ease-out;
 }
-.contact-card:hover { transform: translateY(-2px); box-shadow: 0 22px 54px rgba(0, 0, 0, .1); }
+.contact-card:hover { transform: translateY(-2px); border-color: rgba(200, 164, 92, .4); box-shadow: 0 22px 50px rgba(19, 35, 58, .09); }
 .contact-icon { width: 48px; height: 48px; border-radius: 14px; background: var(--ab-paper); }
+.contact-card:nth-child(1) .contact-icon { background: #FBF2DE; }
+.contact-card:nth-child(2) .contact-icon { background: #EAF2FB; }
+.contact-card:nth-child(3) .contact-icon { background: #E9F5EE; }
 .contact-icon-image { width: 22px; height: 22px; filter: none; }
 .contact-label { margin-top: 20px; font-size: 11px; letter-spacing: .12em; color: var(--ab-muted); }
 .contact-card strong { font-size: 15px; }
@@ -1104,7 +1190,7 @@ async function copyText(text, label) {
 .legal-tabs button { border: 0; background: transparent; border-radius: 999px; padding: 9px 16px; font-size: 13px; color: var(--ab-muted); cursor: pointer; transition: .18s ease-out; }
 .legal-tabs button span { margin-left: 6px; font-size: 10px; opacity: .5; }
 .legal-tabs button.active { background: #fff; color: var(--ab-ink); font-weight: 600; box-shadow: 0 4px 14px rgba(0, 0, 0, .08); }
-.legal-panel { padding: 40px 44px; border-radius: 32px; border: 1px solid var(--ab-line); background: #fff; box-shadow: 0 12px 40px rgba(0, 0, 0, .04); }
+.legal-panel { padding: 40px 44px; border-radius: 32px; border: 1px solid rgba(19, 35, 58, .08); background: linear-gradient(180deg, #FFFDF9, #FAF6EE); box-shadow: 0 12px 36px rgba(19, 35, 58, .04); }
 .legal-title h2 { margin: 8px 0; }
 .legal-title p { color: var(--ab-muted); font-size: 14px; }
 .legal-list { margin-top: 24px; gap: 0; }
@@ -1123,6 +1209,83 @@ async function copyText(text, label) {
 }
 .about-footer-brand { color: var(--ab-muted); font-size: 12px; font-weight: 600; }
 .about-footer-sign { font-size: 11.5px; color: var(--ab-muted); }
+
+/* ============================================================
+   Border Beam（参考 21st.dev @rmahammad · Border Beam Panel）
+   conic-gradient 沿 1.5px 边框巡游；悬停加速、移出恢复。
+   ============================================================ */
+@property --ab-beam-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes ab-beam-spin { to { --ab-beam-angle: 360deg; } }
+
+/* 加入我们：两张卡常驻慢速光轨 + 淡青/淡杏角部光晕（对齐参考图） */
+.join-card {
+  background:
+    radial-gradient(420px 260px at 102% -4%, rgba(186, 230, 253, .5), transparent 62%),
+    radial-gradient(380px 240px at -6% 104%, rgba(254, 215, 170, .38), transparent 60%),
+    linear-gradient(155deg, rgba(255, 255, 255, .96), rgba(255, 255, 255, .72));
+}
+.join-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--ab-beam-angle),
+    transparent 0deg 284deg,
+    rgba(56, 189, 248, .9) 318deg,
+    rgba(99, 102, 241, .95) 344deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: ab-beam-spin 7s linear infinite;
+  pointer-events: none;
+  z-index: 3;
+}
+.join-card:hover::after { animation-duration: 2.2s; }
+
+/* 联系卡：默认无光轨，悬停时亮起并加速 */
+.contact-card { position: relative; overflow: hidden; }
+.contact-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--ab-beam-angle),
+    transparent 0deg 286deg,
+    rgba(56, 189, 248, .85) 320deg,
+    rgba(99, 102, 241, .9) 345deg,
+    transparent 360deg);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  animation: ab-beam-spin 6s linear infinite;
+  animation-play-state: paused;
+  pointer-events: none;
+  transition: opacity .25s ease-out;
+  z-index: 3;
+}
+.contact-card:hover::after { opacity: 1; animation-duration: 1.8s; animation-play-state: running; }
+
+[data-theme='dark'] .join-card {
+  background:
+    radial-gradient(420px 260px at 102% -4%, rgba(56, 189, 248, .14), transparent 62%),
+    radial-gradient(380px 240px at -6% 104%, rgba(251, 146, 60, .1), transparent 60%),
+    linear-gradient(155deg, rgba(30, 41, 59, .82), rgba(15, 23, 42, .66));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .join-card::after, .contact-card::after { animation: none; opacity: 0; }
+}
+
+/* 03 能力矩阵文字卡：光束由 BorderBeamPanel 组件提供，卡片允许光晕外溢 */
+.module-card { overflow: visible; }
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 1024px) {

@@ -1,13 +1,18 @@
 <template>
   <div class="support-root">
-    <button class="support-launcher" type="button" :aria-expanded="visible"
+    <button class="support-launcher" type="button" :class="{ 'is-open': visible }"
+      aria-expanded="visible"
       aria-controls="lanlink-support-panel" @click="toggle">
       <SupportAgentAvatar :size="30" status="online" class="support-launcher-avatar" />
-      <span>专属客服</span>
+      <span class="support-launcher-text">专属客服</span>
     </button>
 
-    <section v-if="visible" id="lanlink-support-panel" class="support-panel"
-      role="dialog" aria-label="LANLinkshopping 专属客服">
+    <!-- 聊天面板：Border Beam 流光边框（移植自 border-beam@1.4.1，白底 light 主题）
+         BorderBeam 为多根组件不透传 class，定位由外层 .support-beam-host 容器接管 -->
+    <div v-if="visible" class="support-beam-host">
+      <BorderBeam :border-radius="18" theme="light" color-variant="colorful">
+        <section id="lanlink-support-panel" class="support-panel"
+          role="dialog" aria-label="LANLinkshopping 专属客服">
       <header class="support-header">
         <SupportAgentAvatar :size="34" status="online" />
         <div class="support-header-copy">
@@ -61,11 +66,14 @@
       <footer class="support-scope-note">
         <label class="support-consent">
           <input v-model="persistConversation" type="checkbox" />
-          <span>允许保存脱敏对话，供客服跟进与改进知识库（可选）</span>
+          <span class="consent-full">允许保存脱敏对话，供客服跟进与改进知识库（可选）</span>
+          <span class="consent-short">允许保存脱敏对话（可选）</span>
         </label>
-        <p>不勾选时仍可使用知识库客服，但本次对话不会保存到客服工作台。请勿发送密码、验证码或银行卡信息。</p>
+        <p class="consent-note">不勾选时仍可使用知识库客服，但本次对话不会保存到客服工作台。请勿发送密码、验证码或银行卡信息。</p>
       </footer>
-    </section>
+      </section>
+      </BorderBeam>
+    </div>
   </div>
 </template>
 
@@ -73,6 +81,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { supportApi } from '../api'
 import SupportAgentAvatar from './ui/SupportAgentAvatar.vue'
+import BorderBeam from './ui/BorderBeam.vue'
 import { translateDataText } from '../i18n'
 import { speakText, stopSpeaking } from '../utils/tts'
 
@@ -192,7 +201,11 @@ async function send() {
 .support-launcher { display: inline-flex; align-items: center; gap: 9px; border: 0; border-radius: 999px; padding: 12px 18px 12px 12px; color: #fff; background: #13233A; box-shadow: 0 10px 30px rgba(19,35,58,.24); font-size: 14px; font-weight: 650; cursor: pointer; }
 .support-launcher:hover { background: #203958; }
 .support-launcher-avatar { margin-right: 1px; }
-.support-panel { display: flex; flex-direction: column; position: absolute; right: 0; bottom: 62px; width: min(370px, calc(100vw - 28px)); height: min(560px, calc(100vh - 110px)); background: #fff; border: 1px solid #e4e7ec; border-radius: 18px; box-shadow: 0 20px 55px rgba(16,24,40,.2); overflow: hidden; }
+/* 流光宿主：接管原面板的浮动定位，BorderBeam 在其 1px 边环上跑光 */
+.support-beam-host { position: absolute; right: 0; bottom: 62px; width: min(370px, calc(100vw - 28px)); height: min(560px, calc(100vh - 110px)); }
+/* BorderBeam 根元素铺满宿主（多根组件不透传 class，需 :deep 撑满） */
+.support-beam-host :deep(.bb-wrap) { width: 100%; height: 100%; }
+.support-panel { display: flex; flex-direction: column; position: relative; width: 100%; height: 100%; background: #fff; border: 1px solid #e4e7ec; border-radius: 18px; box-shadow: 0 20px 55px rgba(16,24,40,.2); overflow: hidden; }
 .support-header { display: flex; align-items: center; gap: 11px; padding: 17px 18px; background: #13233A; color: #fff; }
 .support-header-copy { flex: 1 1 auto; min-width: 0; }
 .support-header strong { display: block; font-size: 14px; font-weight: 700; }
@@ -220,7 +233,9 @@ async function send() {
 .support-consent { display:flex; align-items:flex-start; gap:7px; color:#344054; font-size:10px; line-height:1.5; cursor:pointer; }
 .support-consent input { margin-top:2px; accent-color:#13233a; }
 .support-scope-note p { margin:5px 0 0; }
-.support-launcher { position:relative; overflow:hidden; background:linear-gradient(135deg,#13233a 0%,#203958 62%,#34577a 100%); transition:transform .18s ease,box-shadow .18s ease; }
+.support-launcher { position:relative; overflow:hidden; background:linear-gradient(135deg,#13233a 0%,#203958 62%,#34577a 100%); transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease; }
+/* 面板打开时隐藏悬浮球，避免同屏出现两个"客服"入口 */
+.support-launcher.is-open { opacity: 0; pointer-events: none; transform: scale(.9); }
 .support-launcher::after { content:""; position:absolute; top:-80%; left:-40%; width:40%; height:260%; transform:rotate(28deg); background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent); animation:support-sheen 6s ease-in-out infinite; pointer-events:none; }
 .support-launcher:hover { transform:translateY(-1px); box-shadow:0 14px 34px rgba(19,35,58,.3); }
 .support-message { transition:transform .16s ease,border-color .16s ease; }
@@ -229,5 +244,28 @@ async function send() {
 @media (prefers-reduced-motion:reduce) { .support-launcher,.support-message { transition:none; } .support-launcher::after { animation:none; display:none; } }
 .support-scope-note { padding: 0 12px 12px; color: #667085; background: #fff; font-size: 10px; line-height: 1.5; }
 .support-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-@media (max-width: 520px) { .support-root { right: 12px; bottom: 12px; } .support-panel { right: -4px; bottom: 58px; height: min(540px, calc(100vh - 90px)); } }
+@media (max-width: 520px) {
+  /* 悬浮球：收为圆形图标 FAB，减少占屏 */
+  .support-root { right: 14px; bottom: 14px; }
+  .support-launcher { padding: 0; width: 52px; height: 52px; justify-content: center; border-radius: 50%; }
+  .support-launcher-text { display: none; }
+  .support-launcher-avatar { margin: 0; }
+  /* 面板：底部抽屉式（全宽 + 76vh 上限），贴合手机聊天习惯而非浮窗遮内容 */
+  .support-beam-host { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw;
+    height: min(76vh, 76dvh, 620px); border-radius: 18px 18px 0 0; }
+  .support-panel { border-radius: 18px 18px 0 0; border-left: 0; border-right: 0; border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0); }
+  .support-header { padding: 13px 14px; }
+  .support-messages { padding: 12px 11px; }
+  .support-compose { padding: 9px 10px 7px; }
+  .support-compose textarea { min-height: 0; }
+  /* 底部说明在手机端收为一行短标签，长免责声明隐藏 */
+  .support-scope-note { padding: 0 10px 9px; }
+  .consent-full { display: none; }
+  .consent-short { display: inline; }
+  .consent-note { display: none; }
+}
+@media (min-width: 521px) {
+  .consent-short { display: none; }
+}
 </style>

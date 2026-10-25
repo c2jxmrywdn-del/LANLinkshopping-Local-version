@@ -55,10 +55,9 @@
             </div>
           </article>
 
-          <!-- ============ 限时秒杀：深色卡 + Border Beam ============ -->
-          <article v-else-if="c.type === 'flash_sale'" class="fk" @click="goDetail(c)">
-            <i class="fk-frame" aria-hidden="true"></i>
-            <i class="fk-beam" aria-hidden="true"></i>
+          <!-- ============ 限时秒杀：深色卡 + Border Beam Panel（@rmahammad 原版移植：双彗星+速度弹簧） ============ -->
+          <BeamPanel v-else-if="c.type === 'flash_sale'" class="fk" :radius="22" :seed="7"
+                     :colors="['#ffb340']" :hover-speed="300" @click="goDetail(c)">
             <div class="fk-tag">限时秒杀</div>
             <div class="fk-count">
               <span class="fk-cd">{{ remainText(c.endTime) }}</span>
@@ -73,7 +72,7 @@
               <span>{{ c.indName ? c.indName + '行业' : '全场商品' }} · 满足门槛自动享</span>
               <button type="button" class="fk-btn" @click.stop="$router.push('/mall')">去抢购</button>
             </div>
-          </article>
+          </BeamPanel>
 
           <!-- ============ 满减 / 折扣：白卡 ============ -->
           <article v-else-if="['full_reduce','discount'].includes(c.type)" class="pc" :class="accent(c.accent)" @click="goDetail(c)">
@@ -126,6 +125,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { campaignApi } from '../api'
+import BeamPanel from '../components/ui/BeamPanel.vue'
 
 const router = useRouter()
 const TABS = [
@@ -243,6 +243,9 @@ onUnmounted(() => clearInterval(timer))
 .cp-seg-item:not(.on):hover { opacity: 1; }
 
 .cp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; }
+/* grid item 默认 min-width:auto 会被内容 min-content 撑破列宽（手机上横向溢出的根源），统一允许收缩 */
+.cp-grid > article, .cp-grid > .fk { min-width: 0; }
+.tk-body { min-width: 0; }
 
 /* ============ 券票：mask 打孔 + drop-shadow 随形 ============ */
 .tk { position: relative; display: grid; grid-template-columns: 116px 1fr; border-radius: 20px;
@@ -300,23 +303,10 @@ onUnmounted(() => clearInterval(timer))
   font-size: 11px; font-weight: 700; letter-spacing: .1em; color: #b0b0b6;
   border: 1.5px solid #b0b0b6; border-radius: 4px; padding: 1px 7px; opacity: .8; }
 
-/* ============ 限时秒杀：深色卡 + Border Beam（offset-path 沿边跑光） ============ */
-.fk { position: relative; grid-column: span 2; overflow: hidden; border-radius: 22px;
+/* ============ 限时秒杀：深色卡 + BeamPanel 原版移植（双彗星边环 + 投射光晕） ============ */
+.fk { display: block; grid-column: span 2; border: 0; border-radius: 22px;
   padding: 26px 28px 22px; cursor: pointer; color: #fff;
   background: linear-gradient(145deg, #232326, #151517 60%); }
-.fk-frame { position: absolute; inset: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
-  background: rgba(255, 255, 255, .14);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor; mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude; }
-.fk-beam { position: absolute; top: 0; left: 0; width: 72px; aspect-ratio: 1; border-radius: 50%;
-  pointer-events: none; opacity: .95;
-  offset-path: rect(0 auto auto 0 round 72px);
-  background: linear-gradient(to left, #ffb340, #ff5f6d 48%, transparent 75%);
-  filter: blur(9px);
-  animation: fk-beam-run 5.5s linear infinite; }
-@keyframes fk-beam-run { to { offset-distance: 100%; } }
-@media (prefers-reduced-motion: reduce) { .fk-beam { animation: none; opacity: .35; } }
 .fk-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .18em;
   color: #ffd9a8; border: 1px solid rgba(255, 179, 64, .5); border-radius: 999px; padding: 3px 12px; }
 .fk-count { position: absolute; top: 22px; right: 26px; text-align: right; }
@@ -415,5 +405,22 @@ onUnmounted(() => clearInterval(timer))
   .cp-hero h1 { font-size: 30px; }
   .cp-seg { width: 100%; display: flex; }
   .cp-seg-item { flex: 1; padding: 7px 0; }
+  /* 手机端券票：票根收窄 + 主体内边距收紧，面额字号微缩 */
+  .tk { grid-template-columns: 92px 1fr; }
+  .tk-stub { padding: 18px 6px; }
+  .tk-value b { font-size: 27px; }
+  .tk-body { padding: 15px 14px 13px 16px; }
+  .tk-btn { padding: 7px 14px; }
+  .tk-stamp { right: 70px; }
+  /* 秒杀/满减/积分卡：大数字与长文本组合的 flex 行允许换行，避免 min-content 撑宽 */
+  .pc-head, .pc-benefit, .pc-foot,
+  .gc-head, .gc-foot,
+  .fk-benefit, .fk-foot,
+  .tk-row1 { flex-wrap: wrap; row-gap: 6px; }
+  .pc-benefit b { font-size: 30px; }
+  .fk-benefit b { font-size: 34px; }
+  .fk { padding: 20px 18px 18px; }
+  .fk-count { position: static; text-align: left; margin-bottom: 6px; }
+  .fk h3 { font-size: 18px; }
 }
 </style>
