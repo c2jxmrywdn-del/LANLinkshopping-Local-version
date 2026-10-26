@@ -47,7 +47,14 @@ public class TrafficService {
     public void track(Map<String,Object> raw){
         String event=String.valueOf(raw.getOrDefault("eventType",""));if(!EVENTS.contains(event))throw new BusinessException("不支持的流量事件");
         String sid=String.valueOf(raw.getOrDefault("sessionId",""));if(sid.length()<8||sid.length()>128)throw new BusinessException("无效会话标识");
-        Object mid=raw.get("merchantId");if(mid==null)throw new BusinessException("缺少商户标识");
+        Object mid=raw.get("merchantId");
+        if(mid==null){
+            // VISIT/PAY 为平台级事件（站点落地页 / 买家支付成功），不归属单一商户：
+            // 允许 merchantId 缺省，落库以 0 哨兵兜底（merchant_id 列 NOT NULL）；
+            // 其余商品级事件仍强制要求商户标识（向后兼容）。
+            if(!"VISIT".equals(event)&&!"PAY".equals(event))throw new BusinessException("缺少商户标识");
+            mid=0;
+        }
         Map<String,Object> e=new HashMap<>();e.put("merchantId",mid);e.put("productId",raw.get("productId"));e.put("userId",raw.get("userId"));e.put("sessionId",sid);
         e.put("eventType",event);e.put("sourceType",clip(raw.getOrDefault("sourceType","direct"),32));e.put("sourceDetail",clip(raw.get("sourceDetail"),255));e.put("pageUrl",clip(raw.get("pageUrl"),500));e.put("deviceType",clip(raw.getOrDefault("deviceType","unknown"),16));mapper.insertEvent(e);
     }

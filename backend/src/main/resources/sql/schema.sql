@@ -341,6 +341,89 @@ CREATE TABLE IF NOT EXISTS t_campaign_merchant (
   UNIQUE KEY uk_campaign_mer (campaign_id, mer_id)
 ) ENGINE=InnoDB COMMENT='活动商户报名/激励';
 
+-- ==================== 价格智能监控（pricemonitor：价格留痕/行业基准/预警） ====================
+CREATE TABLE IF NOT EXISTS t_price_history (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  prod_id     BIGINT NOT NULL COMMENT '商品ID',
+  mer_id      BIGINT COMMENT '商户ID',
+  ind_id      BIGINT COMMENT '行业ID(冗余,基准对比用)',
+  old_price   DECIMAL(12,2) COMMENT '调整前价格',
+  new_price   DECIMAL(12,2) COMMENT '调整后价格',
+  change_pct  DECIMAL(8,2) COMMENT '变动幅度%(新-旧)/旧',
+  source      VARCHAR(16) DEFAULT 'MERCHANT' COMMENT '来源 MERCHANT/ADMIN/SEED',
+  operator_id BIGINT COMMENT '操作人',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ph_prod (prod_id, create_time),
+  KEY idx_ph_ind (ind_id, create_time)
+) ENGINE=InnoDB COMMENT='商品价格变动留痕';
+
+CREATE TABLE IF NOT EXISTS t_market_benchmark (
+  id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+  ind_id     BIGINT NOT NULL COMMENT '行业ID',
+  day        DATE NOT NULL COMMENT '基准日',
+  benchmark  DECIMAL(12,2) NOT NULL COMMENT '行业基准均价(元)',
+  change_pct DECIMAL(8,2) COMMENT '较前一日变动%',
+  UNIQUE KEY uk_bench_ind_day (ind_id, day)
+) ENGINE=InnoDB COMMENT='行业行情基准价(每日)';
+
+CREATE TABLE IF NOT EXISTS t_price_alert (
+  id                 BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id            BIGINT NOT NULL COMMENT '订阅用户',
+  prod_id            BIGINT NOT NULL COMMENT '商品ID',
+  condition_type     VARCHAR(16) NOT NULL COMMENT 'BELOW低于/ABOVE高于/DROP_PCT降幅%/RISE_PCT涨幅%',
+  threshold          DECIMAL(12,2) NOT NULL COMMENT '阈值(价格或百分比)',
+  status             TINYINT DEFAULT 1 COMMENT '1启用 0停用',
+  last_triggered_time DATETIME COMMENT '最近触发时间',
+  create_time        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_alert_user_prod_cond (user_id, prod_id, condition_type),
+  KEY idx_alert_prod (prod_id, status)
+) ENGINE=InnoDB COMMENT='价格预警订阅';
+
+-- 市场资讯：价格情报台的信息流（政策/供给/需求/价格/行业），按发布时间倒序展示。
+CREATE TABLE IF NOT EXISTS t_market_news (
+  id           BIGINT PRIMARY KEY AUTO_INCREMENT,
+  title        VARCHAR(200) NOT NULL COMMENT '标题',
+  summary      VARCHAR(1000) COMMENT '摘要',
+  category     VARCHAR(24) NOT NULL DEFAULT 'market' COMMENT 'policy/supply/demand/price/tech/market/international',
+  source       VARCHAR(64) COMMENT '来源',
+  url          VARCHAR(500) COMMENT '原文链接(可空)',
+  tags         VARCHAR(200) COMMENT '标签，逗号分隔',
+  importance   TINYINT DEFAULT 1 COMMENT '1普通 2重要 3头条',
+  published_at DATETIME NOT NULL COMMENT '发布时间',
+  created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_news_title (title),
+  KEY idx_news_time (published_at),
+  KEY idx_news_cat (category, published_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='B2B市场资讯';
+
+INSERT IGNORE INTO t_market_news (title, summary, category, source, tags, importance, published_at) VALUES
+ ('建材行业：水泥价格连续三周上行，华东地区领涨', '受错峰生产与基建开工回暖影响，P.O42.5 袋装水泥现货均价环比上涨 3.2%，华东区域涨幅居前。', 'price', '中国建材报', '水泥,建材,华东', 3, DATE_SUB(NOW(), INTERVAL 2 HOUR)),
+ ('多地发布秋冬错峰生产通知，部分化工品供给收紧', '北方多地启动错峰生产，纯碱、甲醇等基础化工品开工率下降，短期供给偏紧。', 'policy', '行业观察', '错峰生产,化工,供给', 3, DATE_SUB(NOW(), INTERVAL 5 HOUR)),
+ ('钢材市场库存回落，螺纹钢现货报价小幅走强', '主要城市建材库存连续两周下降，螺纹钢现货报价上调 20-40 元/吨，贸易商出货节奏加快。', 'supply', '钢铁资讯', '螺纹钢,库存,钢材', 2, DATE_SUB(NOW(), INTERVAL 9 HOUR)),
+ ('电子元器件交期缩短，MLCC 现货价格趋稳', '消费电子与工控需求温和复苏，MLCC 交期由 12 周缩短至 8-10 周，现货价格止跌企稳。', 'demand', '电子供应链周刊', 'MLCC,元器件,交期', 2, DATE_SUB(NOW(), INTERVAL 14 HOUR)),
+ ('纺织原料：涤纶长丝价格回调，下游补库放缓', '涤纶 POY 报价小幅回落 1.5%，织造企业开工率下降，短期以刚需采购为主。', 'price', '纺织信息网', '涤纶,纺织,原料', 1, DATE_SUB(NOW(), INTERVAL 20 HOUR)),
+ ('平台采购指数：本周 B2B 工业品询盘量环比上升 8.6%', '建筑、机械与电子三大行业询盘活跃，工业品采购指数连续第四周回升。', 'market', 'LANLink 数据', '采购指数,询盘,工业品', 2, DATE_SUB(NOW(), INTERVAL 26 HOUR)),
+ ('有色金属：铜价高位震荡，线缆企业按需采购', '沪铜主力合约维持高位，线缆企业以销定产，现货升水小幅收窄。', 'price', '有色行情', '铜价,线缆,有色', 2, DATE_SUB(NOW(), INTERVAL 32 HOUR)),
+ ('包装材料：纸浆价格回落，瓦楞纸成本压力缓解', '进口纸浆报价下调，瓦楞纸与箱板纸成本端压力减轻，包装企业利润空间小幅修复。', 'supply', '包装产业网', '纸浆,瓦楞纸,包装', 1, DATE_SUB(NOW(), INTERVAL 38 HOUR)),
+ ('新能源：光伏组件价格企稳，分布式项目开工提速', '组件价格止跌，分布式光伏备案与开工节奏加快，逆变器与支架需求同步回暖。', 'demand', '新能源观察', '光伏,组件,分布式', 2, DATE_SUB(NOW(), INTERVAL 44 HOUR)),
+ ('政策解读：中小企业数字化采购补贴申报指南发布', '多地对中小企业数字化采购平台使用给予补贴，符合条件的企业可在线申报。', 'policy', '政策速递', '补贴,数字化,中小企业', 2, DATE_SUB(NOW(), INTERVAL 52 HOUR)),
+ ('机械装备：工程机械销量回暖，零部件订单增加', '挖掘机与装载机销量同比转正，液压件、轴承等零部件订单排产周期延长。', 'demand', '机械工业报', '工程机械,零部件,订单', 1, DATE_SUB(NOW(), INTERVAL 60 HOUR)),
+ ('化工：纯碱现货偏紧，部分地区报价上调', '纯碱厂家库存低位，沙河、华东地区轻质纯碱报价上调 30-50 元/吨。', 'price', '化工市场', '纯碱,现货,涨价', 2, DATE_SUB(NOW(), INTERVAL 68 HOUR)),
+ ('交通运输部：主要港口吞吐量保持增长', '外贸集装箱与大宗散货吞吐量同比增长，物流时效整体稳定。', 'market', '交通发布', '港口,物流,吞吐量', 1, DATE_SUB(NOW(), INTERVAL 76 HOUR)),
+ ('平台公告：价格监控上线，支持行业基准与波动预警', '价格情报台现已支持商品价格走势、行业基准对比、异常波动预警与 AI 因果分析。', 'market', '平台公告', '价格监控,上线,AI', 3, DATE_SUB(NOW(), INTERVAL 1 DAY)),
+ ('人民币对美元汇率波动加大，进口设备与原材料采购成本承压', '汇率双向波动幅度扩大，进口设备、芯片与部分化工原料的采购成本抬升，企业加快远期锁汇。', 'international', '外汇观察', '汇率,美元,进口', 2, DATE_SUB(NOW(), INTERVAL 3 HOUR)),
+ ('全球航运运价指数回升，欧美线舱位趋紧', '受旺季补库与运力调配影响，欧线与美西线即期运价连续两周回升，出口企业提前订舱。', 'international', '航运日报', '海运,运价,出口', 3, DATE_SUB(NOW(), INTERVAL 7 HOUR)),
+ ('欧盟碳边境调节机制进入过渡期，出口企业加速核算碳成本', '钢铁、铝与化工类出口企业开始核算产品碳足迹，部分订单报价已计入碳成本。', 'policy', '外贸政策观察', '碳关税,欧盟,出口', 2, DATE_SUB(NOW(), INTERVAL 12 HOUR)),
+ ('地缘局势扰动能源市场，国际油价宽幅震荡', '原油供应预期反复，布伦特原油价格宽幅震荡，化工与物流企业成本端不确定性上升。', 'international', '能源参考', '油价,能源,地缘', 2, DATE_SUB(NOW(), INTERVAL 18 HOUR)),
+ ('铜精矿现货偏紧，冶炼端采购成本抬升', '铜精矿现货流通量收紧，冶炼企业原料采购成本抬升，线缆与电机企业报价随之上调。', 'supply', '有色行情', '铜精矿,冶炼,供给', 2, DATE_SUB(NOW(), INTERVAL 24 HOUR)),
+ ('国内铝锭社会库存下降，铝加工材报价坚挺', '铝锭社会库存连续三周下降，建筑型材与工业型材报价小幅上调，下游按需补库。', 'supply', '有色金属网', '铝锭,库存,铝材', 2, DATE_SUB(NOW(), INTERVAL 30 HOUR)),
+ ('工程塑料原料价格上行，家电与汽车零部件成本抬升', 'PA6、PC 等工程塑料原料报价上调 2%-4%，家电与汽车零部件企业启动成本重算。', 'price', '塑料工业', '工程塑料,原料,成本', 2, DATE_SUB(NOW(), INTERVAL 36 HOUR)),
+ ('多部门部署环保督察，部分高耗能行业阶段性限产', '环保督察覆盖化工、建材与有色行业，部分地区高耗能产线执行阶段性限产。', 'policy', '环保观察', '环保,限产,高耗能', 3, DATE_SUB(NOW(), INTERVAL 42 HOUR)),
+ ('制造业PMI重回扩张区间，企业补库意愿增强', '制造业采购经理指数回到荣枯线上方，原材料库存与采购量分项同步改善。', 'market', '宏观数据', 'PMI,补库,制造业', 2, DATE_SUB(NOW(), INTERVAL 48 HOUR)),
+ ('碳酸锂价格止跌企稳，电池材料采购回暖', '碳酸锂现货报价止跌，正极材料企业询盘增加，电池产业链采购节奏回暖。', 'price', '新能源材料', '碳酸锂,电池,采购', 1, DATE_SUB(NOW(), INTERVAL 54 HOUR)),
+ ('出口退税流程优化，外贸企业现金流改善', '出口退税申报环节精简，平均办理时长缩短，外贸企业资金周转效率提升。', 'policy', '政策速递', '出口退税,外贸,政策', 1, DATE_SUB(NOW(), INTERVAL 62 HOUR)),
+ ('市场情绪调查：超六成采购经理预计下季度工业品价格温和上行', '平台调研显示，采购经理对下季度工业品价格预期偏乐观，补库与备货意愿增强。', 'market', 'LANLink 调研', '情绪,采购经理,预期', 2, DATE_SUB(NOW(), INTERVAL 70 HOUR));
+
 -- ==================== 营销中台：会员系统 ====================
 CREATE TABLE IF NOT EXISTS t_member_level (
   level_id     BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -1158,3 +1241,121 @@ CREATE TABLE IF NOT EXISTS t_join_application (
   KEY idx_join_type_status (apply_type, status, apply_time),
   KEY idx_join_status (status, apply_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='加入我们申请（求职/渠道合作）';
+
+-- ==================== 广告推广（商户流量推广计划） ====================
+-- 闭环：商户选品+预算 → 钱包支付冻结 → 投放(商城广告位) → 点击计费(CPC 原子扣减) →
+--       预算耗尽/到期/手动结束 → 剩余金额结算退回钱包 → 报表 + 续费再来一单。
+CREATE TABLE IF NOT EXISTS t_ad_campaign (
+  campaign_id  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '推广计划ID',
+  mer_id       BIGINT NOT NULL COMMENT '商户ID',
+  user_id      BIGINT NOT NULL COMMENT '创建人(商户账号)用户ID',
+  prod_id      BIGINT NOT NULL COMMENT '推广商品ID',
+  plan_name    VARCHAR(64) COMMENT '计划名称',
+  total_budget DECIMAL(12,2) NOT NULL COMMENT '总预算(支付时冻结)',
+  spent        DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '已花费(点击计费累计)',
+  clicks       BIGINT NOT NULL DEFAULT 0 COMMENT '点击数',
+  impressions  BIGINT NOT NULL DEFAULT 0 COMMENT '曝光数',
+  cpc_price    DECIMAL(8,2) NOT NULL DEFAULT 0.50 COMMENT '点击单价(元)',
+  duration_days INT NOT NULL DEFAULT 7 COMMENT '投放天数',
+  status       VARCHAR(20) NOT NULL COMMENT 'pending_payment待支付/active投放中/paused已暂停/ended已结束',
+  end_reason   VARCHAR(20) COMMENT 'expired到期/budget_exhausted预算耗尽/manual手动结束',
+  start_time   DATETIME COMMENT '投放开始时间',
+  end_time     DATETIME COMMENT '投放结束时间(开始+天数)',
+  settled      DECIMAL(12,2) COMMENT '结算退回金额',
+  settle_time  DATETIME COMMENT '结算时间',
+  create_time  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted      TINYINT DEFAULT 0 COMMENT '逻辑删除',
+  KEY idx_ad_mer (mer_id, status),
+  KEY idx_ad_status (status, end_time),
+  KEY idx_ad_prod (prod_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='广告推广计划';
+
+-- ==================== 商品直播（B2B 实景带货 / 技术研讨直播间） ====================
+CREATE TABLE IF NOT EXISTS t_live_room (
+  room_id        BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '直播间ID',
+  mer_id         BIGINT NOT NULL COMMENT '主办商户ID',
+  user_id        BIGINT NOT NULL COMMENT '主播/创建人用户ID',
+  title          VARCHAR(128) NOT NULL COMMENT '直播主题',
+  cover_url      VARCHAR(512) COMMENT '封面图URL',
+  stream_url     VARCHAR(512) COMMENT '视频流/演示流URL',
+  status         TINYINT NOT NULL DEFAULT 1 COMMENT '0预告 1直播中 2已结束',
+  viewer_count   INT NOT NULL DEFAULT 1 COMMENT '在线观众数',
+  like_count     BIGINT NOT NULL DEFAULT 0 COMMENT '点赞数',
+  pinned_prod_id BIGINT COMMENT '当前讲解商品ID',
+  notice         VARCHAR(255) COMMENT '置顶公告',
+  start_time     DATETIME COMMENT '开播时间',
+  end_time       DATETIME COMMENT '结束时间',
+  create_time    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_live_status (status, start_time),
+  KEY idx_live_mer (mer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='商品直播间';
+
+CREATE TABLE IF NOT EXISTS t_live_product (
+  id           BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+  room_id      BIGINT NOT NULL COMMENT '直播间ID',
+  prod_id      BIGINT NOT NULL COMMENT '商品ID',
+  live_price   DECIMAL(10,2) COMMENT '直播专属特惠价',
+  live_stock   INT DEFAULT 100 COMMENT '直播专供库存',
+  sort_order   INT DEFAULT 0 COMMENT '排序',
+  create_time  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_lp_room (room_id, sort_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='直播间关联商品';
+
+CREATE TABLE IF NOT EXISTS t_live_comment (
+  comment_id   BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '弹幕消息ID',
+  room_id      BIGINT NOT NULL COMMENT '直播间ID',
+  user_id      BIGINT COMMENT '发送人用户ID',
+  nickname     VARCHAR(64) NOT NULL COMMENT '发送人昵称',
+  avatar       VARCHAR(255) COMMENT '头像',
+  content      VARCHAR(500) NOT NULL COMMENT '弹幕内容',
+  msg_type     VARCHAR(16) NOT NULL DEFAULT 'chat' COMMENT 'chat聊天 buy购买 system系统 gift点赞',
+  create_time  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_lc_room (room_id, create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='直播间互动弹幕';
+
+-- 初始示例直播间种子数据 (幂等写入)
+INSERT IGNORE INTO t_live_room (room_id, mer_id, user_id, title, cover_url, stream_url, status, viewer_count, like_count, pinned_prod_id, notice, start_time)
+VALUES
+(1, 1, 3, '工业物联网边缘网关与传感器直发现场评测', 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?q=80&w=1200&auto=format&fit=crop', 'https://assets.mixkit.co/videos/preview/mixkit-circuit-board-details-4835-large.mp4', 1, 1280, 5620, 1, '【官方采购通知】本场直播支持对公集中打款与 30-60 天企业信用账期，下单即赠备件包！', NOW()),
+(2, 1, 3, '企业数字化办公与智能工位全生态专场品鉴', 'https://images.unsplash.com/photo-1524758631624-e2822e304c36?q=80&w=1200&auto=format&fit=crop', 'https://assets.mixkit.co/videos/preview/mixkit-modern-office-with-working-people-42966-large.mp4', 0, 350, 890, 2, '【预告】今晚 20:00 准时开播，前 50 单企业采购客户赠送一年上门原厂巡检服务。', DATE_ADD(NOW(), INTERVAL 4 HOUR));
+
+INSERT IGNORE INTO t_live_product (id, room_id, prod_id, live_price, live_stock, sort_order)
+VALUES
+(1, 1, 1, 1088.00, 200, 1),
+(2, 1, 2, 799.00, 150, 2),
+(3, 2, 2, 799.00, 300, 1);
+
+INSERT IGNORE INTO t_live_comment (comment_id, room_id, user_id, nickname, avatar, content, msg_type, create_time)
+VALUES
+(1, 1, null, '系统助手', '', '欢迎来到 LANLink 直播间，严禁违规广告，支持 13% 增值税专票开具与对公账期。', 'system', DATE_SUB(NOW(), INTERVAL 5 MINUTE)),
+(2, 1, 2, '中车智能制造采购部', '', '请问边缘网关支持多少路 Modbus RTU 串行总线同时轮询？', 'chat', DATE_SUB(NOW(), INTERVAL 3 MINUTE)),
+(3, 1, 3, '主播·官方技术工程师', '', '支持双路隔离 RS485，支持 64 台从站设备毫秒级并发轮询！', 'chat', DATE_SUB(NOW(), INTERVAL 2 MINUTE)),
+(4, 1, null, '德邦精工采购代表', '', '已成功采购下单【工业网关】× 20 台，已选账期结算！', 'buy', DATE_SUB(NOW(), INTERVAL 1 MINUTE));
+
+
+-- ==================== 价格监控：日 K 线演示数据（仅空表时生成，避免重启重复插入） ====================
+-- 以一个交易周期 30 天、每天 1 条调价记录生成连续 OHLC；最后一天收盘价严格等于商品现价，
+-- 保证首页 K 线、当前价、区间高低价三者口径一致。成交量由前端按商品销量估算，未写入此表。
+INSERT INTO t_price_history (prod_id, mer_id, ind_id, old_price, new_price, change_pct, source, operator_id, create_time)
+SELECT x.prod_id, x.mer_id, x.ind_id, x.old_price, x.new_price,
+       ROUND((x.new_price - x.old_price) * 100 / NULLIF(x.old_price, 0), 2), 'SEED', NULL, x.create_time
+FROM (
+  SELECT p.prod_id, p.mer_id, p.ind_id,
+         CASE WHEN d.n = 0 THEN ROUND(p.price * (1 + 0.045 * SIN((-1 + p.prod_id * 7) * 0.62)
+              + 0.018 * COS((-1 * 1.37 + p.prod_id * 2))), 2)
+              ELSE ROUND(p.price * (1 + 0.045 * SIN((d.n - 1 + p.prod_id * 7) * 0.62)
+              + 0.018 * COS(((d.n - 1) * 1.37 + p.prod_id * 2))), 2)
+         END AS old_price,
+         CASE WHEN d.n = 89 THEN p.price
+              ELSE ROUND(p.price * (1 + 0.045 * SIN((d.n + p.prod_id * 7) * 0.62)
+              + 0.018 * COS((d.n * 1.37 + p.prod_id * 2))), 2)
+         END AS new_price,
+         DATE_SUB(NOW(), INTERVAL (89 - d.n) DAY) AS create_time
+  FROM t_product p
+  JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12 UNION ALL SELECT 13 UNION ALL SELECT 14 UNION ALL SELECT 15 UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20 UNION ALL SELECT 21 UNION ALL SELECT 22 UNION ALL SELECT 23 UNION ALL SELECT 24 UNION ALL SELECT 25 UNION ALL SELECT 26 UNION ALL SELECT 27 UNION ALL SELECT 28 UNION ALL SELECT 29 UNION ALL SELECT 30 UNION ALL SELECT 31 UNION ALL SELECT 32 UNION ALL SELECT 33 UNION ALL SELECT 34 UNION ALL SELECT 35 UNION ALL SELECT 36 UNION ALL SELECT 37 UNION ALL SELECT 38 UNION ALL SELECT 39 UNION ALL SELECT 40 UNION ALL SELECT 41 UNION ALL SELECT 42 UNION ALL SELECT 43 UNION ALL SELECT 44 UNION ALL SELECT 45 UNION ALL SELECT 46 UNION ALL SELECT 47 UNION ALL SELECT 48 UNION ALL SELECT 49 UNION ALL SELECT 50 UNION ALL SELECT 51 UNION ALL SELECT 52 UNION ALL SELECT 53 UNION ALL SELECT 54 UNION ALL SELECT 55 UNION ALL SELECT 56 UNION ALL SELECT 57 UNION ALL SELECT 58 UNION ALL SELECT 59 UNION ALL SELECT 60 UNION ALL SELECT 61 UNION ALL SELECT 62 UNION ALL SELECT 63 UNION ALL SELECT 64 UNION ALL SELECT 65 UNION ALL SELECT 66 UNION ALL SELECT 67 UNION ALL SELECT 68 UNION ALL SELECT 69 UNION ALL SELECT 70 UNION ALL SELECT 71 UNION ALL SELECT 72 UNION ALL SELECT 73 UNION ALL SELECT 74 UNION ALL SELECT 75 UNION ALL SELECT 76 UNION ALL SELECT 77 UNION ALL SELECT 78 UNION ALL SELECT 79 UNION ALL SELECT 80 UNION ALL SELECT 81 UNION ALL SELECT 82 UNION ALL SELECT 83 UNION ALL SELECT 84 UNION ALL SELECT 85 UNION ALL SELECT 86 UNION ALL SELECT 87 UNION ALL SELECT 88 UNION ALL SELECT 89) d
+  WHERE p.prod_id IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 14, 15)
+    AND p.price >= 1
+) x
+WHERE NOT EXISTS (SELECT 1 FROM t_price_history LIMIT 1);

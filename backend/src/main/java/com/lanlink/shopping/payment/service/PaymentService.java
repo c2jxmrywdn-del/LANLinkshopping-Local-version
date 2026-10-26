@@ -256,6 +256,11 @@ public class PaymentService {
         if (o == null) throw new BusinessException("订单不存在");
         if (!isPaid(o)) throw new BusinessException("未支付订单不可退款");
         if ("success".equals(o.getRefundStatus())) throw new BusinessException("该订单已全额退款");
+        // 并发防护：applied/none/rejected → processing 原子占位，防双请求同时打款双退
+        int guarded = orderMapper.markRefundProcessingAtomic(o.getOrderNo());
+        if (guarded == 0) {
+            throw new BusinessException("该订单没有待处理的退款申请或已被并发处理");
+        }
         BigDecimal already = o.getRefundAmount() == null ? BigDecimal.ZERO : o.getRefundAmount();
         BigDecimal remain = o.getTotalAmount().subtract(already);
         BigDecimal amount = req.getAmount() == null ? remain : req.getAmount();

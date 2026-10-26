@@ -235,6 +235,40 @@ class CampaignServiceTest {
         assertNull(captor.getValue().getOrderNo());
     }
 
+    /**
+     * 回退范围由查询条件锁定：selectList 必须携带 orderNo 等值 + status=1 过滤，
+     * SQL 语义保证结果行的 order_no 必然等于传入订单号（NULL 亦不匹配），
+     * 因此"回退到不属于本单的券"在实现上不可能发生（评审 Issue 验证结论：不存在）。
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void releaseCouponScopesQueryToTheGivenOrderOnly() {
+        // 纯 mock 环境无 TableInfo 缓存，lambda 列名解析需先初始化实体元信息
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                UserCoupon.class);
+
+        when(userCouponMapper.selectList(any())).thenReturn(List.of());
+
+        service.releaseCoupon("ORD-A");
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<UserCoupon>> cap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(userCouponMapper).selectList(cap.capture());
+        com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?> w =
+                (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?>) cap.getValue();
+        // 查询参数必须同时绑定订单号与状态=1：回退集合在 SQL 层就被限定为本单已核销券
+        // 注：MP 条件参数是惰性注册（渲染 SQL 时才进 paramNameValuePairs），先触发渲染再断言
+        String sqlSegment = w.getSqlSegment();
+        assertTrue(sqlSegment.contains("order_no"), "SQL 片段应含 order_no 等值条件: " + sqlSegment);
+        assertTrue(sqlSegment.contains("status"), "SQL 片段应含 status 条件: " + sqlSegment);
+        assertTrue(w.getParamNameValuePairs().containsValue("ORD-A"),
+                "查询条件应绑定 orderNo 等值过滤: " + w.getParamNameValuePairs());
+        assertTrue(w.getParamNameValuePairs().containsValue(1),
+                "查询条件应绑定 status=1 过滤: " + w.getParamNameValuePairs());
+    }
+
     // ===== 激励参与（注册有礼 / 消费有礼） =====
 
     @Test

@@ -45,7 +45,7 @@
         </div>
         <!-- 秒杀倒计时条 -->
         <div class="cd-flashbar" v-if="c.type === 'flash_sale' && remainMs > 0">
-          ⚡ 距结束 <b class="cd-cd">{{ remainText }}</b>
+          <Zap :size="13" :stroke-width="2.4" style="vertical-align:-2px;margin-right:4px" /> 距结束 <b class="cd-cd">{{ remainText }}</b>
         </div>
 
         <!-- 规格：Apple tech-specs 行 -->
@@ -91,7 +91,7 @@
   </div>
 
   <div v-else class="cd-empty">
-    <div class="cd-empty-ico">🎟️</div>
+    <div class="cd-empty-ico"><Ticket :size="44" :stroke-width="1.6" /></div>
     <p>活动不存在或已结束</p>
     <button type="button" class="cd-back-btn" @click="$router.push('/activity')">返回活动中心</button>
   </div>
@@ -102,6 +102,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { campaignApi } from '../api'
+import { Zap } from 'lucide-vue-next'
+import { Ticket } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -249,7 +251,7 @@ onUnmounted(() => clearInterval(timer))
 .cd-banner i { font-style: normal; font-size: 19px; font-weight: 600; }
 .cd-banner small { font-size: 14.5px; color: var(--ll-muted, #6e6e73); }
 .cd-pts { color: #c97e12; }
-.cd-flashbar { display: flex; align-items: center; gap: 10px; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px;
+.cd-flashbar { display: inline-flex; align-items: center; align-items: center; gap: 10px; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px;
   background: linear-gradient(100deg, #fff3e2, #ffe8ee); font-size: 13.5px; font-weight: 600; color: #b45309; }
 [data-theme='dark'] .cd-flashbar { background: linear-gradient(100deg, #2a2318, #2b1a1f); color: #ffb340; }
 .cd-cd { font-variant-numeric: tabular-nums; font-size: 15px; }
@@ -287,7 +289,7 @@ onUnmounted(() => clearInterval(timer))
 
 /* ===== 空态 ===== */
 .cd-empty { max-width: 360px; margin: 90px auto; text-align: center; }
-.cd-empty-ico { font-size: 50px; margin-bottom: 12px; }
+.cd-empty-ico { display: grid; place-items: center; margin-bottom: 12px; color: var(--ll-muted, #6e6e73); }
 .cd-empty p { margin: 0 0 18px; font-size: 15px; color: var(--ll-muted, #6e6e73); }
 .cd-back-btn { border: none; cursor: pointer; padding: 10px 22px; border-radius: 980px; font-size: 14px;
   font-weight: 500; background: var(--ll-primary, #1E6EB8); color: #fff; }

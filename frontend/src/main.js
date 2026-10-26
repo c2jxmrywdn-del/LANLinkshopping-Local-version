@@ -26,12 +26,18 @@ app.use(Antd)
 
 const amplitudeApiKey = import.meta.env.VITE_AMPLITUDE_API_KEY
 if (!amplitudeApiKey) {
-  console.warn('Amplitude API key missing — analytics disabled')
+  // 未配置埋点密钥属于预期状态：用 debug 级别记录，避免污染默认控制台
+  console.debug('[analytics] Amplitude API key missing — analytics disabled')
 } else if (!window.__lanlinkAmplitudeInitialized) {
   // Keep the browser SDK singleton across app lifecycle and Vite HMR.
   window.__lanlinkAmplitudeInitialized = true
   amplitude.initAll(amplitudeApiKey, {
-    analytics: { autocapture: true },
+    analytics: {
+      autocapture: true,
+      // CSP 合规：关闭自定义 enrichment，避免远程配置下发函数字符串、
+      // SDK 用 new Function 求值而被 script-src 拦截（显式 false 可阻止远程配置重新开启）
+      customEnrichment: false
+    },
     sessionReplay: { sampleRate: 1 }
   })
 

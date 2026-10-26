@@ -33,7 +33,8 @@
               :aria-label="ttsKey === 'msg-' + index ? '停止语音播报' : '语音播报'"
               :title="ttsKey === 'msg-' + index ? '停止语音播报' : '语音播报'"
               @click.stop="toggleSpeak('msg-' + index, item.text)">
-              <span aria-hidden="true">{{ ttsKey === 'msg-' + index ? '⏹' : '🔊' }}</span>
+              <Square v-if="ttsKey === 'msg-' + index" :size="12" class="inline-block align-middle" />
+              <Volume2 v-else :size="13" class="inline-block align-middle" />
             </button>
           </div>
           <p>{{ item.text }}</p>
@@ -65,7 +66,8 @@
       </form>
       <footer class="support-scope-note">
         <label class="support-consent">
-          <input v-model="persistConversation" type="checkbox" />
+          <input id="support-persist-conversation" name="persistConversation"
+                 v-model="persistConversation" type="checkbox" />
           <span class="consent-full">允许保存脱敏对话，供客服跟进与改进知识库（可选）</span>
           <span class="consent-short">允许保存脱敏对话（可选）</span>
         </label>
@@ -79,6 +81,7 @@
 
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { Volume2, Square } from 'lucide-vue-next'
 import { supportApi } from '../api'
 import SupportAgentAvatar from './ui/SupportAgentAvatar.vue'
 import BorderBeam from './ui/BorderBeam.vue'

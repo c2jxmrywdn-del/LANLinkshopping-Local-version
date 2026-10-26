@@ -55,7 +55,10 @@
       <!-- 优惠券（活动系统）：服务端按购物车试算，选中后随下单核销 -->
       <div class="coupon-box" v-if="coupons.length">
         <div class="coupon-head">
-          <span class="coupon-title">🎟️ 优惠券</span>
+          <span class="coupon-title">
+            <Ticket :size="15" class="inline-block mr-1.5 align-middle text-amber-500" />
+            <span>优惠券</span>
+          </span>
           <span class="coupon-count">{{ usableCoupons.length }} 张可用</span>
         </div>
         <div class="coupon-list">
@@ -122,6 +125,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import { Ticket } from 'lucide-vue-next'
 import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi, campaignApi } from '../api'
 import { validateCheckoutForm } from '../utils/validationRules'
 import { useCartStore } from '../store/cart'

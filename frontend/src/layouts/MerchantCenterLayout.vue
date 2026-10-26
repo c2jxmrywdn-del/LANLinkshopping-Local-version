@@ -46,7 +46,7 @@
         <!-- 未入驻：引导页 -->
         <div v-else-if="state === 'none'" class="mc-state">
           <div class="gate-card">
-            <div class="gate-ico">🏬</div>
+            <div class="gate-ico"><Store :size="38" :stroke-width="1.6" /></div>
             <h2>开通您的商户店铺</h2>
             <p>完成入驻审核后，即可发布商品、管理订单、查看经营数据，<br class="pc-br" />并获得企业账期、专属客服等 B2B 服务。</p>
             <div class="gate-feats">
@@ -62,7 +62,7 @@
         <!-- 审核中 -->
         <div v-else-if="state === 'reviewing'" class="mc-state">
           <div class="gate-card">
-            <div class="gate-ico review">⏳</div>
+            <div class="gate-ico review"><Clock :size="38" :stroke-width="1.6" /></div>
             <h2>入驻申请审核中</h2>
             <p>我们正在核验您的企业资质与纳税记录，通常在 1-3 个工作日内完成。<br class="pc-br" />审核结果将通过站内消息通知您。</p>
             <a-button class="gate-btn" @click="$router.push('/me/messages')">查看站内消息</a-button>
@@ -72,7 +72,7 @@
         <!-- 已驳回 -->
         <div v-else-if="state === 'rejected'" class="mc-state">
           <div class="gate-card">
-            <div class="gate-ico reject">🚫</div>
+            <div class="gate-ico reject"><Ban :size="38" :stroke-width="1.6" /></div>
             <h2>入驻申请未通过</h2>
             <a-alert type="error" show-icon class="gate-alert"
                      :message="'驳回原因：' + (merchant.rejectReason || '资质材料不符合要求')" />
@@ -99,6 +99,7 @@ import { MERCHANT_REVIEW } from '../utils/merchantStatus'
 import { useUserStore } from '../store/user'
 import UserAvatar from '../components/ui/UserAvatar.vue'
 import { orgInitialsOf } from '../utils/avatarIdentity'
+import { Store, Ban, Clock } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -111,7 +112,8 @@ const NAV = [
   { path: '/merchant/center/marketing', label: '营销活动' },
   { path: '/merchant/center/orders', label: '订单管理' },
   { path: '/merchant/center/logistics', label: '物流发货' },
-  { path: '/merchant/center/traffic', label: '流量管理' },
+  { path: '/merchant/center/promotion', label: '流量推广' },
+  { path: '/merchant/center/traffic', label: '流量分析' },
   { path: '/merchant/center/finance', label: '资金结算' },
   { path: '/merchant/center/store', label: '店铺设置' }
 ]

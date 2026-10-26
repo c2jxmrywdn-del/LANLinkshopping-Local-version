@@ -12,9 +12,10 @@
       :grab-cursor="true"
       class="banner-swiper"
     >
-      <SwiperSlide v-for="s in slides" :key="s.key">
+      <SwiperSlide v-for="(s, i) in slides" :key="s.key">
         <div class="slide" :class="`slide-${s.key}`" @click="go(s)">
-          <img :src="s.img" :alt="s.title" loading="lazy" decoding="async" />
+          <img :src="s.img" :alt="s.title" :loading="i === 0 ? 'eager' : 'lazy'"
+               :fetchpriority="i === 0 ? 'high' : 'auto'" decoding="async" />
           <div class="mask"></div>
           <div class="content">
             <h2>{{ s.title }}</h2>

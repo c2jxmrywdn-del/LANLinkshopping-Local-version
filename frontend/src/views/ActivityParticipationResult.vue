@@ -1,7 +1,7 @@
 <template>
   <div class="result">
     <div class="card">
-      <div class="mark">✓</div>
+      <div class="mark"><Check :size="30" :stroke-width="2.6" /></div>
       <div class="eyebrow">CAMPAIGNS / PARTICIPATION</div>
       <h1>参与成功</h1>
       <p>你已加入「{{ title || '本次活动' }}」，奖励积分已进入会员积分流水。</p>
@@ -18,6 +18,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { campaignApi } from '../api'
+import { Check } from 'lucide-vue-next'
 const route = useRoute()
 const title = ref('')
 const points = ref(0)

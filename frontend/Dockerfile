@@ -4,6 +4,12 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm install --force --no-audit --no-fund
+
+# Vite 在构建期把 VITE_* 打进静态产物：批量导入 workflow 服务地址由 docker-compose
+# 以 build args 注入（http://127.0.0.1:3000，浏览器从宿主机直连）；默认值保持本地开发行为。
+ARG VITE_WORKFLOW_URL=http://localhost:3000
+ENV VITE_WORKFLOW_URL=$VITE_WORKFLOW_URL
+
 COPY . .
 RUN npm run build
 

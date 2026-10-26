@@ -56,9 +56,9 @@ public interface MerchantCenterMapper {
             + " WHERE o.pay_status = 1 AND" + MINE)
     BigDecimal sumIncomeTotal(@Param("merId") Long merId);
 
-    /** 累计退款金额（退款成功订单中本商户商品明细小计，pay_status=2 为已退款） */
+    /** 累计退款金额（真实退款：pay_status=2 且 refund_status=success；账期单取消同样置 pay_status=2 但无退款资金，须排除） */
     @Select("SELECT COALESCE(SUM(oi.subtotal),0) FROM t_order_item oi JOIN t_order o ON oi.order_no = o.order_no"
-            + " WHERE o.pay_status = 2 AND" + MINE)
+            + " WHERE o.pay_status = 2 AND o.refund_status = 'success' AND" + MINE)
     BigDecimal sumRefundTotal(@Param("merId") Long merId);
 
     /** 待结算：已支付且订单未完成（待发货+已发货；order_status 0/1）的金额，订单完成（2）即转入可结算 */

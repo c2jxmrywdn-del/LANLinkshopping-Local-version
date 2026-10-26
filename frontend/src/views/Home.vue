@@ -16,7 +16,9 @@
     <div class="brand-promise" data-reveal="fade-up"><span>01</span><b>DISCOVER</b><em>→</em><span>02</span><b>TRANSACT</b><em>→</em><span>03</span><b>GROW</b></div>
     <BannerCarousel />
 
-    <h2 class="sec" data-reveal><span>01</span> 行业解决方案</h2>
+    <HomeMarketPulse />
+
+    <h2 class="sec" data-reveal><span>02</span> 行业解决方案</h2>
     <a-row v-if="loadingIndustries" :gutter="[16, 16]">
       <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
         <div class="ll-skeleton ind-skeleton"></div>
@@ -31,7 +33,7 @@
       </a-col>
     </a-row>
 
-    <div class="section-head"><h2 class="sec" data-reveal><span>02</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
+    <div class="section-head"><h2 class="sec" data-reveal><span>03</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
     <a-row v-if="loadingHot" :gutter="[16, 20]">
       <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
         <div class="ll-skeleton-card home-skeleton-card" aria-hidden="true">
@@ -63,16 +65,20 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { homeApi } from '../api'
+import { homeApi, trafficApi } from '../api'
 import BannerCarousel from '../components/BannerCarousel.vue'
 import BrandWordmark from '../components/BrandWordmark.vue'
 import BrandSymbol from '../components/BrandSymbol.vue'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
+import HomeMarketPulse from '../components/pricemonitor/HomeMarketPulse.vue'
 const industries = ref([])
 const hot = ref([])
 const loadingIndustries = ref(true)
 const loadingHot = ref(true)
 onMounted(async () => {
+  // 站点到访埋点：VISIT 为平台级事件，不归属商户（merchantId 由后端以 0 哨兵兜底）；
+  // trackPage 内部校验分析 Cookie 同意项，未同意时静默跳过，上报失败亦静默不影响浏览
+  trafficApi.trackPage({ eventType: 'VISIT' }).catch(() => {})
   try { industries.value = await homeApi.industries() }
   finally { loadingIndustries.value = false }
   try { hot.value = await homeApi.hot(8) }
@@ -81,7 +87,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.sec { margin: 24px 0 12px; }
+.sec { margin: 24px 0 18px; position: relative; z-index: 2; }
 .ind-card { text-align: center; height: 116px; margin-bottom: 16px; }
 .ind-card :deep(.ant-card-body) { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 16px; }
 .ind-name { font-size: 18px; font-weight: 700; color: var(--ll-ink); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -142,7 +148,7 @@ onMounted(async () => {
   .brand-actions :deep(.ant-btn){height:36px;padding-inline:14px;font-size:13px}
   .brand-promise{margin:12px 0 22px;padding:10px 12px;font-size:9px}
   .brand-orbit{opacity:.28;transform:scale(.56);bottom:-80px;right:-70px}
-  .sec{margin:18px 0 10px}
+  .sec{margin:18px 0 14px}
   .section-head{margin-top:18px}
   .ind-card,.ind-skeleton{height:96px}
   .ind-name{font-size:15px}

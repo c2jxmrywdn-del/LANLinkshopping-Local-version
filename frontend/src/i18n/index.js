@@ -540,8 +540,17 @@ function _walkAndTranslate(root=document.body) {
   const nodes=[]
   while(walker.nextNode()) nodes.push(walker.currentNode)
   for(const node of nodes){
-    if(!_nodeSources.has(node)) _nodeSources.set(node,node.nodeValue)
-    const source=_nodeSources.get(node)
+    let source=_nodeSources.get(node)
+    if(source===undefined){
+      source=node.nodeValue
+      _nodeSources.set(node,source)
+    }else if(node.nodeValue!==source && node.nodeValue!==_translateString(source,true)){
+      // Vue 等框架会原地更新文本节点（如 "同步中" → "实时"）。
+      // 若当前值既不是缓存原文、也不是它的译文，说明原文已变，必须刷新缓存，
+      // 否则会把新内容误判为“未翻译”并用旧译文覆盖回去。
+      source=node.nodeValue
+      _nodeSources.set(node,source)
+    }
     const next=_translateString(source,true)
     if(next!==node.nodeValue) node.nodeValue=next
   }
@@ -557,7 +566,9 @@ function _walkAndTranslate(root=document.body) {
       if(!el.hasAttribute(attr)) continue
       let cache=_attrSources.get(el)
       if(!cache){cache={};_attrSources.set(el,cache)}
-      if(cache[attr]===undefined) cache[attr]=el.getAttribute(attr)
+      const current=el.getAttribute(attr)
+      if(cache[attr]===undefined) cache[attr]=current
+      else if(current!==cache[attr] && current!==_translateString(cache[attr],true)) cache[attr]=current
       const next=_translateString(cache[attr],true)
       if(next!==el.getAttribute(attr)) el.setAttribute(attr,next)
     }

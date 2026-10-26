@@ -170,7 +170,7 @@ watch(staticMode, sm => {
     speed.v = 0
     paint(PARKED_ANGLE)
   }
-})
+}, { immediate: true }) // 挂载即静态（系统减少动效）时也停靠——对齐原版 React useEffect 挂载必跑的语义
 
 let motionMedia = null
 let io = null

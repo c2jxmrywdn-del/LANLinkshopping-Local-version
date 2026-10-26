@@ -125,6 +125,8 @@ class PaymentFlowTest {
     @Test
     void fullRefundWalletChannelSettlesEverything() {
         when(orderMapper.selectById("NO1")).thenReturn(order(1, "wallet", new BigDecimal("100.00"), null));
+        // 退款两段式：先有退款申请（applied → processing 原子占位）
+        when(orderMapper.markRefundProcessingAtomic("NO1")).thenReturn(1);
         when(walletService.refundToWallet(eq(2L), eq(new BigDecimal("100.00")), eq("NO1"), anyString()))
                 .thenReturn(wl(20L));
 
@@ -143,6 +145,7 @@ class PaymentFlowTest {
     @Test
     void partialRefundSkipsFullSettle() {
         when(orderMapper.selectById("NO1")).thenReturn(order(1, "wallet", new BigDecimal("100.00"), null));
+        when(orderMapper.markRefundProcessingAtomic("NO1")).thenReturn(1);
         when(walletService.refundToWallet(any(), any(), anyString(), anyString())).thenReturn(wl(21L));
 
         RefundRequest req = new RefundRequest();

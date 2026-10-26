@@ -63,6 +63,16 @@ public class OrderController {
         return R.ok("支付成功", orderService.pay(UserContext.currentUserId(request), orderNo));
     }
 
+    /**
+     * 买家确认收货（订单完成闭环）：已发货订单置为已完成并联动签收在途运单。
+     * 权限：需登录，服务层校验订单归属，仅订单本人可确认。
+     */
+    @PostMapping("/confirm/{orderNo}")
+    public R<Order> confirmReceipt(@PathVariable String orderNo, HttpServletRequest request) {
+        return R.ok("确认收货成功，订单已完成",
+                orderService.confirmReceipt(UserContext.currentUserId(request), orderNo));
+    }
+
     @PostMapping("/cancel/{orderNo}")
     public R<Void> cancel(@PathVariable String orderNo, HttpServletRequest request) {
         orderService.cancel(UserContext.currentUserId(request), orderNo);

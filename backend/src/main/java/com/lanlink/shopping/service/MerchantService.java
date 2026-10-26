@@ -46,6 +46,10 @@ public class MerchantService {
     private final UserMapper userMapper;
     private final AuditLogMapper auditLogMapper;
 
+    /** 站内消息（可选注入，缺省时审核结果通知静默跳过，参照 OrderService 可选依赖模式） */
+    @Autowired(required = false)
+    private MessageService messageService;
+
     @Autowired
     public MerchantService(MerchantMapper merchantMapper, EnterpriseMapper enterpriseMapper,
                            QualificationMapper qualificationMapper, AuditService auditService,
@@ -187,6 +191,18 @@ public class MerchantService {
                 userMapper.updateById(u);
             }
             auditService.record(userId, "IDENTITY_CHANGE", "身份升级: buyer -> merchant（商户初筛通过）", null);
+        }
+
+        // 自动初筛结果站内通知（通过/驳回口径与人工 review() 一致，避免申请人无感知）
+        if (messageService != null && userId != null && m.getReviewStatus() != null) {
+            if (m.getReviewStatus() == 1) {
+                messageService.send(userId, "merchant", "入驻审核通过",
+                        "恭喜！您的商户入驻申请已通过平台初筛，现在可以进入商户中心发布商品、购买流量推广了。", null);
+            } else if (m.getReviewStatus() == 2) {
+                messageService.send(userId, "merchant", "入驻审核未通过",
+                        "您的商户入驻申请未通过：" + (m.getRejectReason() == null ? "资质材料不符合要求" : m.getRejectReason())
+                                + "。如有疑问请联系平台客服。", null);
+            }
         }
         return m;
     }
@@ -485,6 +501,17 @@ public class MerchantService {
                     userMapper.updateById(u);
                     auditService.record(m.getUserId(), "IDENTITY_CHANGE", "身份降级: merchant -> buyer（商户审核驳回）", null);
                 }
+            }
+        }
+        // 审核结果站内通知：保存成功后触达申请人，避免只能回访查看
+        // （batchReview 逐个复用本方法，通知天然逐单发送；messageService 缺省时静默跳过）
+        if (messageService != null && m.getUserId() != null) {
+            if (reviewStatus == 1) {
+                messageService.send(m.getUserId(), "merchant", "入驻审核通过",
+                        "恭喜！您的商户入驻申请已审核通过，现在可以进入商户中心发布商品、购买流量推广了。", null);
+            } else {
+                messageService.send(m.getUserId(), "merchant", "入驻审核未通过",
+                        "您的商户入驻申请未通过：" + m.getRejectReason() + "。如有疑问请联系平台客服。", null);
             }
         }
         return m;

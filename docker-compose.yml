@@ -114,7 +114,54 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # 商品批量导入 workflow 服务（独立 Next.js 子应用，仓库 workflow/ 目录）。
+  # 完整闭环：前端浏览器（构建期注入 VITE_WORKFLOW_URL=http://127.0.0.1:3000）
+  #   → 宿主机 127.0.0.1:3000 → 本容器 → BACKEND_API_BASE=http://backend:8080/api（compose 内网，
+  #   后端 context-path=/api）。浏览器直连的是宿主机端口而非容器网络，因此 frontend 不依赖本服务。
+  workflow:
+    build:
+      context: ./workflow
+      dockerfile: Dockerfile
+    image: lanlink-workflow:local
+    container_name: lanlink-workflow
+    env_file:
+      # 服务账号（WORKFLOW_BACKEND_PHONE/PASSWORD）与 CORS 白名单（ALLOWED_ORIGIN）取自 workflow/.env
+      # （已 gitignore 不入库；缺失时先 cp workflow/.env.example workflow/.env）
+      - ./workflow/.env
+    environment:
+      # 覆盖 workflow/.env 里的 localhost:8080：容器网络内直连后端
+      BACKEND_API_BASE: http://backend:8080/api
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # workflow 事件日志（断点续跑依赖此目录），独立于镜像生命周期
+      - workflow-data:/app/.workflow-data
+    depends_on:
+      backend:
+        condition: service_healthy
+    # 资源限制风格与 support-learning-sandbox 一致；Node 运行时较重放宽到 256m/0.5 核，
+    # 不设 read_only（workflow 运行时需写事件日志目录，已用独立卷承接）
+    mem_limit: 256m
+    cpus: "0.50"
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # GET / 返回服务首页（200）；/api/import 只定义了 POST/OPTIONS（GET 会 405），不作探活端点
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=- http://127.0.0.1:3000/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      start_period: 15s
+      retries: 5
+    restart: unless-stopped
+
   frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Vite 在构建期把 VITE_* 打进静态产物：批量导入服务地址指向宿主机 3000 端口（见上方 workflow 服务）
+        VITE_WORKFLOW_URL: http://127.0.0.1:3000
     image: lanlink-frontend:local
     environment:
       SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
@@ -134,3 +181,4 @@ volumes:
   mysql-data:
   backend-uploads:
   redis-data:
+  workflow-data:

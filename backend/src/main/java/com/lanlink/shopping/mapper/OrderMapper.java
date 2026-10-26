@@ -76,6 +76,25 @@ public interface OrderMapper extends BaseMapper<Order> {
     int markShippedAtomic(@Param("orderNo") String orderNo);
 
     /**
+     * 订单完成原子流转（确认收货闭环）：仅已发货(order_status=1)时置为已完成(order_status=2)。
+     * 买家确认收货 / 运单签收联动 / 超时自动确认共用；返回 0 表示状态不符或已被并发处理。
+     */
+    @Update("UPDATE t_order SET order_status = 2, update_time = NOW() " +
+            "WHERE order_no = #{orderNo} AND order_status = 1")
+    int markCompletedAtomic(@Param("orderNo") String orderNo);
+
+    /** 超时自动确认收货：已发货超过 N 天（按运单发货时间）仍未完成的订单批量置为已完成 */
+    @Update("UPDATE t_order o JOIN t_logistics_waybill w ON w.order_no = o.order_no " +
+            "SET o.order_status = 2, o.update_time = NOW() " +
+            "WHERE o.order_status = 1 AND o.pay_status = 1 AND w.ship_time < DATE_SUB(NOW(), INTERVAL #{days} DAY)")
+    int autoCompleteShipped(@Param("days") int days);
+
+    /** 退款处理中原子流转（防并发双退）：applied → processing，返回 0 表示已被并发处理 */
+    @Update("UPDATE t_order SET refund_status = 'processing', update_time = NOW() " +
+            "WHERE order_no = #{orderNo} AND refund_status = 'applied'")
+    int markRefundProcessingAtomic(@Param("orderNo") String orderNo);
+
+    /**
      * 退款状态原子流转（需求 2：防重复退款申请/并发篡改退款金额）。
      * 仅当订单当前退款状态为 none/rejected/空 时允许置为 applied，返回 0 表示重复申请。
      */

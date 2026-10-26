@@ -1,8 +1,20 @@
 <template>
-  <div class="admin-dashboard-page">
+    <div class="admin-dashboard-page">
+    <!-- Apple iOS 灵动岛 (Dynamic Island) 态势感知与真实审核通报 -->
+    <AppleDynamicIsland
+      :title="`风控态势感知 (${stats.merchantPending + stats.productPending} 项待审)`"
+      :icon="markRaw(ShieldAlert)"
+      :description="`商户待终审: ${stats.merchantPending} 家 · 商品待终审: ${stats.productPending} 件 · 合规拦截布防中`"
+      badge="MONITOR"
+      :status-type="stats.merchantPending + stats.productPending > 0 ? 'warning' : 'success'"
+      :progress="92"
+      progress-text="平台自动化合规检测覆盖率"
+      primary-text="前往商户审核"
+      @primary-click="$router.push('/admin/merchants')"
+    />
     <!-- 21st.dev 风格核心指标大盘 -->
     <div class="kpi-grid">
-      <div class="kpi-card" @click="$router.push('/admin/merchants')">
+      <AppleGlassCard :max-tilt="6" :spotlight-size="260"><div class="kpi-card" @click="$router.push('/admin/merchants')">
         <div class="kpi-top">
           <span class="kpi-label">待审核商户</span>
           <span class="beacon-pulse amber"></span>
@@ -12,9 +24,9 @@
           <span>待资质人工终审</span>
           <span class="jump-arrow">前往审核 →</span>
         </div>
-      </div>
+      </div></AppleGlassCard>
 
-      <div class="kpi-card" @click="$router.push('/admin/products')">
+      <AppleGlassCard :max-tilt="6" :spotlight-size="260"><div class="kpi-card" @click="$router.push('/admin/products')">
         <div class="kpi-top">
           <span class="kpi-label">待审核商品</span>
           <span class="beacon-pulse amber"></span>
@@ -24,9 +36,9 @@
           <span>待智能合规初筛与终审</span>
           <span class="jump-arrow">前往审核 →</span>
         </div>
-      </div>
+      </div></AppleGlassCard>
 
-      <div class="kpi-card" @click="$router.push('/admin/merchants')">
+      <AppleGlassCard :max-tilt="6" :spotlight-size="260"><div class="kpi-card" @click="$router.push('/admin/merchants')">
         <div class="kpi-top">
           <span class="kpi-label">正常入驻商户</span>
           <span class="beacon-pulse green"></span>
@@ -36,9 +48,9 @@
           <span>全平台累计申请 {{ stats.merchantTotal }} 家</span>
           <span class="jump-arrow">商户底册 →</span>
         </div>
-      </div>
+      </div></AppleGlassCard>
 
-      <div class="kpi-card" @click="$router.push('/admin/products')">
+      <AppleGlassCard :max-tilt="6" :spotlight-size="260"><div class="kpi-card" @click="$router.push('/admin/products')">
         <div class="kpi-top">
           <span class="kpi-label">合规在售商品</span>
           <span class="beacon-pulse blue"></span>
@@ -48,7 +60,7 @@
           <span>商品总库 {{ stats.productTotal }} 件</span>
           <span class="jump-arrow">商品看板 →</span>
         </div>
-      </div>
+      </div></AppleGlassCard>
     </div>
 
     <!-- 双待办核验雷达 (商户待审 & 商品待审) -->
@@ -178,7 +190,8 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, markRaw } from 'vue'
+import { ShieldAlert } from 'lucide-vue-next'
 import {
   ShopOutlined,
   AppstoreOutlined,
@@ -186,6 +199,8 @@ import {
   CheckCircleOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi, productApi } from '../../api'
+import AppleDynamicIsland from '../../components/ui/AppleDynamicIsland.vue'
+import AppleGlassCard from '../../components/ui/AppleGlassCard.vue'
 
 const loading = ref(false)
 const stats = reactive({
@@ -450,5 +465,12 @@ onMounted(async () => {
   color: #64748b;
   line-height: 1.5;
   margin: 0;
+}
+
+@media (max-width: 768px) {
+  .admin-dashboard-page { padding: 12px; }
+  .kpi-grid { grid-template-columns: 1fr; gap: 12px; }
+  .radar-grid { grid-template-columns: 1fr; gap: 14px; }
+  .security-tools-grid { grid-template-columns: 1fr; gap: 12px; }
 }
 </style>

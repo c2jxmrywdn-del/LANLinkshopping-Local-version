@@ -83,6 +83,8 @@ class PaymentServiceTest {
         paid.setPayStatus(1);
         paid.setPayChannel("mock");
         when(orderMapper.selectById("20261004123456")).thenReturn(paid);
+        // 退款两段式：先有退款申请（applied → processing 原子占位）
+        when(orderMapper.markRefundProcessingAtomic("20261004123456")).thenReturn(1);
 
         RefundRequest req = new RefundRequest();
         req.setOrderNo("20261004123456");

@@ -11,9 +11,12 @@
     <a-spin :spinning="loading">
       <!-- 商户激励：进度冲刺 -->
       <div class="mk-section" v-if="incentives.length">
-        <div class="mk-sec-title">🏪 激励奖励 <span>按活动时间窗内本店已支付销售额计算进度</span></div>
+        <div class="mk-sec-title"><Store :size="15" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px;color:#047857" /> 激励奖励 <span>按活动时间窗内本店已支付销售额计算进度</span></div>
         <div class="mk-grid">
-          <div v-for="c in incentives" :key="c.campaignId" class="mk-card mk-incentive">
+          <MagicCard v-for="c in incentives" :key="c.campaignId"
+                     class="mk-card mk-incentive" :gradient-size="260"
+                     gradient-from="#1E6EB8" gradient-to="#38bdf8"
+                     gradient-color="rgba(30, 110, 184, .07)">
             <div class="mi-top">
               <span class="mk-chip green">商户激励</span>
               <span class="mi-window">{{ fmtDate(c.startTime) }} ~ {{ fmtDate(c.endTime) || '长期' }}</span>
@@ -47,16 +50,19 @@
                 还差 ¥{{ money(c.targetAmount - c.salesAmount) }} 达标
               </span>
             </div>
-          </div>
+          </MagicCard>
         </div>
       </div>
       <a-empty v-else-if="!loading" description="暂无可报名的激励活动" style="padding:32px 0" />
 
       <!-- 平台大促：开放报名的活动 -->
       <div class="mk-section" v-if="joinables.length">
-        <div class="mk-sec-title">🔥 平台大促 <span>报名后店铺商品将参与活动会场</span></div>
+        <div class="mk-sec-title"><Flame :size="15" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px;color:#e0354b" /> 平台大促 <span>报名后店铺商品将参与活动会场</span></div>
         <div class="mk-grid">
-          <div v-for="c in joinables" :key="c.campaignId" class="mk-card">
+          <MagicCard v-for="c in joinables" :key="c.campaignId"
+                     class="mk-card" :gradient-size="260"
+                     gradient-from="#1E6EB8" gradient-to="#38bdf8"
+                     gradient-color="rgba(30, 110, 184, .07)">
             <div class="mi-top">
               <span class="mk-chip" :class="typeClass(c.type)">{{ typeLabel(c.type) }}</span>
               <span class="mi-window">{{ fmtDate(c.startTime) }} ~ {{ fmtDate(c.endTime) || '长期' }}</span>
@@ -68,7 +74,7 @@
               <a-button v-if="!c.enrolled" type="primary" ghost @click="enroll(c)">立即报名</a-button>
               <a-tag v-else color="green">已报名</a-tag>
             </div>
-          </div>
+          </MagicCard>
         </div>
       </div>
     </a-spin>
@@ -79,6 +85,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { campaignApi } from '../../api'
+import MagicCard from '../../components/ui/MagicCard.vue'
+import { Store, Flame } from 'lucide-vue-next'
 
 const campaigns = ref([])
 const loading = ref(false)

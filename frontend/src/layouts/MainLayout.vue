@@ -43,10 +43,10 @@
         <div class="right">
           <LanguageSwitcher variant="dark" />
           <a-badge v-if="user.logged" :count="user.unread" :overflow-count="99">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages">🔔<span class="nav-action-label"> 消息</span></a-button>
+            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages"><Bell :size="15" :stroke-width="2.2" /><span class="nav-action-label"> 消息</span></a-button>
           </a-badge>
           <a-badge :count="cart.count" :overflow-count="99" :class="{ 'll-badge-bounce': cartBounce }">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart">🛒<span class="nav-action-label"> 购物车</span></a-button>
+            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart"><ShoppingCart :size="15" :stroke-width="2.2" /><span class="nav-action-label"> 购物车</span></a-button>
           </a-badge>
           <template v-if="user.logged">
             <a-dropdown>
@@ -71,9 +71,9 @@
                     <div class="id-scope">当前身份：<b>{{ user.identityName }}</b><br/>{{ user.identityScope }}</div>
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item @click="$router.push('/wallet')">💰 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')">企业账期</a-menu-item>
+                  <a-menu-item @click="$router.push('/wallet')"><Wallet :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')">企业账期</a-menu-item>
                   <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')">商户中心</a-menu-item>
-                  <a-menu-item @click="$router.push('/activity')">🎯 活动中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/activity')"><Target :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 活动中心</a-menu-item>
                   <a-menu-item @click="$router.push('/membership')"><MembershipIcon :size="18" class="membership-menu-icon" /> 会员中心</a-menu-item>
                   <a-menu-item @click="$router.push('/me')">个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')">消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')">收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')">登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')">账户设置</a-menu-item>
                   <a-menu-item @click="doLogout">退出登录</a-menu-item>
@@ -127,6 +127,7 @@ import MembershipIcon from '../components/ui/MembershipIcon.vue'
 import SupportChat from '../components/SupportChat.vue'
 import BackToTop from '../components/BackToTop.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
+import { Bell, ShoppingCart, Wallet, Target } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -151,6 +152,17 @@ const selectedKeys = computed(() => {
 
 const mallMenuOpen = ref(false)
 let mallCloseTimer = null
+
+// 站内消息未读数轻量轮询：登录态下每 60s 刷新一次角标（路由切换已有 afterEach 即时刷新）；
+// refreshUnread 内部静默失败，轮询仅是兜底，不影响页面功能。卸载时清理定时器。
+let unreadPollTimer = null
+function startUnreadPolling() {
+  if (unreadPollTimer || !user.logged) return
+  unreadPollTimer = setInterval(() => user.refreshUnread(), 60000)
+}
+function stopUnreadPolling() {
+  if (unreadPollTimer) { clearInterval(unreadPollTimer); unreadPollTimer = null }
+}
 
 function openMallMenu() {
   if (mallCloseTimer) {
@@ -231,7 +243,10 @@ watch(() => route.fullPath, () => closeMallMenu())
 
 onMounted(() => {
   if (!user.user) user.fetchMe()
-  if (user.logged) cart.load()
+  if (user.logged) {
+    cart.load()
+    startUnreadPolling()
+  }
   nextTick(updateIndicator)
   window.addEventListener('resize', updateIndicator)
   window.addEventListener('scroll', onScroll, { passive: true })
@@ -245,6 +260,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown, true)
   document.removeEventListener('keydown', onDocumentKeydown)
   if (mallCloseTimer) clearTimeout(mallCloseTimer)
+  stopUnreadPolling()
   // 购物车弹跳反馈定时器：卸载时清理，避免回调持有组件实例导致内存泄漏
   clearTimeout(bounceTimer)
 })

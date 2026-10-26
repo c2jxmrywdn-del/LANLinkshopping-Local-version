@@ -1,8 +1,15 @@
 <template>
   <div class="mall-page">
     <div v-if="promos.length" class="promo-bar">
-      <span class="promo-title">🔥 促销进行中</span>
-      <span v-for="p in promos" :key="p.campaignId" class="promo-item" @click="$router.push('/activity/' + p.campaignId)">{{ p.title }}</span>
+      <span class="promo-title"><Flame :size="14" :stroke-width="2.2" /> <AnimatedGradientText speed="1" color-from="#f59e0b" color-to="#e879f9">促销进行中</AnimatedGradientText></span>
+      <!-- 促销较多时无缝滚动（Magic UI marquee 移植），hover 暂停；少量时静态展示 -->
+      <Marquee v-if="promos.length >= 3" class="promo-scroll" pause-on-hover
+               :repeat="promos.length < 5 ? 4 : 2" duration="26s" gap="2.5rem">
+        <span v-for="p in promos" :key="p.campaignId" class="promo-item" @click="$router.push('/activity/' + p.campaignId)">{{ p.title }}</span>
+      </Marquee>
+      <template v-else>
+        <span v-for="p in promos" :key="p.campaignId" class="promo-item" @click="$router.push('/activity/' + p.campaignId)">{{ p.title }}</span>
+      </template>
     </div>
     <div class="toolbar">
       <a-input-search v-model:value="keyword" placeholder="搜索商品名称" class="toolbar-search"
@@ -35,8 +42,25 @@
     </a-row>
 
     <a-row v-else-if="list.length" :gutter="[16, 20]">
-      <a-col v-for="(p, i) in list" :key="p.prodId" :xs="12" :sm="12" :md="8" :lg="6" :data-reveal="'fade-up'" :data-delay="i * 50">
+      <a-col v-for="(p, i) in displayList" :key="p.ad ? 'ad-' + p.campaignId : p.prodId" :xs="12" :sm="12" :md="8" :lg="6" :data-reveal="'fade-up'" :data-delay="i * 50">
+        <div v-if="p.ad" class="ad-card-wrap">
+          <span class="ad-badge">推广</span>
+          <InteractiveProductCard
+            :image-url="p.coverUrl || ''"
+            :title="p.title"
+            :description="p.brand || 'B2B 供应商精选'"
+            :price="'¥' + p.price"
+            @click="goAd(p)"
+          >
+            <template #footer>
+              <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
+              <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
+              <a-button v-else size="small" block type="default" @click.stop="$router.push('/login')">登录后购买</a-button>
+            </template>
+          </InteractiveProductCard>
+        </div>
         <InteractiveProductCard
+          v-else
           :image-url="p.coverUrl || ''"
           :title="p.title"
           :description="p.brand || 'B2B 供应商精选'"
@@ -55,7 +79,7 @@
 
     <div v-else class="empty-wrap">
       <a-empty description="没有找到相关商品">
-        <template #image><span class="empty-icon">🔍</span></template>
+        <template #image><span class="empty-icon"><Search :size="38" :stroke-width="1.8" /></span></template>
         <a-button type="primary" @click="resetFilters">清空筛选条件</a-button>
       </a-empty>
     </div>
@@ -67,20 +91,29 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { productApi, homeApi, campaignApi } from '../api'
+import { productApi, homeApi, campaignApi, adApi, trafficApi } from '../api'
+import Marquee from '../components/ui/Marquee.vue'
+import { Search } from 'lucide-vue-next'
+import AnimatedGradientText from '../components/ui/AnimatedGradientText.vue'
+import { Flame } from 'lucide-vue-next'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
 
 const route = useRoute()
+const router = useRouter()
 const cart = useCartStore()
 const user = useUserStore()
 
 // 促销横幅（营销中台·活动系统：满减/折扣/秒杀类，点击进入活动详情）
 const promos = ref([])
+
+// 广告推广位（商户购买的流量：投放中的商品卡片，插入自然列表的固定位置）
+const AD_SLOTS = [0, 5, 10] // 第 1、6、11 张为推广位
+const adCards = ref([])
 
 const industries = ref([])
 const list = ref([])
@@ -101,6 +134,29 @@ async function reload() {
     total.value = page.total
   } finally { loading.value = false }
 }
+
+// 广告位：加载推广商品并按固定位置与自然结果混排（曝光上报，静默失败不影响浏览）
+async function loadAds() {
+  try {
+    const slots = await adApi.slots(3)
+    adCards.value = slots || []
+    slots.forEach(s => adApi.track(s.campaignId, 'impression').catch(() => {}))
+  } catch (e) { adCards.value = [] }
+}
+/** 混排后的展示列表：位置 0/5/10 插入推广卡（无广告或搜索/筛选时保持自然排序） */
+const displayList = computed(() => {
+  if (!adCards.value.length || keyword.value || indId.value || sort.value) return list.value
+  const out = [...list.value]
+  adCards.value.forEach((ad, i) => {
+    const pos = AD_SLOTS[i]
+    if (pos <= out.length) out.splice(pos, 0, ad)
+  })
+  return out
+})
+function goAd(ad) {
+  adApi.track(ad.campaignId, 'click').catch(() => {})
+  router.push('/product/' + ad.prodId)
+}
 async function addCart(p) {
   if (!user.logged) { message.warning('请先登录'); return }
   await cart.add(p.prodId, 1)
@@ -120,8 +176,12 @@ function resetFilters() {
   reload()
 }
 onMounted(async () => {
+  // 站点到访埋点：VISIT 为平台级事件，不归属商户（merchantId 由后端以 0 哨兵兜底）；
+  // trackPage 内部校验分析 Cookie 同意项，未同意时静默跳过，上报失败亦静默不影响浏览
+  trafficApi.trackPage({ eventType: 'VISIT', sourceType: 'direct', sourceDetail: keyword.value || (indId.value ? 'ind-' + indId.value : null) }).catch(() => {})
   industries.value = await homeApi.industries()
   campaignApi.list('promo').then(d => { promos.value = d || [] }).catch(() => {})
+  loadAds()
   reload()
 })
 
@@ -144,13 +204,24 @@ watch(
 </script>
 
 <style scoped>
+/* 广告推广位：卡片与自然结果同构，右上角"推广"标识区分（合规样式，类似主流电商广告标） */
+.ad-card-wrap { position: relative; height: 100%; }
+.ad-badge { position: absolute; top: 8px; left: 8px; z-index: 3;
+            font-size: 10px; line-height: 1; color: #92400e;
+            background: rgba(254, 243, 199, .95); border: 1px solid rgba(217, 119, 6, .35);
+            border-radius: 5px; padding: 3px 6px; pointer-events: none; }
 .promo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
              background: linear-gradient(90deg, rgba(245,158,11,.12), rgba(232,121,249,.08));
              border: 1px solid rgba(245,158,11,.35); border-radius: var(--ll-radius-lg, 14px);
              padding: 10px 16px; margin-bottom: 16px; font-size: 13px;
              animation: ll-fade-slide 0.3s var(--ll-ease-out, cubic-bezier(0.22, 1, 0.36, 1)); }
-.promo-title { font-weight: 700; color: #b45309; }
-.promo-item { color: var(--ll-gray, #4b5563); }
+.promo-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; color: #b45309; flex-shrink: 0; }
+.promo-item { color: var(--ll-gray, #4b5563); cursor: pointer; white-space: nowrap; }
+.promo-item:hover { color: #b45309; }
+.promo-scroll { flex: 1; min-width: 0; -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent);
+                mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+.promo-scroll .promo-item { padding: 2px 10px; border-radius: 999px;
+                            background: rgba(245, 158, 11, .1); border: 1px solid rgba(245, 158, 11, .25); }
 /* 工具栏：容器化 + 粘性，浏览长列表时随时可调整筛选 */
 .toolbar { position: sticky; top: 64px; z-index: 10; display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; align-items: center;
            padding: 12px 14px; background: color-mix(in srgb, var(--ll-card, #fff) 92%, transparent);

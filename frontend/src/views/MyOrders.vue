@@ -30,6 +30,7 @@
           <a-space wrap>
             <a @click="$router.push('/orders/' + record.orderNo)">详情</a>
             <a v-if="record.payStatus === 0 && record.orderStatus === 0 && record.payType !== 'term'" @click="openPay(record)">支付</a>
+            <a v-if="Number(record.payStatus) === 1 && record.orderStatus === 1" @click="confirmReceipt(record)">确认收货</a>
             <a v-if="canRefund(record)" @click="openRefund(record)">申请退款</a>
             <a v-if="record.orderStatus === 0 && (record.payStatus === 0 || record.payType === 'term')" @click="cancel(record)" style="color:#999">取消</a>
           </a-space>
@@ -47,7 +48,7 @@
         <!-- 钱包余额支付 -->
         <div class="pay-item" :class="{ disabled: walletInsufficient }" @click="payWith('wallet')">
           <div class="pay-main">
-            <div class="pay-name">💰 钱包余额</div>
+            <div class="pay-name"><Wallet :size="15" class="inline-block mr-1.5 align-middle text-amber-500" /> 钱包余额</div>
             <div class="pay-sub">可用 ¥{{ walletBalance.toFixed(2) }}
               <span v-if="walletInsufficient" class="pay-warn">（余额不足，<a @click.stop="$router.push('/wallet'); payOpen = false">去充值</a>）</span>
             </div>
@@ -58,21 +59,21 @@
         <!-- 模拟渠道（mock 模式默认） -->
         <div class="pay-item" @click="payWith('mock')">
           <div class="pay-main">
-            <div class="pay-name">🧪 模拟网关</div>
+            <div class="pay-name"><FlaskConical :size="15" class="inline-block mr-1.5 align-middle text-sky-500" /> 模拟网关</div>
             <div class="pay-sub">演示环境模拟支付，即时到账</div>
           </div>
         </div>
         <!-- 真实渠道（未配置凭证时禁用提示） -->
         <div class="pay-item disabled" @click="realChannelTip('微信')">
           <div class="pay-main">
-            <div class="pay-name">💚 微信支付</div>
+            <div class="pay-name"><Smartphone :size="15" class="inline-block mr-1.5 align-middle text-emerald-500" /> 微信支付</div>
             <div class="pay-sub">扫码支付（需配置商户凭证后启用）</div>
           </div>
           <a-tag>未启用</a-tag>
         </div>
         <div class="pay-item disabled" @click="realChannelTip('支付宝')">
           <div class="pay-main">
-            <div class="pay-name">💙 支付宝</div>
+            <div class="pay-name"><Globe :size="15" class="inline-block mr-1.5 align-middle text-blue-500" /> 支付宝</div>
             <div class="pay-sub">电脑网站支付（需配置应用凭证后启用）</div>
           </div>
           <a-tag>未启用</a-tag>
@@ -101,8 +102,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
-import { orderApi, paymentApi, walletApi } from '../api'
+import { message, Modal } from 'ant-design-vue'
+import { Wallet, FlaskConical, Smartphone, Globe } from 'lucide-vue-next'
+import { orderApi, paymentApi, walletApi, trafficApi } from '../api'
 import { useUserStore } from '../store/user'
 
 const user = useUserStore()
@@ -154,12 +156,16 @@ async function payWith(channel) {
   try {
     if (channel === 'wallet') {
       const vo = await paymentApi.create(current.value.orderNo, 'wallet')
-      if (vo?.payInfo?.paid) message.success(`支付成功，钱包余额 ¥${Number(vo.payInfo.balance).toFixed(2)}`)
+      if (vo?.payInfo?.paid) {
+        message.success(`支付成功，钱包余额 ¥${Number(vo.payInfo.balance).toFixed(2)}`)
+        trackPay()
+      }
     } else {
       // mock 渠道：create 生成模拟令牌后确认支付
       const vo = await paymentApi.create(current.value.orderNo, 'mock')
       if (vo?.mock) await paymentApi.mockConfirm(current.value.orderNo)
       message.success('支付成功')
+      trackPay()
     }
     payOpen.value = false
     user.fetchMe()
@@ -167,11 +173,32 @@ async function payWith(channel) {
   } catch (e) { /* 拦截器已提示 */ }
 }
 
+/** 支付成功埋点：订单列表无商户归属信息，PAY 作为平台级事件上报（后端以 0 兜底），失败静默 */
+function trackPay() {
+  trafficApi.trackPage({ eventType: 'PAY', sourceType: 'order_list' }).catch(() => {})
+}
+
 function realChannelTip(name) {
   message.info(`${name}支付需在服务端配置商户凭证后启用，当前演示环境默认走模拟渠道`)
 }
 
 async function cancel(r) { await orderApi.cancel(r.orderNo); message.success('已取消'); load() }
+
+// ===== 确认收货（订单完成闭环） =====
+function confirmReceipt(r) {
+  Modal.confirm({
+    title: '确认已收到货？',
+    content: `订单 ${r.orderNo} 将被标记为「已完成」，在途运单同步签收。请确认商品已验收无误。`,
+    okText: '确认收货', cancelText: '再等等',
+    onOk: async () => {
+      try {
+        await orderApi.confirmReceipt(r.orderNo)
+        message.success('确认收货成功，交易完成')
+        load()
+      } catch (e) { /* 拦截器已提示 */ }
+    }
+  })
+}
 
 // ===== 退款申请 =====
 const refundOpen = ref(false)

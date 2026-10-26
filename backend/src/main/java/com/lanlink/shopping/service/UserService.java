@@ -41,7 +41,7 @@ public class UserService {
         User user = new User();
         user.setPhone(dto.getPhone());
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
-        user.setNickname(StringUtils.hasText(dto.getNickname()) ? dto.getNickname() : "用户" + dto.getPhone().substring(7));
+        user.setNickname(dto.getNickname().trim());
         user.setRoleId(role.getRoleId());
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());

@@ -10,7 +10,7 @@
     @focusin="boost"
     @focusout="relax"
   >
-    <div v-if="glow" class="bbp-glow" aria-hidden="true"></div>
+    <div v-if="glow" class="bbp-glow" aria-hidden="true" :style="{ opacity: glowOpacity }"></div>
     <div class="bbp-ring" aria-hidden="true"></div>
     <slot />
   </div>
@@ -35,6 +35,7 @@ const props = defineProps({
   idleSpeed: { type: Number, default: 42 },
   hoverSpeed: { type: Number, default: 240 },
   glow: { type: Boolean, default: true },
+  glowOpacity: { type: Number, default: 0.35 },
   radius: { type: Number, default: 16 },
   spring: { type: Object, default: () => ({ stiffness: 30, damping: 11 }) },
   seed: { type: Number, default: 1 },

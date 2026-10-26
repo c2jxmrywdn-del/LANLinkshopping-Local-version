@@ -12,6 +12,7 @@
             </div>
             <div class="status-actions">
               <a-button v-if="canPay" type="primary" size="large" @click="openPay">立即支付</a-button>
+              <a-button v-if="canConfirm" type="primary" size="large" @click="confirmReceipt">确认收货</a-button>
               <a-button v-if="canRefund" size="large" @click="openRefund">申请退款</a-button>
               <a-button v-if="canCancel" size="large" @click="cancel">取消订单</a-button>
             </div>
@@ -121,9 +122,9 @@
 
 <script setup>
 import {ref,computed,onMounted,nextTick,watch,onBeforeUnmount} from 'vue'
-import {message} from 'ant-design-vue'
+import {message,Modal} from 'ant-design-vue'
 import {useRoute,useRouter} from 'vue-router'
-import {orderApi,paymentApi,walletApi} from '../api'
+import {orderApi,paymentApi,walletApi,trafficApi} from '../api'
 import {buildPayQrPayload,renderQrToCanvas} from '../utils/qrCode'
 const route=useRoute(),router=useRouter(),detail=ref(null),loading=ref(false),payLoading=ref(false),walletBalance=ref(0),payOpen=ref(false)
 const refundOpen=ref(false),refunding=ref(false),refundReason=ref('')
@@ -135,6 +136,8 @@ const payType={corporate:'对公转账',balance:'企业钱包',term:'账期/尾�
 const channelText={wallet:'钱包',mock:'模拟网关',wechat:'微信支付',alipay:'支付宝'}
 const canPay=computed(()=>{const o=detail.value?.order;return o&&o.payStatus===0&&o.orderStatus===0&&o.payType!=='term'})
 const canCancel=computed(()=>{const o=detail.value?.order;return o&&o.orderStatus===0&&(o.payStatus===0||o.payType==='term')})
+/** 可确认收货：已支付且已发货（订单完成闭环入口） */
+const canConfirm=computed(()=>{const o=detail.value?.order;return !!o&&Number(o.payStatus)===1&&Number(o.orderStatus)===1})
 /** 可申请退款：已支付、非账期、订单未结束，且无进行中/已完成退款（被驳回可再次申请） */
 const canRefund=computed(()=>{const o=detail.value?.order;return !!o&&Number(o.payStatus)===1&&o.payType!=='term'&&![3,4].includes(Number(o.orderStatus))&&!['applied','processing','success'].includes(o.refundStatus||'none')})
 const stepIndex=computed(()=>{const o=detail.value?.order;if(!o)return 0;if(o.orderStatus===3||o.orderStatus===4)return 0;if(o.orderStatus===2)return 3;if(o.orderStatus===1)return 2;return o.payStatus===1?2:0})
@@ -145,8 +148,19 @@ const refundText=o=>o.refundStatus==='success'?'已退款':o.refundStatus==='pro
 const statusText=o=>o.orderStatus===3?'订单已取消':o.orderStatus===4?'订单已退款':o.payStatus===1?'订单已支付':'待支付'
 const statusHint=o=>o.orderStatus===3?'订单已取消，无法继续操作':o.orderStatus===4?'该订单已完成退款':o.payStatus===1?'订单已进入履约流程':'完成支付后商户才会开始履约'
 async function load(){loading.value=true;try{detail.value=await orderApi.detail(route.params.orderNo)}catch(e){detail.value=null}finally{loading.value=false}}
-async function openPay(){try{const w=await walletApi.my();walletBalance.value=Number(w?.balance||0);payOpen.value=true}catch(e){payOpen.value=true}} async function payWith(channel){if(payLoading.value)return;if(channel==='wallet'&&walletBalance.value<Number(detail.value?.order?.totalAmount||0)){router.push('/wallet/recharge');payOpen.value=false;return}payLoading.value=true;try{const vo=await paymentApi.create(route.params.orderNo,channel);if(channel==='mock'&&vo?.mock)await paymentApi.mockConfirm(route.params.orderNo);if(channel==='wallet'&&!vo?.payInfo?.paid)throw new Error('支付未确认');message.success('支付成功');payOpen.value=false;await load()}catch(e){}finally{payLoading.value=false}}
+async function openPay(){try{const w=await walletApi.my();walletBalance.value=Number(w?.balance||0);payOpen.value=true}catch(e){payOpen.value=true}}
+/** 支付成功埋点：订单详情无商户归属信息，PAY 作为平台级事件上报（后端以 0 兜底），失败静默 */
+function trackPay(){ trafficApi.trackPage({eventType:'PAY',sourceType:'order_detail'}).catch(()=>{}) }
+async function payWith(channel){if(payLoading.value)return;if(channel==='wallet'&&walletBalance.value<Number(detail.value?.order?.totalAmount||0)){router.push('/wallet/recharge');payOpen.value=false;return}payLoading.value=true;try{const vo=await paymentApi.create(route.params.orderNo,channel);if(channel==='mock'&&vo?.mock)await paymentApi.mockConfirm(route.params.orderNo);if(channel==='wallet'&&!vo?.payInfo?.paid)throw new Error('支付未确认');message.success('支付成功');trackPay();payOpen.value=false;await load()}catch(e){}finally{payLoading.value=false}}
 async function cancel(){try{await orderApi.cancel(route.params.orderNo);message.success('订单已取消');await load()}catch(e){}}
+function confirmReceipt(){
+  Modal.confirm({
+    title:'确认已收到货？',
+    content:`订单 ${route.params.orderNo} 将标记为「已完成」，在途运单同步签收。请确认商品已验收无误。`,
+    okText:'确认收货',cancelText:'再等等',
+    onOk:async()=>{try{await orderApi.confirmReceipt(route.params.orderNo);message.success('确认收货成功，交易完成');await load()}catch(e){/* 拦截器已提示 */}}
+  })
+}
 function openRefund(){refundReason.value='';refundOpen.value=true}
 async function doRefund(){if(!refundReason.value.trim()){message.warning('请填写退款原因');return}refunding.value=true;try{await orderApi.applyRefund(route.params.orderNo,refundReason.value.trim());message.success('退款申请已提交，请等待平台处理');refundOpen.value=false;await load()}catch(e){/* 拦截器已提示 */}finally{refunding.value=false}}
 // ===== 扫码支付 =====
@@ -178,7 +192,7 @@ function startPayPolling(){
   payPollTimer=setInterval(async()=>{
     try{
       const st=await paymentApi.query(route.params.orderNo)
-      if(Number(st?.payStatus)===1){ stopPayPolling(); message.success('支付成功'); payOpen.value=false; await load() }
+      if(Number(st?.payStatus)===1){ stopPayPolling(); message.success('支付成功'); trackPay(); payOpen.value=false; await load() }
     }catch(e){ /* 静默重试 */ }
   },3000)
 }

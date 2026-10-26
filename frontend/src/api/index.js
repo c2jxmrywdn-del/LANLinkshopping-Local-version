@@ -126,6 +126,8 @@ export const orderApi = {
   my: () => request.get('/order/my'),
   detail: (orderNo) => request.get(`/order/detail/${orderNo}`),
   pay: (orderNo) => request.post(`/order/pay/${orderNo}`),
+  // 买家确认收货（已发货 → 已完成，联动签收在途运单）
+  confirmReceipt: (orderNo) => request.post(`/order/confirm/${orderNo}`),
   cancel: (orderNo) => request.post(`/order/cancel/${orderNo}`),
   // 退款申请闭环：用户提交申请（进入平台审核队列）/ 平台驳回申请（仅运营）
   applyRefund: (orderNo, reason) => request.post(`/order/refund/apply/${orderNo}`, { reason }),
@@ -308,6 +310,22 @@ export const merchantCenterApi = {
   updateContact: (d) => request.put('/merchant/center/contact', d)
 }
 
+// ===== 广告流量推广（商户购买流量 → 钱包冻结 → 点击计费 → 结算退回） =====
+export const adApi = {
+  // 商户端：创建/支付/暂停/恢复/终止/列表/总览
+  create: (d) => request.post('/ad/campaigns', d),
+  pay: (campaignId) => request.post(`/ad/campaigns/${campaignId}/pay`),
+  pause: (campaignId) => request.post(`/ad/campaigns/${campaignId}/pause`),
+  resume: (campaignId) => request.post(`/ad/campaigns/${campaignId}/resume`),
+  terminate: (campaignId) => request.post(`/ad/campaigns/${campaignId}/terminate`),
+  my: () => request.get('/ad/campaigns/my'),
+  stats: () => request.get('/ad/campaigns/stats'),
+  // 商城侧：广告位商品（公开）
+  slots: (limit = 3) => request.get('/ad/slots', { params: { limit } }),
+  // 曝光/点击上报（公开；click 按 CPC 计费）
+  track: (campaignId, type) => request.post('/ad/track', { campaignId, type })
+}
+
 // ===== 商户端：流量管理（经营数据统计） =====
 export const trafficApi = {
   overview: () => request.get('/merchant/traffic/overview'),
@@ -317,7 +335,7 @@ export const trafficApi = {
   sources: (days = 30) => request.get('/merchant/traffic/sources', { params: { days } }),
   conversion: (days = 30) => request.get('/merchant/traffic/conversion', { params: { days } }),
   diagnosis: (days = 30) => request.get('/merchant/traffic/diagnosis', { params: { days } }),
-  track: (event) => request.post('/merchant/traffic/events', event),
+  track: (event) => request.post('/merchant/traffic/events', event, { silent: true }),
   trackPage: (event) => {
     // 页面行为分析属于可选 Cookie 范畴；用户未同意时不创建分析会话或上报行为。
     if (!hasCookieConsent('analytics')) return Promise.resolve({ skipped: true })
@@ -332,7 +350,7 @@ export const trafficApi = {
       sessionId:sid,
       deviceType:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'pc',
       pageUrl:location.pathname
-    })
+    }, { silent: true })
   }
 }
 
@@ -421,6 +439,33 @@ export const joinApi = {
   adminList: (params) => request.get('/join/admin/list', { params }),
   // 运营端审核：{approved, remark}
   review: (id, payload) => request.post(`/join/admin/review/${id}`, payload)
+}
+
+// ===== 价格智能监控 / 价格情报台 =====
+export const priceMonitorApi = {
+  // 价格走势 + 日K + 区间高低价（days 7-90）
+  trend: (prodId, days = 30) => request.get(`/price-monitor/trend/${prodId}`, { params: { days } }),
+  // 首页每日行情：有调价留痕的在售商品
+  marketProducts: (limit = 12) => request.get('/price-monitor/market/products', { params: { limit } }),
+  // 五维价格因子看板（市场情绪/上游供应链/基础原材料/国际化/政治政策）
+  factors: (prodId) => request.get(`/price-monitor/factors/${prodId}`),
+  // 规则引擎调价建议
+  analysis: (prodId) => request.get(`/price-monitor/analysis/${prodId}`),
+  // AI 实时分析（未配置外部模型时后端回退规则引擎，source=RULE；lang=en 返回英文规则文案）
+  aiAnalysis: (prodId, lang = 'zh') => request.get(`/price-monitor/ai-analysis/${prodId}`, { params: { lang } }),
+  // 因果问答：{ prodId, question, lang }
+  ask: (prodId, question, lang = 'zh') => request.post('/price-monitor/ask', { prodId, question, lang }),
+  // 市场资讯
+  news: (category, limit = 20) => request.get('/price-monitor/news', { params: { category: category || undefined, limit } }),
+  // 商户价格总览
+  merchantOverview: () => request.get('/price-monitor/merchant/overview'),
+  // 管理端
+  adminAnomalies: (days = 30, limit = 50) => request.get('/admin/price-monitor/anomalies', { params: { days, limit } }),
+  adminBenchmarks: () => request.get('/admin/price-monitor/benchmarks'),
+  // 预警订阅
+  myAlerts: () => request.get('/price-monitor/my/alerts'),
+  subscribe: (payload) => request.post('/price-monitor/alerts', payload),
+  cancelAlert: (id) => request.delete(`/price-monitor/alerts/${id}`)
 }
 
 // ===== 设计工具对接中台（微服务 lanlink-design-service，经网关 /api/design/**）=====

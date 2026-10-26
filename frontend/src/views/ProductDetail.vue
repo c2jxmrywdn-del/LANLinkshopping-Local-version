@@ -41,10 +41,10 @@
             </div>
 
             <div class="trust-row">
-              <span><strong>✓</strong> 正品保障</span>
-              <span><strong>✓</strong> 安全支付</span>
-              <span><strong>✓</strong> 售后支持</span>
-              <span><strong>✓</strong> 商户认证</span>
+              <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 正品保障</span>
+              <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 安全支付</span>
+              <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 售后支持</span>
+              <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 商户认证</span>
             </div>
           </div>
 
@@ -57,7 +57,8 @@
                 :aria-label="introSpeaking ? '停止语音介绍' : '播放语音介绍'"
                 :title="introSpeaking ? '停止语音介绍' : '播放语音介绍'"
                 @click="toggleIntro">
-                <span aria-hidden="true">{{ introSpeaking ? '⏹' : '🔊' }}</span>
+                <Square v-if="introSpeaking" :size="14" class="inline-block align-middle mr-1" />
+                <Volume2 v-else :size="15" class="inline-block align-middle mr-1" />
                 <span>{{ introSpeaking ? '停止播报' : '语音介绍' }}</span>
               </button>
             </div>
@@ -113,7 +114,7 @@
                   登录后购买
                 </a-button>
               </div>
-              <p class="secure-note">🔒 交易过程受平台安全机制保护</p>
+              <p class="secure-note"><Lock :size="13" class="inline-block mr-1 align-middle text-slate-400" /> 交易过程受平台安全机制保护</p>
             </div>
           </div>
         </section>
@@ -178,6 +179,7 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { CheckCircle2, Volume2, Square, Lock } from 'lucide-vue-next'
 import { message } from 'ant-design-vue'
 import { productApi, trafficApi } from '../api'
 import { useCartStore } from '../store/cart'

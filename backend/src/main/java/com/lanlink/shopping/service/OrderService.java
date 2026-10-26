@@ -251,6 +251,43 @@ public class OrderService {
                 .eq(Order::getUserId, userId).orderByDesc(Order::getCreateTime));
     }
 
+    /**
+     * 买家确认收货（订单完成闭环）：已发货订单置为已完成，联动在途运单签收。
+     * 原子流转防并发；成功后站内消息通知，订单进入可结算口径。
+     */
+    @Transactional
+    public Order confirmReceipt(Long userId, String orderNo) {
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null || !o.getUserId().equals(userId)) throw new BusinessException("订单不存在");
+        int affected = orderMapper.markCompletedAtomic(orderNo);
+        if (affected == 0) throw new BusinessException("订单不在已发货状态，无法确认收货");
+        // 联动签收未完成的在途运单（状态机逐步推进至 delivered）
+        if (waybillMapper != null) {
+            waybillMapper.selectList(Wrappers.<LogisticsWaybill>lambdaQuery()
+                            .eq(LogisticsWaybill::getOrderNo, orderNo))
+                    .forEach(wb -> {
+                        String s = wb.getStatus();
+                        if (!"delivered".equals(s) && !"cancelled".equals(s) && !"returned".equals(s) && !"lost".equals(s)) {
+                            wb.setStatus("delivered");
+                            wb.setDeliveredTime(LocalDateTime.now());
+                            waybillMapper.updateById(wb);
+                        }
+                    });
+        }
+        messageService.send(userId, "order", "订单已完成",
+                "订单 " + orderNo + " 已确认收货，交易完成。", orderNo);
+        return orderMapper.selectById(orderNo);
+    }
+
+    /** 超时自动确认收货：发货超过 7 天未确认的订单每日自动完成（定时任务） */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "0 30 3 * * ?")
+    public void autoCompleteReceipt() {
+        int n = orderMapper.autoCompleteShipped(7);
+        if (n > 0) {
+            auditService.record(null, "ORDER_AUTO_COMPLETE", "超时自动确认收货 " + n + " 单", null);
+        }
+    }
+
     public OrderDetailVO detail(Long userId, String orderNo) {
         return detail(userId, orderNo, false);
     }
@@ -336,13 +373,30 @@ public class OrderService {
 
     /** 记录退款结果 */
     @Transactional
+    /**
+     * 回写退款结果（PaymentService 渠道退款后调用；refundAmount 为累计已退总额）。
+     * - 成功且已退满 → success（订单闭环）；
+     * - 成功但部分退 → rejected + 说明"剩余可再次申请"（解锁再退，避免部分退款后锁死）；
+     * - 失败 → 回到 applied（运营可重试或驳回），'processing' 仅存在于打款进行中的瞬间。
+     */
     public void applyRefundResult(String orderNo, String refundId, BigDecimal refundAmount, boolean success) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null) throw new BusinessException("订单不存在: " + orderNo);
-        o.setRefundStatus(success ? "success" : "processing");
-        if (refundId != null) o.setRefundId(refundId);
-        if (refundAmount != null) o.setRefundAmount(refundAmount);
-        if (success) o.setRefundTime(LocalDateTime.now());
+        BigDecimal total = refundAmount == null ? BigDecimal.ZERO : refundAmount;
+        boolean full = total.compareTo(o.getTotalAmount()) >= 0;
+        o.setRefundId(refundId);
+        o.setRefundAmount(total);
+        if (success) {
+            if (full) {
+                o.setRefundStatus("success");
+                o.setRefundTime(LocalDateTime.now());
+            } else {
+                o.setRefundStatus("rejected");
+                o.setRefundRejectReason("已部分退款 ¥" + total + "，剩余部分可再次申请退款");
+            }
+        } else {
+            o.setRefundStatus("applied");
+        }
         o.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(o);
     }

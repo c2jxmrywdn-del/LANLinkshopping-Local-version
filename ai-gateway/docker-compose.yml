@@ -1,11 +1,14 @@
 # LANLink AI 网关沙盒：OpenAI 兼容网关 + 本地大模型(Ollama) + 本地知识库
 # 一键启动：docker compose -f ai-gateway/docker-compose.yml up -d --build
+# 模型常驻模式：OLLAMA_KEEP_ALIVE=-1 + model-warmup 启动即预加载，无需手动唤醒
 services:
   ollama:
     image: docker.m.daocloud.io/ollama/ollama:latest
     container_name: lanlink-ollama
     ports:
       - "11434:11434"
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"   # 服务端默认：模型加载后永久常驻，不再 5 分钟自动卸载
     volumes:
       - lanlink-ollama-models:/root/.ollama
     restart: unless-stopped
@@ -14,6 +17,24 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+
+  # 一次性预热容器：随栈启动自动把 qwen2.5:0.5b 加载进内存（配合上面的 -1 即常驻）
+  model-warmup:
+    image: docker.m.daocloud.io/ollama/ollama:latest
+    container_name: lanlink-model-warmup
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "[warmup] 预加载 qwen2.5:0.5b (常驻模式)..."
+        ollama run qwen2.5:0.5b "你好" >/dev/null 2>&1 \
+          && echo "[warmup] 模型已加载并常驻" \
+          || echo "[warmup] 加载失败，首次调用时将自动重试"
+    restart: "no"
 
   ai-gateway:
     build: .

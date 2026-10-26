@@ -71,7 +71,7 @@
     </div>
 
     <span v-if="state === 'current'" class="mb-chip">当前</span>
-    <span v-else-if="state === 'locked'" class="mb-chip mb-chip--lock" aria-hidden="true">🔒</span>
+    <span v-else-if="state === 'locked'" class="mb-chip mb-chip--lock" aria-hidden="true"><Lock :size="11" class="inline-block align-middle" /></span>
   </div>
 </template>
 
@@ -83,6 +83,7 @@
 // 以及进/离场的「反向矩阵」弹簧编排。tier/state/size/delay/burst/link 为会员体系适配层。
 import { useId, ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { Lock } from 'lucide-vue-next'
 import { locale, translateDataText } from '../../i18n'
 
 const props = defineProps({

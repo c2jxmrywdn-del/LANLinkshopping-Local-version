@@ -2,9 +2,17 @@ package com.lanlink.shopping.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.lanlink.shopping.entity.Product;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.util.List;
+
 public interface ProductMapper extends BaseMapper<Product> {
+
+    /** 当前有在售商品的行业 ID（行业基准聚合用，避免在服务层构造 Lambda 查询）。 */
+    @Select("SELECT DISTINCT ind_id FROM t_product " +
+            "WHERE status = 1 AND review_status = 1 AND ind_id IS NOT NULL")
+    List<Long> distinctIndustryIds();
 
     /**
      * 库存原子扣减（防超卖/防并发篡改，需求 2）。

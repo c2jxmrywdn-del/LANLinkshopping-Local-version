@@ -59,7 +59,7 @@
         </div>
       </div>
       <div v-else-if="!loading" class="my-empty">
-        <div class="my-empty-ico">🎫</div>
+        <div class="my-empty-ico"><Ticket :size="42" :stroke-width="1.6" /></div>
         <p>这个分类下还没有优惠券</p>
         <button type="button" class="my-pill" @click="$router.push('/activity')">去活动中心领券</button>
       </div>
@@ -69,7 +69,10 @@
     <div v-else class="join-zone">
       <div class="join-list" v-if="parts.length">
         <div v-for="(p, i) in parts" :key="i" class="join-item" @click="$router.push('/activity/' + p.campaignId)">
-          <div class="join-ico">{{ p.type === 'purchase' ? '🧾' : '🎁' }}</div>
+          <div class="join-ico">
+            <Receipt v-if="p.type === 'purchase'" :size="20" :stroke-width="2" />
+            <Gift v-else :size="20" :stroke-width="2" />
+          </div>
           <div class="join-main">
             <b>{{ p.title }}</b>
             <span>{{ p.type === 'purchase' ? '消费有礼 · 支付后自动参与' : '注册有礼 · 主动参与' }} · {{ fmt(p.joinTime) }}</span>
@@ -78,7 +81,7 @@
         </div>
       </div>
       <div v-else-if="!loading" class="my-empty">
-        <div class="my-empty-ico">🎁</div>
+        <div class="my-empty-ico"><Gift :size="40" :stroke-width="1.6" /></div>
         <p>还没有参与过激励活动</p>
         <button type="button" class="my-pill" @click="$router.push('/activity')">发现活动</button>
       </div>
@@ -91,6 +94,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { campaignApi } from '../api'
+import { Ticket, Receipt, Gift } from 'lucide-vue-next'
 
 const tab = ref('coupon')
 const couponFilter = ref('usable')

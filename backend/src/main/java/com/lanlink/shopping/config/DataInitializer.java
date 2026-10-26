@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 启动初始化: 若示例数据不存在则写入(密码用 BCrypt 正确加密)
@@ -41,6 +42,8 @@ public class DataInitializer implements CommandLineRunner {
     private final ThirdAuthMapper thirdAuthMapper;
     private final MessageMapper messageMapper;
     private final CampaignMapper campaignMapper;
+    private final com.lanlink.shopping.module.pricemonitor.mapper.MarketBenchmarkMapper benchmarkMapper;
+    private final com.lanlink.shopping.module.pricemonitor.mapper.PriceHistoryMapper priceHistoryMapper;
     private final PasswordEncoder passwordEncoder;
 
     public DataInitializer(UserMapper userMapper, RoleMapper roleMapper, EnterpriseMapper enterpriseMapper,
@@ -48,6 +51,8 @@ public class DataInitializer implements CommandLineRunner {
                            CategoryMapper categoryMapper, ThirdAuthMapper thirdAuthMapper,
                            MessageMapper messageMapper,
                            CampaignMapper campaignMapper,
+                           com.lanlink.shopping.module.pricemonitor.mapper.MarketBenchmarkMapper benchmarkMapper,
+                           com.lanlink.shopping.module.pricemonitor.mapper.PriceHistoryMapper priceHistoryMapper,
                            PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper; this.roleMapper = roleMapper;
         this.enterpriseMapper = enterpriseMapper; this.merchantMapper = merchantMapper;
@@ -55,6 +60,8 @@ public class DataInitializer implements CommandLineRunner {
         this.thirdAuthMapper = thirdAuthMapper;
         this.messageMapper = messageMapper;
         this.campaignMapper = campaignMapper;
+        this.benchmarkMapper = benchmarkMapper;
+        this.priceHistoryMapper = priceHistoryMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -144,8 +151,61 @@ public class DataInitializer implements CommandLineRunner {
         seedThirdAuthDemo();
         // 7. 站内消息演示数据
         seedMessageDemo();
+        // 8. 价格监控演示数据（行业基准 30 天游走 + 商品价格留痕）
+        seedPriceMonitorDemo();
 
         log.info("==== 演示数据就绪: 演示账号(13800000000/13900000001/13700000002)密码均为 123456 ====");
+    }
+
+    /**
+     * 价格监控演示数据：近 30 天行业基准价（随机游走，幂等按 ind+day）+
+     * 演示商品的价格留痕（从现价反推逐日演变，幂等按 prod_id）。
+     */
+    private void seedPriceMonitorDemo() {
+        LocalDateTime now = LocalDateTime.now();
+        // 1) 行业基准：行业 1-4，各 30 天；基准价按行业量级起步，日波动 ±2%
+        Map<Long, Double> base = Map.of(1L, 2200.0, 2L, 3200.0, 3L, 1600.0, 4L, 220.0);
+        java.time.LocalDate today = java.time.LocalDate.now();
+        for (Map.Entry<Long, Double> e : base.entrySet()) {
+            double v = e.getValue();
+            for (int i = 29; i >= 0; i--) {
+                java.time.LocalDate day = today.minusDays(i);
+                Long dup = benchmarkMapper.selectCount(Wrappers.<com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark>lambdaQuery()
+                        .eq(com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark::getIndId, e.getKey())
+                        .eq(com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark::getDay, day));
+                if (dup > 0) continue;
+                com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark mb =
+                        new com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark();
+                mb.setIndId(e.getKey());
+                mb.setDay(day);
+                mb.setBenchmark(BigDecimal.valueOf(Math.round(v * 100) / 100.0));
+                benchmarkMapper.insert(mb);
+                v *= 1 + (Math.random() - 0.48) * 0.04; // 轻微上偏的随机游走
+            }
+        }
+        // 2) 商品价格留痕：每个演示商品 4 条（近 30 天），从现价反推
+        for (var p : productMapper.selectList(Wrappers.<Product>lambdaQuery().last("LIMIT 20"))) {
+            Long cnt = priceHistoryMapper.selectCount(Wrappers.<com.lanlink.shopping.module.pricemonitor.entity.PriceHistory>lambdaQuery()
+                    .eq(com.lanlink.shopping.module.pricemonitor.entity.PriceHistory::getProdId, p.getProdId()));
+            if (cnt > 0) continue;
+            double cur = p.getPrice().doubleValue();
+            double prev = cur;
+            for (int i = 4; i >= 1; i--) {
+                double old = cur * (1 + (Math.random() - 0.5) * 0.08);
+                com.lanlink.shopping.module.pricemonitor.entity.PriceHistory h =
+                        new com.lanlink.shopping.module.pricemonitor.entity.PriceHistory();
+                h.setProdId(p.getProdId());
+                h.setMerId(p.getMerId());
+                h.setIndId(p.getIndId());
+                h.setOldPrice(BigDecimal.valueOf(Math.round(old * 100) / 100.0));
+                h.setNewPrice(BigDecimal.valueOf(Math.round(prev * 100) / 100.0));
+                h.setChangePct(BigDecimal.valueOf(Math.round((prev / old - 1) * 10000) / 100.0));
+                h.setSource("SEED");
+                h.setCreateTime(now.minusDays(i * 6L));
+                priceHistoryMapper.insert(h);
+                prev = old;
+            }
+        }
     }
 
     /** 营销中台演示数据：统一活动体系（领券/满减/折扣/秒杀/激励/商户激励，按标题幂等） */

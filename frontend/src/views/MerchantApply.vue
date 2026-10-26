@@ -216,7 +216,7 @@
                           <div class="up-pct">{{ license.percent }}% 营业执照上传中...</div>
                         </template>
                         <template v-else>
-                          <div class="up-icon">📁</div>
+                          <div class="up-icon"><FolderUp :size="32" class="text-slate-400 inline-block" /></div>
                           <div class="up-text">点击或拖拽上传营业执照图片</div>
                           <div class="up-hint-text">支持高分辨率证件照片（需包含统一社会信用代码与公章）</div>
                         </template>
@@ -379,7 +379,7 @@
                             <div class="up-pct">{{ specialPermit.percent }}% 许可证上传中...</div>
                           </template>
                           <template v-else>
-                            <div class="up-icon">📜</div>
+                            <div class="up-icon"><FileText :size="32" class="text-slate-400 inline-block" /></div>
                             <div class="up-text">点击或拖拽上传特殊经营许可证文件</div>
                             <div class="up-hint-text">支持彩色扫描件或清晰实拍图（JPG、PNG 或 PDF）</div>
                           </template>
@@ -512,7 +512,7 @@
 
             <div class="security-data-card">
               <div class="sec-card-title">
-                <span>🛡️ 加密商户档案</span>
+                <span><ShieldCheck :size="16" class="inline-block mr-1 align-middle text-sky-500" /> 加密商户档案</span>
                 <a-tag color="blue">AES-256-GCM</a-tag>
               </div>
               <div class="sec-item">
@@ -550,7 +550,7 @@
             <!-- 入驻后：月度完税记录上报（首季按季度 3 份，之后每月 1 份，次月 15 日前完成） -->
             <div v-if="mine.reviewStatus === 1" class="tax-compliance-card">
               <div class="taxc-title">
-                <span>🧾 完税记录月度上报</span>
+                <span><FileSpreadsheet :size="16" class="inline-block mr-1 align-middle text-amber-500" /> 完税记录月度上报</span>
                 <a-tag :color="currentTaxStatus.color">{{ currentTaxStatus.short }}</a-tag>
               </div>
               <p class="taxc-policy">入驻首季按季度提交近 3 个月（共 3 份）；之后每月上报上一自然月记录，次月 15 日前完成，最多延期 15 天。</p>
@@ -589,7 +589,7 @@
 
           <template v-else>
             <div class="empty-status">
-              <div class="empty-icon">🏢</div>
+              <div class="empty-icon"><Building2 :size="48" class="text-slate-300 inline-block" /></div>
               <h4>您当前尚未入驻商户</h4>
               <p>完成左侧四步入驻流程，即可开通商户专属管理控制台，上架发布工业商品。</p>
             </div>
@@ -612,6 +612,13 @@
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
+import {
+  FolderUp,
+  FileText,
+  ShieldCheck,
+  FileSpreadsheet,
+  Building2
+} from 'lucide-vue-next'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,

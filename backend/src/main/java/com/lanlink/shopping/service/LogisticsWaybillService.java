@@ -172,7 +172,11 @@ public class LogisticsWaybillService {
         }
         if (wb.getStatus().equals(toStatus)) return wb; // 幂等
         wb.setStatus(toStatus);
-        if (LogisticsStateMachine.DELIVERED.equals(toStatus)) wb.setDeliveredTime(LocalDateTime.now());
+        if (LogisticsStateMachine.DELIVERED.equals(toStatus)) {
+            wb.setDeliveredTime(LocalDateTime.now());
+            // 签收联动订单完成（原子 1→2）：商户确认签收/服务商轨迹推到签收即完成交易
+            completeOrderIfShipped(wb.getOrderNo());
+        }
         waybillMapper.updateById(wb);
         if (operatorNote != null && !operatorNote.isBlank()) {
             insertTrace(wb.getWaybillId(), LocalDateTime.now(), operatorNote, toStatus, false, "manual");
@@ -180,6 +184,21 @@ public class LogisticsWaybillService {
         auditService.record(operatorId, "LOGISTICS_TRANSIT",
                 "运单 " + wb.getWaybillNo() + " 状态流转为 " + toStatus, httpReq);
         return wb;
+    }
+
+    /** 运单签收后联动订单完成（已发货→已完成，原子防并发；状态不符静默跳过） */
+    private void completeOrderIfShipped(String orderNo) {
+        try {
+            if (orderMapper.markCompletedAtomic(orderNo) > 0) {
+                Order o = orderMapper.selectById(orderNo);
+                if (o != null) {
+                    messageService.send(o.getUserId(), "order", "订单已完成",
+                            "运单已签收，订单 " + orderNo + " 交易完成。", orderNo);
+                }
+            }
+        } catch (Exception e) {
+            // 联动失败不影响签收主流程，由每日自动确认兜底
+        }
     }
 
     /**
@@ -208,7 +227,11 @@ public class LogisticsWaybillService {
             if (LogisticsStateMachine.canTransit(wb.getStatus(), parsed.status())
                     && !wb.getStatus().equals(parsed.status())) {
                 wb.setStatus(parsed.status());
-                if (LogisticsStateMachine.DELIVERED.equals(parsed.status())) wb.setDeliveredTime(traceTime);
+                if (LogisticsStateMachine.DELIVERED.equals(parsed.status())) {
+                    wb.setDeliveredTime(traceTime);
+                    // 服务商轨迹推到签收 → 联动订单完成
+                    completeOrderIfShipped(wb.getOrderNo());
+                }
                 waybillMapper.updateById(wb);
             }
             // 异常告警（幂等）

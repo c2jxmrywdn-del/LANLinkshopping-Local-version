@@ -64,7 +64,17 @@
         </div>
 
         <div class="capability-grid">
-          <article v-for="item in capabilities" :key="item.title" class="capability-card">
+          <HyperiuxBeam
+            v-for="item in capabilities"
+            :key="item.title"
+            class="capability-card"
+            :border-radius="28"
+            :beam-width="2"
+            :duration="item.index === '01' ? 3.3 : 5"
+            :strength="item.index === '01' ? 0.9 : 0.55"
+            :color-variant="item.index === '01' ? 'colorful' : 'brand'"
+            :theme="item.index === '01' ? 'dark' : 'auto'"
+          >
             <div class="capability-icon">{{ item.icon }}</div>
             <div>
               <span class="card-index">{{ item.index }}</span>
@@ -72,7 +82,7 @@
               <p>{{ item.desc }}</p>
             </div>
             <span class="card-arrow">↗</span>
-          </article>
+          </HyperiuxBeam>
         </div>
       </section>
 
@@ -133,6 +143,7 @@
               :thickness="2"
               :beams="2"
               glow
+              :glow-opacity="0.12"
             >
               <span class="module-number">{{ item.number }}</span>
               <div class="module-icon">{{ item.icon }}</div>
@@ -388,6 +399,7 @@ import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import AuthorCard from '../components/AuthorCard.vue'
 import BorderBeamPanel from '../components/ui/BorderBeamPanel.vue'
+import HyperiuxBeam from '../components/ui/HyperiuxBeam.vue'
 import { useRouter, useRoute } from 'vue-router'
 import { joinApi } from '../api'
 import { useUserStore } from '../store/user'
@@ -1285,7 +1297,12 @@ async function copyText(text, label) {
 }
 
 /* 03 能力矩阵文字卡：光束由 BorderBeamPanel 组件提供，卡片允许光晕外溢 */
-.module-card { overflow: visible; }
+.module-card {
+  overflow: visible;
+  --motiq-accent: #8FB6F2;
+  --motiq-secondary-accent: #8FD6D8;
+  --motiq-signature: #E9A79A;
+}
 
 /* ---------- 响应式 ---------- */
 @media (max-width: 1024px) {

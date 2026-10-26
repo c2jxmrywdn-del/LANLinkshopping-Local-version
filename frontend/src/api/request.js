@@ -74,7 +74,8 @@ request.interceptors.response.use(
       }
       // /auth/me 仅用于静默探测登录态：401 时不弹提示、不强制跳登录
       const isMe = (res.config.url || '').includes('/auth/me')
-      if (!isMe) {
+      // 埋点/遥测类请求（config.silent）失败不打扰用户：不弹错、不跳登录
+      if (!isMe && !res.config.silent) {
         message.error(body.message || '请求失败')
         if (body.code === 401) {
           router.push('/login')
@@ -97,7 +98,9 @@ request.interceptors.response.use(
     if (resp && err.config && isCsrfFailure(resp.status, resp.data) && !err.config._retried && isCsrfProtectedMutation(err.config)) {
       return retryWithCsrf(err.config)
     }
-    message.error('网络错误: ' + (err.message || ''))
+    if (!err.config?.silent) {
+      message.error('网络错误: ' + (err.message || ''))
+    }
     return Promise.reject(err)
   }
 )

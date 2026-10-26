@@ -86,7 +86,7 @@
               <div class="acc-name">{{ acc.name }}</div>
               <div class="acc-email">{{ acc.email }}</div>
             </div>
-            <span class="acc-check" v-if="selectedEmail === acc.email">✓</span>
+            <span class="acc-check" v-if="selectedEmail === acc.email"><Check :size="14" /></span>
           </div>
 
           <div class="custom-acc-input">
@@ -133,7 +133,7 @@
               <div class="acc-name">{{ acc.name }}</div>
               <div class="acc-email">{{ acc.email }}</div>
             </div>
-            <span class="acc-check" v-if="selectedEmail === acc.email">✓</span>
+            <span class="acc-check" v-if="selectedEmail === acc.email"><Check :size="14" /></span>
           </div>
 
           <div class="apple-privacy-toggle">
@@ -146,7 +146,7 @@
 
         <div class="apple-auth-indicator">
           <div class="face-id-icon">
-            <span>🛡️</span>
+            <ShieldCheck :size="18" class="text-sky-500 inline-block align-middle" />
           </div>
           <span>使用 Touch ID / 密码认证即可完成登录</span>
         </div>
@@ -166,6 +166,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { ShieldCheck, Check } from 'lucide-vue-next'
 import { socialApi } from '../../api'
 import { useUserStore } from '../../store/user'
 import { useCartStore } from '../../store/cart'

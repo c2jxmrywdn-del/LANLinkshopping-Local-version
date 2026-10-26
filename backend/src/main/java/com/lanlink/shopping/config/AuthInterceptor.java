@@ -50,13 +50,14 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (isWhiteList(uri)) {
             return true;
         }
-        if (UserContext.current(request) == null) {
+        // 统一读取一次当前用户：既做登录校验，也供后续 /admin/** 鉴权使用，避免重复查询与空指针风险
+        User u = UserContext.current(request);
+        if (u == null) {
             write(response, R.fail(401, "请先登录"));
             return false;
         }
         // 运营后台鉴权（越权访问记录审计日志）
         if (uri.startsWith("/admin/") || uri.contains("/admin/")) {
-            User u = UserContext.current(request);
             if (!com.lanlink.shopping.common.UserRoles.isAdmin(u.getRoleId())) {
                 auditService.record(u.getUserId(), "ACCESS_DENIED", "越权访问后台: " + uri, request);
                 write(response, R.fail(403, "无权限：仅平台运营可操作"));
@@ -90,11 +91,22 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 活动中心公开浏览（列表/详情）；领券/参与/券包/商户端均需登录
                 || uri.equals("/campaign/list")
                 || uri.startsWith("/campaign/detail/")
+                // 价格监控：商品价格走势、五维因子与市场资讯公开浏览（商品详情页/首页行情）
+                || uri.startsWith("/price-monitor/trend/")
+                || uri.startsWith("/price-monitor/factors/")
+                || uri.startsWith("/price-monitor/market/")
+                || uri.equals("/price-monitor/news")
                 // 订阅方案列表公开浏览；购买/我的/取消需登录
                 || uri.equals("/subscription/plans")
                 // 支付渠道异步通知与同步回跳：无登录态，公开放行（内部已做签名校验）
                 || uri.startsWith("/payment/notify/")
                 || uri.equals("/payment/alipay/return")
+                // 广告推广：商城广告位与曝光/点击上报公开（游客也可浏览商城广告位）
+                || uri.equals("/ad/slots")
+                || uri.equals("/ad/track")
+                // 商品直播：直播广场、直播间详情、商品柜、互动弹幕、点赞公开放行
+                || uri.equals("/live/rooms")
+                || uri.startsWith("/live/room/")
                 // Public one-click marketing unsubscribe uses a signed, account-bound token.
                 || uri.equals("/marketing-email/unsubscribe");
     }

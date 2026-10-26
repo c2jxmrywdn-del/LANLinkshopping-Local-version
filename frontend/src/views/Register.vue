@@ -11,8 +11,8 @@
         <a-form-item label="手机号" :rules="[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]">
           <a-input v-model:value="form.phone" size="large" />
         </a-form-item>
-        <a-form-item label="昵称">
-          <a-input v-model:value="form.nickname" size="large" />
+        <a-form-item label="昵称" name="nickname" :rules="[{ required: true, whitespace: true, message: '请输入昵称' }, { max: 32, message: '昵称不能超过 32 字' }]">
+          <a-input v-model:value="form.nickname" size="large" :maxlength="32" />
         </a-form-item>
         <a-form-item label="密码" :rules="[{ required: true, message: '请输入密码' }]">
           <a-input-password v-model:value="form.password" size="large" />

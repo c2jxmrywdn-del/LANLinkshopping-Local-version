@@ -20,7 +20,7 @@
               <p>{{ statusHint }}</p>
             </div>
             <a-button v-if="canShip" type="primary" size="large" class="pill" @click="shipOpen = true">
-              🚚 立即发货
+              <Truck :size="16" class="inline-block mr-1 align-middle" /> 立即发货
             </a-button>
           </div>
           <a-steps :current="stepIndex" size="small" class="steps"
@@ -97,7 +97,7 @@
                   </span>
                 </button>
                 <a-button v-if="canSign" block class="sign-btn" @click="signConfirm">
-                  ✅ 确认签收（买家已收货时操作）
+                  <CheckCircle2 :size="15" class="inline-block mr-1 align-middle text-emerald-500" /> 确认签收（买家已收货时操作）
                 </a-button>
               </template>
               <a-empty v-else-if="!canShip" :image="aEmpty.PRESENTED_IMAGE_SIMPLE" description="暂无运单" />
@@ -118,6 +118,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Empty, message, Modal } from 'ant-design-vue'
+import { Truck, CheckCircle2 } from 'lucide-vue-next'
 import { orderApi, merchantCenterApi, logisticsApi } from '../../api'
 import { ORDER_STATUS, PAY_CHANNEL, REFUND_STATUS, WAYBILL_STATUS, fmtMoney, orderStepIndex } from '../../utils/merchantStatus'
 import ShipModal from '../../components/merchant/ShipModal.vue'

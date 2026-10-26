@@ -43,6 +43,7 @@ public class ProductService {
     private final IndustryMapper industryMapper;
     private final AuditLogMapper auditLogMapper;
     private final AuditService auditService;
+    private final com.lanlink.shopping.module.pricemonitor.service.PriceMonitorService priceMonitorService;
 
     @Autowired
     public ProductService(ProductMapper productMapper,
@@ -51,7 +52,8 @@ public class ProductService {
                           @Autowired(required = false) CategoryMapper categoryMapper,
                           @Autowired(required = false) IndustryMapper industryMapper,
                           @Autowired(required = false) AuditLogMapper auditLogMapper,
-                          @Autowired(required = false) AuditService auditService) {
+                          @Autowired(required = false) AuditService auditService,
+                          @Autowired(required = false) com.lanlink.shopping.module.pricemonitor.service.PriceMonitorService priceMonitorService) {
         this.productMapper = productMapper;
         this.merchantMapper = merchantMapper;
         this.enterpriseMapper = enterpriseMapper;
@@ -59,10 +61,11 @@ public class ProductService {
         this.industryMapper = industryMapper;
         this.auditLogMapper = auditLogMapper;
         this.auditService = auditService;
+        this.priceMonitorService = priceMonitorService;
     }
 
     public ProductService(ProductMapper productMapper) {
-        this(productMapper, null, null, null, null, null, null);
+        this(productMapper, null, null, null, null, null, null, null);
     }
 
     /** 分页查询(前台): 关键词/分类/行业/排序 */
@@ -302,10 +305,13 @@ public class ProductService {
      * 商户编辑自己的商品：
      * - 仅调整库存：即时生效，不影响审核状态与可售状态；
      * - 修改标题/价格/分类/主图/详情等内容字段：重置为「待审核」且不可售，平台复审通过后自动恢复可售。
+     * 价格变动同步写入价格监控留痕（同事务，触发订阅预警）。
      */
+    @Transactional
     public Product myUpdate(Long merId, Long prodId, Product patch) {
         Product p = myDetail(merId, prodId);
         boolean contentChanged = false;
+        BigDecimal priceBefore = p.getPrice();
         if (patch.getTitle() != null && !patch.getTitle().equals(p.getTitle())) {
             p.setTitle(patch.getTitle().trim());
             contentChanged = true;
@@ -365,6 +371,10 @@ public class ProductService {
         }
         p.setUpdateTime(LocalDateTime.now());
         productMapper.updateById(p);
+        // 价格智能监控：调价留痕 + 预警评估（同事务）
+        if (priceBefore != null && p.getPrice() != null && priceBefore.compareTo(p.getPrice()) != 0) {
+            priceMonitorService.recordPriceChange(p, priceBefore, p.getPrice(), "MERCHANT", null);
+        }
         return p;
     }
 

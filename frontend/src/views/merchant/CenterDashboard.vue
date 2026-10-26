@@ -7,7 +7,7 @@
         <p>今天有 {{ kpis.pendingShip || 0 }} 笔订单待发货，近 7 日销售额 {{ money(kpis.weekAmount) }} 元。</p>
       </div>
       <div class="hero-actions">
-        <a-button size="large" class="pill" @click="$router.push('/merchant/center/orders')">🧾 处理订单</a-button>
+        <a-button size="large" class="pill" @click="$router.push('/merchant/center/orders')"><FileText :size="15" class="inline-block mr-1 align-middle" /> 处理订单</a-button>
         <a-button size="large" type="primary" class="pill" @click="publishOpen = true">＋ 发布商品</a-button>
       </div>
     </section>
@@ -25,17 +25,17 @@
         <div class="kpi-foot">{{ kpis.reviewingProducts ? `另有 ${kpis.reviewingProducts} 件审核中` : '全部商品经营正常' }}</div>
       </div>
       <div class="kpi-card warn" @click="$router.push('/merchant/center/orders?tab=paid')">
-        <div class="kpi-top"><span>待发货订单</span><span class="kpi-ico">🚚</span></div>
+        <div class="kpi-top"><span>待发货订单</span><span class="kpi-ico"><Truck :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.pendingShip || 0 }}</div>
         <div class="kpi-foot">{{ kpis.pendingShip ? '点击立即处理' : '暂无待发货' }}</div>
       </div>
       <div class="kpi-card" :class="{ warn: kpis.refundPending }" @click="$router.push('/merchant/center/orders?tab=refund')">
-        <div class="kpi-top"><span>退款申请</span><span class="kpi-ico">↩</span></div>
+        <div class="kpi-top"><span>退款申请</span><span class="kpi-ico"><RotateCcw :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.refundPending || 0 }}</div>
         <div class="kpi-foot">{{ kpis.refundPending ? '待平台处理，可查看详情' : '暂无退款申请' }}</div>
       </div>
       <div class="kpi-card" @click="$router.push('/merchant/center/traffic')">
-        <div class="kpi-top"><span>在途订单</span><span class="kpi-ico">🧭</span></div>
+        <div class="kpi-top"><span>在途订单</span><span class="kpi-ico"><Compass :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.shipping || 0 }}</div>
         <div class="kpi-foot">已发货运输中</div>
       </div>
@@ -70,13 +70,13 @@
         </template>
         <template v-if="todos.length">
           <button v-for="t in todos" :key="t.key" type="button" class="todo-row" @click="$router.push(t.link)">
-            <span class="todo-ico" :class="t.key">{{ todoIco(t.key) }}</span>
+            <span class="todo-ico" :class="t.key"><component :is="todoIco(t.key)" :size="16" /></span>
             <span class="todo-label">{{ t.label }}</span>
             <b class="todo-count">{{ t.count }}</b>
             <span class="todo-go">→</span>
           </button>
         </template>
-        <div v-else class="todo-empty"><span>✓</span><div><b>一切井然有序</b><p>暂无待处理事项，继续保持。</p></div></div>
+        <div v-else class="todo-empty"><CheckCircle2 :size="24" class="text-emerald-500 inline-block align-middle" /><div><b>一切井然有序</b><p>暂无待处理事项，继续保持。</p></div></div>
       </a-card>
     </section>
 
@@ -126,8 +126,18 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, markRaw } from 'vue'
 import { Empty } from 'ant-design-vue'
+import {
+  FileText,
+  Truck,
+  Compass,
+  RotateCcw,
+  Package,
+  Search,
+  AlertTriangle,
+  CheckCircle2
+} from 'lucide-vue-next'
 import { merchantCenterApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'
 import ProductPublishForm from '../../components/merchant/ProductPublishForm.vue'
@@ -159,8 +169,14 @@ const orderCols = [
 ]
 
 const money = fmtMoney
+const TODO_MAP = {
+  ship: markRaw(Package),
+  refund: markRaw(RotateCcw),
+  review: markRaw(Search),
+  reject: markRaw(AlertTriangle)
+}
 function todoIco(key) {
-  return { ship: '📦', refund: '↩', review: '🔎', reject: '⚠️' }[key] || '•'
+  return TODO_MAP[key] || markRaw(Package)
 }
 function barHeight(d) {
   const max = Math.max(...trend.value.map(x => Number(x.amount || 0)), 0.01)

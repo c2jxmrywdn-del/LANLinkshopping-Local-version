@@ -61,6 +61,10 @@
           <template #icon><UserAddOutlined /></template>
           <span>加入我们审核</span>
         </a-menu-item>
+        <a-menu-item key="admin-price-monitor">
+          <template #icon><LineChartOutlined /></template>
+          <span>价格监控</span>
+        </a-menu-item>
         <a-menu-item key="admin-audit">
           <template #icon><FileProtectOutlined /></template>
           <span>审计日志</span>
@@ -177,6 +181,7 @@ import {
   FileProtectOutlined,
   CommentOutlined,
   UserAddOutlined,
+  LineChartOutlined,
   LockOutlined,
   ExportOutlined,
   LogoutOutlined,
@@ -226,6 +231,7 @@ const routeNameMap = {
   'admin-credit-terms': '账期审核',
   'admin-ai-models': '外部大模型',
   'admin-join-us': '加入我们审核',
+  'admin-price-monitor': '价格监控',
   'admin-audit': '审计日志',
   'admin-communications': '沟通概览',
   'admin-communications-inbox': '会话工作台',

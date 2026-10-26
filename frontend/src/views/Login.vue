@@ -34,10 +34,12 @@
             <!-- 第一步：手机号 + 密码 -->
             <a-form v-if="!twofa" :model="form" layout="vertical" @finish="submit">
               <a-form-item label="手机号" :rules="[{ required: true, message: '请输入手机号' }]">
-                <a-input v-model:value="form.phone" placeholder="请输入已注册的手机号" size="large" />
+                <a-input id="login-phone" name="phone" autocomplete="username"
+                         v-model:value="form.phone" placeholder="请输入已注册的手机号" size="large" />
               </a-form-item>
               <a-form-item label="密码" :rules="[{ required: true, message: '请输入密码' }]">
-                <a-input-password v-model:value="form.password" placeholder="请输入注册时设置的密码" size="large" />
+                <a-input-password id="login-password" name="password" autocomplete="current-password"
+                                  v-model:value="form.password" placeholder="请输入注册时设置的密码" size="large" />
               </a-form-item>
               <!-- 忘记密码入口：密码框下方、登录按钮上方 -->
               <div class="forgot-row">
@@ -64,7 +66,8 @@
                 <template #message>该账号已开启两步验证，请输入验证器 App 上的动态验证码（绑定手机 {{ twofa.hint }}）</template>
               </a-alert>
               <a-form-item label="动态验证码" :rules="[{ required: true, pattern: /^\d{6}$/, message: '请填写 6 位动态验证码' }]">
-                <a-input v-model:value="twofa.code" placeholder="6 位数字" size="large" :maxlength="6" autofocus />
+                <a-input id="login-2fa-code" name="twofaCode" autocomplete="one-time-code"
+                         v-model:value="twofa.code" placeholder="6 位数字" size="large" :maxlength="6" autofocus />
               </a-form-item>
               <a-button type="primary" html-type="submit" block size="large" :loading="loading">验证并登录</a-button>
               <div class="tip"><a @click="reset2fa">返回重新登录</a></div>
@@ -87,35 +90,41 @@
           <a-tab-pane key="register" tab="注册">
             <a-form :model="reg" layout="vertical" @finish="doRegister">
               <a-form-item label="注册身份">
-                <a-radio-group v-model:value="reg.roleCode" button-style="solid">
+                <a-radio-group v-model:value="reg.roleCode" name="registerRole" button-style="solid">
                   <a-radio-button value="buyer">采购方</a-radio-button>
                   <a-radio-button value="merchant">商户/供应商</a-radio-button>
                 </a-radio-group>
               </a-form-item>
               <a-form-item label="手机号" :rules="[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]">
-                <a-input v-model:value="reg.phone" size="large" placeholder="11 位手机号" />
+                <a-input id="register-phone" name="phone" autocomplete="tel"
+                         v-model:value="reg.phone" size="large" placeholder="11 位手机号" />
               </a-form-item>
               <a-form-item label="邮箱（选填）" :rules="reg.email ? [{ type: 'email', message: '邮箱格式不正确' }] : []">
-                <a-input v-model:value="reg.email" size="large" placeholder="name@example.com" />
+                <a-input id="register-email" name="email" autocomplete="email"
+                         v-model:value="reg.email" size="large" placeholder="name@example.com" />
               </a-form-item>
-              <a-form-item label="昵称">
-                <a-input v-model:value="reg.nickname" size="large" />
+              <a-form-item label="昵称" name="nickname" :rules="[{ required: true, whitespace: true, message: '请输入昵称' }, { max: 32, message: '昵称不能超过 32 字' }]">
+                <a-input id="register-nickname" name="nickname" autocomplete="nickname"
+                         v-model:value="reg.nickname" size="large" :maxlength="32" />
               </a-form-item>
               <a-form-item label="验证码" :rules="[{ required: true, message: '请输入验证码' }]">
                 <div class="code-row">
-                  <a-input v-model:value="reg.code" size="large" placeholder="6 位验证码" :maxlength="6" />
+                  <a-input id="register-code" name="verifyCode" autocomplete="one-time-code"
+                           v-model:value="reg.code" size="large" placeholder="6 位验证码" :maxlength="6" />
                   <a-button size="large" :disabled="cd > 0" @click="sendCode">{{ cd > 0 ? cd + 's' : '获取验证码' }}</a-button>
                 </div>
               </a-form-item>
               <a-form-item label="密码" :rules="[{ required: true, message: '请输入密码' }]">
-                <a-input-password v-model:value="reg.password" size="large" placeholder="至少 8 位，含字母与数字" />
+                <a-input-password id="register-password" name="password" autocomplete="new-password"
+                                  v-model:value="reg.password" size="large" placeholder="至少 8 位，含字母与数字" />
                 <div class="strength">
                   <span class="bars"><i :class="['bar', strength >= 1 ? 'on s1' : '']"></i><i :class="['bar', strength >= 2 ? 'on s2' : '']"></i><i :class="['bar', strength >= 3 ? 'on s3' : '']"></i></span>
                   <em>{{ strengthText }}</em>
                 </div>
               </a-form-item>
               <a-form-item label="确认密码" :rules="[{ required: true, message: '请再次输入密码' }]">
-                <a-input-password v-model:value="reg.confirm" size="large" />
+                <a-input-password id="register-confirm" name="confirmPassword" autocomplete="new-password"
+                                  v-model:value="reg.confirm" size="large" />
               </a-form-item>
               <a-button type="primary" html-type="submit" block size="large" :loading="regLoading">注册</a-button>
               <div class="tip">已有账号？请 <a @click="tab = 'login'">登录</a></div>
@@ -131,13 +140,15 @@
       <a-form :model="forgot" layout="vertical" class="forgot-form">
         <a-form-item label="用户账号 / 邮箱"
                      :validate-status="forgotErr.account ? 'error' : ''" :help="forgotErr.account">
-          <a-input v-model:value="forgot.account" size="large" allow-clear
+          <a-input id="forgot-account" name="account" autocomplete="username"
+                   v-model:value="forgot.account" size="large" allow-clear
                    placeholder="请输入注册手机号或邮箱" @blur="checkForgotAccount" />
         </a-form-item>
         <a-form-item label="验证码"
                      :validate-status="forgotErr.code ? 'error' : ''" :help="forgotErr.code">
           <div class="code-row">
-            <a-input v-model:value="forgot.code" size="large" :maxlength="6" allow-clear
+            <a-input id="forgot-code" name="verifyCode" autocomplete="one-time-code"
+                     v-model:value="forgot.code" size="large" :maxlength="6" allow-clear
                      placeholder="6 位验证码" @blur="checkForgotCode" />
             <a-button size="large" :disabled="forgotCd > 0"
                       @click="sendForgotCode">

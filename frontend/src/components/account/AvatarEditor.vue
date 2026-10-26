@@ -2,7 +2,7 @@
   <a-modal :open="open" :title="t('acct.avatar.title')" :footer="null" @cancel="onClose" destroy-on-close>
     <!-- 未选择图片：上传区 -->
     <div v-if="!img" class="drop" @click="pick" @dragover.prevent @drop.prevent="onDrop" role="button" :aria-label="t('acct.avatar.dropHint')" tabindex="0" @keydown.enter="pick">
-      <div class="drop-icon">🖼</div>
+      <div class="drop-icon"><ImagePlus :size="36" class="text-slate-400" /></div>
       <div>{{ t('acct.avatar.dropHint') }}</div>
       <div class="hint">{{ t('acct.avatar.typeHint') }}</div>
     </div>
@@ -15,7 +15,7 @@
       <div class="ops">
         <span class="op-label">{{ t('acct.avatar.zoom') }}</span>
         <a-slider v-model:value="zoom" :min="1" :max="3" :step="0.05" class="zoom" @change="draw" />
-        <a-button class="op-btn" @click="rotate">⟳ {{ t('acct.avatar.rotate') }}</a-button>
+        <a-button class="op-btn" @click="rotate"><RotateCw :size="13" class="inline-block mr-1 align-middle" /> {{ t('acct.avatar.rotate') }}</a-button>
         <a-button class="op-btn" @click="reset">{{ t('acct.avatar.reselect') }}</a-button>
       </div>
       <a-progress v-if="uploading || fail" :percent="percent" :status="fail ? 'exception' : (percent >= 100 ? 'success' : 'active')" />
@@ -35,6 +35,7 @@
 <script setup>
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { ImagePlus, RotateCw } from 'lucide-vue-next'
 import { userApi } from '../../api'
 import { t } from '../../i18n'
 

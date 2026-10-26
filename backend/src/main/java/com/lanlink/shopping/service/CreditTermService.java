@@ -47,6 +47,10 @@ public class CreditTermService {
     private final ApplicationEventPublisher eventPublisher;
     private final com.lanlink.shopping.payment.wallet.service.WalletService walletService;
 
+    /** 审计服务（可选注入，保持既有构造器签名不变，缺省时跳过审计） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private AuditService auditService;
+
     public CreditTermService(CreditAccountMapper accountMapper, CreditBillMapper billMapper,
                              CreditRepaymentMapper repaymentMapper, CreditAdjustRequestMapper adjustMapper,
                              UserMapper userMapper, MessageService messageService,
@@ -351,6 +355,37 @@ public class CreditTermService {
         messageService.send(userId, "credit", "账期订单已释放", "订单 " + orderNo + " 已取消，未使用授信已释放。", orderNo);
         if (rejected > 0)
             log.info("取消账期订单 {} 时自动驳回 {} 条待确认转账登记", orderNo, rejected);
+    }
+
+    // ==================== 逾期定时任务 ====================
+
+    /**
+     * 账期账单逾期检查：每天凌晨 2 点扫描到期未还账单。
+     * 到期日早于今天且仍为 UNPAID 的账单，经条件 UPDATE 流转为 OVERDUE（仅 UNPAID→OVERDUE，
+     * 返回 1 才视为本次流转成功，天然防并发与重复通知），并对每个账单所属用户发送站内催收提醒。
+     */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "0 0 2 * * ?")
+    public void overdueCheck() {
+        LocalDate today = LocalDate.now();
+        List<CreditBill> candidates = billMapper.selectOverdueCandidates(today);
+        int overdue = 0;
+        for (CreditBill b : candidates) {
+            if (b.getId() == null || b.getUserId() == null) continue;
+            // 条件 UPDATE 防重复：仅 UNPAID 且已到期的账单会流转成功，重跑/并发下不会重复发消息
+            if (billMapper.markOverdueIfUnpaid(b.getId(), today) != 1) continue;
+            overdue++;
+            BigDecimal outstanding = nvl(b.getOutstandingAmount());
+            messageService.send(b.getUserId(), "credit", "账期账单已逾期",
+                    "账单 " + b.getId() + "（订单 " + (isBlank(b.getOrderNo()) ? "-" : b.getOrderNo())
+                            + "）已逾期，应还金额 ¥" + outstanding + "，请尽快还款以免影响授信使用。",
+                    isBlank(b.getOrderNo()) ? String.valueOf(b.getId()) : b.getOrderNo());
+        }
+        if (overdue > 0) {
+            log.info("账期逾期检查完成：{} 笔账单由 UNPAID 置为 OVERDUE", overdue);
+            if (auditService != null) {
+                auditService.record(null, "CREDIT_BILL_OVERDUE", "账期逾期定时检查：" + overdue + " 笔账单置为 OVERDUE", null);
+            }
+        }
     }
 
     // ==================== 管理端授信审核 ====================

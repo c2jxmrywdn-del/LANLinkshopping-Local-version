@@ -44,7 +44,7 @@
           <a-descriptions-item label="联系邮箱">{{ store.contactEmail || '未填写' }}</a-descriptions-item>
           <a-descriptions-item label="经营地址">{{ store.businessAddress || '未填写' }}</a-descriptions-item>
         </a-descriptions>
-        <p class="privacy-note">🔒 以上信息加密存储，仅平台运营可在核验场景下查看。</p>
+        <p class="privacy-note"><Lock :size="12" class="inline-block mr-1 align-middle text-slate-400" /> 以上信息加密存储，仅平台运营可在核验场景下查看。</p>
       </a-card>
     </div>
 
@@ -77,7 +77,8 @@
           </div>
           <div v-if="taxProofList.length" class="cert-list">
             <div v-for="(u, i) in taxProofList" :key="u" class="cert-file">
-              <span class="cert-file-ico">{{ u.toLowerCase().endsWith('.pdf') ? '📄' : '🖼️' }}</span>
+              <FileText v-if="u.toLowerCase().endsWith('.pdf')" :size="15" class="cert-file-ico inline-block text-rose-500 mr-1.5 align-middle" />
+              <Image v-else :size="15" class="cert-file-ico inline-block text-sky-500 mr-1.5 align-middle" />
               <a :href="u" target="_blank" rel="noopener" class="cert-file-name">纳税证明 #{{ i + 1 }}{{ periodOf(u) }}</a>
             </div>
           </div>
@@ -144,6 +145,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { Lock, FileText, Image } from 'lucide-vue-next'
 import { merchantApi, merchantCenterApi } from '../../api'
 import { MERCHANT_REVIEW, fmtMoney } from '../../utils/merchantStatus'
 import { useUserStore } from '../../store/user'
