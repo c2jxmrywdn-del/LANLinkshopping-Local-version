@@ -37,7 +37,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- 版本栈：Boot 3.2.5 / Cloud 2023.0.1 / Spring Cloud Alibaba 2023.0.1.2（Nacos 注册+配置） -->
-        <spring-cloud.version>2023.0.1</spring-cloud.version>
+        <spring-cloud.version>2025.1.4</spring-cloud.version>
         <spring-cloud-alibaba.version>2023.0.1.2</spring-cloud-alibaba.version>
     </properties>
 
