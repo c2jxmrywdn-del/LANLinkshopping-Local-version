@@ -25,8 +25,8 @@
           <button v-for="item in NAV" :key="item.path" type="button" class="mc-nav-item"
                   :class="{ on: isActive(item) }" @click="go(item)">
             <span>{{ item.label }}</span>
-            <i v-if="item.path === '/merchant/center/orders' && dash.pendingShip"
-               class="nav-badge">{{ dash.pendingShip }}</i>
+            <i v-if="item.badgeKey && dash[item.badgeKey]"
+               class="nav-badge">{{ dash[item.badgeKey] }}</i>
           </button>
         </nav>
         <div class="mc-side-foot">
@@ -110,7 +110,10 @@ const NAV = [
   { path: '/merchant/center', label: '工作台', exact: true },
   { path: '/merchant/center/products', label: '商品管理' },
   { path: '/merchant/center/marketing', label: '营销活动' },
-  { path: '/merchant/center/orders', label: '订单管理' },
+  { path: '/merchant/center/live', label: '直播带货' },
+  { path: '/merchant/center/pricing', label: '价格监控' },
+  { path: '/merchant/center/orders', label: '订单管理', badgeKey: 'pendingShip' },
+  { path: '/merchant/center/chat', label: '客户消息', badgeKey: 'chatUnread' },
   { path: '/merchant/center/logistics', label: '物流发货' },
   { path: '/merchant/center/promotion', label: '流量推广' },
   { path: '/merchant/center/traffic', label: '流量分析' },
@@ -155,7 +158,11 @@ async function loadGate() {
 /** 拉取工作台数据用于侧栏角标（待发货数），静默失败不影响导航 */
 async function loadDashBadge() {
   try {
-    dash.value = (await merchantCenterApi.summary()) || {}
+    const s = (await merchantCenterApi.summary()) || {}
+    dash.value = s
+    // 角标统一平铺到根：订单待发货 + 客户消息未读（来自 kpis）
+    dash.value.pendingShip = s.kpis?.pendingShip
+    dash.value.chatUnread = s.kpis?.chatUnread
   } catch (e) { /* 角标失败可忽略 */ }
 }
 

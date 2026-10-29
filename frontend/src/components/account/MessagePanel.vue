@@ -6,6 +6,8 @@
         <a-radio-button value="order">订单</a-radio-button>
         <a-radio-button value="promotion">促销</a-radio-button>
         <a-radio-button value="system">系统</a-radio-button>
+        <a-radio-button value="price">价格</a-radio-button>
+
       </a-radio-group>
       <a-space>
         <a-button size="small" @click="reload">刷新</a-button>
@@ -82,8 +84,8 @@ const unread = ref(0)
 
 const hasUnread = computed(() => unread.value > 0)
 
-const TYPE_NAME = { order: '订单', promotion: '促销', system: '系统' }
-const TYPE_COLOR = { order: 'blue', promotion: 'magenta', system: 'default' }
+const TYPE_NAME = { price: '价格', order: '订单', promotion: '促销', system: '系统' }
+const TYPE_COLOR = { price: 'gold', order: 'blue', promotion: 'magenta', system: 'default' }
 function typeName(t) { return TYPE_NAME[t] || t || '通知' }
 function typeColor(t) { return TYPE_COLOR[t] || 'default' }
 

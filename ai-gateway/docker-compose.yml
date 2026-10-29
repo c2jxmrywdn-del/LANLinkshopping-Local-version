@@ -1,6 +1,12 @@
-# LANLink AI 网关沙盒：OpenAI 兼容网关 + 本地大模型(Ollama) + 本地知识库
+# LANLink AI 网关沙盒：OpenAI 兼容网关 + 本地大模型(llama.cpp router / Ollama) + 共享 Redis 向量知识库
 # 一键启动：docker compose -f ai-gateway/docker-compose.yml up -d --build
 # 模型常驻模式：OLLAMA_KEEP_ALIVE=-1 + model-warmup 启动即预加载，无需手动唤醒
+#
+# 知识库说明：共享向量库 aikb-idx（92 docs / 768 维，后端 Java 写入）位于根 docker-compose.yml
+# 的 redis 服务（redis-stack-server 7.4）。本网关通过加入其项目网络 shopping_default 直连
+# redis:6379；密码不写死——由 env_file 从根 .env 注入 REDIS_PASSWORD，Python 侧再拼装
+# redis://:pwd@host:port/0（也支持 REDIS_URL / REDIS_URLS 显式覆盖）。Redis 不可用时网关自动
+# 回退到本地 TF-IDF 知识库，不会让 /kb/search 或 chat RAG 失败。
 services:
   ollama:
     image: docker.m.daocloud.io/ollama/ollama:latest
@@ -9,9 +15,22 @@ services:
       - "11434:11434"
     environment:
       OLLAMA_KEEP_ALIVE: "-1"   # 服务端默认：模型加载后永久常驻，不再 5 分钟自动卸载
+      # 24GB 宿主机/单张 8GB 显卡：单请求串行 + 只驻留一个模型，避免多 runner 争内存/CPU
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      # KV 上限增强：q8_0 KV 省一半 KV 内存（依赖 flash attention，两者成对开启）
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: "q8_0"
     volumes:
       - lanlink-ollama-models:/root/.ollama
     restart: unless-stopped
+    # 5G 内存上限（memswap 7G）：7b 兜底实测可用档（4G 会 mmap 换页抖动打满磁盘 240MB/s，
+    # 累计可读出数百 GB——compose 重建会重置 docker update 的运行时修改，必须写死在这里）
+    mem_limit: 5g
+    memswap_limit: 7g
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 30s
@@ -36,25 +55,116 @@ services:
           || echo "[warmup] 加载失败，首次调用时将自动重试"
     restart: "no"
 
+  # GPU 硬件指标 sidecar：网关容器本身不带 GPU 设备/nvidia-smi，
+  # 由该容器每 2s 采样显存/利用率写入共享文件，供硬件调度器决策（CPU 辅助/视觉是否可加载）。
+  # 复用已拉取的 llama.cpp CUDA 镜像（自带 nvidia-smi），不额外下载镜像。
+  gpu-metrics:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: lanlink-gpu-metrics
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        mkdir -p /metrics
+        while true; do
+          if nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free,utilization.gpu --format=csv,noheader,nounits > /metrics/gpu.txt.tmp 2>/dev/null; then
+            mv /metrics/gpu.txt.tmp /metrics/gpu.txt
+          else
+            echo "unavailable" > /metrics/gpu.txt
+          fi
+          sleep 2
+        done
+    volumes:
+      - ./metrics:/metrics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    mem_limit: 128m
+    # 该容器只执行 nvidia-smi 采样循环，不需要 llama-server 健康检查（镜像自带 HEALTHCHECK 不适用）
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "2" }
+
   ai-gateway:
     build: .
     image: lanlink-ai-gateway:latest
     container_name: lanlink-ai-gateway
     ports:
       - "8090:8090"
+    # 从仓库根 .env 注入 REDIS_PASSWORD 等敏感配置（不写进仓库、不烘焙进镜像）。
+    # 路径相对本 compose 文件所在目录；Compose 插值读不到 env_file，故 Redis 连接串在 Python 侧拼装。
+    env_file:
+      - ../.env
     environment:
       PORT: "8090"
       OLLAMA_BASE_URL: http://ollama:11434
       LLM_MODEL: qwen2.5:0.5b
+      LLM_BACKEND: llamacpp
+      # llama.cpp router（Docker 服务 llama-cpp:8123，随主项目 compose 启动）：
+      # 同容器内按需加载 qwen2.5-7b(text) / qwen2.5-vl(vision)，--models-max 1 自动切换
+      LLAMA_CPP_URL: http://llama-cpp:8123
+      LLAMA_MODEL_TEXT: qwen2.5-7b
+      LLAMA_MODEL_VL: qwen2.5-vl
+      # 硬件调度：CPU 轻量辅助模型（显存轻微溢出时仅 3/29 层放 CPU）+ 长文本阈值
+      LLAMA_MODEL_CPU_ASSIST: qwen2.5-7b-cpu-assist
+      HARDWARE_LONG_TEXT_CHARS: "6000"
+      # 32K ctx 档实测校准：text ~6.7G / cpu-assist ~6.0G（KV +476MB），margin 提到 300
+      HARDWARE_GPU_MARGIN_MB: "300"
+      HARDWARE_VRAM_TEXT_MB: "6700"
+      HARDWARE_VRAM_CPU_ASSIST_MB: "6050"
+      # 切换防抖：进入 cpu-assist 后冷却 120s，期间不回 GPU；回切需额外 500MB 滞回余量
+      HARDWARE_SWITCH_COOLDOWN_SEC: "120"
+      HARDWARE_RETURN_HYSTERESIS_MB: "500"
+      LLAMA_TIMEOUT: "240"          # 文本推理超时（含 router 冷加载）
+      LLAMA_VISION_TIMEOUT: "300"   # VL 视觉推理超时（冷加载 + 推理约 40-60s）
+      MODEL_MANAGER_URL: ""         # 可选外部模型管理器；router 模式留空即可
+      # ---- 共享 Redis 向量知识库（容器内直连 shopping 项目的 redis 服务）----
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      KB_INDEX: aikb-idx
+      # 与后端 Java 共用同一嵌入模型（bge-m3 多语言 1024 维；由根 .env 的 AI_EMBED_MODEL 覆盖）
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-bge-m3}
+      AI_EMBED_TIMEOUT: "30"
+      # 若 Redis 已映射到宿主机端口，可改为：
+      #   REDIS_URL: "redis://:${REDIS_PASSWORD}@host.docker.internal:6379/0"
+      # 并以 `docker compose --env-file ../.env ...` 方式运行（否则 ${REDIS_PASSWORD} 为空）。
       KB_PATH: /app/kb_data/ecommerce_kb.json
+      SESSION_TOKEN_BUDGET: "12000"   # 会话历史预算(配合模型 16384 上下文，多轮可塞更多原文再摘要)
+      # 硬件调度：读取 gpu-metrics sidecar 写入的显存/利用率指标
+      HARDWARE_GPU_METRICS_FILE: /metrics/gpu.txt
+    volumes:
+      - ./metrics:/metrics:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - shopping-kb
     depends_on:
       - ollama
     restart: unless-stopped
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "3" }
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health',timeout=3).read()"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+networks:
+  # 根 docker-compose.yml 创建的项目网络，服务名 redis 可直接解析（后端 Java 也在此网络写向量库）。
+  # 若共享 Redis 改为宿主机端口映射，可删除本网络与上方 ai-gateway.networks，改用 REDIS_URL。
+  shopping-kb:
+    external: true
+    name: shopping_default
 
 volumes:
   lanlink-ollama-models:

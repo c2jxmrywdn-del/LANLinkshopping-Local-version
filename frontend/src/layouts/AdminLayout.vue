@@ -45,6 +45,14 @@
           <template #icon><GiftOutlined /></template>
           <span>活动管理</span>
         </a-menu-item>
+        <a-menu-item key="admin-price-monitor">
+          <template #icon><LineChartOutlined /></template>
+          <span>价格监控</span>
+        </a-menu-item>
+        <a-menu-item key="admin-live">
+          <template #icon><VideoCameraOutlined /></template>
+          <span>直播管理</span>
+        </a-menu-item>
         <a-menu-item key="admin-payments">
           <template #icon><DollarCircleOutlined /></template>
           <span>交易管理</span>
@@ -61,13 +69,13 @@
           <template #icon><UserAddOutlined /></template>
           <span>加入我们审核</span>
         </a-menu-item>
-        <a-menu-item key="admin-price-monitor">
-          <template #icon><LineChartOutlined /></template>
-          <span>价格监控</span>
-        </a-menu-item>
         <a-menu-item key="admin-audit">
           <template #icon><FileProtectOutlined /></template>
           <span>审计日志</span>
+        </a-menu-item>
+        <a-menu-item key="admin-risk">
+          <template #icon><FileProtectOutlined /></template>
+          <span>风险名单</span>
         </a-menu-item>
         <a-sub-menu key="admin-customer-communication">
           <template #icon><CommentOutlined /></template>
@@ -76,6 +84,8 @@
           <a-menu-item key="admin-communications-inbox">会话工作台</a-menu-item>
           <a-menu-item key="admin-communications-learning">对话学习审核</a-menu-item>
           <a-menu-item key="admin-support-learning">学习沙盒</a-menu-item>
+          <a-menu-item key="admin-support-tickets">人工客服工单</a-menu-item>
+          <a-menu-item key="admin-knowledge">本地知识库</a-menu-item>
           <a-menu-item key="admin-communications-ai-config">AI 与密钥配置</a-menu-item>
         </a-sub-menu>
       </a-menu>
@@ -175,13 +185,13 @@ import {
   ShopOutlined,
   AppstoreOutlined,
   GiftOutlined,
+  LineChartOutlined,
   DollarCircleOutlined,
   SafetyCertificateOutlined,
   ApiOutlined,
   FileProtectOutlined,
   CommentOutlined,
   UserAddOutlined,
-  LineChartOutlined,
   LockOutlined,
   ExportOutlined,
   LogoutOutlined,
@@ -218,6 +228,8 @@ const communicationRouteToMenu = {
   'admin-communications-learning-detail': 'admin-communications-learning',
   'admin-communications-learning-review': 'admin-communications-learning',
   'admin-support-learning': 'admin-support-learning',
+  'admin-support-tickets': 'admin-support-tickets',
+  'admin-knowledge': 'admin-knowledge',
   'admin-communications-ai-config': 'admin-communications-ai-config'
 }
 
@@ -227,14 +239,17 @@ const routeNameMap = {
   'admin-merchant-detail': '商户档案详情',
   'admin-products': '商品管理',
   'admin-campaigns': '活动管理',
+  'admin-price-monitor': '价格监控',
+  'admin-live': '直播管理',
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',
   'admin-ai-models': '外部大模型',
   'admin-join-us': '加入我们审核',
-  'admin-price-monitor': '价格监控',
   'admin-audit': '审计日志',
   'admin-communications': '沟通概览',
   'admin-communications-inbox': '会话工作台',
+  'admin-support-tickets': '人工客服工单',
+  'admin-knowledge': '本地知识库',
   'admin-communications-ai-config': 'AI 与密钥配置'
 }
 

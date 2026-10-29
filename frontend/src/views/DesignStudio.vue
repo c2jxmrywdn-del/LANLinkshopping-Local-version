@@ -17,7 +17,8 @@
         <a-tag v-for="c in CAP_LABELS" :key="c.k"
                :color="currentTool.capabilities.includes(c.k) ? 'blue' : 'default'"
                :style="{ opacity: currentTool.capabilities.includes(c.k) ? 1 : .45 }">
-          {{ currentTool.capabilities.includes(c.k) ? '✓ ' : '× ' }}{{ c.label }}
+          <AppleIcon :name="currentTool.capabilities.includes(c.k) ? 'confirm' : 'close'" :size="12" />
+          {{ c.label }}
         </a-tag>
       </div>
     </a-card>
@@ -50,9 +51,9 @@
           <div v-if="file" class="file-tree">
             <div class="file-name">{{ file.name }}</div>
             <div v-for="p in file.pages" :key="p.nodeId" class="page">
-              <div class="page-name">📄 {{ p.name }}</div>
+              <div class="page-name"><AppleIcon name="file" :size="13" /> {{ p.name }}</div>
               <div v-for="f in p.frames" :key="f.nodeId" class="frame" @click="loadPreview(f.nodeId)">
-                <span>🖼 {{ f.name }}</span>
+                <span><AppleIcon name="image" :size="13" /> {{ f.name }}</span>
                 <small>{{ f.width }}×{{ f.height }}</small>
               </div>
             </div>
@@ -107,7 +108,7 @@
           </a-space>
           <div v-if="exportResult" class="export-result">
             <div class="export-meta">
-              <a-tag color="green">✓ {{ exportResult.fileName }}</a-tag>
+              <a-tag color="green"><AppleIcon name="confirm" :size="12" /> {{ exportResult.fileName }}</a-tag>
               <a-button size="small" @click="copyCode">复制代码</a-button>
             </div>
             <pre class="code-block"><code>{{ exportResult.code }}</code></pre>
@@ -141,6 +142,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { designApi } from '../api'
+import AppleIcon from '../components/ui/AppleIcon.vue'
 
 const CAP_LABELS = [
   { k: 'OAUTH', label: 'OAuth 授权' },

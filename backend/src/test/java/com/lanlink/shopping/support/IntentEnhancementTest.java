@@ -66,9 +66,24 @@ class IntentEnhancementTest {
         IntentUnderstandingService service = new IntentUnderstandingService(config, client, null);
         when(config.toggle("intent_external_enabled")).thenReturn(true);
         when(client.classify(anyString(), any())).thenReturn("logistics_tracking");
-        var data = service.analyze("订单怎么查询", List.of()).data();
+        // 规则无法决胜（"收货地址"不在意图规则关键词内，但属平台知识问答域，可授权外部增强）
+        var data = service.analyze("收货地址怎么填", List.of()).data();
         assertEquals("logistics_tracking", data.get("intent"));
         assertEquals("external", data.get("source"));
+    }
+
+    @Test
+    void externalEnhancementDoesNotOverrideDecisiveRules() {
+        OutboundModelConfigService config = mock(OutboundModelConfigService.class);
+        ExternalIntentClient client = mock(ExternalIntentClient.class);
+        IntentUnderstandingService service = new IntentUnderstandingService(config, client, null);
+        when(config.toggle("intent_external_enabled")).thenReturn(true);
+        when(client.classify(anyString(), any())).thenReturn("logistics_tracking");
+        // 规则明确决胜（"订单"关键词加权领先）→ 不被外部模型覆盖，且不调用外部模型
+        var data = service.analyze("订单怎么查询", List.of()).data();
+        assertEquals("cart_order", data.get("intent"));
+        assertEquals("local", data.get("source"));
+        verify(client, never()).classify(anyString(), any());
     }
 
     // ===== Guard 授权约束（外部意图分类） =====

@@ -115,6 +115,9 @@ class CampaignServiceTest {
 
         service.claimCoupon(7L, 1L);
 
+        // 并发防线：先锁活动行，再查每人限领，最后原子扣减
+        verify(campaignMapper).lockById(1L);
+        verify(campaignMapper).claimOne(1L);
         ArgumentCaptor<UserCoupon> captor = ArgumentCaptor.forClass(UserCoupon.class);
         verify(userCouponMapper).insert(captor.capture());
         assertEquals(7L, captor.getValue().getUserId());
@@ -160,16 +163,27 @@ class CampaignServiceTest {
         when(userCouponMapper.selectById(11L)).thenReturn(myCoupon(0));
         when(campaignMapper.selectById(1L)).thenReturn(campaign("coupon", "all", null,
                 new BigDecimal("200"), new BigDecimal("30"), null));
+        when(userCouponMapper.useOne(11L, 7L, "ORD1")).thenReturn(1);
 
         BigDecimal benefit = service.applyCouponForOrder(7L, 11L, new BigDecimal("500"),
                 1L, new BigDecimal("450"), "ORD1");
 
         assertEquals(0, new BigDecimal("30").compareTo(benefit));
-        ArgumentCaptor<UserCoupon> captor = ArgumentCaptor.forClass(UserCoupon.class);
-        verify(userCouponMapper).updateById(captor.capture());
-        assertEquals(1, captor.getValue().getStatus());
-        assertEquals("ORD1", captor.getValue().getOrderNo());
-        assertNotNull(captor.getValue().getUsedTime());
+        // 核销必须走原子条件更新（status 0→1），不能先查后写
+        verify(userCouponMapper).useOne(11L, 7L, "ORD1");
+    }
+
+    @Test
+    void applyCouponRejectsWhenConcurrentOrderWonTheCoupon() {
+        when(userCouponMapper.selectById(11L)).thenReturn(myCoupon(0));
+        when(campaignMapper.selectById(1L)).thenReturn(campaign("coupon", "all", null,
+                new BigDecimal("200"), new BigDecimal("30"), null));
+        // 读到未使用，但原子核销时已被并发订单抢先用掉 → 0 行
+        when(userCouponMapper.useOne(11L, 7L, "ORD1")).thenReturn(0);
+
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                service.applyCouponForOrder(7L, 11L, new BigDecimal("500"), 1L, new BigDecimal("450"), "ORD1"));
+        assertTrue(ex.getMessage().contains("已被使用"));
     }
 
     @Test
@@ -202,6 +216,7 @@ class CampaignServiceTest {
         when(userCouponMapper.selectById(11L)).thenReturn(myCoupon(0));
         when(campaignMapper.selectById(1L)).thenReturn(campaign("coupon", "all", null,
                 new BigDecimal("200"), new BigDecimal("30"), null));
+        when(userCouponMapper.useOne(11L, 7L, "ORD1")).thenReturn(1);
 
         // 券前应付仅 20 → 券面 30 被封顶为 20（保证应付 ≥ 0）
         BigDecimal benefit = service.applyCouponForOrder(7L, 11L, new BigDecimal("500"),

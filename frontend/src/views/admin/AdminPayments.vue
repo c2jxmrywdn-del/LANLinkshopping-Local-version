@@ -31,6 +31,7 @@
             <a-tag color="blue">退款申请中 ⓘ</a-tag>
           </a-tooltip>
           <a-tag v-else-if="record.refundStatus === 'rejected'" color="default">申请已驳回</a-tag>
+          <a-tag v-else-if="record.refundStatus === 'partial'" color="gold">已部分退款 ¥{{ record.refundAmount || 0 }}</a-tag>
           <a-tag v-else-if="record.refundStatus === 'processing'" color="orange">退款处理中</a-tag>
           <span v-else style="color:#999">—</span>
         </template>

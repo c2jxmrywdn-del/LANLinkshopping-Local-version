@@ -6,7 +6,7 @@ export const supportApi = {
   async ask(question, visitorToken, persistConversation = false) {
     const unavailable = '您好！客服暂时无法响应，请稍后重试。'
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000)
+    const timeoutId = setTimeout(() => controller.abort(), 25000)
     try {
       const response = await fetch('/api/support/ask', {
         method: 'POST', credentials: 'same-origin',
@@ -23,6 +23,7 @@ export const supportApi = {
       return {
         answer,
         unavailable: false,
+        source: body?.data?.source,
         visitorToken: body?.data?.visitorToken || visitorToken,
         lastMessageId: Number(body?.data?.lastMessageId || 0)
       }
@@ -55,6 +56,32 @@ export const supportApi = {
       clearTimeout(timeoutId)
     }
   }
+}
+
+// 人工客服工单：用户在「设置 → 人工客服」提交留言并查看回复；运营在工作台处理。
+export const supportTicketApi = {
+  // 用户侧
+  submit: (payload) => request.post('/support-ticket/submit', payload),
+  my: () => request.get('/support-ticket/my'),
+  detail: (id) => request.get(`/support-ticket/${encodeURIComponent(id)}`),
+  // 运营侧
+  adminList: (params) => request.get('/admin/support-ticket/list', { params }),
+  adminReply: (id, reply) => request.post(`/admin/support-ticket/${encodeURIComponent(id)}/reply`, { reply }),
+  adminSetStatus: (id, status) => request.post(`/admin/support-ticket/${encodeURIComponent(id)}/status`, { status })
+}
+
+// 向量知识库管理（运营后台）：统计 / 重灌 / RAG 测试台 / 逐条维护
+export const kbApi = {
+  stats: () => request.get('/admin/kb/stats'),
+  // 向量库重灌/外部抓取/RAG 测试台：涉及 bge-m3 嵌入 + 本地 7B 推理，放宽 axios 超时，
+  // 避免默认 15s 超时被误判为"系统繁忙"而弹出全屏排队遮罩。
+  ingest: (source) => request.post('/admin/kb/ingest', null, { params: { source }, timeout: 180000 }),
+  ask: (payload) => request.post('/admin/kb/ask', payload, { timeout: 180000 }),
+  // 外部资讯自动抓取（RSS → 市场资讯 → 向量库）；limit 控制单次抓取条数
+  fetchExternal: (limit = 30) => request.post('/admin/kb/fetch-external', null, { params: { limit }, timeout: 180000 }),
+  entries: (params) => request.get('/admin/kb/entries', { params }),
+  addEntry: (payload) => request.post('/admin/kb/entry', payload),
+  deleteEntry: (id) => request.delete(`/admin/kb/entry/${encodeURIComponent(id)}`)
 }
 
 export const authApi = {
@@ -303,6 +330,91 @@ export const merchantApi = {
   adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } })
 }
 
+// ===== 直播带货（广场/直播间/商户控制台/管理端治理；后端 /live/** 与 /admin/live/**） =====
+export const liveApi = {
+  // ---- 公开：观众端（白名单 /live/rooms、/live/room/**、/live/room-by-product/**） ----
+  // 房间列表：status 0 预告 / 1 直播中 / 2 已结束，不传返回全部
+  rooms: (status, config) => request.get('/live/rooms', { params: (status === undefined || status === null || status === '') ? {} : { status }, ...config }),
+  // 房间详情（含 pinnedProduct 讲解中商品）
+  room: (roomId, config) => request.get(`/live/room/${roomId}`, config),
+  // 挂载商品专柜（LiveProduct[]，含 livePrice/liveStock/clickCount）
+  products: (roomId) => request.get(`/live/room/${roomId}/products`),
+  roomProducts: (roomId) => request.get(`/live/room/${roomId}/products`),
+  // 弹幕（升序，默认最近 50 条）；config 可传 { silent: true }
+  comments: (roomId, limit = 50, config) => request.get(`/live/room/${roomId}/comments`, { params: { limit }, ...config }),
+  // 发送弹幕（可匿名，昵称降级；msgType: chat | buy | system | gift）
+  comment: (roomId, content, msgType = 'chat', config) => request.post(`/live/room/${roomId}/comment`, { content, msgType }, config),
+  // 点赞：返回累计点赞数（后端从 body.count 读取，count query 兼容保留）
+  like: (roomId, count = 1, config) => request.post(`/live/room/${roomId}/like`, { count }, { params: { count }, ...config }),
+  // 进出直播间：join 返回当前在线数；leave 无返回（游客触发请传 { silent: true }）
+  join: (roomId, config) => request.post(`/live/room/${roomId}/join`, null, config),
+  leave: (roomId, config) => request.post(`/live/room/${roomId}/leave`, null, config),
+  // 讲解商品点击埋点：返回含最新 livePrice 的 LiveProduct
+  productClick: (roomId, prodId, config) => request.post(`/live/room/${roomId}/product/${prodId}/click`, null, config),
+  trackProductClick: (roomId, prodId) => request.post(`/live/room/${roomId}/product/${prodId}/click`),
+  // 商品直播中徽章：返回 LiveRoom | null（游客可访问，建议传 { silent: true } 吸收 401）
+  roomByProduct: (prodId, config) => request.get(`/live/room-by-product/${prodId}`, config),
+  // ---- 商户控制台（merchant:manage）----
+  merchantCurrent: () => request.get('/live/merchant/current'),
+  myRoom: () => request.get('/live/merchant/current'),
+  merchantCreate: (d) => request.post('/live/merchant/create', d),
+  createRoom: (d) => request.post('/live/merchant/create', d),
+  // 置顶讲解商品 / 开关播（后端均从 body 读取参数）
+  merchantPin: (roomId, prodId) => request.post(`/live/merchant/${roomId}/pin-product`, { prodId }),
+  pinProduct: (roomId, prodId) => request.post(`/live/merchant/${roomId}/pin-product`, { prodId }),
+  merchantStatus: (roomId, status) => request.post(`/live/merchant/${roomId}/status`, { status }),
+  updateStatus: (roomId, status) => request.post(`/live/merchant/${roomId}/status`, { status }),
+  // 复盘统计：{ room, products[], totalOrders, totalGmv, commentCount }
+  merchantStats: (roomId, config) => request.get(`/live/merchant/${roomId}/stats`, config),
+  stats: (roomId) => request.get(`/live/merchant/${roomId}/stats`),
+  // ---- 管理端（admin）----
+  adminRooms: (status) => request.get('/admin/live/rooms', { params: (status === undefined || status === null || status === '') ? {} : { status } }),
+  adminForceClose: (roomId) => request.post(`/admin/live/${roomId}/force-close`),
+  // 平台审核：approved=true 通过（商户方可开播）/ false 驳回（下线并回显原因，站内通知商户）
+  review: (roomId, approved, reason) => request.post(`/admin/live/${roomId}/review`, { approved, reason }),
+  adminStats: (roomId) => request.get(`/admin/live/${roomId}/stats`)
+}
+
+// ===== 买家↔商家 联系商家对话（sender_role 由服务端按登录身份强制写入） =====
+export const chatApi = {
+  // 买家侧
+  start: (merId, prodId) => request.post('/chat/session', { merId, prodId }),
+  sessions: () => request.get('/chat/sessions'),
+  unread: () => request.get('/chat/unread'),
+  messages: (sessionId, afterId = 0) => request.get(`/chat/${sessionId}/messages`, { params: { afterId } }),
+  // 发消息：body 透传两种形态——文本 { content }（传字符串时包装兼容旧签名）与
+  // 媒体 { msgType: 'image'|'file'|'voice', mediaUrl, mediaName?, mediaSize?, voiceSeconds? }
+  send: (sessionId, payload) => request.post(`/chat/${sessionId}/messages`, typeof payload === 'string' ? { content: payload } : payload),
+  // 聊天媒体上传（kind=image/file/voice，返回 { url, name, size }）：
+  // FormData + onUploadProgress 进度回调；大文件放宽到 120s（默认 15s 超时会掐断上传）
+  upload: (file, kind, onProgress) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('kind', kind)
+    return request.post('/chat/media', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+      onUploadProgress: (e) => { if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100)) }
+    })
+  },
+  // 商户端（merchant:manage）
+  merchant: {
+    sessions: (page = 1, size = 20) => request.get('/merchant/center/chat/sessions', { params: { page, size } }),
+    unread: () => request.get('/merchant/center/chat/unread'),
+    messages: (sessionId, afterId = 0) => request.get(`/merchant/center/chat/${sessionId}/messages`, { params: { afterId } }),
+    send: (sessionId, payload) => request.post(`/merchant/center/chat/${sessionId}/messages`, typeof payload === 'string' ? { content: payload } : payload),
+    upload: (file, kind, onProgress) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('kind', kind)
+      return request.post('/merchant/center/chat/media', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+        onUploadProgress: (e) => { if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100)) }
+      })
+    }
+  }
+}
 // ===== 商户中心：工作台汇总 / 资金结算 / 店铺资料 =====
 export const merchantCenterApi = {
   summary: () => request.get('/merchant/center/summary'),
@@ -352,6 +464,12 @@ export const trafficApi = {
       pageUrl:location.pathname
     }, { silent: true })
   }
+}
+
+// ===== 商品推荐（公开浏览；个性化仅在 analytics 授权下生效，否则回退热度榜） =====
+export const recommendApi = {
+  home: (limit = 8) => request.get('/recommendations/home', { params: { limit }, silent: true }),
+  similar: (prodId, limit = 6) => request.get(`/recommendations/similar/${prodId}`, { params: { limit }, silent: true })
 }
 
 // ===== 管理后台审计（/admin/**，AuthInterceptor 已限定 admin 角色） =====
@@ -447,14 +565,15 @@ export const priceMonitorApi = {
   trend: (prodId, days = 30) => request.get(`/price-monitor/trend/${prodId}`, { params: { days } }),
   // 首页每日行情：有调价留痕的在售商品
   marketProducts: (limit = 12) => request.get('/price-monitor/market/products', { params: { limit } }),
-  // 五维价格因子看板（市场情绪/上游供应链/基础原材料/国际化/政治政策）
-  factors: (prodId) => request.get(`/price-monitor/factors/${prodId}`),
+  // 五维价格因子看板（按商品计算：市场情绪/上游供应链/基础原材料/国际化/政治政策）
+  // lang=zh|en 让后端本地化 summary / systematicAnalysis.conclusion 等文案
+  factors: (prodId, lang = 'zh') => request.get(`/price-monitor/factors/${prodId}`, { params: { lang } }),
   // 规则引擎调价建议
   analysis: (prodId) => request.get(`/price-monitor/analysis/${prodId}`),
-  // AI 实时分析（未配置外部模型时后端回退规则引擎，source=RULE；lang=en 返回英文规则文案）
-  aiAnalysis: (prodId, lang = 'zh') => request.get(`/price-monitor/ai-analysis/${prodId}`, { params: { lang } }),
-  // 因果问答：{ prodId, question, lang }
-  ask: (prodId, question, lang = 'zh') => request.post('/price-monitor/ask', { prodId, question, lang }),
+  // AI 实时分析（本地 7B 链路含模型冷加载/切换，需放宽超时；未配置外部模型时后端回退规则引擎，source=RULE；lang=en 返回英文规则文案）
+  aiAnalysis: (prodId, lang = 'zh') => request.get(`/price-monitor/ai-analysis/${prodId}`, { params: { lang }, timeout: 180000 }),
+  // 因果问答：{ prodId, question, lang }（本地模型推理可能 10-30s，放宽超时）
+  ask: (prodId, question, lang = 'zh') => request.post('/price-monitor/ask', { prodId, question, lang }, { timeout: 180000 }),
   // 市场资讯
   news: (category, limit = 20) => request.get('/price-monitor/news', { params: { category: category || undefined, limit } }),
   // 商户价格总览
@@ -465,7 +584,11 @@ export const priceMonitorApi = {
   // 预警订阅
   myAlerts: () => request.get('/price-monitor/my/alerts'),
   subscribe: (payload) => request.post('/price-monitor/alerts', payload),
-  cancelAlert: (id) => request.delete(`/price-monitor/alerts/${id}`)
+  cancelAlert: (id) => request.delete(`/price-monitor/alerts/${id}`),
+  // 商品详情回显当前用户订阅（后端 GET /price-monitor/product/{id}/alerts）
+  productAlerts: (prodId, config) => request.get(`/price-monitor/product/${prodId}/alerts`, config),
+  // 管理端手动刷新行业基准（POST /admin/price-monitor/refresh，返回行业数）
+  refresh: () => request.post('/admin/price-monitor/refresh')
 }
 
 // ===== 设计工具对接中台（微服务 lanlink-design-service，经网关 /api/design/**）=====

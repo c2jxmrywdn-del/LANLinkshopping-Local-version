@@ -19,9 +19,9 @@ RUN apt-get update \
 
 COPY --from=build --chown=app:app /workspace/target/lanlink-shopping.jar /app/app.jar
 
-# 上传目录（营业执照/完税凭证/特殊许可/头像）：容器以非 root 用户运行，
+# 上传目录（营业执照/完税凭证/特殊许可/头像/聊天媒体）：容器以非 root 用户运行，
 # 必须在镜像内预先创建并授权，否则运行期 mkdirs 失败导致上传接口 500。
-RUN mkdir -p /app/uploads/licenses /app/uploads/tax-proofs /app/uploads/special-permits /app/uploads/avatars \
+RUN mkdir -p /app/uploads/licenses /app/uploads/tax-proofs /app/uploads/special-permits /app/uploads/avatars /app/uploads/chat \
     && chown -R app:app /app/uploads
 
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -Dfile.encoding=UTF-8"

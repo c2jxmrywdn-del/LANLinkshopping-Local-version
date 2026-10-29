@@ -7,9 +7,21 @@ server {
     gzip on;
     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
 
+    # index.html 不缓存，保证前端发版后刷新即拿新 bundle；带 hash 的 assets 长缓存。
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
     location /api/support/ask {
         proxy_pass http://backend:8080/api/support/ask;
         proxy_http_version 1.1;
+        proxy_connect_timeout 10s;
+        # 本地 7B/VL 推理可能 10-60s：放宽 nginx 默认 60s 读超时，避免长 AI 请求被截断
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -21,6 +33,9 @@ server {
     location /api/ {
         proxy_pass http://backend:8080/api/;
         proxy_http_version 1.1;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

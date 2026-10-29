@@ -38,16 +38,29 @@ public class SupportController {
     private final CustomerCommunicationService communications;
     private final SupportFallbackService fallbackService;
     private final IntentUnderstandingService intents;
+    private final SupportAiAnswerService supportAi;
+    private final com.lanlink.shopping.module.aikb.KnowledgeRagService rag;
+    /** 向量检索命中最低相似度：低于此值视为无相关资料，回退兜底而非强行作答。 */
+    private static final double RAG_MIN_SCORE = 0.12d;
+    /** 英文提问未命中平台资料时的英文兜底引导（避免中文残留）。 */
+    private static final String EN_OUT_OF_SCOPE_FALLBACK =
+            "I'm the LANLinkshopping assistant. I can help with account, orders, payment, credit terms, "
+                    + "membership, logistics, returns and more. If I can't confirm this from the platform's information, "
+                    + "please open a ticket under Settings → Human Support and our team will follow up during service hours.";
 
     public SupportController(SupportAnswerService answers, SupportRequestGuard guard,
                              ObjectMapper objectMapper, CustomerCommunicationService communications,
-                             SupportFallbackService fallbackService, IntentUnderstandingService intents) {
+                             SupportFallbackService fallbackService, IntentUnderstandingService intents,
+                             SupportAiAnswerService supportAi,
+                             com.lanlink.shopping.module.aikb.KnowledgeRagService rag) {
         this.answers = answers;
         this.guard = guard;
         this.objectMapper = objectMapper;
         this.communications = communications;
         this.fallbackService = fallbackService;
         this.intents = intents;
+        this.supportAi = supportAi;
+        this.rag = rag;
     }
 
     @PostMapping("/ask")
@@ -109,12 +122,68 @@ public class SupportController {
 
             String question = body.path("question").asText();
             String answer;
+            String answerSource = "KB";
+            boolean english = !containsCjk(question);
             try {
-                answer = answers.answer(question);
+                // 先取本地知识库精确答案（含问候/自我介绍/拒答兜底），作为事实来源与最终回退。
+                String kbAnswer = answers.answer(question);
+                answer = kbAnswer;
+                String matched = answers.matchedEntryId(question);
+                boolean substantive = answers.eligibleForAiModel(question);
+                // 统一"组合接地"策略：命中权威条目时以其打底，再叠加向量检索到的本站真实数据
+                // （政策/会员/订阅/商品/物流/学习候选…），交本地 qwen2.5-vl 生成——既摆脱模板腔，
+                // 又让"会员折扣/物流合作方/退换政策"这类事实子问题以入库数据为准，抑制臆造。
+                if (substantive && supportAi.available()) {
+                    String ragContext = "";
+                    try {
+                        com.lanlink.shopping.module.aikb.KnowledgeRagService.RagContext ctx =
+                                rag.buildContext(question, 6, RAG_MIN_SCORE, english);
+                        if (ctx.usable()) ragContext = ctx.text();
+                    } catch (Exception ragEx) {
+                        log.warn("[support] rag retrieval skipped: {}", ragEx.getMessage());
+                    }
+                    StringBuilder grounding = new StringBuilder();
+                    if (StringUtils.hasText(matched)) grounding.append(kbAnswer);
+                    if (!ragContext.isEmpty()) {
+                        if (grounding.length() > 0) grounding.append("\n\n");
+                        grounding.append(ragContext);
+                    }
+                    String modelText = null;
+                    if (grounding.length() > 0) {
+                        modelText = supportAi.answerRag(question, grounding.toString()).orElse(null);
+                    } else if (StringUtils.hasText(matched)) {
+                        // 无检索资料但命中条目：对权威答案做纯润色
+                        modelText = supportAi.answer(question, kbAnswer).orElse(null);
+                    }
+                    boolean hasRag = !ragContext.isEmpty();
+                    if (modelText != null) {
+                        answer = modelText;
+                        answerSource = hasRag ? "RAG" : "AI";
+                    }
+                    boolean deflected = modelText == null || modelText.contains("超出知识库范围")
+                            || (english && containsCjk(modelText));
+                    if (english && hasRag && deflected) {
+                        String extracted = contextExtract(ragContext, true);
+                        if (!extracted.isBlank()) {
+                            answer = extracted;
+                            answerSource = "RAG";
+                        }
+                    }
+                }
             } catch (Exception ex) {
                 // 主客服服务异常 → 备用链路接管（知识问答仍只走本地知识库；外部模型仅限寒暄润色）
                 log.error("[support] primary answer failed, switching to fallback", ex);
                 answer = fallbackService.answerInBackup(question);
+            }
+            // 英文提问下的问候/自我介绍/兜底：按语言切换为英文变体，杜绝中文残留。
+            if (english && "KB".equals(answerSource) && answer != null) {
+                if (answer.equals(answers.greeting())) answer = answers.englishGreeting();
+                else if (answer.equals(answers.selfIntro())) answer = answers.englishSelfIntro();
+                else if (answer.equals(answers.fallback())) answer = answers.englishFallback();
+            }
+            // 英文模式下的终态清洗：去除模型可能夹带的残留汉字/假名/全角标点（保留 ¥ 与数字）。
+            if (english && ("RAG".equals(answerSource) || "AI".equals(answerSource))) {
+                answer = stripCjkForEnglish(answer);
             }
             // 自主学习：未命中知识库的合格提问自动沉淀为待审核候选（不自动发布）；
             // 异步执行且吞异常，绝不影响回答主链路
@@ -150,7 +219,8 @@ public class SupportController {
             }
             return ResponseEntity.ok(R.ok(Map.of(
                     "answer", answer, "visitorToken", visitorToken, "lastMessageId", lastMessageId,
-                    "intent", intents.analyze(question, List.of()).data())));
+                    "source", answerSource,
+                    "intent", intents.analyzeFast(question).data())));
         } catch (JsonProcessingException ex) {
             return ResponseEntity.ok(R.ok(Map.of("answer", fallback)));
         }
@@ -170,5 +240,78 @@ public class SupportController {
         status.put("externalChannelConfigured", fallbackService.externalChannelConfigured());
         status.put("policy", "knowledge=local-kb-only; external-model=greeting-only; anti-proxy=enforced");
         return ResponseEntity.ok(R.ok(status));
+    }
+
+    private static boolean containsCjk(String s) {
+        if (s == null) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if ((c >= 0x3040 && c <= 0x30ff) || (c >= 0x4e00 && c <= 0x9fff)
+                    || (c >= 0xac00 && c <= 0xd7af) || (c >= 0x3400 && c <= 0x4dbf)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 兜底接地提取：模型拒答/不可用/未按语言作答时，直接以检索到的语料块拼成可读回答。
+     * english=true → 取拉丁为主的块并清洗残留中文；english=false → 取含中文的块。
+     */
+    private static String contextExtract(String ragContext, boolean english) {
+        if (ragContext == null || ragContext.isBlank()) return english ? EN_OUT_OF_SCOPE_FALLBACK : "";
+        String[] blocks = ragContext.split("\\n\\s*\\n");
+        java.util.List<String> keep = new java.util.ArrayList<>();
+        java.util.List<String> all = new java.util.ArrayList<>();
+        for (String b : blocks) {
+            String body = b.replaceFirst("^\\s*\\[\\d+\\]（[^）]*）", "").trim();
+            if (body.isEmpty()) continue;
+            all.add(body);
+            double ratio = cjkRatio(body);
+            if (english ? ratio < 0.15 : ratio > 0) keep.add(body);
+        }
+        java.util.List<String> chosen = keep.isEmpty() ? all : keep;
+        StringBuilder sb = new StringBuilder();
+        for (String body : chosen) {
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(body.replaceAll("\\s+", " "));
+        }
+        String out = sb.toString().trim();
+        if (english) {
+            out = out.replaceAll("[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\u3000-\\u303f\\uff00-\\uffef\\u2018\\u2019\\u201c\\u201d《》、：（）　]", " ")
+                     .replaceAll("\\s+", " ").trim();
+            if (out.isEmpty()) return EN_OUT_OF_SCOPE_FALLBACK;
+        }
+        if (out.length() > 700) out = out.substring(0, 700).trim() + "…";
+        return out;
+    }
+
+    private static double cjkRatio(String s) {
+        int total = 0, cjk = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isWhitespace(c)) continue;
+            total++;
+            if ((c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3040 && c <= 0x30ff)
+                    || (c >= 0x3400 && c <= 0x4dbf) || (c >= 0xac00 && c <= 0xd7af)) cjk++;
+        }
+        return total == 0 ? 1 : (double) cjk / total;
+    }
+
+    /**
+     * 英文模式终态清洗：删除模型可能夹带的汉字/假名/韩文与全角标点（保留 ¥ 与数字/字母），
+     * 保证英文回答零中文残留。清洗后为空则回退英文兜底串。
+     */
+    private static String stripCjkForEnglish(String s) {
+        if (s == null || s.isBlank()) return EN_OUT_OF_SCOPE_FALLBACK;
+        // 汉字/假名/韩文/扩展A + 全角标点（但排除 U+FFE5 ¥，保留货币符号）
+        String cleaned = s
+                .replaceAll("[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af]", " ")
+                .replaceAll("[\\u3000-\\u303f\\uff00-\\uffff&&[^\\uffe5]]", " ")
+                .replaceAll("[《》、：（）【】〔〕　\\u2018\\u2019\\u201c\\u201d]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        // 去掉行尾悬挂的孤立标点/逗号
+        cleaned = cleaned.replaceAll("[,;:.\\s]+$", "").trim();
+        if (cleaned.isEmpty()) return EN_OUT_OF_SCOPE_FALLBACK;
+        return cleaned;
     }
 }

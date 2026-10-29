@@ -25,6 +25,8 @@ public class Order {
     private BigDecimal couponDiscount;
     /** 使用的用户券ID（t_user_coupon.id，取消/退款回退依据） */
     private Long couponId;
+    /** 下单归因直播间ID（t_live_room.room_id，直播带货复盘依据；非直播单为 null） */
+    private Long liveId;
     private Integer payStatus;
     private Integer orderStatus;
     private String receiver;
@@ -39,7 +41,7 @@ public class Order {
     private String transactionId;
     /** 微信预下单号 */
     private String prepayId;
-    /** 退款状态：none | applied(用户已申请待平台处理) | rejected(申请被驳回) | processing | success */
+    /** 退款状态：none | applied(用户已申请待平台处理) | rejected(申请被驳回) | processing | partial(部分退款已到账) | success */
     private String refundStatus;
     /** 渠道退款单号 */
     private String refundId;

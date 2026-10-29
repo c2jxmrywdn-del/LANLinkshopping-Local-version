@@ -503,7 +503,7 @@
         </div>
 
         <div class="tax-conclusion">
-          <span>✓ 该商户纳税记录按月连续足额申报，无欠税与虚假抵扣记录，具备优良的企业财务履约能力。</span>
+          <span><AppleIcon name="confirm" :size="14" /> 该商户纳税记录按月连续足额申报，无欠税与虚假抵扣记录，具备优良的企业财务履约能力。</span>
         </div>
       </div>
     </a-modal>
@@ -570,6 +570,7 @@ import {
   FileImageOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const route = useRoute()

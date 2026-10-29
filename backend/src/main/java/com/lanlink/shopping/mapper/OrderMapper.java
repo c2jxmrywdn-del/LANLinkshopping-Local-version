@@ -96,12 +96,13 @@ public interface OrderMapper extends BaseMapper<Order> {
 
     /**
      * 退款状态原子流转（需求 2：防重复退款申请/并发篡改退款金额）。
-     * 仅当订单当前退款状态为 none/rejected/空 时允许置为 applied，返回 0 表示重复申请。
+     * 仅当订单当前退款状态为 none/rejected/partial/空 时允许置为 applied，
+     * 返回 0 表示重复申请（partial = 部分退款已到账，剩余金额可再次申请）。
      */
     @Update("UPDATE t_order SET refund_status = 'applied', refund_reason = #{reason}, " +
             "refund_apply_time = NOW(), refund_reject_reason = NULL, update_time = NOW() " +
             "WHERE order_no = #{orderNo} " +
-            "AND (refund_status IS NULL OR refund_status IN ('none','rejected'))")
+            "AND (refund_status IS NULL OR refund_status IN ('none','rejected','partial'))")
     int applyRefundAtomic(@Param("orderNo") String orderNo, @Param("reason") String reason);
 
     /**

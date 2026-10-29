@@ -211,6 +211,9 @@ public class CampaignService {
         Campaign c = campaignMapper.selectById(campaignId);
         if (c == null || !TYPE_COUPON.equals(c.getType())) throw new BusinessException("领券活动不存在");
         if (!c.effectiveNow(LocalDateTime.now())) throw new BusinessException("活动未开始或已结束");
+        // 行锁串行化同一活动的领券事务：把「每人限领」的 count→insert 收进临界区，
+        // 避免并发请求同时通过限领校验后各自插入导致超领（库存仍由 claimOne 原子扣减）。
+        campaignMapper.lockById(campaignId);
         int limit = c.getPerUserLimit() == null ? 1 : c.getPerUserLimit();
         long mine = userCouponMapper.selectCount(Wrappers.<UserCoupon>lambdaQuery()
                 .eq(UserCoupon::getCampaignId, campaignId).eq(UserCoupon::getUserId, userId));
@@ -373,10 +376,11 @@ public class CampaignService {
         BigDecimal benefit = couponBenefit(c, total);
         if (benefit.compareTo(payableBeforeCoupon) > 0) benefit = payableBeforeCoupon;
         if (benefit.compareTo(BigDecimal.ZERO) < 0) benefit = BigDecimal.ZERO;
-        uc.setStatus(1);
-        uc.setUsedTime(LocalDateTime.now());
-        uc.setOrderNo(orderNo);
-        userCouponMapper.updateById(uc);
+        // 原子核销（status 0→1 条件更新）：并发下单时只有一个请求能更新成功，
+        // 其余返回 0 行并抛异常，订单事务整体回滚，杜绝同一张券被两笔订单核销。
+        if (userCouponMapper.useOne(couponId, userId, orderNo) == 0) {
+            throw new BusinessException("优惠券已被使用");
+        }
         return benefit;
     }
 

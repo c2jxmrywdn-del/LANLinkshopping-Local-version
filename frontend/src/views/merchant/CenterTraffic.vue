@@ -12,13 +12,13 @@
           <a-radio-button :value="30">近 30 天</a-radio-button>
           <a-radio-button :value="90">近 90 天</a-radio-button>
         </a-radio-group>
-        <a-button class="refresh" @click="reload"><span class="refresh-icon">↻</span> 刷新数据</a-button>
+        <a-button class="refresh" @click="reload"><AppleIcon name="refresh" :size="15" /> 刷新数据</a-button>
       </div>
     </section>
 
     <section class="kpi-grid">
       <div v-for="(m,i) in metrics" :key="m.label" class="kpi-card" :class="'tone-'+i">
-        <div class="kpi-top"><span>{{m.label}}</span><span class="kpi-icon">{{m.icon}}</span></div>
+        <div class="kpi-top"><span>{{m.label}}</span><span class="kpi-icon"><AppleIcon :name="m.icon" :size="15" /></span></div>
         <div class="kpi-value">{{m.value}}</div>
         <div class="kpi-foot" :class="m.cls">{{m.sub}}</div>
       </div>
@@ -48,7 +48,7 @@
             <div class="opportunity-item" v-for="d in diagnosis.slice(0,3)" :key="d.code">
               <span class="status" :class="d.level"></span><div><b>{{d.title}}</b><p>{{d.suggestion}}</p></div>
             </div>
-            <div v-if="!diagnosis.length" class="healthy"><span>✓</span> 当前没有明显流量异常</div>
+            <div v-if="!diagnosis.length" class="healthy"><AppleIcon name="confirm" :size="13" /> 当前没有明显流量异常</div>
           </a-card>
         </div>
 
@@ -100,7 +100,7 @@
       <a-tab-pane key="diagnosis" tab="流量诊断">
         <div class="diagnosis-grid">
           <div v-for="d in diagnosis" :key="d.code" class="diagnosis-card" :class="d.level">
-            <div class="diagnosis-head"><span>{{d.level==='success'?'✓':'!'}}</span><b>{{d.title}}</b></div>
+            <div class="diagnosis-head"><span><AppleIcon :name="d.level==='success'?'confirm':'warning'" :size="12" /></span><b>{{d.title}}</b></div>
             <p>{{d.suggestion}}</p><a-button v-if="d.level!=='success'" type="link">查看建议 →</a-button>
           </div>
           <div v-if="!diagnosis.length" class="empty-diagnosis">暂无诊断结果</div>
@@ -113,17 +113,18 @@
 <script setup>
 import {ref,computed,onMounted} from 'vue'
 import {trafficApi} from '../../api'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { Empty } from 'ant-design-vue'
 const aEmpty=Empty
 const tab=ref('overview'),days=ref(30),ov=ref({}),trend=ref([]),sources=ref([]),products=ref([]),conversion=ref({products:[]}),diagnosis=ref([])
 const fmt=n=>Number(n||0).toFixed(2)
 const metrics=computed(()=>[
- {label:'近30天销售额',value:'¥'+fmt(ov.value.recentAmount),sub:ov.value.chainGrowthPct==null?'环比暂无数据':`环比 ${Number(ov.value.chainGrowthPct)>=0?'↑':'↓'} ${Math.abs(Number(ov.value.chainGrowthPct)).toFixed(1)}%`,cls:Number(ov.value.chainGrowthPct)>=0?'up':'down',icon:'¥'},
- {label:'近30天订单',value:ov.value.recentOrders||0,sub:'已支付订单',icon:'↗'},
- {label:'客单价',value:'¥'+fmt(ov.value.avgOrderValue),sub:'近30天平均',icon:'◆'},
- {label:'动销率',value:(ov.value.activeRatePct||0)+'%',sub:`动销 ${ov.value.activeProducts||0} / 在售 ${ov.value.onSaleProducts||0}`,icon:'◈'},
- {label:'累计销售额',value:'¥'+fmt(ov.value.totalAmount),sub:'历史已支付',icon:'◷'},
- {label:'累计销量',value:ov.value.totalSold||0,sub:'累计成交件数',icon:'▦'}
+ {label:'近30天销售额',value:'¥'+fmt(ov.value.recentAmount),sub:ov.value.chainGrowthPct==null?'环比暂无数据':`环比 ${Number(ov.value.chainGrowthPct)>=0?'↑':'↓'} ${Math.abs(Number(ov.value.chainGrowthPct)).toFixed(1)}%`,cls:Number(ov.value.chainGrowthPct)>=0?'up':'down',icon:'wallet'},
+ {label:'近30天订单',value:ov.value.recentOrders||0,sub:'已支付订单',icon:'arrowupright'},
+ {label:'客单价',value:'¥'+fmt(ov.value.avgOrderValue),sub:'近30天平均',icon:'gem'},
+ {label:'动销率',value:(ov.value.activeRatePct||0)+'%',sub:`动销 ${ov.value.activeProducts||0} / 在售 ${ov.value.onSaleProducts||0}`,icon:'diamond'},
+ {label:'累计销售额',value:'¥'+fmt(ov.value.totalAmount),sub:'历史已支付',icon:'clock'},
+ {label:'累计销量',value:ov.value.totalSold||0,sub:'累计成交件数',icon:'grid'}
 ])
 const sourceCols=[{title:'来源',dataIndex:'source'},{title:'访客 UV',dataIndex:'uv'},{title:'商品浏览',dataIndex:'productViews'},{title:'加购',dataIndex:'carts'},{title:'支付',dataIndex:'pays'}]
 const productCols=[{title:'商品',dataIndex:'title'},{title:'浏览 UV',dataIndex:'views'},{title:'加购 UV',dataIndex:'carts'},{title:'支付 UV',dataIndex:'pays'}]

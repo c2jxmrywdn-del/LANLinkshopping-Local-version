@@ -15,12 +15,12 @@
     <!-- KPI 指标卡 -->
     <section class="kpi-grid">
       <div class="kpi-card" @click="$router.push('/merchant/center/finance')">
-        <div class="kpi-top"><span>近 7 日销售额</span><span class="kpi-ico">¥</span></div>
+        <div class="kpi-top"><span>近 7 日销售额</span><span class="kpi-ico"><Wallet :size="18" /></span></div>
         <div class="kpi-value">{{ money(kpis.weekAmount) }}</div>
         <div class="kpi-foot">{{ kpis.weekOrders || 0 }} 笔已支付订单</div>
       </div>
       <div class="kpi-card" @click="$router.push('/merchant/center/products')">
-        <div class="kpi-top"><span>在售商品</span><span class="kpi-ico">▦</span></div>
+        <div class="kpi-top"><span>在售商品</span><span class="kpi-ico"><LayoutGrid :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.onSaleProducts || 0 }}<em>/ {{ kpis.totalProducts || 0 }}</em></div>
         <div class="kpi-foot">{{ kpis.reviewingProducts ? `另有 ${kpis.reviewingProducts} 件审核中` : '全部商品经营正常' }}</div>
       </div>
@@ -136,7 +136,9 @@ import {
   Package,
   Search,
   AlertTriangle,
-  CheckCircle2
+  CheckCircle2,
+  Wallet,
+  LayoutGrid
 } from 'lucide-vue-next'
 import { merchantCenterApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'

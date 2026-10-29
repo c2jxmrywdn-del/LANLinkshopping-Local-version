@@ -24,7 +24,7 @@
         <a-radio-button value="done">已完成</a-radio-button>
         <a-radio-button value="refund">退款相关</a-radio-button>
       </a-radio-group>
-      <a-button type="text" @click="load">↻ 刷新</a-button>
+      <a-button type="text" @click="load"><AppleIcon name="refresh" :size="15" /> 刷新</a-button>
     </div>
 
     <a-card :bordered="false" class="panel">
@@ -81,6 +81,7 @@
             <div class="status-cell">
               <a-tag :color="ORDER_STATUS[record.order.orderStatus]?.color">{{ ORDER_STATUS[record.order.orderStatus]?.text }}</a-tag>
               <small v-if="record.order.refundStatus === 'applied'" class="rf-warn">退款申请中</small>
+              <small v-else-if="record.order.refundStatus === 'partial'" class="rf-warn">已部分退款</small>
               <small v-else-if="record.order.refundStatus === 'success'" class="rf-done">已退款</small>
             </div>
           </template>
@@ -107,6 +108,7 @@ import { useRoute } from 'vue-router'
 import { orderApi, merchantCenterApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'
 import ShipModal from '../../components/merchant/ShipModal.vue'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 
 const route = useRoute()
 const rows = ref([])

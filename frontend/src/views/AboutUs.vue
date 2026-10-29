@@ -75,13 +75,13 @@
             :color-variant="item.index === '01' ? 'colorful' : 'brand'"
             :theme="item.index === '01' ? 'dark' : 'auto'"
           >
-            <div class="capability-icon">{{ item.icon }}</div>
+            <div class="capability-icon"><AppleIcon :name="item.icon" :size="22" /></div>
             <div>
               <span class="card-index">{{ item.index }}</span>
               <h3>{{ item.title }}</h3>
               <p>{{ item.desc }}</p>
             </div>
-            <span class="card-arrow">↗</span>
+            <span class="card-arrow"><AppleIcon name="arrowupright" :size="16" /></span>
           </HyperiuxBeam>
         </div>
       </section>
@@ -146,7 +146,7 @@
               :glow-opacity="0.12"
             >
               <span class="module-number">{{ item.number }}</span>
-              <div class="module-icon">{{ item.icon }}</div>
+              <div class="module-icon"><AppleIcon :name="item.icon" :size="20" /></div>
               <h3>{{ item.title }}</h3>
               <p>{{ item.desc }}</p>
               <div class="module-tags">
@@ -398,6 +398,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import AuthorCard from '../components/AuthorCard.vue'
+import AppleIcon from '../components/ui/AppleIcon.vue'
 import BorderBeamPanel from '../components/ui/BorderBeamPanel.vue'
 import HyperiuxBeam from '../components/ui/HyperiuxBeam.vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -433,10 +434,10 @@ const sections = [
 ]
 
 const capabilities = [
-  { index: '01', icon: '⌁', title: '商品与采购', desc: '商品浏览、搜索、详情、购物车与订单形成一条连续路径。' },
-  { index: '02', icon: '◎', title: '商户经营', desc: '商户入驻、商品发布与流量分析形成经营闭环。' },
-  { index: '03', icon: '◇', title: '营销中台', desc: '活动、促销与会员能力共同作用于交易转化与复购。' },
-  { index: '04', icon: '↗', title: '平台运营', desc: '管理员通过商户、商品、支付与审计模块维护平台秩序。' }
+  { index: '01', icon: 'package', title: '商品与采购', desc: '商品浏览、搜索、详情、购物车与订单形成一条连续路径。' },
+  { index: '02', icon: 'store', title: '商户经营', desc: '商户入驻、商品发布与流量分析形成经营闭环。' },
+  { index: '03', icon: 'sparkles', title: '营销中台', desc: '活动、促销与会员能力共同作用于交易转化与复购。' },
+  { index: '04', icon: 'grid', title: '平台运营', desc: '管理员通过商户、商品、支付与审计模块维护平台秩序。' }
 ]
 
 const identities = [
@@ -448,9 +449,9 @@ const identities = [
 ]
 
 const modules = [
-  { number: '01', icon: '◌', title: '交易', desc: '商品 → 购物车 → 结算 → 支付 → 订单', tags: ['订单', '钱包', '支付'] },
-  { number: '02', icon: '✦', title: '营销', desc: '活动、促销与会员权益协同工作', tags: ['活动', '促销', '会员'] },
-  { number: '03', icon: '⌁', title: '增长', desc: '商户流量、来源、转化与诊断形成经营反馈', tags: ['流量', '转化', '诊断'] }
+  { number: '01', icon: 'cart', title: '交易', desc: '商品 → 购物车 → 结算 → 支付 → 订单', tags: ['订单', '钱包', '支付'] },
+  { number: '02', icon: 'sparkles', title: '营销', desc: '活动、促销与会员权益协同工作', tags: ['活动', '促销', '会员'] },
+  { number: '03', icon: 'arrowupright', title: '增长', desc: '商户流量、来源、转化与诊断形成经营反馈', tags: ['流量', '转化', '诊断'] }
 ]
 
 let observer

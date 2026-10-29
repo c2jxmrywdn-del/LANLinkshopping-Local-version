@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS t_order (
   pay_channel  VARCHAR(16) COMMENT '支付渠道 wechat/alipay/mock',
   transaction_id VARCHAR(64) COMMENT '第三方渠道交易号',
   prepay_id    VARCHAR(64) COMMENT '微信预下单号',
-  refund_status VARCHAR(16) DEFAULT 'none' COMMENT '退款状态 none/processing/success',
+  refund_status VARCHAR(16) DEFAULT 'none' COMMENT '退款状态 none/applied/rejected/processing/partial/success',
   refund_id    VARCHAR(64) COMMENT '渠道退款单号',
   refund_amount DECIMAL(14,2) COMMENT '已退金额',
   refund_time  DATETIME COMMENT '退款完成时间',
@@ -354,7 +354,8 @@ CREATE TABLE IF NOT EXISTS t_price_history (
   operator_id BIGINT COMMENT '操作人',
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
   KEY idx_ph_prod (prod_id, create_time),
-  KEY idx_ph_ind (ind_id, create_time)
+  KEY idx_ph_ind (ind_id, create_time),
+  KEY idx_ph_time (create_time)
 ) ENGINE=InnoDB COMMENT='商品价格变动留痕';
 
 CREATE TABLE IF NOT EXISTS t_market_benchmark (
@@ -705,7 +706,7 @@ PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN prepay_id VARCHAR(64) COMMENT ''预下单号''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='prepay_id');
 PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
-SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_status VARCHAR(16) DEFAULT ''none'' COMMENT ''退款状态 none/processing/success''', 'SELECT 1')
+SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_status VARCHAR(16) DEFAULT ''none'' COMMENT ''退款状态 none/applied/rejected/processing/partial/success''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_status');
 PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_id VARCHAR(64) COMMENT ''渠道退款单号''', 'SELECT 1')
@@ -717,7 +718,7 @@ PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_time DATETIME COMMENT ''退款完成时间''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_time');
 PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
--- 退款申请闭环：用户申请原因/申请时间 + 平台驳回原因（退款状态扩展 applied/rejected）
+-- 退款申请闭环：用户申请原因/申请时间 + 平台驳回原因（退款状态扩展 applied/rejected/partial）
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN refund_reason VARCHAR(200) COMMENT ''退款申请原因(用户填写)''', 'SELECT 1')
   FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='refund_reason');
 PREPARE pay_stmt FROM @paycol; EXECUTE pay_stmt; DEALLOCATE PREPARE pay_stmt;
@@ -1315,6 +1316,48 @@ CREATE TABLE IF NOT EXISTS t_live_comment (
   KEY idx_lc_room (room_id, create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='直播间互动弹幕';
 
+-- ============================================================
+-- 直播商业闭环补列（幂等，历史库可重复执行）：
+--   t_live_room.peak_viewer_count  观看峰值（进出场维护）
+--   t_live_product.click_count     讲解商品点击数（归因漏斗）
+--   t_order.live_id                下单归因直播间（复盘 GMV 依据）
+-- ============================================================
+SET @lv1 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_room ADD COLUMN peak_viewer_count INT NOT NULL DEFAULT 0 COMMENT ''观看峰值'' AFTER viewer_count', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_room' AND COLUMN_NAME='peak_viewer_count');
+PREPARE lv_stmt1 FROM @lv1; EXECUTE lv_stmt1; DEALLOCATE PREPARE lv_stmt1;
+
+SET @lv5 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_room ADD COLUMN review_status TINYINT NOT NULL DEFAULT 1 COMMENT ''审核状态 0待审核 1通过 2驳回'' AFTER status', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_room' AND COLUMN_NAME='review_status');
+PREPARE lv_stmt5 FROM @lv5; EXECUTE lv_stmt5; DEALLOCATE PREPARE lv_stmt5;
+
+SET @lv6 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_room ADD COLUMN reject_reason VARCHAR(255) NULL COMMENT ''驳回原因'' AFTER review_status', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_room' AND COLUMN_NAME='reject_reason');
+PREPARE lv_stmt6 FROM @lv6; EXECUTE lv_stmt6; DEALLOCATE PREPARE lv_stmt6;
+
+SET @lv2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_product ADD COLUMN click_count INT NOT NULL DEFAULT 0 COMMENT ''点击数'' AFTER live_stock', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_product' AND COLUMN_NAME='click_count');
+PREPARE lv_stmt2 FROM @lv2; EXECUTE lv_stmt2; DEALLOCATE PREPARE lv_stmt2;
+
+SET @lv3 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN live_id BIGINT NULL COMMENT ''下单归因直播间ID'' AFTER coupon_id', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='live_id');
+PREPARE lv_stmt3 FROM @lv3; EXECUTE lv_stmt3; DEALLOCATE PREPARE lv_stmt3;
+
+SET @lv4 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD INDEX idx_order_live (live_id)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND INDEX_NAME='idx_order_live');
+PREPARE lv_stmt4 FROM @lv4; EXECUTE lv_stmt4; DEALLOCATE PREPARE lv_stmt4;
+
+SET @lv7 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order_item ADD INDEX idx_oi_order (order_no)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order_item' AND INDEX_NAME='idx_oi_order');
+PREPARE lv_stmt7 FROM @lv7; EXECUTE lv_stmt7; DEALLOCATE PREPARE lv_stmt7;
+
+SET @lv8 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_product ADD INDEX idx_lp_prod (prod_id)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_product' AND INDEX_NAME='idx_lp_prod');
+PREPARE lv_stmt8 FROM @lv8; EXECUTE lv_stmt8; DEALLOCATE PREPARE lv_stmt8;
+
+SET @lv9 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_live_comment ADD INDEX idx_lc_room_cid (room_id, comment_id)', 'SELECT 1')
+  FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_live_comment' AND INDEX_NAME='idx_lc_room_cid');
+PREPARE lv_stmt9 FROM @lv9; EXECUTE lv_stmt9; DEALLOCATE PREPARE lv_stmt9;
+
 -- 初始示例直播间种子数据 (幂等写入)
 INSERT IGNORE INTO t_live_room (room_id, mer_id, user_id, title, cover_url, stream_url, status, viewer_count, like_count, pinned_prod_id, notice, start_time)
 VALUES
@@ -1359,3 +1402,156 @@ FROM (
     AND p.price >= 1
 ) x
 WHERE NOT EXISTS (SELECT 1 FROM t_price_history LIMIT 1);
+
+
+-- ==================== 人工客服工单（设置页「人工客服」留言 → 运营处理） ====================
+CREATE TABLE IF NOT EXISTS t_support_ticket (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id     BIGINT NOT NULL COMMENT '提交用户',
+  contact     VARCHAR(120) COMMENT '回电/邮箱(可空)',
+  category    VARCHAR(32) NOT NULL DEFAULT 'other' COMMENT 'account/order/payment/merchant/other',
+  title       VARCHAR(200) NOT NULL COMMENT '标题',
+  content     VARCHAR(2000) NOT NULL COMMENT '问题描述',
+  status      VARCHAR(16) NOT NULL DEFAULT 'OPEN' COMMENT 'OPEN/PROCESSING/REPLIED/CLOSED',
+  reply       VARCHAR(2000) COMMENT '运营回复',
+  reply_by    BIGINT COMMENT '回复运营用户ID',
+  reply_time  DATETIME COMMENT '回复时间',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_st_user (user_id, create_time),
+  KEY idx_st_status (status, create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='人工客服工单';
+
+-- ==================== 买家↔商家 联系商家对话 ====================
+-- 闭环：商品详情页「联系商家」(携带 merId+prodId) → find-or-create 会话 → 双方互发消息 →
+--       未读数（对方维度）→ 商户中心「客户消息」收发；买家未读独立于 t_message 平台通知角标。
+CREATE TABLE IF NOT EXISTS t_merchant_chat (
+  id            BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '会话ID',
+  buyer_id      BIGINT NOT NULL COMMENT '买家用户ID',
+  mer_id        BIGINT NOT NULL COMMENT '商户ID(t_merchant.mer_id)',
+  prod_id       BIGINT NULL COMMENT '最近咨询商品ID',
+  last_msg_content VARCHAR(200) DEFAULT '' COMMENT '最后一条消息摘要',
+  last_sender_role VARCHAR(10) DEFAULT '' COMMENT 'buyer/merchant',
+  unread_count  INT NOT NULL DEFAULT 0 COMMENT '对方未读数(结合last_sender_role判定归属)',
+  status        VARCHAR(16) NOT NULL DEFAULT 'active' COMMENT 'active/closed',
+  create_time   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY ux_chat_buyer_mer (buyer_id, mer_id),
+  KEY idx_chat_mer (mer_id, update_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='买家商家会话';
+
+CREATE TABLE IF NOT EXISTS t_merchant_chat_msg (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  session_id  BIGINT NOT NULL COMMENT '会话ID',
+  sender_role VARCHAR(10) NOT NULL COMMENT 'buyer/merchant',
+  sender_id   BIGINT NOT NULL COMMENT '发送者用户ID',
+  content     VARCHAR(500) NOT NULL COMMENT '文本内容；媒体消息存占位([图片]/[文件] 名/[语音])',
+  msg_type    VARCHAR(16) NOT NULL DEFAULT 'text' COMMENT '消息类型：text/image/file/voice',
+  media_url   VARCHAR(300) NULL COMMENT '媒体URL(/api/uploads/chat/{yyyyMM}/{userId}_{ts}.{ext})',
+  media_name  VARCHAR(200) NULL COMMENT '媒体原始文件名(仅回显落库，不参与路径)',
+  media_size  BIGINT NULL COMMENT '媒体字节数',
+  voice_seconds INT NULL COMMENT '语音时长(秒，仅voice，1-300)',
+  read_flag   TINYINT DEFAULT 0 COMMENT '对方是否已读',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_chat_msg_session (session_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='买家商家消息';
+
+-- ==================== 用户习惯画像（分析类 Cookie 收集的服务端同步） ====================
+CREATE TABLE IF NOT EXISTS t_user_habit (
+  user_id BIGINT PRIMARY KEY COMMENT '用户ID（登录用户跨设备续用）',
+  consent TINYINT NOT NULL DEFAULT 0 COMMENT '上报时的 analytics 授权快照(1=已授权)',
+  consent_at DATETIME NULL COMMENT '最近一次授权上报时间',
+  payload LONGTEXT NOT NULL COMMENT '画像 JSON：搜索词/类目/最近浏览/访问次数（前端限条目，后端限 8KB）',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户习惯画像（analytics 授权后采集）';
+
+-- ==================== 商品推荐：共现矩阵 + 热度日榜（定时物化） ====================
+CREATE TABLE IF NOT EXISTS t_prod_cooccur (
+  prod_a     BIGINT NOT NULL COMMENT '来源商品',
+  prod_b     BIGINT NOT NULL COMMENT '共现商品',
+  cnt        INT    NOT NULL DEFAULT 0 COMMENT '加权共现次数(VIEW=1,CLICK=2,ADD_CART=3,PAY=5)',
+  score      DECIMAL(10,6) NOT NULL DEFAULT 0 COMMENT '余弦归一分 cnt/sqrt(total_a*total_b)',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (prod_a, prod_b),
+  KEY idx_cooccur_b (prod_b)
+) ENGINE=InnoDB COMMENT='商品共现矩阵(session 内加权, 定时物化)';
+
+CREATE TABLE IF NOT EXISTS t_prod_hot_stat (
+  prod_id    BIGINT PRIMARY KEY,
+  ind_id     BIGINT,
+  cat_id     BIGINT,
+  view_cnt   INT DEFAULT 0,
+  cart_cnt   INT DEFAULT 0,
+  pay_cnt    INT DEFAULT 0,
+  hot_score  DECIMAL(10,6) NOT NULL DEFAULT 0 COMMENT 'Wilson 下界*时间衰减',
+  stat_date  DATE NOT NULL,
+  KEY idx_hot_ind (ind_id, hot_score)
+) ENGINE=InnoDB COMMENT='商品热度日榜(物化)';
+
+-- ==================== 用户违规风控：命中事件 + 风险总分（打分卡，只记录不动真格） ====================
+CREATE TABLE IF NOT EXISTS t_user_risk_event (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  rule_code VARCHAR(32) NOT NULL COMMENT 'R01高频取消/R02高频下单/R03批量下单/R04重复退款/R05篡改/R06登录异常/R07客服灌水',
+  score INT NOT NULL,
+  detail VARCHAR(500),
+  ref_type VARCHAR(24),
+  ref_id VARCHAR(40) COMMENT 'order_no/user 等引用',
+  reviewed_status TINYINT DEFAULT NULL COMMENT 'NULL未复核 0误报(白名单) 1确认',
+  reviewed_by BIGINT,
+  reviewed_time DATETIME,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_risk_user_time (user_id, create_time),
+  KEY idx_risk_rule (rule_code, create_time)
+) ENGINE=InnoDB COMMENT='用户风控命中事件';
+
+CREATE TABLE IF NOT EXISTS t_user_risk_summary (
+  user_id BIGINT PRIMARY KEY,
+  total_score INT NOT NULL DEFAULT 0,
+  level VARCHAR(16) NOT NULL DEFAULT 'NORMAL' COMMENT 'NORMAL/WATCH/REVIEW',
+  hit_count INT DEFAULT 0,
+  last_event_time DATETIME,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB COMMENT='用户风险总分(30天窗口, 定时物化)';
+
+-- ==================== A/B 实验平台（最小版：分流哈希 + 曝光/转化日志 + 指标检验） ====================
+CREATE TABLE IF NOT EXISTS t_ab_experiment (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  exp_key VARCHAR(64) NOT NULL COMMENT '实验键（分流哈希输入）',
+  name VARCHAR(128) NOT NULL COMMENT '实验名称',
+  status VARCHAR(16) NOT NULL DEFAULT 'draft' COMMENT 'draft/running/paused/finished',
+  traffic_pct INT NOT NULL DEFAULT 100 COMMENT '进入实验的流量百分比 0-100',
+  variants_json VARCHAR(500) NOT NULL COMMENT '变体名数组 JSON，如 ["control","treatment"]',
+  metric VARCHAR(32) NOT NULL DEFAULT 'ctr' COMMENT '主指标 ctr/cvr/gmv',
+  description VARCHAR(500),
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_ab_key (exp_key)
+) ENGINE=InnoDB COMMENT='A/B 实验定义';
+
+CREATE TABLE IF NOT EXISTS t_ab_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  exp_key VARCHAR(64) NOT NULL,
+  variant VARCHAR(32) NOT NULL,
+  user_id BIGINT NULL,
+  session_id VARCHAR(128) NULL,
+  event_type VARCHAR(16) NOT NULL COMMENT 'expose/convert',
+  value DECIMAL(12,2) NULL COMMENT '转化金额（gmv 指标用）',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ab_exp_variant (exp_key, variant, event_type),
+  KEY idx_ab_user (exp_key, user_id, event_type)
+) ENGINE=InnoDB COMMENT='A/B 曝光与转化日志';
+
+-- ==================== RFM 用户分层（每日 04:00 物化，固定阈值版） ====================
+CREATE TABLE IF NOT EXISTS t_user_rfm (
+  user_id BIGINT PRIMARY KEY,
+  r_score INT NOT NULL,
+  f_score INT NOT NULL,
+  m_score INT NOT NULL,
+  r_days INT,
+  f_cnt INT,
+  m_amount DECIMAL(12,2),
+  layer VARCHAR(16) NOT NULL DEFAULT '一般挽留' COMMENT '八层经典矩阵',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_rfm_layer (layer)
+) ENGINE=InnoDB COMMENT='RFM 用户分层(物化, 只读)';

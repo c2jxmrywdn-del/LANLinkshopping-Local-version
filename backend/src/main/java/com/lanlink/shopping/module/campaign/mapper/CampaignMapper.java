@@ -22,6 +22,13 @@ public interface CampaignMapper extends BaseMapper<Campaign> {
     int claimOne(@Param("campaignId") Long campaignId);
 
     /**
+     * 锁定活动行（SELECT ... FOR UPDATE），串行化同一活动的领券事务，
+     * 让「每人限领」的 查询→插入 在并发下不存在竞态窗口。须在事务内调用。
+     */
+    @Select("SELECT campaign_id FROM t_campaign WHERE campaign_id = #{campaignId} FOR UPDATE")
+    Long lockById(@Param("campaignId") Long campaignId);
+
+    /**
      * 商户在时间窗内的已支付销售额（本商户商品明细小计之和）。
      * 用于商户激励活动的进度计算与达标领奖；start/end 由服务层保证非空（无界传极值）。
      */

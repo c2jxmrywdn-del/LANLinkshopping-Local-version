@@ -64,21 +64,48 @@ public class OutboundModelConfigService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
 
-    /** 密钥加密主密钥：环境变量优先，缺省退化为配置值（开发环境便利，生产必须走环境变量） */
-    @Value("${OUTBOUND_KEY_SECRET:${support.outbound.key-secret:lanlink-outbound-key-dev-secret}}")
+    /** 密钥加密主密钥：AI 专用环境变量优先（AI_OUTBOUND_KEY_SECRET），兼容旧名，缺省退化配置值（生产必须走环境变量） */
+    @Value("${AI_OUTBOUND_KEY_SECRET:${OUTBOUND_KEY_SECRET:${support.outbound.key-secret:lanlink-outbound-key-dev-secret}}}")
     private String keySecret;
 
-    @Value("${support.fallback.mimo-api-key:${MIMO_API_KEY:}}")
+    /** AI 专用环境变量组：MIMO 渠道（兼容旧名 MIMO_API_KEY） */
+    @Value("${AI_MIMO_API_KEY:${support.fallback.mimo-api-key:${MIMO_API_KEY:}}}")
     private String envMimoApiKey;
 
-    @Value("${support.fallback.mimo-base-url:${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}}")
+    @Value("${AI_MIMO_BASE_URL:${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}}")
     private String envMimoBaseUrl;
 
-    @Value("${support.fallback.qwen-api-key:${QWEN_API_KEY:${DASHSCOPE_API_KEY:}}}")
+    /** QWEN 渠道（兼容旧名 QWEN_API_KEY / DASHSCOPE_API_KEY） */
+    @Value("${AI_QWEN_API_KEY:${support.fallback.qwen-api-key:${QWEN_API_KEY:${DASHSCOPE_API_KEY:}}}}")
     private String envQwenApiKey;
 
-    @Value("${support.fallback.qwen-base-url:${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}")
+    @Value("${AI_QWEN_BASE_URL:${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}}")
     private String envQwenBaseUrl;
+
+    /** DEEPSEEK 渠道（AI 专用组新增） */
+    @Value("${AI_DEEPSEEK_API_KEY:}")
+    private String envDeepseekApiKey;
+
+    @Value("${AI_DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}")
+    private String envDeepseekBaseUrl;
+
+    /**
+     * 本地 AI 网关渠道（channel=mimosa，OpenAI 兼容，背后 Ollama）：
+     * 后端在容器内，通过宿主机端口访问网关，故默认走 host.docker.internal:8090。
+     * 网关不校验密钥，但渠道存储要求非空 Key，用占位密钥即可。
+     * 只需在 .env 配置这几个共享变量即可启用/切换模型，无需改代码。
+     */
+    @Value("${AI_GATEWAY_BASE_URL:http://host.docker.internal:8090/v1}")
+    private String envGatewayBaseUrl;
+
+    @Value("${AI_GATEWAY_API_KEY:lanlink-local-ai-gateway}")
+    private String envGatewayApiKey;
+
+    @Value("${AI_GATEWAY_MODEL:qwen2.5-vl}")
+    private String envGatewayModel;
+
+    @Value("${AI_GATEWAY_ENABLED:true}")
+    private boolean envGatewayEnabled;
 
     @org.springframework.beans.factory.annotation.Autowired
     public OutboundModelConfigService(JdbcTemplate jdbc, AuditService auditService) {
@@ -98,14 +125,27 @@ public class OutboundModelConfigService {
             if (envMimoApiKey != null && !envMimoApiKey.isBlank()) {
                 if (storedChannel("mimo") == null) {
                     upsert("mimo", envMimoBaseUrl, envMimoApiKey, "mimo-v2.6-flash", true, 0L, null);
-                    log.info("[outbound-config] MIMO API Key auto-configured from environment");
+                    log.info("[outbound-config] MIMO API Key auto-configured from AI_MIMO_API_KEY");
                 }
             }
             if (envQwenApiKey != null && !envQwenApiKey.isBlank()) {
                 if (storedChannel("qwen") == null) {
                     upsert("qwen", envQwenBaseUrl, envQwenApiKey, "qwen-plus", true, 0L, null);
-                    log.info("[outbound-config] Qwen API Key auto-configured from environment");
+                    log.info("[outbound-config] Qwen API Key auto-configured from AI_QWEN_API_KEY");
                 }
+            }
+            if (envDeepseekApiKey != null && !envDeepseekApiKey.isBlank()) {
+                if (storedChannel("deepseek") == null) {
+                    upsert("deepseek", envDeepseekBaseUrl, envDeepseekApiKey, "deepseek-chat", true, 0L, null);
+                    log.info("[outbound-config] DeepSeek API Key auto-configured from AI_DEEPSEEK_API_KEY");
+                }
+            }
+            // 本地 AI 网关渠道：每次启动按共享环境变量对齐（base/model/启用状态以 .env 为准）。
+            if (envGatewayEnabled && envGatewayBaseUrl != null && !envGatewayBaseUrl.isBlank()
+                    && envGatewayApiKey != null && !envGatewayApiKey.isBlank()) {
+                upsert("mimosa", envGatewayBaseUrl, envGatewayApiKey, envGatewayModel, true, 0L, null);
+                log.info("[outbound-config] AI gateway channel (mimosa) configured: base={} model={}",
+                        envGatewayBaseUrl, envGatewayModel);
             }
         } catch (Exception e) {
             log.warn("[outbound-config] env channels init skipped: {}", e.getMessage());

@@ -35,11 +35,11 @@ public interface AdCampaignMapper extends BaseMapper<AdCampaign> {
             + " WHERE campaign_id = #{campaignId} AND status = 'active'")
     int countImpression(@Param("campaignId") Long campaignId);
 
-    /** 广告位候选：投放中的计划（JOIN 在售商品），按剩余预算降序轮换 */
+    /** 广告位候选：投放中的计划（JOIN 在售商品）全量取出（≤50），由 Service 层做 eCPM 排序与 pacing 准入 */
     @Select("SELECT c.* FROM t_ad_campaign c JOIN t_product p ON p.prod_id = c.prod_id"
             + " WHERE c.status = 'active' AND c.deleted = 0 AND c.end_time > NOW()"
             + " AND p.status = 1 AND p.deleted = 0"
-            + " ORDER BY (c.total_budget - c.spent) DESC, c.campaign_id LIMIT #{limit}")
+            + " ORDER BY (c.total_budget - c.spent) DESC, c.campaign_id LIMIT 50")
     List<AdCampaign> activeSlots(@Param("limit") int limit);
 
     /** 到期待结算的计划（投放中/暂停 且已过结束时间） */

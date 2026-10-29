@@ -157,11 +157,44 @@ public class AdCampaignService {
         campaignMapper.countImpression(campaignId);
     }
 
-    /** 商城广告位：投放中的商品卡片（带商品摘要），前端在列表固定位置插入 */
+    /**
+     * 商城广告位：eCPM 排序 + 预算 pacing 准入（计费原子链路不变）。
+     *
+     * <p>eCPM = CPC × pCTR × 1000，pCTR 用 Beta 平滑 (clicks+α)/(impressions+α+β)
+     * （α=0.1/β=10：低曝光计划向 1% 先验收缩，抑制小样本噪声）；pacing 按计划
+     * 时长进度与花费进度之比节流——预算消耗快于时间进度时概率性让位，避免前快后慢。
+     */
     public List<Map<String, Object>> slots(int limit) {
         int n = Math.max(1, Math.min(limit, 6));
+        List<AdCampaign> candidates = campaignMapper.activeSlots(50);
+
+        // eCPM 降序
+        record Cand(AdCampaign c, double ecpm, double pacing) {}
+        List<Cand> ranked = new ArrayList<>();
+        for (AdCampaign c : candidates) {
+            double pctr = betaSmoothedCtr(c.getClicks(), c.getImpressions());
+            double ecpm = c.getCpcPrice() == null ? 0 : c.getCpcPrice().doubleValue() * pctr * 1000;
+            ranked.add(new Cand(c, ecpm, pacingFactor(c)));
+        }
+        ranked.sort((a, b) -> Double.compare(b.ecpm, a.ecpm));
+
+        // pacing 准入：消耗过快（factor < 0.5）的计划按概率跳过；下限 0.2 保底曝光
+        List<AdCampaign> picked = new ArrayList<>();
+        for (Cand cand : ranked) {
+            if (picked.size() >= n) break;
+            double factor = Math.max(0.2, cand.pacing());
+            if (factor < 1.0 && java.util.concurrent.ThreadLocalRandom.current().nextDouble() > factor) {
+                continue;
+            }
+            picked.add(cand.c());
+        }
+        // 全被 pacing 跳过时回退 eCPM TopN（广告位永不空）
+        if (picked.isEmpty()) {
+            ranked.stream().limit(n).forEach(cd -> picked.add(cd.c()));
+        }
+
         List<Map<String, Object>> out = new ArrayList<>();
-        for (AdCampaign c : campaignMapper.activeSlots(n)) {
+        for (AdCampaign c : picked) {
             Product p = productMapper.selectById(c.getProdId());
             if (p == null) continue;
             Map<String, Object> slot = new LinkedHashMap<>();
@@ -177,6 +210,32 @@ public class AdCampaignService {
             out.add(slot);
         }
         return out;
+    }
+
+    /** Beta 平滑 CTR：抑制低曝光噪声（α=0.1/β=10 → 先验均值 1%） */
+    static double betaSmoothedCtr(Long clicks, Long impressions) {
+        double cl = clicks == null ? 0 : clicks;
+        double im = impressions == null ? 0 : impressions;
+        return (cl + 0.1) / (im + 10.1);
+    }
+
+    /** pacing 因子 = 时间进度 / 花费进度（>1 消耗偏慢可放量，<1 消耗偏快应收紧） */
+    static double pacingFactor(AdCampaign c) {
+        try {
+            if (c.getStartTime() == null || c.getEndTime() == null || c.getTotalBudget() == null) return 1.0;
+            long start = c.getStartTime().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
+            long end = c.getEndTime().toInstant(java.time.ZoneOffset.UTC).toEpochMilli();
+            long total = end - start;
+            if (total <= 0) return 1.0;
+            double timeProgress = (System.currentTimeMillis() - start) / (double) total;
+            timeProgress = Math.max(0.05, Math.min(1.0, timeProgress));
+            double spendProgress = c.getSpent() == null ? 0
+                    : c.getSpent().doubleValue() / Math.max(c.getTotalBudget().doubleValue(), 0.01);
+            spendProgress = Math.min(1.0, spendProgress);
+            return Math.min(1.0, timeProgress / Math.max(spendProgress, 0.05));
+        } catch (Exception e) {
+            return 1.0;
+        }
     }
 
     // ===== 报表 =====

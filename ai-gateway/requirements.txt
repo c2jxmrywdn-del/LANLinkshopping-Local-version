@@ -1,6 +1,12 @@
+# 国内网络环境使用阿里云 PyPI 镜像加速镜像构建（本机 PyPI 直连仅 ~8KB/s）；
+# 如需官方源，删除下面两行或执行 pip install -i <index> 覆盖即可。
+--index-url https://mirrors.aliyun.com/pypi/simple/
 fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.6
 jieba>=0.42
 pymysql>=1.1
 httpx>=0.27
+redis>=5.0
+# 工具 fetch_page 的正文提取（过滤广告/导航；musllinux 轮子已实测齐备）
+trafilatura>=1.12

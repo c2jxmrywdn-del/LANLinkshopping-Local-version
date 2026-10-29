@@ -28,10 +28,29 @@ public class LiveController {
 
     private final LiveService liveService;
     private final MerchantMapper merchantMapper;
+    private final com.lanlink.shopping.mapper.LiveRoomMapper liveRoomMapper;
+    private final com.lanlink.shopping.service.LiveRateGuard rateGuard;
 
-    public LiveController(LiveService liveService, MerchantMapper merchantMapper) {
+    public LiveController(LiveService liveService, MerchantMapper merchantMapper,
+                          com.lanlink.shopping.mapper.LiveRoomMapper liveRoomMapper,
+                          com.lanlink.shopping.service.LiveRateGuard rateGuard) {
         this.liveService = liveService;
         this.merchantMapper = merchantMapper;
+        this.liveRoomMapper = liveRoomMapper;
+        this.rateGuard = rateGuard;
+    }
+
+    /** 客户端 IP（代理链取首个，与 SecurityRouteGuard 同口径） */
+    private String clientIp(HttpServletRequest request) {
+        String ip = request.getHeader("CF-Connecting-IP");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getHeader("X-Forwarded-For");
+        }
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) {
+            ip = request.getRemoteAddr();
+        }
+        if (ip != null && ip.contains(",")) ip = ip.split(",")[0].trim();
+        return ip == null ? "unknown" : ip;
     }
 
     // ==================== 1. 买家 / 观众公开端 ====================
@@ -65,15 +84,22 @@ public class LiveController {
         return R.ok(liveService.getRecentComments(roomId, limit));
     }
 
-    /** 发送点赞 (高频轻量接口) */
+    /** 发送点赞 (高频轻量接口；IP 限流防刷) */
     @PostMapping("/room/{roomId}/like")
     public R<Integer> sendLike(@PathVariable Long roomId,
-                               @RequestBody(required = false) Map<String, Object> body) {
-        int count = 1;
-        if (body != null && body.containsKey("count")) {
-            count = Math.min(20, Math.max(1, ((Number) body.get("count")).intValue()));
+                               @RequestBody(required = false) Map<String, Object> body,
+                               HttpServletRequest request) {
+        LiveRoom room = liveRoomMapper.selectById(roomId);
+        long current = room == null || room.getLikeCount() == null ? 0 : room.getLikeCount();
+        if (!rateGuard.allow(clientIp(request) + ":like:" + roomId, 2, 2_000)) {
+            return R.ok(null, (int) Math.min(Integer.MAX_VALUE, current));
         }
-        return R.ok(liveService.addLikes(roomId, count));
+        int count = 1;
+        if (body != null && body.get("count") instanceof Number num) {
+            count = Math.min(20, Math.max(1, num.intValue()));
+        }
+        liveService.addLikes(roomId, count);
+        return R.ok(null, (int) Math.min(Integer.MAX_VALUE, current + count));
     }
 
     /** 发送弹幕 / 评论 (登录用户使用个人昵称，未登录使用默认代表昵称) */
@@ -85,6 +111,10 @@ public class LiveController {
         String msgType = body != null && body.get("msgType") != null ? (String) body.get("msgType") : "chat";
         if (content == null || content.trim().isEmpty()) {
             return R.fail("请输入弹幕内容");
+        }
+
+        if (!rateGuard.allow(clientIp(request) + ":comment:" + roomId, 1, 3_000)) {
+            return R.fail("发送太频繁，请稍后再试");
         }
 
         User u = UserContext.current(request);
@@ -155,11 +185,14 @@ public class LiveController {
         return R.ok("直播间创建成功", created);
     }
 
-    /** 主播在直播中置顶讲解指定商品 */
+    /** 主播在直播中置顶讲解指定商品（校验直播间归属 + 商品归属） */
     @PostMapping("/merchant/{roomId}/pin-product")
     @RequirePerm("merchant:manage")
     public R<Boolean> pinProduct(@PathVariable Long roomId,
-                                 @RequestBody Map<String, Object> body) {
+                                 @RequestBody Map<String, Object> body,
+                                 HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        if (!ownsRoom(userId, roomId)) return R.fail(403, "无权操作他人直播间");
         Long prodId = body != null && body.get("prodId") != null ? ((Number) body.get("prodId")).longValue() : null;
         if (prodId == null) {
             return R.fail("请指定讲解商品");
@@ -168,16 +201,79 @@ public class LiveController {
         return R.ok("已置顶当前讲解商品", ok);
     }
 
-    /** 修改直播状态 (1=开播, 2=结束直播) */
+    /** 修改直播状态 (1=开播, 2=结束直播)，校验直播间归属 */
     @PostMapping("/merchant/{roomId}/status")
     @RequirePerm("merchant:manage")
     public R<Boolean> updateStatus(@PathVariable Long roomId,
-                                   @RequestBody Map<String, Object> body) {
+                                   @RequestBody Map<String, Object> body,
+                                   HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        if (!ownsRoom(userId, roomId)) return R.fail(403, "无权操作他人直播间");
         Integer status = body != null && body.get("status") != null ? ((Number) body.get("status")).intValue() : null;
         if (status == null) {
             return R.fail("状态参数不能为空");
         }
         boolean ok = liveService.updateRoomStatus(roomId, status);
         return R.ok(status == 1 ? "已开启直播" : "直播已结束", ok);
+    }
+
+    // ==================== 3. 商业闭环：观看归因 / 讲解点击 / 成交复盘 ====================
+
+    /** 观众进入直播间（在线数 +1，峰值抬升；公开，浏览器进入/刷新时调用；IP 限流防刷） */
+    @PostMapping("/room/{roomId}/join")
+    public R<Integer> joinRoom(@PathVariable Long roomId, HttpServletRequest request) {
+        if (!rateGuard.allow(clientIp(request) + ":join:" + roomId, 1, 15_000)) {
+            LiveRoom cur = liveRoomMapper.selectById(roomId);
+            return R.ok(null, cur == null ? 0 : cur.getViewerCount());
+        }
+        liveService.joinRoom(roomId);
+        LiveRoom room = liveRoomMapper.selectById(roomId);
+        return R.ok("欢迎来到直播间", room == null ? 0 : room.getViewerCount());
+    }
+
+    /** 观众离开直播间（离开/关页时调用，在线数 -1；IP 限流防恶意清零） */
+    @PostMapping("/room/{roomId}/leave")
+    public R<Void> leaveRoom(@PathVariable Long roomId, HttpServletRequest request) {
+        if (rateGuard.allow(clientIp(request) + ":leave:" + roomId, 1, 15_000)) {
+            liveService.leaveRoom(roomId);
+        }
+        return R.ok(null, null);
+    }
+
+    /** 商品详情页"直播中"徽章：返回该商品当前直播中的直播间（无则 data=null） */
+    @GetMapping("/room-by-product/{prodId}")
+    public R<LiveRoom> roomByProduct(@PathVariable Long prodId) {
+        return R.ok(liveService.findActiveRoomByProduct(prodId));
+    }
+
+    /** 讲解商品点击埋点：返回直播价等行信息，前端据此跳转商品详情（带归因参数；IP 限流防刷） */
+    @PostMapping("/room/{roomId}/product/{prodId}/click")
+    public R<LiveProduct> trackProductClick(@PathVariable Long roomId, @PathVariable Long prodId,
+                                            HttpServletRequest request) {
+        if (!rateGuard.allow(clientIp(request) + ":click:" + roomId + ":" + prodId, 1, 2_000)) {
+            LiveProduct row = liveService.getRoomProducts(roomId).stream()
+                    .filter(x -> prodId.equals(x.getProdId())).findFirst().orElse(null);
+            return row == null ? R.fail("该商品未在本直播间挂载") : R.ok(row);
+        }
+        LiveProduct lp = liveService.trackProductClick(roomId, prodId);
+        return lp == null ? R.fail("该商品未在本直播间挂载") : R.ok(lp);
+    }
+
+    /** 直播复盘看板（商户）：房间 + 商品漏斗（点击/单量/GMV） + 总成交 */
+    @GetMapping("/merchant/{roomId}/stats")
+    @RequirePerm("merchant:manage")
+    public R<java.util.Map<String, Object>> roomStats(@PathVariable Long roomId, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        if (!ownsRoom(userId, roomId)) return R.fail(403, "无权查看他人直播间");
+        return R.ok(liveService.roomStats(roomId));
+    }
+
+    /** 直播间归属校验：当前用户必须是直播间主办商户负责人 */
+    private boolean ownsRoom(Long userId, Long roomId) {
+        if (userId == null || roomId == null) return false;
+        Merchant m = merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery().eq(Merchant::getUserId, userId));
+        if (m == null) return false;
+        LiveRoom room = liveRoomMapper.selectById(roomId);
+        return room != null && m.getMerId().equals(room.getMerId());
     }
 }

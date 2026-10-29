@@ -65,10 +65,19 @@ Thumbs.db
 desktop.ini
 *.swp
 
+# 本地端到端验证产物（截图等，不入库）
+.verify-out/
+
+# Python 运行时产物
+__pycache__/
+*.pyc
+
 # AI 助手工具目录（非业务代码，不入库）
 .codebuddy/
 .claude/
 .agents/
 .deepsec/
 .trae/
+.zwork/
 skills-lock.json
+ai-gateway/metrics/*.txt

@@ -302,9 +302,12 @@ async function submit() {
       usePoints: usePoints.value && pointsInput.value > 0 ? pointsInput.value : null,
       // 优惠券：服务端校验归属/门槛/有效期并核销（金额不信任前端）
       couponId: selectedCouponId.value || null,
+      // 直播归因：从直播间讲解卡进入并下单时携带直播间 ID（供直播复盘统计成交），异常安全
+      liveRoomId: (() => { try { const a = JSON.parse(sessionStorage.getItem('ll_live_attr') || 'null'); return (a && a.liveId) || null } catch (e) { return null } })(),
       idempotentKey: idempotentKey.value
     })
     idempotentKey.value = '' // 下单成功，重置幂等键，允许下一次新结算
+    sessionStorage.removeItem('ll_live_attr') // 本单已归因，清除直播来源标记
     selectedCouponId.value = null
     coupons.value = []
     await cart.load()

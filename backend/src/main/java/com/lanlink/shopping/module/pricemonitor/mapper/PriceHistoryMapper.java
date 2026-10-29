@@ -45,4 +45,15 @@ public interface PriceHistoryMapper extends BaseMapper<PriceHistory> {
             "ORDER BY ABS(h.change_pct) DESC LIMIT #{limit}")
     List<Map<String, Object>> recentChanges(@Param("since") java.time.LocalDateTime since,
                                             @Param("limit") int limit);
+
+    /** 商户总览聚合：每商品近30日调价次数 + 最近一次变动时间与幅度（一条 SQL 替代 3N+1） */
+    @Select("<script>SELECT prod_id AS prodId, COUNT(*) AS cnt, " +
+            "MAX(create_time) AS lastChangeTime, " +
+            "SUBSTRING_INDEX(GROUP_CONCAT(change_pct ORDER BY create_time DESC), ',', 1) AS lastChangePct " +
+            "FROM t_price_history WHERE prod_id IN " +
+            "<foreach collection='prodIds' item='id' open='(' separator=',' close=')'>#{id}</foreach> " +
+            "AND create_time &gt;= #{since} " +
+            "GROUP BY prod_id</script>")
+    List<Map<String, Object>> aggregateByProducts(@Param("prodIds") List<Long> prodIds,
+                                                  @Param("since") java.time.LocalDateTime since);
 }

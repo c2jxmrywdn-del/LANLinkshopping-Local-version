@@ -38,6 +38,7 @@ class PriceMonitorServiceTest {
     private ProductMapper productMapper;
     private IndustryMapper industryMapper;
     private MessageService messageService;
+    private com.lanlink.shopping.mapper.MerchantMapper merchantMapper;
     private PriceMonitorService service;
 
     @BeforeEach
@@ -48,8 +49,9 @@ class PriceMonitorServiceTest {
         productMapper = mock(ProductMapper.class);
         industryMapper = mock(IndustryMapper.class);
         messageService = mock(MessageService.class);
+        merchantMapper = mock(com.lanlink.shopping.mapper.MerchantMapper.class);
         service = new PriceMonitorService(historyMapper, benchmarkMapper, alertMapper,
-                productMapper, industryMapper, messageService);
+                productMapper, industryMapper, messageService, merchantMapper);
     }
 
     private Product product() {
@@ -133,7 +135,9 @@ class PriceMonitorServiceTest {
         assertEquals("BELOW", cap.getValue().getConditionType());
 
         assertThrows(BusinessException.class, () -> service.subscribe(7L, 1L, "HACK", BigDecimal.ONE));
-        when(alertMapper.selectCount(any())).thenReturn(1L);
+        // 并发重复由唯一键兜底：insert 抛 DuplicateKeyException → 转业务提示
+        when(alertMapper.insert(any(PriceAlert.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("dup"));
         assertThrows(BusinessException.class, () -> service.subscribe(7L, 1L, "BELOW", new BigDecimal("3000")));
     }
 

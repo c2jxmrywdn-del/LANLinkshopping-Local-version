@@ -33,6 +33,7 @@ public class MerchantCenterService {
     private final ProductMapper productMapper;
     private final EnterpriseMapper enterpriseMapper;
     private final OrderService orderService;
+    private final com.lanlink.shopping.service.MerchantChatService chatService;
 
     /**
      * @Lazy 防御性解耦：OrderService 依赖 MerchantMapper/ProductMapper 等同域组件，
@@ -40,12 +41,14 @@ public class MerchantCenterService {
      */
     public MerchantCenterService(MerchantService merchantService, MerchantCenterMapper centerMapper,
                                  ProductMapper productMapper, EnterpriseMapper enterpriseMapper,
-                                 @Lazy OrderService orderService) {
+                                 @Lazy OrderService orderService,
+                                 com.lanlink.shopping.service.MerchantChatService chatService) {
         this.merchantService = merchantService;
         this.centerMapper = centerMapper;
         this.productMapper = productMapper;
         this.enterpriseMapper = enterpriseMapper;
         this.orderService = orderService;
+        this.chatService = chatService;
     }
 
     /** 工作台汇总：店铺信息 + 核心指标 + 待办 + 近 7 日趋势 + 最新订单 */
@@ -67,6 +70,8 @@ public class MerchantCenterService {
         Map<String, Object> recent = centerMapper.sumRecent(merId, 7);
         kpis.put("weekAmount", dec(recent.get("amount")));
         kpis.put("weekOrders", num(recent.get("orders")));
+        // 客户消息未读（买家↔商家对话）：商户中心侧栏「客户消息」角标
+        kpis.put("chatUnread", chatService.merchantUnread(userId));
         out.put("kpis", kpis);
 
         out.put("trend", fillTrend(centerMapper.trendByDay(merId, 7), 7));

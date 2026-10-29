@@ -53,16 +53,20 @@ public class PriceMonitorService {
     private final ProductMapper productMapper;
     private final IndustryMapper industryMapper;
     private final MessageService messageService;
+    private final com.lanlink.shopping.mapper.MerchantMapper merchantMapper;
 
     public PriceMonitorService(PriceHistoryMapper historyMapper, MarketBenchmarkMapper benchmarkMapper,
                                PriceAlertMapper alertMapper, ProductMapper productMapper,
-                               IndustryMapper industryMapper, MessageService messageService) {
+                               IndustryMapper industryMapper, MessageService messageService,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false)
+                               com.lanlink.shopping.mapper.MerchantMapper merchantMapper) {
         this.historyMapper = historyMapper;
         this.benchmarkMapper = benchmarkMapper;
         this.alertMapper = alertMapper;
         this.productMapper = productMapper;
         this.industryMapper = industryMapper;
         this.messageService = messageService;
+        this.merchantMapper = merchantMapper;
     }
 
     // ==================== 留痕 + 预警触发 ====================
@@ -77,9 +81,10 @@ public class PriceMonitorService {
     @Transactional
     public void recordPriceChange(Product prod, BigDecimal oldPrice, BigDecimal newPrice,
                                   String source, Long operatorId) {
-        if (oldPrice == null || newPrice == null || oldPrice.compareTo(newPrice) == 0) return;
-        BigDecimal changePct = newPrice.subtract(oldPrice)
-                .multiply(BigDecimal.valueOf(100))
+        if (newPrice == null) return;
+        if (oldPrice != null && oldPrice.compareTo(newPrice) == 0) return;
+        BigDecimal changePct = oldPrice == null ? null
+                : newPrice.subtract(oldPrice).multiply(BigDecimal.valueOf(100))
                 .divide(oldPrice, 2, RoundingMode.HALF_UP);
 
         PriceHistory h = new PriceHistory();
@@ -93,7 +98,8 @@ public class PriceMonitorService {
         h.setOperatorId(operatorId);
         h.setCreateTime(LocalDateTime.now());
         historyMapper.insert(h);
-
+        // 首发价（oldPrice=null）无"变动"语义，跳过预警评估
+        if (oldPrice == null) return;
         evaluateAlerts(prod, oldPrice, newPrice, changePct);
     }
 
@@ -133,17 +139,26 @@ public class PriceMonitorService {
 
     // ==================== 行业基准（每日调度） ====================
 
-    /** 每日 00:10 聚合行业基准价；启动/调用时也补当日与断档（幂等） */
+    /** 每日 00:10 聚合行业基准价；随后扫描商户价格偏离并发送市场波动摘要（仅新建基准日触发） */
     @Scheduled(cron = "0 10 0 * * ?")
     public void scheduledRefresh() {
-        refreshBenchmarks();
+        List<Long> newInds = refreshBenchmarksAndReturnNew();
+        notifyBenchmarkDeviations(newInds);
     }
 
     /** 刷新行业基准价：对每个有在售商品的行业，取现价均价写入当日基准（存在则更新） */
     @Transactional
     public int refreshBenchmarks() {
+        return refreshBenchmarksAndReturnNew().size();
+    }
+
+    /** 同上，但返回今日【新建】基准的行业 ID（用于波动摘要触发，手动更新不触发）。
+     * 注意：同类 this 调用不经过 Spring 代理，事务注解在此无效——按行业独立提交、
+     * 幂等可重跑，容忍部分行业失败（下次调度自动补齐），故不加 @Transactional。 */
+    public List<Long> refreshBenchmarksAndReturnNew() {
         List<Long> industryIds = productMapper.distinctIndustryIds();
         LocalDate today = LocalDate.now();
+        List<Long> newIndIds = new ArrayList<>();
         int n = 0;
         for (Long indId : industryIds) {
             BigDecimal avg = benchmarkMapper.avgPriceByIndustry(indId);
@@ -167,6 +182,7 @@ public class PriceMonitorService {
                 mb.setBenchmark(avg);
                 mb.setChangePct(changePct);
                 benchmarkMapper.insert(mb);
+                newIndIds.add(indId);
             } else {
                 exist.setBenchmark(avg);
                 exist.setChangePct(changePct);
@@ -174,7 +190,56 @@ public class PriceMonitorService {
             }
             n++;
         }
-        return n;
+        return newIndIds;
+    }
+
+    /**
+     * 市场波动商户摘要：基准日新建（每日一次）时扫描全行业在售商品，
+     * 现价偏离当日基准 ≥ DEVIATION_NOTIFY_PCT 的按商户聚合发站内摘要，
+     * 让商户"市场动了当天知道"。手动 refresh 更新既有行不触发（防刷屏）。
+     */
+    public static final BigDecimal DEVIATION_NOTIFY_PCT = new BigDecimal("20");
+
+    public void notifyBenchmarkDeviations(List<Long> newIndIds) {
+        if (newIndIds == null || newIndIds.isEmpty()) return;
+        LocalDate today = LocalDate.now();
+        for (Long indId : newIndIds) {
+            MarketBenchmark bench = benchmarkMapper.selectOne(Wrappers.<MarketBenchmark>lambdaQuery()
+                    .eq(MarketBenchmark::getIndId, indId)
+                    .eq(MarketBenchmark::getDay, today));
+            if (bench == null || bench.getBenchmark() == null || bench.getBenchmark().signum() <= 0) continue;
+            String indName = Optional.ofNullable(industryMapper.selectById(indId))
+                    .map(i -> i.getName()).orElse("行业 #" + indId);
+            List<Product> onSale = productMapper.selectList(Wrappers.<Product>lambdaQuery()
+                    .eq(Product::getIndId, indId)
+                    .eq(Product::getStatus, 1)
+                    .eq(Product::getReviewStatus, 1));
+            // 按商户聚合偏离商品
+            Map<Long, List<Product>> byMerchant = new LinkedHashMap<>();
+            for (Product p : onSale) {
+                if (p.getPrice() == null || p.getMerId() == null) continue;
+                BigDecimal dev = p.getPrice().subtract(bench.getBenchmark())
+                        .multiply(BigDecimal.valueOf(100)).divide(bench.getBenchmark(), 2, RoundingMode.HALF_UP);
+                if (dev.abs().compareTo(DEVIATION_NOTIFY_PCT) >= 0) {
+                    byMerchant.computeIfAbsent(p.getMerId(), k -> new ArrayList<>()).add(p);
+                }
+            }
+            for (Map.Entry<Long, List<Product>> e : byMerchant.entrySet()) {
+                var m = merchantMapper == null ? null : merchantMapper.selectById(e.getKey());
+                if (m == null || m.getUserId() == null) continue;
+                List<Product> items = e.getValue();
+                String direction = items.get(0).getPrice().compareTo(bench.getBenchmark()) > 0 ? "高于" : "低于";
+                String sample = items.stream().limit(3)
+                        .map(p -> "「" + p.getTitle() + "」¥" + p.getPrice())
+                        .reduce((a, b) -> a + "、" + b).orElse("");
+                String more = items.size() > 3 ? " 等 " + items.size() + " 个商品" : "";
+                messageService.send(m.getUserId(), "price", "行业行情波动提醒",
+                        indName + "今日基准价 ¥" + bench.getBenchmark() + "，你有 " + items.size()
+                                + " 个在售商品价格" + direction + "基准 20% 以上：" + sample + more
+                                + "。建议前往 商户中心 → 价格监控 查看智能调价建议。",
+                        "bench:" + indId);
+            }
+        }
     }
 
     // ==================== 走势 + 智能建议 ====================
@@ -416,25 +481,30 @@ public class PriceMonitorService {
 
     // ==================== 商户端总览 / 管理端异常榜 ====================
 
-    /** 商户价格监控总览：自己每个在售商品的现价/近30日变动/预警订阅数 */
+    /** 商户价格监控总览：自己每个在售商品的现价/近30日变动/预警订阅数（3 条聚合查询，无 N+1） */
     public List<Map<String, Object>> merchantOverview(Long merId) {
         List<Product> products = productMapper.selectList(Wrappers.<Product>lambdaQuery()
                 .eq(Product::getMerId, merId)
                 .orderByDesc(Product::getUpdateTime));
         if (products.isEmpty()) return List.of();
         LocalDateTime since = LocalDateTime.now().minusDays(30);
+        List<Long> prodIds = products.stream().map(Product::getProdId).toList();
+        // 聚合 1：近 30 日调价次数 + 最近一次变动（时间/幅度），一次 SQL
+        Map<Long, Map<String, Object>> aggByProd = new HashMap<>();
+        for (Map<String, Object> row : historyMapper.aggregateByProducts(prodIds, since)) {
+            aggByProd.put(((Number) row.get("prodId")).longValue(), row);
+        }
+        // 聚合 2：生效预警订阅数，一次 SQL
+        Map<Long, Long> alertCountByProd = new HashMap<>();
+        for (Map<String, Object> row : alertMapper.countByProducts(prodIds)) {
+            alertCountByProd.put(((Number) row.get("prodId")).longValue(), ((Number) row.get("cnt")).longValue());
+        }
         List<Map<String, Object>> out = new ArrayList<>();
         for (Product p : products) {
-            Long changes = historyMapper.selectCount(Wrappers.<PriceHistory>lambdaQuery()
-                    .eq(PriceHistory::getProdId, p.getProdId())
-                    .ge(PriceHistory::getCreateTime, since));
-            Long alerts = alertMapper.selectCount(Wrappers.<PriceAlert>lambdaQuery()
-                    .eq(PriceAlert::getProdId, p.getProdId())
-                    .eq(PriceAlert::getStatus, 1));
-            PriceHistory last = historyMapper.selectOne(Wrappers.<PriceHistory>lambdaQuery()
-                    .eq(PriceHistory::getProdId, p.getProdId())
-                    .orderByDesc(PriceHistory::getCreateTime)
-                    .last("LIMIT 1"));
+            Map<String, Object> agg = aggByProd.get(p.getProdId());
+            Long changes = agg == null ? 0L : ((Number) agg.get("cnt")).longValue();
+            Object lastPct = agg == null ? null : agg.get("lastChangePct");
+            Object lastTime = agg == null ? null : agg.get("lastChangeTime");
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("prodId", p.getProdId());
             m.put("title", p.getTitle());
@@ -443,11 +513,12 @@ public class PriceMonitorService {
             m.put("status", p.getStatus());
             m.put("reviewStatus", p.getReviewStatus());
             m.put("changeCount30d", changes);
-            m.put("lastChangePct", last == null ? null : last.getChangePct());
-            m.put("lastChangeTime", last == null ? null : last.getCreateTime());
-            m.put("alertCount", alerts);
-            m.put("anomaly", last != null && last.getChangePct() != null
-                    && last.getChangePct().abs().compareTo(ANOMALY_PCT) >= 0);
+            m.put("lastChangePct", lastPct == null ? null : new BigDecimal(String.valueOf(lastPct)));
+            m.put("lastChangeTime", lastTime == null ? null
+                    : LocalDateTime.parse(String.valueOf(lastTime).replace(' ', 'T').substring(0, 16)));
+            m.put("alertCount", alertCountByProd.getOrDefault(p.getProdId(), 0L));
+            BigDecimal lastPctDec = lastPct == null ? null : new BigDecimal(String.valueOf(lastPct));
+            m.put("anomaly", lastPctDec != null && lastPctDec.abs().compareTo(ANOMALY_PCT) >= 0);
             out.add(m);
         }
         return out;
@@ -494,19 +565,19 @@ public class PriceMonitorService {
         }
         if (threshold == null || threshold.signum() <= 0) throw new BusinessException("阈值需大于 0");
         if (productMapper.selectById(prodId) == null) throw new BusinessException("商品不存在");
-        Long dup = alertMapper.selectCount(Wrappers.<PriceAlert>lambdaQuery()
-                .eq(PriceAlert::getUserId, userId)
-                .eq(PriceAlert::getProdId, prodId)
-                .eq(PriceAlert::getConditionType, conditionType));
-        if (dup > 0) throw new BusinessException("您已订阅过该商品的同类预警");
-        PriceAlert a = new PriceAlert();
-        a.setUserId(userId);
-        a.setProdId(prodId);
-        a.setConditionType(conditionType);
-        a.setThreshold(threshold);
-        a.setStatus(1);
-        a.setCreateTime(LocalDateTime.now());
-        alertMapper.insert(a);
+        try {
+            PriceAlert a = new PriceAlert();
+            a.setUserId(userId);
+            a.setProdId(prodId);
+            a.setConditionType(conditionType);
+            a.setThreshold(threshold);
+            a.setStatus(1);
+            a.setCreateTime(LocalDateTime.now());
+            alertMapper.insert(a);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发重复订阅由 uk_alert_user_prod_cond 唯一键兜底：转为业务提示而非 500
+            throw new BusinessException("您已订阅过该商品的同类预警");
+        }
     }
 
     /** 商品详情页：当前用户对该商品的订阅（用于前端回显"已开启提醒"） */

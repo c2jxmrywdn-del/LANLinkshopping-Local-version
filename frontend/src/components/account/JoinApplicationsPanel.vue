@@ -13,7 +13,7 @@
 
     <a-spin :spinning="loading">
       <div v-if="!items.length && !loading" class="jp-empty">
-        <div class="jp-empty-icon">✦</div>
+        <div class="jp-empty-icon"><AppleIcon name="sparkles" :size="28" /></div>
         <p>还没有提交过申请</p>
         <a-button type="primary" @click="goJoin">去「关于我们 · 加入我们」看看</a-button>
       </div>
@@ -46,6 +46,7 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { joinApi } from '../../api'
+import AppleIcon from '../ui/AppleIcon.vue'
 
 const router = useRouter()
 const loading = ref(false)

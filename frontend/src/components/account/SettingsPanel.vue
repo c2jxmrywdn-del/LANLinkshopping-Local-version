@@ -116,6 +116,76 @@
       <a-button danger class="touch-sm" @click="confirmReset">{{ t('acct.settings.reset') }}</a-button>
     </a-card>
 
+    <!-- 人工客服 -->
+    <a-card :bordered="false" class="sec" :title="t('acct.settings.humanCs')">
+      <div class="desc muted">{{ t('acct.settings.humanCsIntro') }}</div>
+      <div class="cs-channels">
+        <div class="cs-channel">
+          <span class="cs-ch-ic"><AppleIcon name="phone" :size="17" /></span>
+          <div class="row-main">
+            <div class="row-title">{{ t('acct.settings.csHotline') }}</div>
+            <div class="row-desc">{{ t('acct.settings.csHotlineValue') }}</div>
+          </div>
+          <a-button size="small" class="touch-xs" @click="copyText(t('acct.settings.csHotlineValue'))">{{ t('acct.settings.copy') }}</a-button>
+        </div>
+        <div class="cs-channel">
+          <span class="cs-ch-ic"><AppleIcon name="mail" :size="17" /></span>
+          <div class="row-main">
+            <div class="row-title">{{ t('acct.settings.csEmail') }}</div>
+            <div class="row-desc">{{ t('acct.settings.csEmailValue') }}</div>
+          </div>
+          <a-button size="small" class="touch-xs" @click="copyText(t('acct.settings.csEmailValue'))">{{ t('acct.settings.copy') }}</a-button>
+        </div>
+        <div class="cs-channel">
+          <span class="cs-ch-ic"><AppleIcon name="timer" :size="17" /></span>
+          <div class="row-main">
+            <div class="row-title">{{ t('acct.settings.csHours') }}</div>
+            <div class="row-desc">{{ t('acct.settings.csHoursValue') }}</div>
+          </div>
+        </div>
+      </div>
+
+      <a-divider style="margin: 14px 0 12px" />
+      <div class="cs-block-title">{{ t('acct.settings.csNewTicket') }}</div>
+      <a-form layout="vertical" @submit.prevent="submitTicket">
+        <a-form-item :label="t('acct.settings.csCategory')">
+          <a-select v-model:value="csForm.category" class="full">
+            <a-select-option v-for="o in csCatOptions" :key="o.value" :value="o.value">{{ o.label }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item :label="t('acct.settings.csTitle')" :validate-status="csErr.title ? 'error' : ''" :help="csErr.title">
+          <a-input v-model:value="csForm.title" :maxlength="100" :placeholder="t('acct.settings.csTitlePh')" allow-clear @blur="csValidate('title')" />
+        </a-form-item>
+        <a-form-item :label="t('acct.settings.csContent')" :validate-status="csErr.content ? 'error' : ''" :help="csErr.content">
+          <a-textarea v-model:value="csForm.content" :rows="4" :maxlength="2000" :placeholder="t('acct.settings.csContentPh')" @blur="csValidate('content')" />
+        </a-form-item>
+        <a-form-item :label="t('acct.settings.csContact')">
+          <a-input v-model:value="csForm.contact" :maxlength="120" :placeholder="t('acct.settings.csContactPh')" allow-clear />
+        </a-form-item>
+        <a-button type="primary" html-type="submit" block size="large" :loading="csSubmitting" class="touch">{{ t('acct.settings.csSubmit') }}</a-button>
+      </a-form>
+
+      <a-divider style="margin: 18px 0 12px" />
+      <div class="cs-block-title">{{ t('acct.settings.csMyTickets') }}</div>
+      <div v-if="csLoading" class="empty">…</div>
+      <template v-else>
+        <div v-if="csTickets.length === 0" class="empty">{{ t('acct.settings.csEmpty') }}</div>
+        <div v-for="tk in csTickets" :key="tk.id" class="cs-ticket">
+          <div class="cs-ticket-head">
+            <span class="cs-ticket-title">{{ tk.title }}</span>
+            <a-tag :color="csStatusColor(tk.status)">{{ csStatusLabel(tk.status) }}</a-tag>
+          </div>
+          <div class="cs-ticket-meta">{{ csCatLabel(tk.category) }} · {{ t('acct.settings.csSubmittedAt') }} {{ fmtDateTime(tk.createTime) }}</div>
+          <div class="cs-ticket-content">{{ tk.content }}</div>
+          <div v-if="tk.reply" class="cs-ticket-reply">
+            <div class="cs-reply-label">{{ t('acct.settings.csReply') }}</div>
+            <div class="cs-reply-text">{{ tk.reply }}</div>
+          </div>
+          <div v-else class="cs-ticket-reply cs-reply-none">{{ t('acct.settings.csNoReply') }}</div>
+        </div>
+      </template>
+    </a-card>
+
     <!-- 修改密码弹窗 -->
     <a-modal :open="pwdOpen" :title="t('acct.settings.changePwd')" :footer="null" @cancel="pwdOpen = false" destroy-on-close>
       <a-form layout="vertical" @submit.prevent="submitPwd">
@@ -159,9 +229,10 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import TotpSetup from './TotpSetup.vue'
+import AppleIcon from '../ui/AppleIcon.vue'
 import { useSettingsStore } from '../../store/settings'
-import { userApi } from '../../api'
-import { t } from '../../i18n'
+import { userApi, supportTicketApi } from '../../api'
+import { t, locale } from '../../i18n'
 import { passwordStrength } from '../../utils/validators'
 import { openCookiePreferences, readCookieConsent } from '../../utils/cookieConsent'
 
@@ -308,6 +379,92 @@ function confirmRevoke(ta) {
   })
 }
 
+// ===== 人工客服：工单 =====
+const CS_STATUS = { OPEN: 'Open', PROCESSING: 'Processing', REPLIED: 'Replied', CLOSED: 'Closed' }
+const CS_STATUS_COLOR = { OPEN: 'orange', PROCESSING: 'blue', REPLIED: 'green', CLOSED: 'default' }
+const csForm = reactive({ category: 'other', title: '', content: '', contact: '' })
+const csErr = reactive({ title: '', content: '' })
+const csSubmitting = ref(false)
+const csLoading = ref(false)
+const csTickets = ref([])
+const csCatOptions = computed(() => [
+  { value: 'account', label: t('acct.settings.csCatAccount') },
+  { value: 'order', label: t('acct.settings.csCatOrder') },
+  { value: 'payment', label: t('acct.settings.csCatPayment') },
+  { value: 'merchant', label: t('acct.settings.csCatMerchant') },
+  { value: 'other', label: t('acct.settings.csCatOther') }
+])
+function csCatLabel(c) {
+  return (csCatOptions.value.find((o) => o.value === c) || {}).label || t('acct.settings.csCatOther')
+}
+function csStatusLabel(s) {
+  return t('acct.settings.csStatus' + (CS_STATUS[s] || 'Open'))
+}
+function csStatusColor(s) {
+  return CS_STATUS_COLOR[s] || 'default'
+}
+function fmtDateTime(value) {
+  if (!value) return ''
+  try {
+    return new Intl.DateTimeFormat(locale.value === 'en-US' ? 'en-US' : 'zh-CN', { dateStyle: 'medium', timeStyle: 'short' })
+      .format(new Date(String(value).replace('T', ' ').replace(/-/g, '/')))
+  } catch (e) {
+    return String(value).replace('T', ' ')
+  }
+}
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+      document.body.appendChild(ta); ta.select()
+      document.execCommand('copy'); document.body.removeChild(ta)
+    }
+    message.success(t('acct.settings.copied'), 2)
+  } catch (e) { /* 静默 */ }
+}
+function csValidate(field) {
+  if (field === 'title') {
+    const v = csForm.title.trim()
+    csErr.title = (v.length < 2 || v.length > 100) ? t('acct.settings.csTitleRequired') : ''
+  }
+  if (field === 'content') {
+    const v = csForm.content.trim()
+    csErr.content = (v.length < 5 || v.length > 2000) ? t('acct.settings.csContentRequired') : ''
+  }
+}
+async function loadTickets() {
+  csLoading.value = true
+  try {
+    const data = await supportTicketApi.my()
+    csTickets.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    csTickets.value = []
+  } finally {
+    csLoading.value = false
+  }
+}
+async function submitTicket() {
+  csValidate('title'); csValidate('content')
+  if (csErr.title || csErr.content) return
+  csSubmitting.value = true
+  try {
+    await supportTicketApi.submit({
+      category: csForm.category,
+      title: csForm.title.trim(),
+      content: csForm.content.trim(),
+      contact: csForm.contact.trim()
+    })
+    message.success(t('acct.settings.csSubmitted'), 3)
+    csForm.title = ''; csForm.content = ''; csForm.contact = ''; csForm.category = 'other'
+    await loadTickets()
+  } catch (e) { /* 拦截器已提示 */ } finally {
+    csSubmitting.value = false
+  }
+}
+
 // ===== 恢复默认设置 =====
 function confirmReset() {
   Modal.confirm({
@@ -325,6 +482,7 @@ function confirmReset() {
 onMounted(() => {
   refreshSecurity()
   loadThirdAuths()
+  loadTickets()
   window.addEventListener('ll-cookie-consent-changed', handleCookieConsentChanged)
 })
 
@@ -349,6 +507,20 @@ onBeforeUnmount(() => {
 .empty { color: var(--ll-gray2); padding: 12px 0; text-align: center; }
 .third-row { display: flex; align-items: center; gap: 10px; min-height: 56px; }
 .third-icon { width: 34px; height: 34px; border-radius: 8px; background: var(--ll-ring-gradient); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; flex-shrink: 0; }
+/* ===== 人工客服 ===== */
+.cs-channels { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.cs-channel { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.cs-ch-ic { width: 34px; height: 34px; border-radius: 8px; background: var(--ll-ring-gradient); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.cs-block-title { font-weight: 600; color: var(--ll-ink); margin-bottom: 10px; font-size: 15px; }
+.cs-ticket { border: 1px solid var(--ll-border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--ll-card-soft); }
+.cs-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cs-ticket-title { font-weight: 600; color: var(--ll-ink); }
+.cs-ticket-meta { font-size: 12px; color: var(--ll-muted); margin-top: 2px; }
+.cs-ticket-content { margin-top: 8px; color: var(--ll-ink); white-space: pre-wrap; word-break: break-word; }
+.cs-ticket-reply { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--ll-brand-gold-soft); border-left: 3px solid var(--ll-brand-gold); }
+.cs-reply-label { font-size: 12px; color: var(--ll-brand-gold-strong); font-weight: 600; margin-bottom: 4px; }
+.cs-reply-text { color: var(--ll-ink); white-space: pre-wrap; word-break: break-word; }
+.cs-reply-none { color: var(--ll-muted); font-size: 13px; border-left-color: var(--ll-gray2); background: transparent; padding: 8px 0 0; }
 .strength { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .strength .bars { display: inline-flex; gap: 4px; }
 .strength .bar { width: 26px; height: 5px; border-radius: 3px; background: #e5e7eb; }

@@ -12,7 +12,11 @@
       <template v-if="p">
         <section class="product-shell">
           <div class="media-column">
-            <div class="gallery">
+            <!-- 生产线直播（商户导入直播流；直播中/预告/结束三态） -->
+            <div v-if="liveRoom" class="live-slot" data-reveal="scale">
+              <LivePlayerCard :room="liveRoom" :merchant-name="liveRoom.merchantName || (p.brand || '商户')" />
+            </div>
+            <div class="gallery" data-reveal>
               <!-- 京东式主图放大镜：悬停出取景框，右侧同步局部放大图 + 规格文字 -->
               <div class="gallery-main" :class="{ 'is-zoomable': zoomEnabled }"
                    @mouseenter="startZoom" @mousemove="onZoomMove" @mouseleave="stopZoom">
@@ -63,6 +67,13 @@
               </button>
             </div>
 
+            <button v-if="liveRoom" type="button" class="live-badge" @click="router.push('/live/' + liveRoom.roomId)">
+              <i class="live-dot" aria-hidden="true"></i>
+              <span class="live-badge-text">正在直播讲解</span>
+              <span class="live-badge-meta"><Eye :size="12" :stroke-width="2.2" /> {{ liveRoom.viewerCount || 0 }}</span>
+              <ChevronRight :size="14" :stroke-width="2.2" />
+            </button>
+
             <div class="price-card">
               <div class="price-label">到手价</div>
               <div class="price-line">
@@ -71,6 +82,27 @@
               </div>
               <div v-if="user.hasPerm('vip:discount')" class="vip-copy">
                 VIP 价 ¥{{ money(Number(p.price) * 0.95) }} · 已自动为你应用会员折扣
+              </div>
+            </div>
+
+            <!-- 价格智能监控：走势 vs 行业基准 + 降价提醒（买家侧，公开数据） -->
+            <div class="ptrend-card" v-if="trendLoaded && trendSeries.length">
+              <button type="button" class="ptrend-head" @click="ptrendOpen = !ptrendOpen">
+                <span class="ptrend-title"><TrendingUp :size="14" :stroke-width="2.2" /> 价格走势 · 对标行业</span>
+                <ChevronDown :size="14" class="ptrend-caret" :class="{ open: ptrendOpen }" />
+              </button>
+              <div v-show="ptrendOpen" class="ptrend-body">
+                <PriceChart :series="trendSeries" :height="170" />
+                <div class="ptrend-alert">
+                  <template v-if="!alertCreated">
+                    <a-input-number v-model:value="alertPrice" size="small" :min="0.01" :precision="2"
+                                    :placeholder="money(p.price)" style="flex:1;min-width:110px" />
+                    <button type="button" class="ptrend-btn" :disabled="alertSaving" @click="subscribeAlert">
+                      <BellPlus :size="13" :stroke-width="2.2" /> 降价提醒
+                    </button>
+                  </template>
+                  <span v-else class="ptrend-on"><BellRing :size="13" :stroke-width="2.2" /> 已开启降价提醒，到价站内通知</span>
+                </div>
               </div>
             </div>
 
@@ -92,8 +124,8 @@
             </div>
 
             <div class="service-card">
-              <div><span class="service-icon">◇</span><b>配送</b><span>下单后按商户规则发货</span></div>
-              <div><span class="service-icon">↺</span><b>售后</b><span>以商品及商户售后政策为准</span></div>
+              <div><span class="service-icon"><AppleIcon name="truck" :size="15" /></span><b>配送</b><span>下单后按商户规则发货</span></div>
+              <div><span class="service-icon"><AppleIcon name="reset" :size="15" /></span><b>售后</b><span>以商品及商户售后政策为准</span></div>
             </div>
 
             <div class="purchase-area">
@@ -114,6 +146,11 @@
                   登录后购买
                 </a-button>
               </div>
+              <!-- 联系商家：不受库存/登录限制，携带商品与商家上下文进入对话 -->
+              <button v-if="p.merId" type="button" class="contact-merchant" @click="contactMerchant">
+                <MessageCircle :size="14" :stroke-width="2" />
+                联系商家
+              </button>
               <p class="secure-note"><Lock :size="13" class="inline-block mr-1 align-middle text-slate-400" /> 交易过程受平台安全机制保护</p>
             </div>
           </div>
@@ -160,10 +197,31 @@
               <div><b>售后服务</b><p>如遇商品或订单问题，可根据平台及商户售后规则申请处理。</p></div>
             </div>
           </div>
+
+          <!-- 看了又看：共现协同过滤推荐（冷启动回退同类目热度） -->
+          <div id="similar" class="detail-section similar-section">
+            <div class="section-heading">
+              <span>RECOMMEND</span>
+              <h2>看了又看</h2>
+            </div>
+            <div v-if="similarItems.length" class="similar-grid">
+              <div v-for="s in similarItems" :key="s.prodId" class="similar-card"
+                   @click="$router.push('/product/' + s.prodId)">
+                <img :src="s.coverUrl || ''" :alt="s.title" loading="lazy" />
+                <p class="similar-name">{{ s.title }}</p>
+                <span class="similar-price">¥{{ s.price }}</span>
+              </div>
+            </div>
+            <p v-else class="similar-empty">暂无相关推荐</p>
+          </div>
         </section>
 
         <div class="mobile-buybar">
           <div><small>合计</small><strong>¥{{ money(Number(p.price) * qty * vipRate) }}</strong></div>
+          <button v-if="p.merId" type="button" class="contact-merchant mobile" aria-label="联系商家" @click="contactMerchant">
+            <MessageCircle :size="17" :stroke-width="2" />
+            <span class="cm-label">联系商家</span>
+          </button>
           <a-button v-if="user.hasPerm('cart:manage')" class="cart-btn" @click="addCart" :disabled="p.stock <= 0">加购</a-button>
           <a-button type="primary" class="buy-btn" @click="user.logged ? buyNow() : router.push('/login')" :disabled="p.stock <= 0">
             {{ user.logged ? '立即购买' : '登录购买' }}
@@ -179,9 +237,15 @@
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { CheckCircle2, Volume2, Square, Lock } from 'lucide-vue-next'
+import { CheckCircle2, Volume2, Square, Lock ,TrendingUp, ChevronDown, BellPlus, BellRing, Eye, ChevronRight, MessageCircle} from 'lucide-vue-next'
+import PriceChart from '../components/ui/PriceChart.vue'
+import AppleIcon from '../components/ui/AppleIcon.vue'
+import LivePlayerCard from '../components/product/LivePlayerCard.vue'
+import { chatApi } from '../api'
 import { message } from 'ant-design-vue'
-import { productApi, trafficApi } from '../api'
+import { productApi, trafficApi, priceMonitorApi, liveApi } from '../api'
+import * as habitTracker from '../utils/habitTracker'
+import { recommendApi } from '../api'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
 import { translateDataText, locale } from '../i18n'
@@ -194,8 +258,12 @@ const user = useUserStore()
 const p = ref(null)
 const qty = ref(1)
 const loading = ref(true)
+const similarItems = ref([])
 const activeIndex = ref(0)
 const introSpeaking = ref(false)
+
+// 直播中徽章：该商品正在某直播间讲解时展示（匿名可访问，silent 吸收游客 401）
+const liveRoom = ref(null)
 
 /** 商品语音介绍：标题 + 品牌 + 规格 + 详情，英文模式下先按词表翻译 */
 function toggleIntro() {
@@ -339,9 +407,66 @@ function money(value) {
   return Number(value || 0).toFixed(2)
 }
 
+// ===== 价格智能监控：走势（公开）+ 降价提醒（登录） =====
+const trendLoaded = ref(false)
+const ptrendOpen = ref(false)
+const trendSeries = ref([])
+const alertPrice = ref(null)
+const alertSaving = ref(false)
+const alertCreated = ref(false)
+
+async function loadPriceTrend() {
+  try {
+    const t = await priceMonitorApi.trend(route.params.id, 30)
+    const product = (t?.series || []).map(x => ({ label: x.day, value: Number(x.price) }))
+    if (t?.product?.price && product.length) {
+      const today = new Date().toISOString().slice(0, 10)
+      if (!product.some(x => x.label === today)) product.push({ label: today, value: Number(t.product.price) })
+    }
+    const bench = (t?.benchmark || []).map(b => ({ label: String(b.day), value: Number(b.benchmark) }))
+    const out = []
+    if (product.length) out.push({ name: '商品价', color: '#1E6EB8', data: product })
+    if (bench.length) out.push({ name: '行业基准', color: '#c97e12', data: bench, dashed: true, width: 1.6, fill: false })
+    trendSeries.value = out
+    // 已有订阅则直接显示"已开启"态
+    try {
+      const mine = await priceMonitorApi.productAlerts(route.params.id, { silent: true })
+      alertCreated.value = (mine || []).some(a => a.conditionType === 'BELOW')
+    } catch (e) { /* 未登录静默 */ }
+  } catch (e) { /* 走势加载失败静默：不阻塞商品主流程 */ } finally {
+    trendLoaded.value = true
+  }
+}
+
+async function subscribeAlert() {
+  if (needLogin()) return
+  const threshold = alertPrice.value ?? Number(p.value?.price)
+  if (!threshold || threshold <= 0) return
+  alertSaving.value = true
+  try {
+    await priceMonitorApi.subscribe({ prodId: Number(route.params.id), conditionType: 'BELOW', threshold })
+    alertCreated.value = true
+    message.success('已开启降价提醒，价格到点站内通知')
+  } catch (e) { /* 拦截器已提示 */ } finally { alertSaving.value = false }
+}
+
 onMounted(async () => {
+  loadPriceTrend()
   updateZoomEnabled()
   window.addEventListener('resize', updateZoomEnabled)
+  // 直播中徽章：匿名可访问；silent 吸收游客 401；从直播间跳转时写入归因标记供结算携带
+  liveApi.roomByProduct(route.params.id, { silent: true })
+    .then(r => { liveRoom.value = r || null })
+    .catch(() => { liveRoom.value = null })
+  if (route.query.liveId) {
+    try {
+      sessionStorage.setItem('ll_live_attr', JSON.stringify({
+        liveId: Number(route.query.liveId),
+        prodId: Number(route.params.id),
+        ts: Date.now()
+      }))
+    } catch (e) { /* 存储不可用时忽略 */ }
+  }
   try {
     p.value = await productApi.detail(route.params.id)
     if (p.value?.merId) {
@@ -353,6 +478,16 @@ onMounted(async () => {
         sourceDetail: route.query.keyword || null
       }).catch(() => {})
     }
+    // 用户习惯收集（analytics 授权门控在 tracker 内部）：商品浏览偏好
+    try {
+      habitTracker.recordProductView({
+        prodId: p.value.prodId,
+        title: p.value.title,
+        categoryName: p.value.catName || p.value.categoryName || null
+      })
+    } catch (e) { /* 收集永不影响浏览 */ }
+    // 看了又看：静默失败不影响详情页
+    recommendApi.similar(route.params.id, 6).then(r => { similarItems.value = r?.items || [] }).catch(() => {})
     nextTick(setupSectionObserver)
   } catch (e) {
     message.error('商品信息加载失败')
@@ -368,6 +503,16 @@ function needLogin() {
     return true
   }
   return false
+}
+
+/** 联系商家：未登录先登录；已登录则携带商家与商品上下文 find-or-create 会话后进入对话页 */
+async function contactMerchant() {
+  if (needLogin()) return
+  if (!p.value?.merId) { message.error('该商品缺少商家信息，暂时无法联系'); return }
+  try {
+    const s = await chatApi.start(p.value.merId, p.value.prodId)
+    router.push('/chat/' + s.sessionId)
+  } catch (e) { /* 拦截器已提示 */ }
 }
 
 async function addCart() {
@@ -396,7 +541,9 @@ async function buyNow() {
 </script>
 
 <style scoped>
-.product-page { --ink:#18212f; --muted:#6b7280; --line:#e8e5de; --paper:#fbf9f1; --red:#9b2d20; --gold:#8A6A2F; max-width:1240px; margin:0 auto; padding:8px 20px 90px; color:var(--ink); }
+.product-page {
+.similar-section{margin-top:26px}.similar-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.similar-card{border:1px solid #edf0f3;border-radius:12px;overflow:hidden;cursor:pointer;transition:.18s ease;background:#fff}.similar-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.08)}.similar-card img{width:100%;height:120px;object-fit:cover;display:block;background:#eef1f5}.similar-name{margin:8px 10px 4px;color:#13233A;font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:33px}.similar-price{display:block;padding:0 10px 10px;color:#C2410C;font-weight:800;font-size:13px}.similar-empty{color:#98A2B3;font-size:12px;margin:8px 0}@media (max-width:767px){.similar-grid{grid-template-columns:repeat(2,1fr)}.similar-card img{height:100px}}
+ --ink:#18212f; --muted:#6b7280; --line:#e8e5de; --paper:#fbf9f1; --red:#9b2d20; --gold:#8A6A2F; max-width:1240px; margin:0 auto; padding:8px 20px 90px; color:var(--ink); }
 .crumbs { display:flex; gap:10px; align-items:center; padding:10px 0 18px; color:#4b5563; font-size:13px; }
 .crumbs span { cursor:pointer; }.crumbs b { color:#343a45; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.crumbs i { font-style:normal; color:#c7c3bb; }
 .product-shell { display:grid; grid-template-columns:minmax(0,1.04fr) minmax(420px,.96fr); gap:48px; background:#fff; border:1px solid var(--line); border-radius:20px; padding:24px; box-shadow:0 10px 35px rgba(24,33,47,.05); }
@@ -430,8 +577,55 @@ async function buyNow() {
 .decision-list { margin:20px 0; border-top:1px solid var(--line); }.decision-row { display:flex; gap:18px; padding:13px 0; border-bottom:1px solid var(--line); font-size:13px; }.decision-row .label { flex:0 0 48px; color:#4b5563; }.decision-row .value { color:#303743; font-weight:600; }.decision-row .danger { color:var(--red); }
 .service-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-card div { display:flex; align-items:center; gap:9px; font-size:12px; margin:7px 0; }.service-card b { width:32px; }.service-card span:last-child { color:#4b5563; }.service-icon { color:var(--gold); font-weight:800; }
 .purchase-area { margin-top:20px; }.quantity-line { display:flex; align-items:center; gap:14px; color:#555; font-size:13px; margin-bottom:13px; }.action-row { display:flex; gap:10px; }.cart-btn,.buy-btn { min-width:150px; height:46px; border-radius:9px; font-weight:700; }.cart-btn { border-color:#9b2d20; color:#9b2d20; }.buy-btn { background:#18212f; border-color:#18212f; }.secure-note { margin:10px 0 0; color:#4b5563; font-size:11px; }
+/* 联系商家：描边胶囊按钮，不依赖库存/登录状态 */
+.contact-merchant { display:inline-flex; align-items:center; gap:6px; width:100%; margin-top:10px;
+  height:40px; border:1px solid var(--line,#e8e5de); border-radius:9px; background:#fff;
+  color:var(--ink,#18212f); font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+  transition:border-color .18s ease, background .18s ease, color .18s ease; }
+.contact-merchant:hover { border-color:var(--ll-azure,#0EA5E9); color:var(--ll-azure,#0EA5E9); background:rgba(14,165,233,.05); }
+.contact-merchant.mobile { width:40px; height:40px; padding:0; justify-content:center; margin-top:0; border-radius:10px; }
 .detail-shell { margin-top:24px; background:#fff; border:1px solid var(--line); border-radius:20px; overflow:hidden; }.detail-nav { display:flex; gap:34px; padding:0 28px; border-bottom:1px solid var(--line); position:sticky; top:64px; z-index:2; background:rgba(255,255,255,.94); backdrop-filter:blur(10px); }.detail-nav a { padding:18px 0; font-size:14px; font-weight:700; color:#70757e; border-bottom:2px solid transparent; transition:color .2s ease, border-color .2s ease; }.detail-nav a:hover { color:var(--ink); }.detail-nav a.active { color:var(--ink); border-bottom-color:var(--ink); }.detail-section { padding:40px 42px; border-bottom:1px solid var(--line); scroll-margin-top:130px; }.detail-section:last-child { border-bottom:0; }.section-heading span { color:var(--gold); font-size:10px; font-weight:800; letter-spacing:.16em; }.section-heading h2 { margin:5px 0 22px; font-size:24px; }.detail-copy { white-space:pre-wrap; color:#525965; line-height:2; font-size:14px; max-width:900px; }.parameter-grid { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--line); border-left:1px solid var(--line); }.parameter-grid div { min-height:62px; padding:12px 15px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:5px; }.parameter-grid span { color:#4b5563; font-size:11px; }.parameter-grid b { font-size:13px; font-weight:600; }.service-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }.service-grid div { padding:18px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-grid b { font-size:14px; }.service-grid p { color:#4b5563; line-height:1.7; font-size:12px; margin:8px 0 0; }
 .mobile-buybar { display:none; }
 @media (max-width:900px) { .product-shell { grid-template-columns:1fr; gap:24px; padding:16px; }.gallery-main { max-height:none; }.buy-column { padding:0; }.detail-section { padding:30px 24px; }.parameter-grid { grid-template-columns:repeat(2,1fr); }.service-grid { grid-template-columns:1fr; } }
-@media (max-width:600px) { .product-page { padding:0 12px 82px; }.crumbs { padding:8px 2px 12px; font-size:12px; }.product-shell { border-radius:14px; padding:10px; border-left:0; border-right:0; box-shadow:none; margin:0 -12px; }.buy-column h1 { font-size:23px; }.price-line strong { font-size:32px; }.trust-row { grid-template-columns:repeat(2,1fr); gap:12px; }.action-row { display:none; }.detail-shell { margin-top:14px; border-radius:14px; }.detail-nav { gap:20px; padding:0 18px; overflow:auto; }.detail-nav a { white-space:nowrap; }.detail-section { padding:26px 18px; }.parameter-grid { grid-template-columns:1fr; }.mobile-buybar { display:flex; position:fixed; z-index:20; left:0; right:0; bottom:0; padding:9px 12px calc(9px + env(safe-area-inset-bottom)); background:rgba(255,255,255,.97); backdrop-filter:blur(12px); border-top:1px solid var(--line); align-items:center; gap:8px; box-shadow:0 -5px 20px rgba(0,0,0,.08); }.mobile-buybar > div { flex:1; display:flex; flex-direction:column; }.mobile-buybar small { color:#4b5563; font-size:10px; }.mobile-buybar strong { color:var(--red); font-size:18px; }.mobile-buybar .cart-btn,.mobile-buybar .buy-btn { min-width:72px; height:40px; }.mobile-buybar .buy-btn { color:#fff; } }
+@media (max-width:600px) { .product-page { padding:0 12px 124px; }.crumbs { padding:8px 2px 12px; font-size:12px; }.product-shell { border-radius:14px; padding:10px; border-left:0; border-right:0; box-shadow:none; margin:0 -12px; }.buy-column h1 { font-size:23px; }.price-line strong { font-size:32px; }.trust-row { grid-template-columns:repeat(2,1fr); gap:12px; }.action-row { display:none; }.detail-shell { margin-top:14px; border-radius:14px; }.detail-nav { gap:20px; padding:0 18px; overflow:auto; }.detail-nav a { white-space:nowrap; }.detail-section { padding:26px 18px; }.parameter-grid { grid-template-columns:1fr; }.mobile-buybar { display:flex; position:fixed; z-index:20; left:0; right:0; bottom:0; padding:9px 12px calc(9px + env(safe-area-inset-bottom)); background:rgba(255,255,255,.97); backdrop-filter:blur(12px); border-top:1px solid var(--line); align-items:center; gap:8px; box-shadow:0 -5px 20px rgba(0,0,0,.08); }.mobile-buybar > div { flex:1; display:flex; flex-direction:column; }.mobile-buybar small { color:#4b5563; font-size:10px; }.mobile-buybar strong { color:var(--red); font-size:18px; }.mobile-buybar .cart-btn,.mobile-buybar .buy-btn { min-width:72px; height:40px; }.mobile-buybar .buy-btn { color:#fff; }
+  /* PC 版联系按钮在手机上隐藏：底部操作条悬浮胶囊已是唯一入口，避免双按钮 */
+  .purchase-area .contact-merchant { display:none; }
+  /* 移动端「联系商家」：底部操作条上方右侧悬浮胶囊，保留文字文案且不挤压加购/购买按钮 */
+  .mobile-buybar .contact-merchant.mobile { position:absolute; right:12px; bottom:calc(100% + 8px); width:auto; height:36px; padding:0 13px; gap:6px; font-size:12px; border-radius:999px; box-shadow:0 8px 22px rgba(19,35,58,.16); }
+  .mobile-buybar .contact-merchant.mobile .cm-label { display:inline; } }
+.ptrend-card { margin: 14px 0 4px; border: 1px solid var(--ll-border, #e5e7eb);
+  border-radius: var(--ll-radius-lg, 14px); background: var(--ll-card-soft, #fbfcfe); overflow: hidden; }
+.ptrend-head { width: 100%; display: flex; justify-content: space-between; align-items: center;
+  border: none; background: transparent; cursor: pointer; padding: 11px 14px; }
+.ptrend-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+  color: var(--ll-ink, #1d1d1f); }
+.ptrend-title svg { color: var(--ll-primary, #1E6EB8); }
+.ptrend-caret { transition: transform .25s var(--ll-ease-out, ease); color: var(--ll-muted, #64748b); }
+.ptrend-caret.open { transform: rotate(180deg); }
+.ptrend-body { padding: 0 14px 12px; }
+.ptrend-alert { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+.ptrend-btn { display: inline-flex; align-items: center; gap: 5px; border: none; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: #fff; padding: 6px 14px; border-radius: 999px;
+  background: var(--ll-primary, #1E6EB8); transition: transform .2s var(--ll-ease-out, ease), box-shadow .2s; }
+.ptrend-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(30,110,184,.3); }
+.ptrend-btn:disabled { opacity: .55; cursor: not-allowed; }
+.ptrend-on { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: #047857; font-weight: 600; }
+
+/* 直播中徽章条（价格卡上方）：红点闪烁 + 观看人数，点击进入直播间 */
+.live-badge {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  margin: 0 0 10px; padding: 9px 13px;
+  border: 1px solid rgba(155, 45, 32, .18);
+  border-radius: 12px; cursor: pointer;
+  background: linear-gradient(90deg, rgba(155, 45, 32, .08), rgba(155, 45, 32, .03));
+  font: inherit; text-align: left;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.live-badge:hover { transform: translateY(-2px); box-shadow: 0 1px 1px rgba(0,0,0,.04), 0 8px 20px rgba(0,0,0,.08); }
+.live-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--ll-brand-red, #9B2D20); animation: live-dot-blink 1.2s ease-in-out infinite; }
+@keyframes live-dot-blink { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(155,45,32,.4); } 50% { opacity: .35; box-shadow: 0 0 0 4px rgba(155,45,32,0); } }
+.live-badge-text { font-size: 13px; font-weight: 700; color: var(--ll-brand-red, #9B2D20); letter-spacing: -.01em; }
+.live-badge-meta { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; font-size: 12px; color: var(--ll-muted, #64748B); font-variant-numeric: tabular-nums; }
+.live-badge > svg:last-child { color: var(--ll-muted, #64748B); flex-shrink: 0; }
+@media (max-width: 860px) { .live-badge-text { font-size: 12.5px; } }
 </style>

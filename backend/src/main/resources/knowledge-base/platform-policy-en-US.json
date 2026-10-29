@@ -1,0 +1,67 @@
+{
+  "version": "1.0",
+  "locale": "en-US",
+  "note": "English corpus of LANLinkshopping platform business policies, indexed into the vector knowledge base so the assistant can answer English questions from real site facts. Specific amounts / turnaround / discounts follow the product page and contract terms.",
+  "entries": [
+    {
+      "id": "policy-payment-methods-en",
+      "title": "Payment Methods",
+      "keywords": ["payment", "pay", "how to pay", "payment methods", "checkout payment"],
+      "text": "LANLinkshopping supports multiple payment options for B2B purchasing: corporate wallet balance, Alipay, WeChat Pay, and business credit terms (buy first, settle later) for approved enterprises. Choose the payment method for the order on the checkout page; if the wallet balance is insufficient, top up first or switch to another channel."
+    },
+    {
+      "id": "policy-wallet-en",
+      "title": "Wallet Top-up and Withdrawal",
+      "keywords": ["wallet", "top up", "withdraw", "recharge", "balance"],
+      "text": "The corporate wallet is used for on-platform settlement. Top-ups are normally credited in real time; withdrawals are processed by the selected payment channel and typically reach the linked account within one business day, subject to on-page prompts and channel rules. View balance and transaction history in My Wallet."
+    },
+    {
+      "id": "policy-credit-terms-en",
+      "title": "Business Credit Terms",
+      "keywords": ["credit terms", "credit", "buy now pay later", "payment terms", "apply for credit"],
+      "text": "Business credit terms let enterprise users purchase first and settle later. Apply with your company credentials; the platform reviews and grants credit eligibility. Within the valid period, purchases can be deferred and repaid by the agreed billing cycle. The specific credit limit, term length, and review outcome follow the platform's actual approval."
+    },
+    {
+      "id": "policy-return-refund-en",
+      "title": "Returns, Refunds and After-sales",
+      "keywords": ["return", "refund", "exchange", "after-sales", "after sales", "warranty"],
+      "text": "After delivery, if goods have quality, quantity or specification issues versus the agreement, you can open a return / exchange / after-sales request from the order detail page, state the reason and upload evidence, and the merchant or platform reviews and processes it. Scope, shipping-fee responsibility and turnaround follow the product page terms and the contract between the parties. For manual help, submit a ticket under Settings > Human Support."
+    },
+    {
+      "id": "policy-invoice-en",
+      "title": "Invoicing",
+      "keywords": ["invoice", "VAT invoice", "receipt", "billing"],
+      "text": "The platform supports VAT invoices (general and special). Request an invoice from the checkout or order entry and provide accurate billing details (name, tax ID; special VAT invoices also need the bank and account). Invoice progress and electronic / paper format follow the on-page status."
+    },
+    {
+      "id": "policy-merchant-onboarding-en",
+      "title": "Merchant Onboarding",
+      "keywords": ["become a merchant", "merchant", "onboarding", "open a store", "supplier", "apply to sell"],
+      "text": "Sellers and suppliers can apply from Become a Merchant by submitting company and qualification documents. Once the platform approves, the store is opened and products can be published and listed for normal operation. Onboarding requirements and the review outcome follow the platform's notification; for review questions you can submit a ticket under Settings > Human Support."
+    },
+    {
+      "id": "policy-membership-en",
+      "title": "Membership and Points",
+      "keywords": ["membership", "membership level", "tier", "points", "loyalty", "discount", "redeem"],
+      "text": "The platform defines membership tiers by growth value; higher tiers receive higher exclusive discounts. Points rules: earn points by spending (VIP earns at a higher multiplier), redeem points toward payment with a per-order cap (up to a percentage of the payable amount), and points used on a cancelled order are fully refunded. See the exact tier thresholds, discounts and point rules in the Membership Center."
+    },
+    {
+      "id": "policy-subscription-en",
+      "title": "Subscription Plans",
+      "keywords": ["subscription", "monthly", "quarterly", "annual", "renew", "plan price"],
+      "text": "The platform offers monthly, quarterly and annual subscription plans; longer terms usually carry a higher discount, and prices follow the real-time subscription page. Review each plan's cost, validity and auto-renewal on the subscription page and open or change as needed."
+    },
+    {
+      "id": "policy-logistics-en",
+      "title": "Logistics and Shipping",
+      "keywords": ["logistics", "shipping", "delivery", "carrier", "freight", "tracking", "shipment"],
+      "text": "The platform integrates multiple logistics partners as well as merchant self-delivery. Shipping, freight and delivery time depend on the chosen carrier and the product's fulfilment terms; you can track the waybill and shipment trace in the logistics detail. Specific turnaround and freight follow the product page and contract. To check the status of one of your own orders, go to My Orders or submit a manual ticket."
+    },
+    {
+      "id": "policy-human-support-en",
+      "title": "Human Support and Tickets",
+      "keywords": ["human support", "contact support", "ticket", "customer service", "talk to a person", "complaint"],
+      "text": "When the AI assistant cannot resolve an issue, go to Settings > Human Support to view the service hotline and email and submit a message ticket; the operations team replies during service hours, and both submission and replies are sent as in-app notifications. You can also review your past tickets and replies there."
+    }
+  ]
+}

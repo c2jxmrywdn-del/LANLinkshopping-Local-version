@@ -46,7 +46,8 @@ class OrderDetailAdminTest {
                 userMapper, messageService, identityService, auditService, pricingFacade,
                 eventPublisher, membershipService, creditTermService,
                 mock(IdempotentService.class), mock(TamperGuardService.class),
-                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class),
+                mock(com.lanlink.shopping.module.risk.service.RiskEventService.class));
     }
 
     @Test

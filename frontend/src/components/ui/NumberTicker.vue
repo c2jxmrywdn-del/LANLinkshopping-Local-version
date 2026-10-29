@@ -53,15 +53,25 @@ function frame(now) {
   spring.v += a * dt
   spring.x += spring.v * dt
   paint()
+  // 收敛即停帧（|位移|与|速度|均近零）：rAF 永续循环是多实例叠加时的 CPU/耗电大户；
+  // 目标值变化时由 watch 重新启动。
+  if (Math.abs(spring.target - spring.x) < 0.5 && Math.abs(spring.v) < 0.5) {
+    spring.x = spring.target
+    paint()
+    raf = 0
+    return
+  }
   raf = requestAnimationFrame(frame)
 }
 function activate() {
   timer = setTimeout(() => {
     spring.target = springTarget()
     spring.x = props.direction === 'down' ? props.value : props.startValue
-    cancelAnimationFrame(raf)
-    last = 0
-    raf = requestAnimationFrame(frame)
+    if (!raf) {
+      cancelAnimationFrame(raf)
+      last = 0
+      raf = requestAnimationFrame(frame)
+    }
   }, props.delay * 1000)
 }
 
@@ -69,6 +79,10 @@ watch(() => props.value, () => {
   // 目标值变化（切商品/轮询刷新）：弹簧持续追新值；
   // 不能只在 IntersectionObserver 仍存活时更新，否则首次进场后目标会被锁死。
   spring.target = springTarget()
+  if (!raf && root.value) {
+    last = 0
+    raf = requestAnimationFrame(frame)
+  }
 })
 
 onMounted(() => {

@@ -38,7 +38,8 @@ class OrderRefundApplyTest {
                 mock(PricingFacade.class), mock(ApplicationEventPublisher.class),
                 mock(MembershipService.class), mock(CreditTermService.class),
                 mock(IdempotentService.class), mock(TamperGuardService.class),
-                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class),
+                mock(com.lanlink.shopping.module.risk.service.RiskEventService.class));
     }
 
     private Order paidOrder() {

@@ -1,0 +1,85 @@
+{
+  "version": "1.0",
+  "locale": "en-US",
+  "note": "English customer-service how-to / navigation corpus. Ingested into the vector knowledge base (source kb) so the assistant answers English navigation questions from these scripts. Privacy disclaimers mirror the Chinese corpus.",
+  "entries": [
+    {
+      "id": "account-registration-en",
+      "title": "Account Registration",
+      "keywords": ["how to register", "sign up", "create account", "create an account", "registration", "new user", "how do i register", "register as buyer", "register as supplier", "how to sign up"],
+      "answer": "Open the login page and switch to the “Register” tab, choose the “Buyer” or “Merchant / Supplier” role, then enter your phone number, password and the other required fields and submit. After successful registration, sign in with the phone number and password you used."
+    },
+    {
+      "id": "account-login-en",
+      "title": "Login",
+      "keywords": ["how to log in", "sign in", "login", "log in", "cannot log in", "wrong password", "two-factor", "otp", "verification code", "login failed", "can't sign in"],
+      "answer": "Sign in with your registered phone number and password. If two-factor authentication is enabled on the account, after the password check you also need to enter the 6-digit dynamic code from your authenticator app. When the page shows “incorrect phone number or password”, the system does not distinguish a non-existent phone number from a wrong password in that message."
+    },
+    {
+      "id": "product-browsing-en",
+      "title": "Browsing Products",
+      "keywords": ["browse products", "find products", "product details", "search products", "product category", "industry category", "mall", "how to find products", "product list"],
+      "answer": "The homepage provides industry-category and featured-product entries. Open the “Mall” and use the industry and category menus to browse products and enter a product detail page. This knowledge base does not include a specific product's real-time price, stock, specifications, logistics or delivery details."
+    },
+    {
+      "id": "cart-checkout-en",
+      "title": "Cart and Checkout",
+      "keywords": ["shopping cart", "add to cart", "checkout", "how to checkout", "cart checkout", "where is the cart", "how to use the cart", "after adding to cart"],
+      "answer": "The cart and checkout require you to sign in first. After signing in, use the cart from the Mall or a product detail page, then go to checkout from the “Cart”. For payment methods and credit terms, see the relevant policy answers."
+    },
+    {
+      "id": "order-navigation-en",
+      "title": "My Orders",
+      "keywords": ["my orders", "view orders", "order details", "how to place an order", "place order", "order list", "order center", "where are my orders", "track order"],
+      "answer": "After signing in, go to “My Orders” from the page navigation or the user menu to see your order list and open an order's details. The assistant does not read personal order records or query the live status of a specific order."
+    },
+    {
+      "id": "merchant-onboarding-en",
+      "title": "Merchant Onboarding",
+      "keywords": ["become a merchant", "merchant onboarding", "apply as supplier", "open a store", "how to onboard", "supplier application", "start selling"],
+      "answer": "First register or sign in, then submit an application from the “Become a Merchant” entry in the page navigation. You can also choose the “Merchant / Supplier” role when registering. Features such as publishing products and merchant traffic management are available based on the account role and permissions."
+    },
+    {
+      "id": "wallet-en",
+      "title": "Wallet",
+      "keywords": ["my wallet", "wallet", "top up", "balance", "wallet page", "how to open wallet", "transaction history", "transaction details"],
+      "answer": "After signing in, open “My Wallet” from the user menu. The platform provides wallet overview, top-up, transaction history and transaction detail pages. The assistant does not read or display your personal wallet balance or transaction data."
+    },
+    {
+      "id": "credit-terms-en",
+      "title": "Business Credit Terms",
+      "keywords": ["credit terms", "apply for credit", "credit bill", "credit repayment", "credit center", "how to apply for credit terms", "pay credit bill"],
+      "answer": "After signing in, if your account has credit-term viewing permission, a “Credit Terms” entry appears in the page navigation. The credit module includes the credit center, application, bill list and bill detail pages. The assistant does not commit to a specific credit limit, review criteria or application outcome."
+    },
+    {
+      "id": "membership-en",
+      "title": "Membership and Points",
+      "keywords": ["membership level", "membership benefits", "points", "membership", "vip", "membership center", "how to view membership level", "how to use points"],
+      "answer": "After signing in, enter the “Membership Center” from the user menu to access membership level, points and benefits pages. For the actual tier thresholds, discounts and point rules, see the membership policy answer. The assistant does not read your personal point balance, membership-level record or account-specific benefits."
+    },
+    {
+      "id": "activities-promotions-en",
+      "title": "Campaigns and Promotions",
+      "keywords": ["activity center", "join campaign", "promotion", "discount", "deals", "campaign list", "how to join a campaign", "promotions"],
+      "answer": "The top navigation provides a “Deals” entry to the promotions center; after signing in you can also open the “Activity Center”, activity details and “My Campaigns” pages. The assistant does not add campaign times, discounted prices or specific rules that are not in the knowledge base."
+    },
+    {
+      "id": "messages-en",
+      "title": "Messages",
+      "keywords": ["message center", "in-app messages", "unread messages", "notifications", "how to view messages", "system notifications"],
+      "answer": "After signing in, use the “Messages” entry in the top bar or enter the “Message Center” from the user menu to view in-app messages and the unread count."
+    },
+    {
+      "id": "cookie-privacy-en",
+      "title": "Cookies and Privacy",
+      "keywords": ["cookie settings", "cookie", "privacy settings", "cookie preferences", "how to set cookies", "manage cookies", "cookie permissions", "privacy"],
+      "answer": "The page footer provides a “Privacy & Cookies” entry; clicking it opens the cookie and privacy settings page."
+    },
+    {
+      "id": "account-addresses-en",
+      "title": "Shipping Addresses",
+      "keywords": ["manage shipping addresses", "address book", "add address", "edit address", "shipping address", "where to manage addresses", "default address"],
+      "answer": "After signing in, go to the “Shipping Addresses” tab in the personal center, or open the shipping-address page, to manage delivery addresses and the default address. The assistant does not read or display the specific addresses you have saved."
+    }
+  ]
+}

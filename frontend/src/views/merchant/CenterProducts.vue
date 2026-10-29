@@ -7,8 +7,8 @@
         <p>发布、编辑商品并跟踪审核进度，审核通过后即可上架销售。</p>
       </div>
       <div class="hero-actions">
-        <a-button size="large" class="pill" @click="$router.push('/price-monitor')">◔ 价格监控</a-button>
-        <a-button size="large" class="pill" @click="$router.push('/merchant/center/products/import')">⇪ 批量导入</a-button>
+        <a-button size="large" class="pill" @click="$router.push('/price-monitor')"><AppleIcon name="chart" :size="15" /> 价格监控</a-button>
+        <a-button size="large" class="pill" @click="$router.push('/merchant/center/products/import')"><AppleIcon name="upload" :size="15" /> 批量导入</a-button>
         <a-button size="large" type="primary" class="pill" @click="publishOpen = true">＋ 发布商品</a-button>
       </div>
     </section>
@@ -140,6 +140,7 @@ import { message, Modal } from 'ant-design-vue'
 import { productApi } from '../../api'
 import { REVIEW_STATUS, fmtMoney } from '../../utils/merchantStatus'
 import ProductPublishForm from '../../components/merchant/ProductPublishForm.vue'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 
 const route = useRoute()
 const rows = ref([])

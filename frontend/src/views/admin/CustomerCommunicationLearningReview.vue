@@ -29,7 +29,7 @@
               <div class="answer">
                 <div class="answer-header">
                   <div class="label">拟发布回答（支持编辑完善）</div>
-                  <a-button size="small" type="link" :loading="aiSuggesting" @click="fetchAiSuggest">✨ AI 建议回答与关键词</a-button>
+                  <a-button size="small" type="link" :loading="aiSuggesting" @click="fetchAiSuggest"><AppleIcon name="sparkles" :size="13" /> AI 建议回答与关键词</a-button>
                 </div>
                 <a-textarea v-model:value="answerText" :rows="4" :maxlength="1000" show-count placeholder="请输入核验后的准确客服回答。自动沉淀的候选回答为空，须补充后方可发布。" />
               </div>
@@ -69,6 +69,7 @@ import { computed,nextTick,onMounted,reactive,ref,watch } from 'vue'
 import { useRoute,useRouter } from 'vue-router'
 import { message,Modal } from 'ant-design-vue'
 import { adminApi } from '../../api'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 const route=useRoute(),router=useRouter(),loading=ref(false),submitting=ref(false),aiSuggesting=ref(false),candidate=ref(null),sourceQuestion=ref(null),sourceAnswer=ref(null),conversationId=ref(null),note=ref(''),answerText=ref('')
 const editableKeywords=ref([]),inputVisible=ref(false),inputValue=ref(''),inputRef=ref(null)
 const checks=reactive({fact:false,privacy:false,scope:false})

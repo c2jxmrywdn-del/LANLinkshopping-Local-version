@@ -6,7 +6,6 @@
         <component :is="Component" :key="route.path" />
       </Transition>
     </router-view>
-    <BusinessBusyLoading />
     <CookieConsent />
     <!-- 语言切换：过渡动画页与登录/注册页不提供手动入口，由多维特征自动识别（见 main.js → applyAutoLocale）；
          登录进入主系统后，切换控件在各布局头部内保持正常可用 -->
@@ -18,7 +17,6 @@
 import { ref, watch, onMounted } from 'vue'
 import { theme } from 'ant-design-vue'
 import SplashScreen from './components/SplashScreen.vue'
-import BusinessBusyLoading from './components/BusinessBusyLoading.vue'
 import CookieConsent from './components/CookieConsent.vue'
 import { useUserStore } from './store/user'
 import { useSettingsStore } from './store/settings'

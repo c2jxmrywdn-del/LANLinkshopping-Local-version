@@ -41,8 +41,14 @@ public class OrderService {
     private final IdempotentService idempotentService;
     private final TamperGuardService tamperGuardService;
     private final com.lanlink.shopping.module.campaign.service.CampaignService campaignService;
+    private final com.lanlink.shopping.module.risk.service.RiskEventService riskEventService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AddressMapper addressMapper;
+    /** 直播归因：下单时校验并落 liveId（可选注入，缺省时直播归因降级关闭） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.mapper.LiveRoomMapper liveRoomMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.mapper.LiveProductMapper liveProductMapper;
 
     public void setAddressMapper(AddressMapper addressMapper) {
         this.addressMapper = addressMapper;
@@ -65,7 +71,8 @@ public class OrderService {
                         com.lanlink.shopping.module.membership.service.MembershipService membershipService,
                         CreditTermService creditTermService, IdempotentService idempotentService,
                         TamperGuardService tamperGuardService,
-                        com.lanlink.shopping.module.campaign.service.CampaignService campaignService) {
+                        com.lanlink.shopping.module.campaign.service.CampaignService campaignService,
+                        com.lanlink.shopping.module.risk.service.RiskEventService riskEventService) {
         this.cartMapper = cartMapper;
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
@@ -81,6 +88,7 @@ public class OrderService {
         this.idempotentService = idempotentService;
         this.tamperGuardService = tamperGuardService;
         this.campaignService = campaignService;
+        this.riskEventService = riskEventService;
     }
 
     @Transactional
@@ -90,6 +98,10 @@ public class OrderService {
         try {
             Order order = doCheckout(userId, dto);
             idempotentService.bound(idemToken, order.getOrderNo());
+            // 风控旁路：R02 高频下单（创建频率由周期任务 + 事件窗口判定）/ R03 批量下单信号
+            try {
+                riskEventService.record(userId, "R02", 20, "checkout 提交", "order", order.getOrderNo());
+            } catch (Exception ignore) { /* 风控旁路不阻断交易 */ }
             return order;
         } catch (RuntimeException e) {
             idempotentService.release(idemToken); // 失败释放，允许携带同一幂等键重试
@@ -210,6 +222,15 @@ public class OrderService {
             if (!tamperGuardService.checkNumeric(userId, "order", "totalAmount", dto.getExpectedTotal(), payable, null)) {
                 throw new BusinessException("订单金额异常(客户端传入金额与后端重算不一致)");
             }
+        }
+        // 直播归因（证据链校验，防凭空盖归因）：直播间存在 + 非预告态 + 本单至少含一个该直播间挂载商品；
+        // 校验不过则静默不归因（不阻塞下单），归因口径以"真实从直播链路进入"为准
+        if (dto.getLiveRoomId() != null && liveRoomMapper != null && liveProductMapper != null) {
+            var liveRoom = liveRoomMapper.selectById(dto.getLiveRoomId());
+            boolean roomLiveable = liveRoom != null && liveRoom.getStatus() != null && liveRoom.getStatus() != 0;
+            boolean hasMountedProduct = roomLiveable && carts.stream().anyMatch(c ->
+                    liveProductMapper.selectByRoomAndProduct(liveRoom.getRoomId(), c.getProdId()) != null);
+            if (roomLiveable && hasMountedProduct) order.setLiveId(liveRoom.getRoomId());
         }
         // 账期订单在结算时直接形成授信应付账单，不再进入普通支付弹窗
         orderMapper.insert(order);
@@ -376,7 +397,7 @@ public class OrderService {
     /**
      * 回写退款结果（PaymentService 渠道退款后调用；refundAmount 为累计已退总额）。
      * - 成功且已退满 → success（订单闭环）；
-     * - 成功但部分退 → rejected + 说明"剩余可再次申请"（解锁再退，避免部分退款后锁死）；
+     * - 成功但部分退 → partial（金额已退回，买家可再次申请剩余部分，不显示为"被驳回"）；
      * - 失败 → 回到 applied（运营可重试或驳回），'processing' 仅存在于打款进行中的瞬间。
      */
     public void applyRefundResult(String orderNo, String refundId, BigDecimal refundAmount, boolean success) {
@@ -391,8 +412,7 @@ public class OrderService {
                 o.setRefundStatus("success");
                 o.setRefundTime(LocalDateTime.now());
             } else {
-                o.setRefundStatus("rejected");
-                o.setRefundRejectReason("已部分退款 ¥" + total + "，剩余部分可再次申请退款");
+                o.setRefundStatus("partial");
             }
         } else {
             o.setRefundStatus("applied");
@@ -428,6 +448,10 @@ public class OrderService {
                     "订单 " + orderNo + " 已取消，使用的优惠券已退回券包。", orderNo);
         }
         messageService.send(userId, "order", "订单已取消", "订单 " + orderNo + " 已取消，库存已恢复。", orderNo);
+        // 风控旁路：R01 高频取消（取消率由周期任务聚合判定）
+        try {
+            riskEventService.record(userId, "R01", 30, "用户取消订单", "order", orderNo);
+        } catch (Exception ignore) { /* 风控旁路不阻断交易 */ }
     }
 
     /**
@@ -461,6 +485,10 @@ public class OrderService {
         }
         messageService.send(userId, "order", "退款申请已提交",
                 "订单 " + orderNo + " 的退款申请已提交，平台将尽快处理。", orderNo);
+        // 风控旁路：R04 重复退款（90 天窗口由周期任务聚合判定）
+        try {
+            riskEventService.record(userId, "R04", 30, "用户申请退款", "order", orderNo);
+        } catch (Exception ignore) { /* 风控旁路不阻断交易 */ }
     }
 
     /**

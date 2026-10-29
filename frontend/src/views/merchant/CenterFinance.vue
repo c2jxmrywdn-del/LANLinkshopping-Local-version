@@ -7,34 +7,34 @@
         <p>本店商品的成交收入、退款与结算明细，全部透明可查。</p>
       </div>
       <div class="hero-actions">
-        <a-button size="large" class="pill" @click="load">↻ 刷新数据</a-button>
+        <a-button size="large" class="pill" @click="load"><AppleIcon name="refresh" :size="15" /> 刷新数据</a-button>
       </div>
     </section>
 
     <!-- 资金总览 -->
     <section class="kpi-grid">
       <div class="kpi-card main">
-        <div class="kpi-top"><span>累计收入</span><span class="kpi-ico">¥</span></div>
+        <div class="kpi-top"><span>累计收入</span><span class="kpi-ico"><AppleIcon name="wallet" :size="15" /></span></div>
         <div class="kpi-value">{{ money(f.totalIncome) }}</div>
         <div class="kpi-foot">历史已支付订单的本店金额</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>本月收入</span><span class="kpi-ico">↗</span></div>
+        <div class="kpi-top"><span>本月收入</span><span class="kpi-ico"><AppleIcon name="arrowupright" :size="15" /></span></div>
         <div class="kpi-value">{{ money(f.monthIncome) }}</div>
         <div class="kpi-foot">近 30 天 · {{ f.monthOrders || 0 }} 笔订单</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>累计退款</span><span class="kpi-ico">↩</span></div>
+        <div class="kpi-top"><span>累计退款</span><span class="kpi-ico"><AppleIcon name="refund" :size="15" /></span></div>
         <div class="kpi-value refund">{{ money(f.totalRefund) }}</div>
         <div class="kpi-foot">已全额退款订单的本店金额</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>净收入</span><span class="kpi-ico">◆</span></div>
+        <div class="kpi-top"><span>净收入</span><span class="kpi-ico"><AppleIcon name="gem" :size="15" /></span></div>
         <div class="kpi-value">{{ money(f.netIncome) }}</div>
         <div class="kpi-foot">累计收入 − 累计退款</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>待结算</span><span class="kpi-ico">◷</span></div>
+        <div class="kpi-top"><span>待结算</span><span class="kpi-ico"><AppleIcon name="clock" :size="15" /></span></div>
         <div class="kpi-value">{{ money(f.pendingSettle) }}</div>
         <div class="kpi-foot">已支付、履约中的订单金额</div>
       </div>
@@ -108,6 +108,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Empty } from 'ant-design-vue'
 import { merchantCenterApi } from '../../api'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { PAY_CHANNEL, fmtMoney } from '../../utils/merchantStatus'
 
 const aEmpty = Empty

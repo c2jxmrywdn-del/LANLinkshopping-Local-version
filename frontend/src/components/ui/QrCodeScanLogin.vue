@@ -32,11 +32,11 @@
         <a-button type="primary" size="small" @click="replay">{{ t('qrsl.refreshNow') }}</a-button>
       </div>
       <div v-else-if="status === 'scanned'" class="qrsl__overlay is-scanned">
-        <span class="qrsl__tick" aria-hidden="true">✓</span>
+        <span class="qrsl__tick" aria-hidden="true"><AppleIcon name="confirm" :size="18" /></span>
         <p class="qrsl__overlay-title">{{ t('qrsl.scanned') }}</p>
       </div>
       <div v-else-if="status === 'confirmed'" class="qrsl__overlay is-confirmed">
-        <span class="qrsl__tick" aria-hidden="true">✓</span>
+        <span class="qrsl__tick" aria-hidden="true"><AppleIcon name="confirm" :size="18" /></span>
         <p class="qrsl__overlay-title">{{ t('qrsl.confirming') }}</p>
       </div>
     </div>
@@ -73,6 +73,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { buildLoginQrPayload, renderQrToCanvas } from '../../utils/qrCode'
+import AppleIcon from './AppleIcon.vue'
 import { t } from '../../i18n'
 
 const props = defineProps({

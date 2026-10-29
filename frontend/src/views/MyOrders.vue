@@ -24,6 +24,7 @@
           <a-tag>{{ statusMap[record.orderStatus] || record.orderStatus }}</a-tag>
           <div v-if="record.refundStatus === 'applied'" class="rf rf-wait">退款申请中 · 待平台处理</div>
           <div v-else-if="record.refundStatus === 'rejected'" class="rf rf-rej">退款申请被驳回：{{ record.refundRejectReason || '不符合退款条件' }}</div>
+          <div v-else-if="record.refundStatus === 'partial'" class="rf">已部分退款 ¥{{ record.refundAmount }}，剩余金额可再次申请</div>
           <div v-else-if="record.refundStatus === 'success'" class="rf">已全额退款 ¥{{ record.refundAmount }}</div>
         </template>
         <template v-else-if="column.key === 'op'">

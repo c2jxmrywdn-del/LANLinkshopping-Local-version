@@ -28,6 +28,8 @@
           <div class="support-message-label">
             <SupportAgentAvatar v-if="item.role !== 'user'" :size="16" />
             <span>{{ item.role === 'user' ? '你' : '专属客服' }}</span>
+            <span v-if="item.source === 'AI' || item.source === 'RAG'" class="support-ai-tag"
+              title="由本地大模型基于平台知识库生成">AI 生成</span>
             <button v-if="item.role !== 'user'" type="button" class="support-tts"
               :class="{ 'is-on': ttsKey === 'msg-' + index }"
               :aria-label="ttsKey === 'msg-' + index ? '停止语音播报' : '语音播报'"
@@ -50,7 +52,7 @@
             <SupportAgentAvatar :size="16" />
             <span>专属客服</span>
           </div>
-          <p>正在检索知识库…</p>
+          <p>正在思考…</p>
         </div>
       </div>
 
@@ -188,7 +190,7 @@ async function send() {
     const result = await supportApi.ask(question, visitorToken.value, persistConversation.value)
     if (result.visitorToken) visitorToken.value = result.visitorToken
     const answer = typeof result?.answer === 'string' && result.answer ? result.answer : FALLBACK
-    messages.value.push({ role: 'assistant', text: answer, unavailable: result.unavailable === true })
+    messages.value.push({ role: 'assistant', text: answer, source: result.source, unavailable: result.unavailable === true })
     lastHistoryMessageId.value = Math.max(lastHistoryMessageId.value, Number(result.lastMessageId || 0))
   } catch {
     messages.value.push({ role: 'assistant', text: FALLBACK })
@@ -223,6 +225,7 @@ async function send() {
 .support-message.from-user { align-self: flex-end; border-color: #d6e4f5; background: #eef5ff; }
 .support-message.from-support { align-self: flex-start; }
 .support-message-label { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; color: #667085; font-size: 10px; font-weight: 700; }
+.support-ai-tag { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 700; letter-spacing: .02em; color: #1E6EB8; background: rgba(30, 110, 184, .1); border: 1px solid rgba(30, 110, 184, .22); }
 .support-tts { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 1px solid #e4e7ec; border-radius: 7px; background: #fff; color: #667085; font-size: 11px; line-height: 1; cursor: pointer; transition: background .16s ease, border-color .16s ease, color .16s ease; }
 .support-tts:hover { border-color: #b8c6d8; color: #344054; background: #f5f8fc; }
 .support-tts.is-on { border-color: #9fc0e8; color: #1e6eb8; background: #eef5ff; }

@@ -33,6 +33,10 @@ public class Product {
     private Integer sales;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+
+    /** 类目名称（非表列，详情接口回填；供前端习惯画像与推荐展示） */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private String catName;
     @TableLogic
     @JsonIgnore
     private Integer deleted;

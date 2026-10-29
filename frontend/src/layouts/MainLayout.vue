@@ -15,9 +15,10 @@
             :ellipsis="false"
             @click="onNav"
           >
-            <a-menu-item key="home">首页</a-menu-item>
-            <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true">▾</i></a-menu-item>
+            <a-menu-item key="home" class="nav-home" @mouseenter="openHomePanel">首页<i class="mall-caret" :class="{ 'is-open': homePanelOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
+            <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
             <a-menu-item key="activity">活动</a-menu-item>
+            <a-menu-item key="live">直播</a-menu-item>
             <a-menu-item v-if="user.hasPerm('credit:view')" key="credit-term">账期</a-menu-item>
             <a-menu-item v-if="user.hasPerm('order:view')" key="orders">我的订单</a-menu-item>
             <a-menu-item v-if="user.isAdmin" key="admin/merchants">商户管理</a-menu-item>
@@ -25,6 +26,13 @@
             <a-menu-item v-else-if="user.hasPerm('merchant:manage') || user.hasPerm('product:publish')" key="merchant/center">商户中心</a-menu-item>
             <a-menu-item key="about">关于我们</a-menu-item>
           </a-menu>
+
+          <HomeNavPanel
+            v-show="homePanelOpen"
+            :close="closeHomePanel"
+            @mouseenter="openHomePanel"
+            @mouseleave="scheduleCloseMallMenu"
+          />
 
           <IndustryCategoryMenu
             v-show="mallMenuOpen"
@@ -43,10 +51,10 @@
         <div class="right">
           <LanguageSwitcher variant="dark" />
           <a-badge v-if="user.logged" :count="user.unread" :overflow-count="99">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages"><Bell :size="15" :stroke-width="2.2" /><span class="nav-action-label"> 消息</span></a-button>
+            <a-button type="text" class="ll-tap nav-action" style="color:#fff" @pointerdown="onTap" @click.stop="goMessages"><Bell class="nav-action-icon" :size="15" :stroke-width="1.75" /><span class="nav-action-label">消息</span></a-button>
           </a-badge>
           <a-badge :count="cart.count" :overflow-count="99" :class="{ 'll-badge-bounce': cartBounce }">
-            <a-button type="text" class="ll-tap" style="color:#fff" @pointerdown="onTap" @click.stop="goCart"><ShoppingCart :size="15" :stroke-width="2.2" /><span class="nav-action-label"> 购物车</span></a-button>
+            <a-button type="text" class="ll-tap nav-action" style="color:#fff" @pointerdown="onTap" @click.stop="goCart"><ShoppingCart class="nav-action-icon" :size="15" :stroke-width="1.75" /><span class="nav-action-label">购物车</span></a-button>
           </a-badge>
           <template v-if="user.logged">
             <a-dropdown>
@@ -63,7 +71,7 @@
                 <span v-if="user.isVip" class="id-badge id-vip" title="VIP 用户">VIP</span>
                 <span v-else-if="user.isAdmin" class="id-badge id-admin" title="平台管理员">ADMIN</span>
                 <span v-else-if="user.isMerchant" class="id-badge id-merchant" title="入驻商户">商户</span>
-                <span class="header-user-name">{{ user.user.nickname }} ▾</span>
+                <span class="header-user-name">{{ user.user.nickname }} <AppleIcon name="chevrondown" :size="11" /></span>
               </a>
               <template #overlay>
                 <a-menu>
@@ -73,6 +81,7 @@
                   <a-menu-divider />
                   <a-menu-item @click="$router.push('/wallet')"><Wallet :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')">企业账期</a-menu-item>
                   <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')">商户中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/price-monitor')"><LineChart :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 价格情报台</a-menu-item>
                   <a-menu-item @click="$router.push('/activity')"><Target :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 活动中心</a-menu-item>
                   <a-menu-item @click="$router.push('/membership')"><MembershipIcon :size="18" class="membership-menu-icon" /> 会员中心</a-menu-item>
                   <a-menu-item @click="$router.push('/me')">个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')">消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')">收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')">登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')">账户设置</a-menu-item>
@@ -102,8 +111,12 @@
           <button type="button" @click.stop="$router.push('/mall')">商城</button>
           <button type="button" @click.stop="$router.push('/about')">关于我们</button>
           <button type="button" @click.stop="$router.push({ path: '/about', hash: '#contact' })">联系我们</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'terms' } })">用户服务协议</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'privacy' } })">隐私政策</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'cookies' } })">Cookie 政策</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'platform' } })">平台说明</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'disclaimer' } })">免责声明</button>
           <button type="button" @click.stop="$router.push({ name: 'privacy-cookies' })">隐私与 Cookie</button>
-          <button type="button" @click.stop="$router.push({ name: 'about', query: { legal: 'ip' }, hash: '#terms' })">知识产权声明</button>
         </div>
         <AuthorCard variant="compact" />
       </div>
@@ -121,16 +134,22 @@ import { useCartStore } from '../store/cart'
 import { useSettingsStore } from '../store/settings'
 import { tapFeedback } from '../utils/feedback'
 import IndustryCategoryMenu from '../components/IndustryCategoryMenu.vue'
+import HomeNavPanel from '../components/home/HomeNavPanel.vue'
+import AppleIcon from '../components/ui/AppleIcon.vue'
 import AuthorCard from '../components/AuthorCard.vue'
 import UserAvatar from '../components/ui/UserAvatar.vue'
 import MembershipIcon from '../components/ui/MembershipIcon.vue'
 import SupportChat from '../components/SupportChat.vue'
 import BackToTop from '../components/BackToTop.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
-import { Bell, ShoppingCart, Wallet, Target } from 'lucide-vue-next'
+import { recordVisit } from '../utils/habitTracker'
+import { Bell, ShoppingCart, Wallet, Target, LineChart } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
+
+// 用户习惯收集（分析类 Cookie 授权门控在 tracker 内部）：30 分钟窗口内的路由切换只记 1 次访问
+watch(() => route.path, () => { try { recordVisit() } catch (e) { /* 收集永不影响浏览 */ } }, { immediate: true })
 const user = useUserStore()
 const cart = useCartStore()
 const settings = useSettingsStore()
@@ -139,6 +158,7 @@ const NAV_PATHS = [
   { key: 'home', match: (p) => p === '/' },
   { key: 'mall', match: (p) => p === '/mall' || p.startsWith('/product') },
   { key: 'activity', match: (p) => p.startsWith('/activity') || p.startsWith('/promotions') },
+  { key: 'live', match: (p) => p.startsWith('/live') },
   { key: 'credit-term', match: (p) => p.startsWith('/credit-term') },
   { key: 'orders', match: (p) => p.startsWith('/orders') },
   { key: 'merchant/center', match: (p) => p.startsWith('/merchant/center') || p.startsWith('/merchant/products') || p.startsWith('/merchant/traffic') },
@@ -151,6 +171,7 @@ const selectedKeys = computed(() => {
 })
 
 const mallMenuOpen = ref(false)
+const homePanelOpen = ref(false)
 let mallCloseTimer = null
 
 // 站内消息未读数轻量轮询：登录态下每 60s 刷新一次角标（路由切换已有 afterEach 即时刷新）；
@@ -169,7 +190,22 @@ function openMallMenu() {
     clearTimeout(mallCloseTimer)
     mallCloseTimer = null
   }
+  homePanelOpen.value = false
   mallMenuOpen.value = true
+}
+
+/** 首页二级分栏：悬停「首页」弹出（与商城分栏同一套悬停/容错/外点关闭逻辑，互斥展开） */
+function openHomePanel() {
+  if (mallCloseTimer) {
+    clearTimeout(mallCloseTimer)
+    mallCloseTimer = null
+  }
+  mallMenuOpen.value = false
+  homePanelOpen.value = true
+}
+
+function closeHomePanel() {
+  homePanelOpen.value = false
 }
 
 function scheduleCloseMallMenu() {
@@ -177,6 +213,7 @@ function scheduleCloseMallMenu() {
   // 140ms 容错：既能在鼠标划出商城区域后自动收起，也不会因指针短暂掠过间隙而误关
   mallCloseTimer = window.setTimeout(() => {
     mallMenuOpen.value = false
+    homePanelOpen.value = false
   }, 140)
 }
 
@@ -186,6 +223,7 @@ function closeMallMenu() {
     mallCloseTimer = null
   }
   mallMenuOpen.value = false
+  homePanelOpen.value = false
 }
 
 function openMallAll() {
@@ -230,9 +268,9 @@ function updateIndicator() {
 }
 watch(selectedKeys, () => nextTick(updateIndicator))
 
-// 商城弹层收起策略：鼠标离开导航/面板、点击页面空白、按 Esc、切换路由都会自动收起
+// 商城/首页弹层收起策略：鼠标离开导航/面板、点击页面空白、按 Esc、切换路由都会自动收起
 function onDocumentPointerDown(e) {
-  if (!mallMenuOpen.value) return
+  if (!mallMenuOpen.value && !homePanelOpen.value) return
   if (navShell.value && navShell.value.contains(e.target)) return
   closeMallMenu()
 }
@@ -371,6 +409,9 @@ function secretTap() {
 .nav-mall:hover .mall-caret { opacity: 1; }
 .nav-mall .mall-caret.is-open { opacity: 1; transform: rotate(180deg); }
 .right { display: flex; align-items: center; gap: 16px; }
+/* 顶栏「消息 / 购物车」：图标与文字同一基线、固定 6px 间距 */
+.nav-action.ant-btn { display: inline-flex; align-items: center; gap: 6px; }
+.nav-action-icon { display: block; flex-shrink: 0; }
 .user-trigger { display: inline-flex; align-items: center; gap: 7px; }
 .header-avatar { vertical-align: middle; }
 .membership-menu-icon { margin-right: 7px; }

@@ -162,6 +162,7 @@ const statusMain = computed(() => {
   const o = vo.value?.order
   if (!o) return ''
   if (o.refundStatus === 'applied') return '退款申请中 · 待平台处理'
+  if (o.refundStatus === 'partial') return '已部分退款'
   if (o.refundStatus === 'success') return '已退款'
   return ORDER_STATUS[o.orderStatus]?.text || '—'
 })
@@ -169,6 +170,7 @@ const statusHint = computed(() => {
   const o = vo.value?.order
   if (!o) return ''
   if (o.refundStatus === 'applied') return '买家已提交退款申请，平台审核后将自动处理退款'
+  if (o.refundStatus === 'partial') return `已部分退款 ¥${money(o.refundAmount)}，买家可再次申请剩余金额`
   if (o.refundStatus === 'success') return `退款金额 ¥${money(o.refundAmount)} 已原路退回`
   if (o.orderStatus === 0 && Number(o.payStatus) === 1) return '买家已支付，请尽快安排发货'
   if (o.orderStatus === 1) return '包裹运输中，买家确认收货或签收后订单完成'
@@ -184,6 +186,7 @@ const refundBanner = computed(() => {
     applied: { type: 'warning', text: `买家申请退款：${o.refundReason || '未填写原因'}`, desc: '退款由平台统一审核处理，审核结果将通过站内消息通知。' },
     rejected: { type: 'info', text: `平台已驳回该退款申请：${o.refundRejectReason || ''}`, desc: '买家可重新发起申请，请留意订单状态变化。' },
     processing: { type: 'processing', text: '退款处理中', desc: '退款正在原路返回买家账户。' },
+    partial: { type: 'warning', text: `已部分退款：¥${money(o.refundAmount)}`, desc: `买家可再次申请剩余金额退款。申请原因：${o.refundReason || '—'}` },
     success: { type: 'success', text: `退款成功：¥${money(o.refundAmount)}`, desc: `申请原因：${o.refundReason || '—'}` }
   }
   return map[o.refundStatus] || null

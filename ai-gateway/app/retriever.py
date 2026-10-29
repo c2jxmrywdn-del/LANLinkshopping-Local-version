@@ -32,6 +32,36 @@ def tokenize(text: str) -> list:
     return tokens
 
 
+_STOP_BIGRAMS = {"怎么", "什么", "多少", "多久", "可以", "能否", "是否", "哪些", "怎样",
+                 "如何", "请问", "一下", "我的", "你们", "这个", "那个", "有没", "没有"}
+
+
+def _bigrams(s: str) -> list:
+    """字符二元组（用于向量无命中时的模糊兜底召回）。"""
+    s = (s or "").lower()
+    return [s[i:i + 2] for i in range(len(s) - 1) if s[i:i + 2].strip()]
+
+
+def _embed(texts: list, base_url: str, model: str) -> list:
+    """调用 Ollama /api/embed 批量取向量（bge-m3 等）。失败返回 []。"""
+    import urllib.request
+    try:
+        payload = json.dumps({"model": model, "input": texts}).encode("utf-8")
+        req = urllib.request.Request(base_url.rstrip("/") + "/api/embed", data=payload,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        embs = data.get("embeddings") or []
+        return embs if len(embs) == len(texts) else []
+    except Exception:
+        return []
+
+
+def _norm(vec: list) -> list:
+    n = math.sqrt(sum(v * v for v in vec)) or 1.0
+    return [v / n for v in vec]
+
+
 class VectorIndex:
     """TF-IDF 向量索引：构建期统计 IDF，检索期做余弦相似度。"""
 
@@ -69,15 +99,39 @@ class VectorIndex:
             a, b = b, a
         return sum(v * b.get(k, 0.0) for k, v in a.items())
 
+    def _fuzzy(self, query: str, top_k: int = 4) -> list:
+        """向量无命中时的模糊兜底：按查询字符 bigram 在文档中的命中数排序。"""
+        qb = {g for g in _bigrams(query) if g not in _STOP_BIGRAMS}
+        if not qb:
+            return []
+        scored = []
+        for doc in self.documents:
+            text = f"{doc['title']} {doc['category']} {doc['content']}".lower()
+            hits = sum(1 for g in qb if g in text)
+            if hits > 0:
+                scored.append({**doc, "score": round(hits / len(qb), 4), "fuzzy": True})
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:top_k]
+
     def search(self, query: str, top_k: int = 4, min_score: float = 0.05) -> list:
-        """向量检索：返回 [{id,title,category,content,score}]，按相似度降序。"""
-        qvec = self._vectorize(tokenize(query))
+        """混合检索：余弦相似度 + 标题/分类命中加权（让最相关文档排前，提升精准度/注意力）。
+        无命中时回退 bigram 模糊召回。"""
+        qtokens = tokenize(query)
+        qset = set(qtokens)
+        qvec = self._vectorize(qtokens)
+        nq = len(qset) or 1
         scored = []
         for doc, dvec in zip(self.documents, self.doc_vectors):
-            score = self._cosine(qvec, dvec)
+            base = self._cosine(qvec, dvec)
+            # 标题/分类命中加权：命中数占比 * 0.15（让领域精确匹配优先，减少"答非所问"）
+            tcat = set(tokenize(f"{doc['title']} {doc['category']}"))
+            boost = 0.15 * (len(qset & tcat) / nq)
+            score = base + boost
             if score >= min_score:
                 scored.append({**doc, "score": round(score, 4)})
         scored.sort(key=lambda x: x["score"], reverse=True)
+        if not scored:
+            return self._fuzzy(query, top_k=top_k)
         return scored[:top_k]
 
     def search_with_context(self, query: str, top_k: int = 4) -> list:
@@ -97,10 +151,13 @@ class VectorIndex:
 
 
 class KnowledgeBase:
-    """知识库读取模块：加载 JSON 知识库 + 向量索引 + 检索 API。"""
+    """知识库：JSON + TF-IDF 索引 + bge-m3 语义向量（混合检索；embedding 失败自动回退 TF-IDF）。"""
 
     def __init__(self, kb_path: str):
         self.kb_path = kb_path
+        self.ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.emb_model = os.environ.get("EMBED_MODEL", "bge-m3:latest")
+        self.doc_embs = []
         self.reload()
 
     def reload(self):
@@ -109,17 +166,59 @@ class KnowledgeBase:
         self.meta = data.get("meta", {})
         self.documents = data["documents"]
         self.index = VectorIndex(self.documents)
+        texts = [f"{d['title']} {d['category']} {d['content']}" for d in self.documents]
+        embs = _embed(texts, self.ollama_base, self.emb_model)
+        self.doc_embs = [_norm(e) for e in embs] if embs else []
+
+    def _rank(self, query: str, top_k: int) -> list:
+        """混合打分：TF-IDF 余弦 + bge-m3 语义相似(高于基线才加权) + 标题/分类加成。"""
+        qt = tokenize(query)
+        qset = set(qt)
+        qvec = self.index._vectorize(qt)
+        nq = len(qset) or 1
+        qe = None
+        if self.doc_embs:
+            ee = _embed([query], self.ollama_base, self.emb_model)
+            qe = _norm(ee[0]) if ee else None
+        scored = []
+        for i, doc in enumerate(self.documents):
+            tfv = self.index._cosine(qvec, self.index.doc_vectors[i])
+            tcat = set(tokenize(f"{doc['title']} {doc['category']}"))
+            boost = 0.15 * (len(qset & tcat) / nq)
+            if qe is not None and i < len(self.doc_embs):
+                embv = sum(a * b for a, b in zip(qe, self.doc_embs[i]))
+                sem = max(0.0, embv - 0.40) / 0.60      # 高于基线才有贡献，避免无关文档被抬分
+                score = 0.55 * tfv + 0.55 * sem + boost
+            else:
+                score = tfv + boost
+            if score >= 0.05:
+                scored.append({**doc, "score": round(score, 4)})
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        if not scored:
+            return self.index._fuzzy(query, top_k=top_k)
+        return scored[:top_k]
 
     def search(self, query: str, top_k: int = 4, with_context: bool = True) -> list:
-        if with_context:
-            return self.index.search_with_context(query, top_k=top_k)
-        return self.index.search(query, top_k=top_k)
+        hits = self._rank(query, top_k=top_k if not with_context else max(top_k, 4))
+        if not with_context or not hits:
+            return hits[:top_k]
+        seen = {h["id"] for h in hits}
+        context = list(hits)
+        for h in hits:
+            for doc in self.documents:
+                if doc["id"] not in seen and doc["category"] == h["category"]:
+                    seen.add(doc["id"])
+                    context.append({**doc, "score": 0.0, "related": True})
+                    break
+        return context
 
     def stats(self) -> dict:
         return {
             "document_count": len(self.documents),
             "categories": sorted({d["category"] for d in self.documents}),
             "vocab_size": len(self.index.idf),
+            "embedding": {"enabled": bool(self.doc_embs), "model": self.emb_model,
+                          "dim": len(self.doc_embs[0]) if self.doc_embs else 0},
             "meta": self.meta,
         }
 

@@ -144,7 +144,7 @@ const stepIndex=computed(()=>{const o=detail.value?.order;if(!o)return 0;if(o.or
 const fmt=v=>v?String(v).replace('T',' '):'—'
 const money=v=>Number(v||0).toFixed(2)
 const maskPhone=v=>{const s=String(v||'');return s.length>=7?s.slice(0,3)+'****'+s.slice(-4):s||'—'}
-const refundText=o=>o.refundStatus==='success'?'已退款':o.refundStatus==='processing'?'退款处理中':o.refundStatus==='applied'?'退款申请中 · 待平台处理':o.refundStatus==='rejected'?'退款申请被驳回':'无退款'
+const refundText=o=>o.refundStatus==='success'?'已退款':o.refundStatus==='partial'?`已部分退款 ¥${money(o.refundAmount)}，剩余可再次申请`:o.refundStatus==='processing'?'退款处理中':o.refundStatus==='applied'?'退款申请中 · 待平台处理':o.refundStatus==='rejected'?'退款申请被驳回':'无退款'
 const statusText=o=>o.orderStatus===3?'订单已取消':o.orderStatus===4?'订单已退款':o.payStatus===1?'订单已支付':'待支付'
 const statusHint=o=>o.orderStatus===3?'订单已取消，无法继续操作':o.orderStatus===4?'该订单已完成退款':o.payStatus===1?'订单已进入履约流程':'完成支付后商户才会开始履约'
 async function load(){loading.value=true;try{detail.value=await orderApi.detail(route.params.orderNo)}catch(e){detail.value=null}finally{loading.value=false}}

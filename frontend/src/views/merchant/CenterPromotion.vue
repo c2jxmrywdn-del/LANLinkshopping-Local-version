@@ -67,19 +67,19 @@
 
       <!-- KPI 小卡 ×4 -->
       <div class="tile">
-        <div class="tile-head"><span class="tile-label">累计花费</span><span class="tile-ico">¥</span></div>
+        <div class="tile-head"><span class="tile-label">累计花费</span><span class="tile-ico"><CircleDollarSign :size="16" /></span></div>
         <div class="tile-num">¥{{ money(stats.totalSpent) }}</div>
         <div class="tile-foot">结算退回 ¥{{ money(stats.totalSettled) }}</div>
         <div class="spark"><i :style="{ width: spentSpark + '%' }"></i></div>
       </div>
       <div class="tile">
-        <div class="tile-head"><span class="tile-label">总点击</span><span class="tile-ico">◎</span></div>
+        <div class="tile-head"><span class="tile-label">总点击</span><span class="tile-ico"><MousePointerClick :size="16" /></span></div>
         <div class="tile-num">{{ stats.totalClicks || 0 }}</div>
         <div class="tile-foot">单价 ¥{{ cpc }}/次</div>
         <div class="spark"><i :style="{ width: ctrSpark + '%' }"></i></div>
       </div>
       <div class="tile">
-        <div class="tile-head"><span class="tile-label">总曝光</span><span class="tile-ico">◍</span></div>
+        <div class="tile-head"><span class="tile-label">总曝光</span><span class="tile-ico"><Eye :size="16" /></span></div>
         <div class="tile-num">{{ stats.totalImpressions || 0 }}</div>
         <div class="tile-foot">CTR {{ stats.ctr || 0 }}%</div>
         <div class="spark"><i :style="{ width: impSpark + '%' }"></i></div>
@@ -99,7 +99,8 @@
           <a-button type="link" @click="load">刷新</a-button>
         </div>
       </template>
-      <a-table :data-source="rows" :columns="cols" row-key="campaignId" :loading="loading"
+      <!-- 行结构为 {campaign:{campaignId},...}，rowKey 需取嵌套字段 -->
+      <a-table :data-source="rows" :columns="cols" :row-key="r => r.campaign?.campaignId" :loading="loading"
                class="mc-table" :scroll="{ x: 1080 }"
                :pagination="{ pageSize: 10, showSizeChanger: false }">
         <template #bodyCell="{ column, record }">
@@ -191,7 +192,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { Rocket, Wallet } from 'lucide-vue-next'
+import { Rocket, Wallet, CircleDollarSign, MousePointerClick, Eye } from 'lucide-vue-next'
 import { adApi, productApi } from '../../api'
 import { fmtMoney } from '../../utils/merchantStatus'
 

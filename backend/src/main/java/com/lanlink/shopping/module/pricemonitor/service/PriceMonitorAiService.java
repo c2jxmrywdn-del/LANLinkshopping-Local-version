@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.entity.Category;
+import com.lanlink.shopping.entity.Industry;
 import com.lanlink.shopping.entity.Product;
+import com.lanlink.shopping.mapper.CategoryMapper;
 import com.lanlink.shopping.mapper.IndustryMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.module.pricemonitor.entity.MarketNews;
@@ -52,11 +55,19 @@ public class PriceMonitorAiService {
     private final ProductMapper productMapper;
     private final PriceHistoryMapper historyMapper;
     private final IndustryMapper industryMapper;
+    private final CategoryMapper categoryMapper;
     private final MarketNewsService newsService;
     private final PriceMonitorService monitorService;
     private final OutboundModelConfigService configService;
+    private final NewsLinkService newsLinkService;
 
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    /**
+     * 同一问题/分析的并发请求合并（single-flight）：用户反复点"提问"/多标签同时请求时，
+     * 只触发一次本地 7B 推理，其余请求等待同一结果，避免把单卡模型队列堵死。
+     */
+    private final Map<String, java.util.concurrent.CompletableFuture<Map<String, Object>>> inflight =
+            new ConcurrentHashMap<>();
     /** 外部模型熔断：失败后 5 分钟内直接走规则引擎，避免每次请求都等待超时。 */
     private volatile long aiDisabledUntil = 0;
 
@@ -64,19 +75,26 @@ public class PriceMonitorAiService {
 
     public PriceMonitorAiService(ProductMapper productMapper, PriceHistoryMapper historyMapper,
                                  IndustryMapper industryMapper, MarketNewsService newsService,
-                                 PriceMonitorService monitorService, OutboundModelConfigService configService) {
+                                 PriceMonitorService monitorService, OutboundModelConfigService configService,
+                                 NewsLinkService newsLinkService, CategoryMapper categoryMapper) {
         this.productMapper = productMapper;
         this.historyMapper = historyMapper;
         this.industryMapper = industryMapper;
         this.newsService = newsService;
         this.monitorService = monitorService;
         this.configService = configService;
+        this.newsLinkService = newsLinkService;
+        this.categoryMapper = categoryMapper;
     }
 
-    // ==================== 五维价格因子 ====================
+    // ==================== 五维价格因子（按商品） ====================
+
+    /** 五维顺序固定：市场情绪 / 上游供应链 / 基础原材料 / 国际化因素 / 政治与政策。 */
+    private static final List<String> FACTOR_KEYS = ProductFactorProfile.FACTOR_KEYS;
 
     /** 因子定义：市场情绪 / 上游供应链 / 基础原材料 / 国际化因素 / 政治与政策。 */
     private static final Map<String, String> FACTOR_LABELS;
+    private static final Map<String, String> FACTOR_LABELS_EN;
     private static final Map<String, List<String>> FACTOR_KEYWORDS;
     static {
         Map<String, String> labels = new LinkedHashMap<>();
@@ -86,6 +104,14 @@ public class PriceMonitorAiService {
         labels.put("international", "国际化因素");
         labels.put("politics", "政治与政策");
         FACTOR_LABELS = Collections.unmodifiableMap(labels);
+
+        Map<String, String> labelsEn = new LinkedHashMap<>();
+        labelsEn.put("sentiment", "Market sentiment");
+        labelsEn.put("supply", "Upstream supply");
+        labelsEn.put("material", "Raw materials");
+        labelsEn.put("international", "Global factors");
+        labelsEn.put("politics", "Policy & politics");
+        FACTOR_LABELS_EN = Collections.unmodifiableMap(labelsEn);
 
         Map<String, List<String>> kw = new LinkedHashMap<>();
         kw.put("sentiment", List.of("情绪", "预期", "看涨", "看跌", "采购", "询盘", "订单", "补库", "需求",
@@ -101,97 +127,246 @@ public class PriceMonitorAiService {
         FACTOR_KEYWORDS = Collections.unmodifiableMap(kw);
     }
 
-    private record ScoredNews(MarketNews news, int dir, int importance, int relevance) { }
+    /**
+     * 价格行为画像：本商品自己的价格历史 + 行业基准推导出的数值信号，
+     * 是「不同商品因子拉开差距」的第二来源（第一来源是个性化资讯相关性）。
+     */
+    private record PriceBehavior(BigDecimal momentum30dPct, BigDecimal rangePositionPct,
+                                 Integer stockCoverageDays, BigDecimal relativePct,
+                                 BigDecimal benchmarkChangePct, BigDecimal volatilityPct,
+                                 int changeCount, BigDecimal currentPrice, BigDecimal firstPrice,
+                                 boolean hasPriceData) { }
 
-    /** 五维因子看板：从近期资讯中量化各维度对价格的方向性压力（-100 偏空 ~ +100 偏多）。 */
+    /** 单条资讯在某一维度上的打分：dir 方向 / importance 重要度 / factorRelevance 维度命中度 / productRelevance 商品相关度。 */
+    private record ScoredNews(MarketNews news, int dir, int importance, int factorRelevance,
+                              double productRelevance) { }
+
+    /** 五维因子看板（中文）：按商品做系统性分析。 */
     public Map<String, Object> factors(Long prodId) {
+        return factors(prodId, "zh");
+    }
+
+    /**
+     * 五维因子看板：把「全局最新资讯」换成「本商品相关资讯加权分」+「本商品价格行为分」融合计算。
+     *
+     * <p>资讯分：先用维度关键词筛出该维度资讯，再按 {@link ProductFactorProfile#relevanceOf} 加权
+     * （商品相关 3 / 同行业 2 / 泛市场 1 / 其他行业 0.4），权重再乘行业暴露度；
+     * 行为分：本商品 30 日动量、区间位置、相对行业强弱、库存覆盖等。两者 65% / 35% 合成，
+     * 因此不同商品命中不同资讯、价格走势不同，factors 输出必然不同。
+     *
+     * <p>返回键序固定：prodId/title/industryName/categoryName/productProfile/factors/
+     * sentimentIndex/dominant/summary/systematicAnalysis/generatedAt/disclaimer。
+     */
+    public Map<String, Object> factors(Long prodId, String lang) {
+        boolean en = isEnglish(lang);
         Product p = mustProduct(prodId);
-        List<MarketNews> news = newsService.latest(40);
-        List<Map<String, Object>> list = computeFactors(news);
+        String industryName = industryNameOf(p);
+        String categoryName = categoryNameOf(p);
+        ProductFactorProfile profile = ProductFactorProfile.of(p, industryName, categoryName);
+        Map<String, Object> rule = safeAnalyze(prodId);
+        PriceBehavior behavior = priceBehavior(p, rule, safeHistories(prodId));
+        List<MarketNews> news = safeNews(40);
+        List<Map<String, Object>> list = computeFactors(news, profile, behavior, en);
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("prodId", p.getProdId());
         out.put("title", p.getTitle());
-        out.put("industryName", p.getIndId() == null ? null :
-                Optional.ofNullable(industryMapper.selectById(p.getIndId())).map(i -> i.getName()).orElse(null));
+        out.put("industryName", industryName);
+        out.put("categoryName", categoryName);
+        out.put("productProfile", productProfile(profile, categoryName));
         out.put("factors", list);
         out.put("sentimentIndex", sentimentIndex(list));
         out.put("dominant", dominantFactor(list));
-        out.put("summary", factorSummary(list));
+        out.put("summary", productSummary(list, p, en));
+        out.put("systematicAnalysis", systematicAnalysis(list, behavior, profile, p, en));
         out.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-        out.put("disclaimer", "因子由近期市场资讯与平台价格行为量化生成，仅作经营决策参考。");
+        out.put("disclaimer", en
+                ? "Factors are quantified from recent market news and this product's own price behaviour; for reference only."
+                : "因子由近期市场资讯与本商品价格行为量化生成，仅作经营决策参考。");
         return out;
     }
 
-    private List<Map<String, Object>> computeFactors(List<MarketNews> news) {
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (Map.Entry<String, String> e : FACTOR_LABELS.entrySet()) {
-            String key = e.getKey();
-            List<ScoredNews> matched = new ArrayList<>();
-            for (MarketNews n : news) {
-                String text = textOf(n);
+    private static Map<String, Object> productProfile(ProductFactorProfile profile, String categoryName) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("keywords", profile.productKeywords());
+        m.put("industryKeywords", profile.industryKeywords());
+        m.put("factorWeights", profile.factorWeights());
+        m.put("categoryName", categoryName);
+        return m;
+    }
+
+    /**
+     * 核心：按商品计算五维因子。资讯只查一次、商品相关度只算一次（复杂度 O(资讯数×5)），
+     * analysis/ask 的上下文复用同一方法，避免重复查库与口径漂移。
+     */
+    private List<Map<String, Object>> computeFactors(List<MarketNews> news, ProductFactorProfile profile,
+                                                     PriceBehavior behavior, boolean en) {
+        Map<String, List<ScoredNews>> grouped = new LinkedHashMap<>();
+        for (String key : FACTOR_KEYS) grouped.put(key, new ArrayList<>());
+        for (MarketNews n : news) {
+            if (n == null) continue;
+            String text = textOf(n);
+            double productRelevance = profile.relevanceOf(n);
+            int importance = n.getImportance() == null ? 1 : Math.max(1, n.getImportance());
+            for (String key : FACTOR_KEYS) {
                 if (!matchesFactor(key, n.getCategory(), text)) continue;
-                int imp = n.getImportance() == null ? 1 : Math.max(1, n.getImportance());
-                matched.add(new ScoredNews(n, direction(key, text), imp, relevanceFor(key, n, text)));
+                grouped.get(key).add(new ScoredNews(n, direction(key, text), importance,
+                        relevanceFor(key, n, text), productRelevance));
             }
-            matched.sort((a, b) -> {
-                if (a.relevance != b.relevance) return Integer.compare(b.relevance, a.relevance);
-                int ca = Math.abs(a.dir * a.importance);
-                int cb = Math.abs(b.dir * b.importance);
-                if (ca != cb) return Integer.compare(cb, ca);
-                return b.news.getPublishedAt().compareTo(a.news.getPublishedAt());
-            });
-
-            int weighted = 0;
-            int impSum = 0;
-            for (ScoredNews s : matched) {
-                weighted += s.dir * s.importance;
-                impSum += s.importance;
-            }
-            int count = matched.size();
-            double avg = count == 0 ? 0 : (double) weighted / count;
-            int score = count == 0 ? 0 : (int) Math.round(avg * 30);
-            score = Math.max(-100, Math.min(100, score));
-            double agreement = impSum == 0 ? 0 : Math.min(1, (double) Math.abs(weighted) / impSum);
-            double coverage = Math.min(1, count / 10.0);
-            boolean fresh = matched.stream().anyMatch(s -> s.news.getPublishedAt() != null
-                    && s.news.getPublishedAt().isAfter(LocalDateTime.now().minusDays(3)));
-            int strength = count == 0 ? 12
-                    : (int) Math.min(96, Math.round(20 + coverage * 40 + agreement * 35 + (fresh ? 6 : 0)));
-            String impact = score >= 18 ? "up" : score <= -18 ? "down" : "neutral";
-
-            List<String> evidence = new ArrayList<>();
-            List<Map<String, Object>> newsRefs = new ArrayList<>();
-            for (int i = 0; i < Math.min(2, matched.size()); i++) {
-                MarketNews n = matched.get(i).news;
-                int dir = matched.get(i).dir;
-                String tag = dir > 0 ? "偏多" : dir < 0 ? "偏空" : "中性";
-                evidence.add(n.getTitle() + "（" + n.getSource() + "，" + tag + "）");
-                Map<String, Object> ref = new LinkedHashMap<>();
-                ref.put("title", n.getTitle());
-                ref.put("source", n.getSource());
-                ref.put("impact", dir > 0 ? "up" : dir < 0 ? "down" : "neutral");
-                ref.put("publishedAt", n.getPublishedAt() == null ? null : n.getPublishedAt().format(TIME_FMT));
-                newsRefs.add(ref);
-            }
-            if (evidence.isEmpty()) evidence.add("近期资讯中未发现该维度的直接信号，暂按中性处理。");
-
-            Map<String, Object> f = new LinkedHashMap<>();
-            f.put("key", key);
-            f.put("label", e.getValue());
-            f.put("impact", impact);
-            f.put("score", score);
-            f.put("strength", strength);
-            f.put("newsCount", count);
-            f.put("headline", matched.isEmpty() ? null : matched.get(0).news.getTitle());
-            f.put("evidence", evidence);
-            f.put("newsRefs", newsRefs);
-            f.put("updatedAt", matched.stream().map(ScoredNews::news).map(MarketNews::getPublishedAt)
-                    .filter(Objects::nonNull).max(LocalDateTime::compareTo)
-                    .map(t -> t.format(TIME_FMT)).orElse(null));
-            out.add(f);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (String key : FACTOR_KEYS) {
+            out.add(buildFactor(key, grouped.get(key), profile, behavior, en));
         }
         return out;
     }
+
+    /** 单个维度：资讯加权分 + 行为分 → 综合分 / 强度 / 证据 / 商品信号。 */
+    private Map<String, Object> buildFactor(String key, List<ScoredNews> matched, ProductFactorProfile profile,
+                                            PriceBehavior behavior, boolean en) {
+        matched.sort((a, b) -> {
+            if (Double.compare(b.productRelevance, a.productRelevance) != 0) {
+                return Double.compare(b.productRelevance, a.productRelevance);
+            }
+            int ca = Math.abs(a.dir * a.importance);
+            int cb = Math.abs(b.dir * b.importance);
+            if (ca != cb) return Integer.compare(cb, ca);
+            return compareAtDesc(a.news.getPublishedAt(), b.news.getPublishedAt());
+        });
+
+        double weight = profile.weightOf(key);
+        double weightedImportance = 0;
+        double directedImportance = 0;
+        int productNewsCount = 0;
+        for (ScoredNews s : matched) {
+            double w = s.importance * s.productRelevance;
+            weightedImportance += w;
+            directedImportance += s.dir * w;
+            if (s.productRelevance >= 2.0) productNewsCount++;
+        }
+        int newsCount = matched.size();
+        // 资讯分：Σ(方向*重要度*商品相关度) / Σ(重要度*商品相关度)（-1..1）→ ×60×行业权重
+        int newsScore = weightedImportance <= 0 ? 0
+                : clampScore(Math.round(directedImportance / weightedImportance * 60.0 * weight));
+        int behaviorScore = behaviorScoreOf(key, behavior, newsScore, newsCount, weight);
+        // 综合分：资讯 65% + 本商品价格行为 35%
+        int score = clampScore(Math.round(newsScore * 0.65 + behaviorScore * 0.35));
+        double agreement = weightedImportance <= 0 ? 0
+                : Math.min(1.0, Math.abs(directedImportance) / weightedImportance);
+        boolean fresh = matched.stream().anyMatch(s -> s.news.getPublishedAt() != null
+                && s.news.getPublishedAt().isAfter(LocalDateTime.now().minusDays(3)));
+        int strength = factorStrength(newsCount, productNewsCount, agreement, fresh, behaviorCompleteness(behavior));
+        String impact = score >= 18 ? "up" : score <= -18 ? "down" : "neutral";
+        String label = en ? factorLabelEn(key) : FACTOR_LABELS.get(key);
+
+        List<String> evidence = new ArrayList<>();
+        List<Map<String, Object>> newsRefs = new ArrayList<>();
+        for (int i = 0; i < Math.min(2, matched.size()); i++) {
+            ScoredNews s = matched.get(i);
+            MarketNews n = s.news;
+            String tag = s.dir > 0 ? (en ? "bullish" : "偏多")
+                    : s.dir < 0 ? (en ? "bearish" : "偏空") : (en ? "neutral" : "中性");
+            evidence.add(en
+                    ? n.getTitle() + " (" + n.getSource() + ", " + tag + ")"
+                    : n.getTitle() + "（" + n.getSource() + "，" + tag + "）");
+            Map<String, Object> ref = new LinkedHashMap<>();
+            ref.put("title", n.getTitle());
+            ref.put("source", n.getSource());
+            ref.put("impact", s.dir > 0 ? "up" : s.dir < 0 ? "down" : "neutral");
+            ref.put("publishedAt", n.getPublishedAt() == null ? null : n.getPublishedAt().format(TIME_FMT));
+            newsLinkService.apply(ref, n);
+            ref.put("relevance", s.productRelevance);
+            newsRefs.add(ref);
+        }
+        if (evidence.isEmpty()) {
+            evidence.add(en ? "No direct signal for this dimension in recent news - treated as neutral."
+                    : "近期资讯中未发现该维度的直接信号，暂按中性处理。");
+        }
+
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("key", key);
+        f.put("label", label);
+        f.put("impact", impact);
+        f.put("score", score);
+        f.put("strength", strength);
+        f.put("newsCount", newsCount);
+        f.put("productNewsCount", productNewsCount);
+        f.put("headline", matched.isEmpty() ? null : matched.get(0).news.getTitle());
+        f.put("evidence", evidence);
+        f.put("newsRefs", newsRefs);
+        f.put("updatedAt", matched.stream().map(ScoredNews::news).map(MarketNews::getPublishedAt)
+                .filter(Objects::nonNull).max(LocalDateTime::compareTo)
+                .map(t -> t.format(TIME_FMT)).orElse(null));
+        f.put("newsScore", newsScore);
+        f.put("behaviorScore", behaviorScore);
+        f.put("weight", weight);
+        f.put("productSignals", productSignals(key, behavior, newsCount, productNewsCount, en));
+        f.put("basis", factorBasis(newsScore, behaviorScore, score, newsCount, productNewsCount, weight, en));
+        return f;
+    }
+
+    /**
+     * 行为分（-100..100，无数据=0）：每个维度都吃「本商品自己的价格行为」，
+     * 这是不同商品因子拉开差距的第二来源。映射（写成注释便于调参/复核）：
+     * <ul>
+     *   <li>sentiment：30 日动量 × 6 + (区间位置 - 50) × 0.8</li>
+     *   <li>supply：相对行业强弱 × 6 + (50 - 区间位置) × 0.6 + 库存信号（&lt;15 天 +12；&gt;60 天 -12）</li>
+     *   <li>material：(基准 30 日变动 × 6 + 基准波动率 × 1.5) × weight</li>
+     *   <li>international：30 日动量 × 4 × weight</li>
+     *   <li>politics：波动率 × 2，方向取该维度资讯方向（资讯分&lt;0 取负；无政治类资讯=0）</li>
+     * </ul>
+     */
+    private static int behaviorScoreOf(String factor, PriceBehavior b, int newsScore, int newsCount, double weight) {
+        double momentum = b.momentum30dPct().doubleValue();
+        double relative = b.relativePct().doubleValue();
+        double range = b.rangePositionPct().doubleValue();
+        double benchmark = b.benchmarkChangePct() == null ? 0 : b.benchmarkChangePct().doubleValue();
+        double volatility = b.volatilityPct() == null ? 0 : b.volatilityPct().doubleValue();
+        double stockSignal = b.stockCoverageDays() == null ? 0
+                : b.stockCoverageDays() < 15 ? 12 : b.stockCoverageDays() > 60 ? -12 : 0;
+        double raw = switch (factor) {
+            case "sentiment" -> momentum * 6 + (range - 50) * 0.8;
+            case "supply" -> relative * 6 + (50 - range) * 0.6 + stockSignal;
+            case "material" -> (benchmark * 6 + volatility * 1.5) * weight;
+            case "international" -> momentum * 4 * weight;
+            case "politics" -> newsCount == 0 ? 0 : Math.abs(volatility * 2) * (newsScore < 0 ? -1 : 1);
+            default -> 0;
+        };
+        return clampScore(Math.round(raw));
+    }
+
+    /** 强度 12~96：本商品相关资讯覆盖 + 泛资讯广度 + 方向一致性 + 行为数据完整度 + 新鲜度。 */
+    private static int factorStrength(int newsCount, int productNewsCount, double agreement,
+                                      boolean fresh, double completeness) {
+        if (newsCount == 0) {
+            return (int) Math.max(12, Math.min(24, Math.round(12 + completeness * 12)));
+        }
+        double coverage = Math.min(1.0, productNewsCount / 5.0);
+        double breadth = Math.min(1.0, newsCount / 10.0);
+        double v = 22 + coverage * 40 + breadth * 8 + agreement * 18 + completeness * 10 + (fresh ? 6 : 0);
+        return (int) Math.max(12, Math.min(96, Math.round(v)));
+    }
+
+    /** 行为数据完整度 0..1：自身价格历史 / 行业基准变动 / 库存覆盖 / 调价次数 四项。 */
+    private static double behaviorCompleteness(PriceBehavior b) {
+        int n = 0;
+        if (b.hasPriceData()) n++;
+        if (b.benchmarkChangePct() != null) n++;
+        if (b.stockCoverageDays() != null) n++;
+        if (b.changeCount() > 0) n++;
+        return n / 4.0;
+    }
+
+    private static int clampScore(long v) {
+        return (int) Math.max(-100, Math.min(100, v));
+    }
+
+    private static int compareAtDesc(LocalDateTime a, LocalDateTime b) {
+        LocalDateTime ta = a == null ? LocalDateTime.MIN : a;
+        LocalDateTime tb = b == null ? LocalDateTime.MIN : b;
+        return tb.compareTo(ta);
+    }
+
 
     private static String textOf(MarketNews n) {
         return (n.getTitle() == null ? "" : n.getTitle()) + " "
@@ -322,6 +497,381 @@ public class PriceMonitorAiService {
         return ev == null ? "" : String.valueOf(ev);
     }
 
+    // ---------- 商品信号 / 依据 / 系统性分析 ----------
+
+    /** 单维度「商品级」信号：把本商品价格行为 + 资讯覆盖翻译成给人看的一句话（每条都可追溯到本商品数据）。 */
+    private static List<String> productSignals(String factor, PriceBehavior b, int newsCount,
+                                               int productNewsCount, boolean en) {
+        List<String> out = new ArrayList<>();
+        String momentum = en ? "Own price " + signed(b.momentum30dPct()) + "% over 30 days"
+                : "自身价格近30日 " + signed(b.momentum30dPct()) + "%";
+        String range = b.rangePositionPct().toPlainString();
+        switch (factor) {
+            case "sentiment" -> {
+                if (b.hasPriceData()) {
+                    out.add(momentum);
+                    out.add(en ? "Current price sits at " + range + "% of the 30-day range"
+                            : "现价处于近30日区间 " + range + "% 分位");
+                }
+            }
+            case "supply" -> {
+                if (b.hasPriceData()) {
+                    BigDecimal rel = b.relativePct();
+                    String direction = rel.signum() > 0 ? (en ? "above" : "高于")
+                            : rel.signum() < 0 ? (en ? "below" : "低于") : (en ? "in line with" : "持平");
+                    String relText = en
+                            ? "Own price " + signed(b.momentum30dPct()) + "%, " + direction
+                              + " the industry by " + signed(rel.abs()) + " pct"
+                            : "自身价格近30日 " + signed(b.momentum30dPct()) + "%，" + direction
+                              + "行业 " + signed(rel.abs()) + "pct";
+                    out.add(relText);
+                }
+                if (b.stockCoverageDays() != null) {
+                    int days = b.stockCoverageDays();
+                    String tag = days < 15 ? (en ? " (tight)" : "（偏紧）")
+                            : days > 60 ? (en ? " (heavy)" : "（偏高）") : "";
+                    out.add(en ? "Inventory covers about " + days + " days of sales" + tag
+                            : "库存覆盖约 " + days + " 天" + tag);
+                }
+            }
+            case "material" -> {
+                if (b.benchmarkChangePct() != null) {
+                    out.add(en ? "Industry benchmark " + signed(b.benchmarkChangePct()) + "% over 30 days"
+                            : "行业基准近30日 " + signed(b.benchmarkChangePct()) + "%");
+                }
+                out.add(en ? "Benchmark volatility " + b.volatilityPct() + "%"
+                        : "行业基准波动率 " + b.volatilityPct() + "%");
+            }
+            case "international" -> {
+                if (b.hasPriceData()) out.add(momentum);
+                if (b.benchmarkChangePct() != null) {
+                    out.add(en ? "Benchmark " + signed(b.benchmarkChangePct()) + "% vs own price " + signed(b.momentum30dPct()) + "%"
+                            : "基准 " + signed(b.benchmarkChangePct()) + "% vs 自身 " + signed(b.momentum30dPct()) + "%");
+                }
+            }
+            case "politics" -> {
+                if (newsCount == 0) {
+                    out.add(en ? "No policy-related news in the current window" : "近期无政治/政策类资讯");
+                } else {
+                    out.add(en ? "Benchmark volatility " + b.volatilityPct() + "% with " + newsCount + " policy-related news items"
+                            : "行业基准波动率 " + b.volatilityPct() + "%，政治/政策类资讯 " + newsCount + " 条");
+                }
+            }
+            default -> { }
+        }
+        if (productNewsCount > 0) {
+            out.add(en ? "Matched " + productNewsCount + " product/industry-relevant news items"
+                    : "匹配 " + productNewsCount + " 条本商品相关资讯");
+        } else if (newsCount > 0) {
+            out.add(en ? newsCount + " market-wide news items, none specific to this product"
+                    : "命中 " + newsCount + " 条泛市场资讯，暂无本商品专属资讯");
+        }
+        if (out.isEmpty()) {
+            out.add(en ? "No price behaviour data yet - scored from news direction only"
+                    : "暂无可用价格行为数据，仅按资讯方向计分");
+        }
+        return out.size() > 4 ? new ArrayList<>(out.subList(0, 4)) : out;
+    }
+
+    /** 维度依据：一行说明「资讯分 × 权重 + 行为分 → 综合分」，便于运营/前端解释因子来源。 */
+    private static String factorBasis(int newsScore, int behaviorScore, int score, int newsCount,
+                                      int productNewsCount, double weight, boolean en) {
+        if (en) {
+            return "Weighted news score " + newsScore + " from " + newsCount + " items (" + productNewsCount
+                    + " relevant to this product/industry) x industry weight " + weight
+                    + " + price-behaviour score " + behaviorScore + " -> composite " + score + ".";
+        }
+        return "资讯加权分 " + newsScore + "（" + newsCount + " 条，其中 " + productNewsCount
+                + " 条与本商品/本行业相关）× 行业权重 " + weight
+                + " + 本商品价格行为分 " + behaviorScore + " → 综合 " + score + "。";
+    }
+
+    /** 顶层 summary（带商品名）。 */
+    private static String productSummary(List<Map<String, Object>> factors, Product p, boolean en) {
+        int idx = sentimentIndex(factors);
+        Map<String, Object> d = dominantFactor(factors);
+        if (en) {
+            String stance = idx >= 58 ? "bullish" : idx <= 42 ? "bearish" : "neutral";
+            StringBuilder sb = new StringBuilder("Product #").append(p.getProdId())
+                    .append(": five-factor composite index ").append(idx).append("/100 (").append(stance).append(")");
+            if (d != null) {
+                int score = (int) d.get("score");
+                String dir = score >= 18 ? "upward pressure" : score <= -18 ? "downward pressure" : "neutral";
+                sb.append("; dominant factor: ").append(d.get("label")).append(" (").append(dir)
+                        .append(", strength ").append(d.get("strength")).append(")");
+            }
+            return sb.append(".").toString();
+        }
+        String stance = idx >= 58 ? "偏多" : idx <= 42 ? "偏空" : "中性";
+        StringBuilder sb = new StringBuilder("商品「").append(p.getTitle() == null ? "" : p.getTitle())
+                .append("」五维因子综合指数 ").append(idx).append("/100，市场信号").append(stance);
+        if (d != null) {
+            int score = (int) d.get("score");
+            String dir = score >= 18 ? "上行压力" : score <= -18 ? "下行压力" : "中性";
+            sb.append("；当前主导因子为").append(d.get("label")).append("（").append(dir)
+                    .append("，强度 ").append(d.get("strength")).append("）");
+        }
+        return sb.append("。").toString();
+    }
+
+    /** 系统性分析：价格行为关键数值 + 各维度贡献拆解 + 驱动 + 结论。 */
+    private static Map<String, Object> systematicAnalysis(List<Map<String, Object>> factors, PriceBehavior b,
+                                                          ProductFactorProfile profile, Product p, boolean en) {
+        Map<String, Object> sa = new LinkedHashMap<>();
+        sa.put("priceChange30dPct", b.momentum30dPct());
+        sa.put("relativePct", b.relativePct());
+        sa.put("volatilityPct", b.volatilityPct());
+        sa.put("changeCount", b.changeCount());
+        sa.put("rangePositionPct", b.rangePositionPct());
+        sa.put("stockCoverageDays", b.stockCoverageDays());
+
+        double totalWeight = 0;
+        for (String key : FACTOR_KEYS) totalWeight += profile.weightOf(key);
+        List<Map<String, Object>> contributions = new ArrayList<>();
+        for (Map<String, Object> f : factors) {
+            int score = (int) f.get("score");
+            double weight = ((Number) f.get("weight")).doubleValue();
+            Map<String, Object> c = new LinkedHashMap<>();
+            c.put("key", f.get("key"));
+            c.put("label", f.get("label"));
+            c.put("score", score);
+            c.put("newsScore", f.get("newsScore"));
+            c.put("behaviorScore", f.get("behaviorScore"));
+            c.put("weight", weight);
+            c.put("contribution", BigDecimal.valueOf(score * weight / totalWeight)
+                    .setScale(2, RoundingMode.HALF_UP).doubleValue());
+            contributions.add(c);
+        }
+        sa.put("factorContributions", contributions);
+        sa.put("drivers", systematicDrivers(factors, b, en));
+        sa.put("conclusion", systematicConclusion(factors, b, p, en));
+        return sa;
+    }
+
+    private static List<Map<String, Object>> systematicDrivers(List<Map<String, Object>> factors,
+                                                               PriceBehavior b, boolean en) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (b.hasPriceData()) {
+            out.add(driver(en ? "Own price movement" : "自身价格变动", impactOf(b.momentum30dPct()),
+                    en ? "Price moved from ¥" + b.firstPrice() + " to ¥" + b.currentPrice()
+                            + " (" + signed(b.momentum30dPct()) + "%) over 30 days, "
+                            + signed(b.relativePct()) + " pct vs the industry."
+                            : "近30日价格由 ¥" + b.firstPrice() + " 变为 ¥" + b.currentPrice()
+                            + "（" + signed(b.momentum30dPct()) + "%），相对行业 "
+                            + signed(b.relativePct()) + " 个百分点。"));
+        }
+        if (b.benchmarkChangePct() != null) {
+            out.add(driver(en ? "Industry benchmark" : "行业基准", impactOf(b.benchmarkChangePct()),
+                    en ? "Benchmark moved " + signed(b.benchmarkChangePct()) + "% in 30 days, volatility "
+                            + b.volatilityPct() + "%."
+                            : "行业基准近30日 " + signed(b.benchmarkChangePct()) + "%，波动率 "
+                            + b.volatilityPct() + "%。"));
+        }
+        if (b.stockCoverageDays() != null) {
+            out.add(driver(en ? "Inventory coverage" : "库存覆盖", "neutral",
+                    en ? "Current inventory covers about " + b.stockCoverageDays() + " days of average sales."
+                            : "当前库存约可覆盖 " + b.stockCoverageDays() + " 天的平均销量。"));
+        }
+        Map<String, Object> dominant = dominantFactor(factors);
+        if (dominant != null && ((int) dominant.get("score")) != 0) {
+            int ds = (int) dominant.get("score");
+            String dk = String.valueOf(dominant.get("key"));
+            int productNews = 0;
+            for (Map<String, Object> f : factors) {
+                if (dk.equals(f.get("key"))) productNews = (int) f.get("productNewsCount");
+            }
+            out.add(driver((en ? "Five-factor · " : "五维因子 · ") + dominant.get("label"),
+                    ds > 0 ? "up" : "down",
+                    en ? "Factor score " + ds + "/100 (strength " + dominant.get("strength") + ") on "
+                            + productNews + " product-relevant news items."
+                            : "评分 " + ds + "/100（强度 " + dominant.get("strength")
+                            + "），本商品相关资讯 " + productNews + " 条。"));
+        }
+        if (out.isEmpty()) {
+            out.add(driver(en ? "Stable pricing" : "价格稳定", "neutral",
+                    en ? "No material price change or benchmark move was recorded in the last 30 days."
+                            : "近30日未出现明显调价，行业基准也未显著波动。"));
+        }
+        return out.size() > 5 ? new ArrayList<>(out.subList(0, 5)) : out;
+    }
+
+    private static String systematicConclusion(List<Map<String, Object>> factors, PriceBehavior b,
+                                               Product p, boolean en) {
+        int idx = sentimentIndex(factors);
+        Map<String, Object> d = dominantFactor(factors);
+        if (en) {
+            String stance = idx >= 58 ? "bullish" : idx <= 42 ? "bearish" : "neutral";
+            StringBuilder sb = new StringBuilder("Product #").append(p.getProdId()).append(" shows a ")
+                    .append(stance).append(" five-factor signal (index ").append(idx).append("/100)");
+            if (d != null) sb.append(", led by ").append(d.get("label"));
+            sb.append("; price over the last 30 days was ").append(signed(b.momentum30dPct()))
+                    .append("%, ").append(signed(b.relativePct())).append(" pct vs the industry");
+            if (b.stockCoverageDays() != null) {
+                sb.append(", with inventory covering about ").append(b.stockCoverageDays()).append(" days");
+            }
+            return sb.append(".").toString();
+        }
+        String stance = idx >= 58 ? "偏多" : idx <= 42 ? "偏空" : "中性";
+        StringBuilder sb = new StringBuilder("商品「").append(p.getTitle() == null ? "" : p.getTitle())
+                .append("」五维因子信号").append(stance).append("（综合指数 ").append(idx).append("/100）");
+        if (d != null) sb.append("，主导因子为").append(d.get("label"));
+        sb.append("；近30日价格 ").append(signed(b.momentum30dPct())).append("%，相对行业 ")
+                .append(signed(b.relativePct())).append(" 个百分点");
+        if (b.stockCoverageDays() != null) {
+            sb.append("，库存约覆盖 ").append(b.stockCoverageDays()).append(" 天");
+        }
+        return sb.append("。").toString();
+    }
+
+    private static String impactOf(BigDecimal v) {
+        if (v == null) return "neutral";
+        return v.signum() > 0 ? "up" : v.signum() < 0 ? "down" : "neutral";
+    }
+
+    // ---------- 数据读取与价格行为 ----------
+
+    /** 价格行为画像：null 安全（analyze 返回空 Map、无价格历史都能算）。 */
+    private PriceBehavior priceBehavior(Product p, Map<String, Object> rule, List<PriceHistory> histories) {
+        BigDecimal current = p.getPrice() == null ? BigDecimal.ZERO : p.getPrice();
+        BigDecimal first = current;
+        BigDecimal high = null;
+        BigDecimal low = null;
+        boolean hasPriceData = histories != null && !histories.isEmpty();
+        if (hasPriceData) {
+            PriceHistory h0 = histories.get(0);
+            first = h0.getOldPrice() != null ? h0.getOldPrice()
+                    : h0.getNewPrice() != null ? h0.getNewPrice() : current;
+            for (PriceHistory h : histories) {
+                for (BigDecimal v : new BigDecimal[]{h.getOldPrice(), h.getNewPrice()}) {
+                    if (v == null) continue;
+                    if (high == null || v.compareTo(high) > 0) high = v;
+                    if (low == null || v.compareTo(low) < 0) low = v;
+                }
+            }
+        }
+        BigDecimal momentum = pctChange(current, first);
+        BigDecimal rangePosition;
+        if (high == null || low == null || high.compareTo(low) <= 0) {
+            rangePosition = new BigDecimal("50.0");
+        } else {
+            rangePosition = current.subtract(low).multiply(BigDecimal.valueOf(100))
+                    .divide(high.subtract(low), 1, RoundingMode.HALF_UP);
+            if (rangePosition.compareTo(BigDecimal.ZERO) < 0) rangePosition = new BigDecimal("0.0");
+            if (rangePosition.compareTo(BigDecimal.valueOf(100)) > 0) rangePosition = new BigDecimal("100.0");
+        }
+        BigDecimal benchmarkChange = dec(rule.get("benchmarkChangePct"));
+        BigDecimal volatility = dec(rule.get("volatilityPct"));
+        if (volatility == null) volatility = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal relative = momentum
+                .subtract(benchmarkChange == null ? BigDecimal.ZERO : benchmarkChange)
+                .setScale(2, RoundingMode.HALF_UP);
+        Integer counted = intOf(rule.get("changeCount"));
+        int changeCount = counted != null ? counted : (hasPriceData ? histories.size() : 0);
+        return new PriceBehavior(momentum, rangePosition, stockCoverageDays(p), relative,
+                benchmarkChange, volatility, changeCount, current, first, hasPriceData);
+    }
+
+    /** 库存可覆盖天数 = stock / max(sales/30, 1)；销量缺失或非正返回 null。 */
+    private static Integer stockCoverageDays(Product p) {
+        if (p == null || p.getStock() == null || p.getSales() == null || p.getSales() <= 0) return null;
+        double dailySales = Math.max(p.getSales() / 30.0, 1.0);
+        return (int) Math.round(p.getStock() / dailySales);
+    }
+
+    private static BigDecimal pctChange(BigDecimal current, BigDecimal base) {
+        if (base == null || base.signum() <= 0) return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        return current.subtract(base).multiply(BigDecimal.valueOf(100))
+                .divide(base, 2, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal dec(Object v) {
+        if (v == null) return null;
+        if (v instanceof BigDecimal b) return b;
+        try {
+            return new BigDecimal(String.valueOf(v));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Integer intOf(Object v) {
+        BigDecimal d = dec(v);
+        return d == null ? null : d.intValue();
+    }
+
+    /** 按商品相关度取资讯：>=2（本商品/本行业）优先，不足的用最新资讯补足到 limit 条。 */
+    private List<MarketNews> relevantNews(List<MarketNews> all, ProductFactorProfile profile, int limit) {
+        List<MarketNews> out = new ArrayList<>();
+        List<MarketNews> relevant = new ArrayList<>();
+        for (MarketNews n : all) {
+            if (n != null && profile.relevanceOf(n) >= 2.0) relevant.add(n);
+        }
+        relevant.sort((a, b) -> {
+            double ra = profile.relevanceOf(a);
+            double rb = profile.relevanceOf(b);
+            if (Double.compare(rb, ra) != 0) return Double.compare(rb, ra);
+            return compareAtDesc(a.getPublishedAt(), b.getPublishedAt());
+        });
+        out.addAll(relevant.subList(0, Math.min(limit, relevant.size())));
+        if (out.size() < limit) {
+            List<MarketNews> latest = new ArrayList<>(all);
+            latest.sort((a, b) -> compareAtDesc(a.getPublishedAt(), b.getPublishedAt()));
+            for (MarketNews n : latest) {
+                if (out.size() >= limit) break;
+                if (n != null && !out.contains(n)) out.add(n);
+            }
+        }
+        return out;
+    }
+
+    private String industryNameOf(Product p) {
+        if (p == null || p.getIndId() == null) return null;
+        Industry industry = industryMapper.selectById(p.getIndId());
+        return industry == null ? null : industry.getName();
+    }
+
+    private String categoryNameOf(Product p) {
+        if (p == null || p.getCatId() == null || categoryMapper == null) return null;
+        Category category = categoryMapper.selectById(p.getCatId());
+        return category == null ? null : category.getName();
+    }
+
+    /** analyze 为空 Map / null 时按「无基准数据」处理，不阻断因子看板。 */
+    private Map<String, Object> safeAnalyze(Long prodId) {
+        try {
+            Map<String, Object> rule = monitorService.analyze(prodId);
+            return rule == null ? new LinkedHashMap<>() : rule;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("[price-ai] analyze failed for prod {}: {}", prodId, e.getMessage());
+            return new LinkedHashMap<>();
+        }
+    }
+
+    private List<PriceHistory> safeHistories(Long prodId) {
+        try {
+            List<PriceHistory> list = historyMapper.selectList(Wrappers.<PriceHistory>lambdaQuery()
+                    .eq(PriceHistory::getProdId, prodId)
+                    .ge(PriceHistory::getCreateTime, LocalDateTime.now().minusDays(30))
+                    .orderByAsc(PriceHistory::getCreateTime));
+            return list == null ? List.of() : list;
+        } catch (RuntimeException e) {
+            log.warn("[price-ai] price history unavailable for prod {}: {}", prodId, e.getMessage());
+            return List.of();
+        }
+    }
+
+    private List<MarketNews> safeNews(int limit) {
+        try {
+            List<MarketNews> list = newsService.latest(limit);
+            return list == null ? List.of() : list;
+        } catch (RuntimeException e) {
+            log.warn("[price-ai] market news unavailable: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
     // ==================== 对外 ====================
 
     public Map<String, Object> analysis(Long prodId) {
@@ -331,11 +881,7 @@ public class PriceMonitorAiService {
     public Map<String, Object> analysis(Long prodId, String lang) {
         boolean en = isEnglish(lang);
         String key = "A:" + prodId + ":" + (en ? "en" : "zh");
-        Map<String, Object> cached = getCached(key);
-        if (cached != null) return cached;
-        Map<String, Object> out = doAnalysis(prodId, en);
-        putCached(key, out);
-        return out;
+        return coalesce(key, () -> doAnalysis(prodId, en));
     }
 
     public Map<String, Object> ask(Long prodId, String question) {
@@ -348,11 +894,36 @@ public class PriceMonitorAiService {
         if (q.isEmpty()) throw new BusinessException(en ? "Please enter a question." : "请输入你想了解的问题");
         if (q.length() > 200) q = q.substring(0, 200);
         String key = "Q:" + prodId + ":" + (en ? "en" : "zh") + ":" + q.hashCode();
+        final String finalQ = q;
+        return coalesce(key, () -> doAsk(prodId, finalQ, en));
+    }
+
+    /** 缓存 + 并发合并：同 key 只执行一次工作，其他线程共享结果。 */
+    private Map<String, Object> coalesce(String key, java.util.function.Supplier<Map<String, Object>> work) {
         Map<String, Object> cached = getCached(key);
         if (cached != null) return cached;
-        Map<String, Object> out = doAsk(prodId, q, en);
-        putCached(key, out);
-        return out;
+        java.util.concurrent.CompletableFuture<Map<String, Object>> mine = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<Map<String, Object>> existing = inflight.putIfAbsent(key, mine);
+        if (existing != null) {
+            try {
+                return existing.join();
+            } catch (java.util.concurrent.CompletionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException re) throw re;
+                throw new RuntimeException(cause == null ? e : cause);
+            }
+        }
+        try {
+            Map<String, Object> out = work.get();
+            putCached(key, out);
+            mine.complete(out);
+            return out;
+        } catch (RuntimeException e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            inflight.remove(key, mine);
+        }
     }
 
     private static boolean isEnglish(String lang) {
@@ -363,15 +934,17 @@ public class PriceMonitorAiService {
 
     private Map<String, Object> doAnalysis(Long prodId, boolean en) {
         Product p = mustProduct(prodId);
-        Map<String, Object> rule = monitorService.analyze(prodId);
-        Ctx ctx = context(p, rule);
+        Map<String, Object> rule = safeAnalyze(prodId);
+        Ctx ctx = context(p, rule, en);
 
-        Map<String, Object> out = baseOut(p, ctx);
-        JsonNode ai = callAi(analysisPrompt(ctx, en));
+        Map<String, Object> out = baseOut(p, ctx, en);
+        JsonNode ai = callAi(analysisPrompt(ctx, en), en);
         if (ai != null) {
+            ai = unwrapNested(ai);
             out.put("source", "AI");
             out.put("summary", text(ai, "summary"));
-            out.put("drivers", objects(ai, "drivers"));
+            List<Map<String, Object>> aiDrivers = driversFrom(ai, en);
+            out.put("drivers", dedupeFactorLabelDrivers(aiDrivers, ctx, en));
             out.put("risk", text(ai, "risk"));
             out.put("suggestion", text(ai, "suggestion"));
             out.put("model", ctx.modelName);
@@ -381,6 +954,81 @@ public class PriceMonitorAiService {
             fillRuleAnalysis(out, ctx);
         }
         return out;
+    }
+
+    /**
+     * 小模型偶发把整包 JSON 再塞进 summary 字段（形如 {"summary":"{\"summary\":…}"}）。
+     * 守卫：summary 值本身是 JSON 对象文本时二次解析，展开为真正的字段。
+     */
+    private static JsonNode unwrapNested(JsonNode ai) {
+        String s = ai.path("summary").asText("");
+        String t = s.trim();
+        if (t.startsWith("{") && t.contains("\"summary\"")) {
+            JsonNode inner = extractJsonStatic(t);
+            if (inner != null && inner.has("summary") && inner.path("summary").isTextual()) {
+                return inner;
+            }
+        }
+        return ai;
+    }
+
+    private static JsonNode extractJsonStatic(String content) {
+        if (content == null) return null;
+        int start = content.indexOf('{');
+        int end = content.lastIndexOf('}');
+        if (start < 0 || end <= start) return null;
+        try {
+            JsonNode node = JSON.readTree(content.substring(start, end + 1));
+            return node.isObject() ? node : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 小模型常见退化：把“市场情绪/上游供应链/…”五个维度名原样当 drivers 返回。
+     * 守卫：剔除纯维度名条目；若剔除后不足 2 条，用本商品自身调价、最强因子（带依据）与
+     * 最新资讯补齐，保证每个商品的 drivers 都是具体、差异化的业务事实。
+     */
+    private List<Map<String, Object>> dedupeFactorLabelDrivers(List<Map<String, Object>> aiDrivers, Ctx ctx, boolean en) {
+        List<String> labels = new ArrayList<>(FACTOR_LABELS.values());
+        labels.addAll(FACTOR_LABELS_EN.values());
+        List<Map<String, Object>> kept = new ArrayList<>();
+        for (Map<String, Object> d : aiDrivers) {
+            String label = String.valueOf(d.get("label")).trim();
+            String stripped = label.replaceAll("^(五维因子|Five-factor)\\s*[·•:]?\\s*", "").trim();
+            boolean bareFactor = labels.contains(label) || labels.contains(stripped);
+            boolean dup = kept.stream().anyMatch(k -> String.valueOf(k.get("label")).equals(label));
+            if (!bareFactor && !dup) kept.add(d);
+        }
+        if (kept.size() >= 2) return kept;
+
+        // 不足 2 条：按规则引擎口径补齐（自身调价 → 最强因子带依据 → 最新资讯）
+        List<Map<String, Object>> out = new ArrayList<>(kept);
+        if (ctx.priceChangePct.abs().compareTo(new BigDecimal("0.5")) >= 0) {
+            out.add(driver(
+                    ctx.priceChangePct.signum() > 0
+                            ? (en ? "Own price moved up" : "本商品价格上行")
+                            : (en ? "Own price moved down" : "本商品价格下行"),
+                    ctx.priceChangePct.signum() > 0 ? "up" : "down",
+                    en ? "Moved from ¥" + ctx.firstPrice + " to ¥" + ctx.currentPrice + " ("
+                            + signed(ctx.priceChangePct) + "%) across " + ctx.changeCount + " changes."
+                            : "近30日由 ¥" + ctx.firstPrice + " 变为 ¥" + ctx.currentPrice
+                            + "（" + signed(ctx.priceChangePct) + "%），共调价 " + ctx.changeCount + " 次。"));
+        }
+        Map<String, Object> dominant = dominantFactor(ctx.factorList);
+        if (dominant != null && ((int) dominant.get("score")) != 0) {
+            out.add(driver((en ? "Five-factor · " : "五维因子 · ") + dominant.get("label"),
+                    ((int) dominant.get("score")) > 0 ? "up" : "down",
+                    String.valueOf(joinEvidence(dominant))));
+        }
+        for (MarketNews n : ctx.news.subList(0, Math.min(2, ctx.news.size()))) {
+            String label = (en ? categoryNameEn(n.getCategory()) : categoryName(n.getCategory()))
+                    + "：" + n.getTitle();
+            boolean dup = out.stream().anyMatch(k -> String.valueOf(k.get("label")).equals(label));
+            if (!dup) out.add(driver(label, "neutral", n.getSummary() == null ? "" : n.getSummary()));
+        }
+        return out.size() > 5 ? out.subList(0, 5) : out;
     }
 
     private void fillRuleAnalysis(Map<String, Object> out, Ctx ctx) {
@@ -559,13 +1207,13 @@ public class PriceMonitorAiService {
 
     private Map<String, Object> doAsk(Long prodId, String question, boolean en) {
         Product p = mustProduct(prodId);
-        Map<String, Object> rule = monitorService.analyze(prodId);
-        Ctx ctx = context(p, rule);
+        Map<String, Object> rule = safeAnalyze(prodId);
+        Ctx ctx = context(p, rule, en);
 
-        Map<String, Object> out = baseOut(p, ctx);
+        Map<String, Object> out = baseOut(p, ctx, en);
         out.put("question", question);
 
-        JsonNode ai = callAi(askPrompt(question, ctx, en));
+        JsonNode ai = callAi(askPrompt(question, ctx, en), en);
         if (ai != null) {
             out.put("source", "AI");
             out.put("answer", text(ai, "answer"));
@@ -763,61 +1411,71 @@ public class PriceMonitorAiService {
                        BigDecimal priceChangePct, int changeCount, BigDecimal latestBenchmark,
                        BigDecimal firstBenchmark, BigDecimal benchmarkChangePct,
                        BigDecimal deviationPct, BigDecimal relativePct, BigDecimal volatilityPct,
-                       List<String> recentChanges, String lastChangeText, String modelName) { }
+                       List<String> recentChanges, String lastChangeText, String modelName,
+                       String industryName, String categoryName, ProductFactorProfile profile,
+                       PriceBehavior behavior) { }
 
-    @SuppressWarnings("unchecked")
-    private Ctx context(Product p, Map<String, Object> rule) {
+    private Ctx context(Product p, Map<String, Object> rule, boolean en) {
+        Map<String, Object> safeRule = rule == null ? new LinkedHashMap<>() : rule;
         BigDecimal current = p.getPrice() == null ? BigDecimal.ZERO : p.getPrice();
-        List<PriceHistory> hs = historyMapper.selectList(Wrappers.<PriceHistory>lambdaQuery()
-                .eq(PriceHistory::getProdId, p.getProdId())
-                .ge(PriceHistory::getCreateTime, LocalDateTime.now().minusDays(30))
-                .orderByAsc(PriceHistory::getCreateTime));
+        List<PriceHistory> hs = safeHistories(p.getProdId());
         BigDecimal first = current;
         if (!hs.isEmpty()) {
             PriceHistory h0 = hs.get(0);
             first = h0.getOldPrice() != null ? h0.getOldPrice()
                     : (h0.getNewPrice() != null ? h0.getNewPrice() : current);
         }
-        BigDecimal changePct = first.signum() <= 0 ? BigDecimal.ZERO
-                : current.subtract(first).multiply(BigDecimal.valueOf(100))
-                .divide(first, 2, RoundingMode.HALF_UP);
+        BigDecimal changePct = pctChange(current, first);
 
         List<String> timeline = new ArrayList<>();
         for (int i = Math.max(0, hs.size() - 6); i < hs.size(); i++) {
             PriceHistory h = hs.get(i);
-            timeline.add(h.getCreateTime().format(TIME_FMT) + " ¥" + h.getOldPrice() + "→¥" + h.getNewPrice()
-                    + "（" + signed(h.getChangePct()) + "%）");
+            timeline.add(en
+                    ? h.getCreateTime().format(TIME_FMT) + " ¥" + h.getOldPrice() + " -> ¥" + h.getNewPrice()
+                      + " (" + signed(h.getChangePct()) + "%)"
+                    : h.getCreateTime().format(TIME_FMT) + " ¥" + h.getOldPrice() + "→¥" + h.getNewPrice()
+                      + "（" + signed(h.getChangePct()) + "%）");
         }
-        String lastText = hs.isEmpty() ? "无调价记录"
+        String lastText = hs.isEmpty() ? (en ? "no price changes" : "无调价记录")
                 : hs.get(hs.size() - 1).getCreateTime().format(TIME_FMT) + " ¥"
-                + hs.get(hs.size() - 1).getOldPrice() + "→¥" + hs.get(hs.size() - 1).getNewPrice();
+                + hs.get(hs.size() - 1).getOldPrice() + (en ? " -> ¥" : "→¥")
+                + hs.get(hs.size() - 1).getNewPrice();
 
-        BigDecimal latest = rule.get("benchmarkPrice") == null ? null : new BigDecimal(String.valueOf(rule.get("benchmarkPrice")));
+        BigDecimal latest = dec(safeRule.get("benchmarkPrice"));
         BigDecimal firstBench = null;
-        Object benchObj = rule.get("benchmarkSeries");
+        Object benchObj = safeRule.get("benchmarkSeries");
         if (benchObj instanceof List<?> benchSeries && !benchSeries.isEmpty()
                 && benchSeries.get(0) instanceof com.lanlink.shopping.module.pricemonitor.entity.MarketBenchmark mb) {
             firstBench = mb.getBenchmark();
         }
-        BigDecimal benchChange = rule.get("benchmarkChangePct") == null ? null : new BigDecimal(String.valueOf(rule.get("benchmarkChangePct")));
-        BigDecimal deviation = rule.get("deviationPct") == null ? null : new BigDecimal(String.valueOf(rule.get("deviationPct")));
-        BigDecimal volatility = rule.get("volatilityPct") == null ? BigDecimal.ZERO : new BigDecimal(String.valueOf(rule.get("volatilityPct")));
-        BigDecimal relative = changePct.subtract(benchChange == null ? BigDecimal.ZERO : benchChange).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal benchChange = dec(safeRule.get("benchmarkChangePct"));
+        BigDecimal deviation = dec(safeRule.get("deviationPct"));
+        BigDecimal volatility = dec(safeRule.get("volatilityPct"));
+        if (volatility == null) volatility = BigDecimal.ZERO;
+        BigDecimal relative = changePct.subtract(benchChange == null ? BigDecimal.ZERO : benchChange)
+                .setScale(2, RoundingMode.HALF_UP);
 
-        List<MarketNews> news = newsService.latest(6);
-        List<Map<String, Object>> factorList = computeFactors(newsService.latest(40));
-        String model = configService.activeChannels().stream().map(OutboundModelConfigService.ChannelConfig::modelName)
+        // 按商品：先算画像/价格行为/五维因子，再按商品相关度取上下文资讯（>=2 优先，最新补足）。
+        String industryName = industryNameOf(p);
+        String categoryName = categoryNameOf(p);
+        ProductFactorProfile profile = ProductFactorProfile.of(p, industryName, categoryName);
+        PriceBehavior behavior = priceBehavior(p, safeRule, hs);
+        List<MarketNews> allNews = safeNews(40);
+        List<Map<String, Object>> factorList = computeFactors(allNews, profile, behavior, en);
+        List<MarketNews> news = relevantNews(allNews, profile, 6);
+        // 展示模型名与实际调用顺序一致：优先本地 AI 网关（mimosa）渠道，其次任一启用渠道。
+        String model = orderedChannels().stream().map(OutboundModelConfigService.ChannelConfig::modelName)
                 .filter(Objects::nonNull).findFirst().orElse(null);
-        return new Ctx(p, rule, hs, news, factorList, current, first, changePct, hs.size(), latest, firstBench,
-                benchChange, deviation, relative, volatility, timeline, lastText, model);
+        return new Ctx(p, safeRule, hs, news, factorList, current, first, changePct, hs.size(), latest, firstBench,
+                benchChange, deviation, relative, volatility, timeline, lastText, model,
+                industryName, categoryName, profile, behavior);
     }
 
-    private Map<String, Object> baseOut(Product p, Ctx ctx) {
+    private Map<String, Object> baseOut(Product p, Ctx ctx, boolean en) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("prodId", p.getProdId());
         out.put("title", p.getTitle());
-        out.put("industryName", p.getIndId() == null ? null :
-                Optional.ofNullable(industryMapper.selectById(p.getIndId())).map(i -> i.getName()).orElse(null));
+        out.put("industryName", ctx.industryName);
         out.put("currentPrice", ctx.currentPrice);
         out.put("priceChange30dPct", ctx.priceChangePct);
         out.put("benchmarkPrice", ctx.latestBenchmark);
@@ -828,7 +1486,7 @@ public class PriceMonitorAiService {
         out.put("trend", ctx.rule);
         out.put("news", ctx.news.subList(0, Math.min(4, ctx.news.size())));
         out.put("factors", ctx.factorList);
-        out.put("factorSummary", factorSummary(ctx.factorList));
+        out.put("factorSummary", en ? factorSummaryEn(ctx.factorList) : factorSummary(ctx.factorList));
         out.put("sentimentIndex", sentimentIndex(ctx.factorList));
         out.put("generatedAt", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
         return out;
@@ -837,17 +1495,23 @@ public class PriceMonitorAiService {
     // ==================== AI 调用 ====================
 
     private String analysisPrompt(Ctx ctx, boolean en) {
-        String schema = "{\"summary\":\"one-sentence conclusion\",\"drivers\":[{\"label\":\"driver\",\"impact\":\"up|down|neutral\",\"evidence\":\"data or news basis\"}],"
+        String schema = "{\"summary\":\"one-sentence conclusion\",\"drivers\":\"driver1；driver2；driver3 (plain text, separated by ；)\","
                 + "\"risk\":\"HIGH|MEDIUM|LOW\",\"suggestion\":\"actionable advice\"}";
         String requirement = en
                 ? "Requirement: answer in English; lead with the conclusion; combine all five dimensions "
-                + "(market sentiment, upstream supply, raw materials, global factors, policy & politics, see \"五维因子\"); "
-                + "cite concrete prices, percentages and news; 2-4 drivers; never invent data. Translate any Chinese news titles you cite.\nData:"
+                + "(market sentiment, upstream supply, raw materials, global factors, policy & politics, see \"five_factors\"); "
+                + "cite concrete prices, percentages and news; put 2-4 drivers in the \"drivers\" string separated by ；"
+                + " (do NOT use nested arrays or objects); never invent data. Translate any Chinese news titles you cite.\n"
+                + "Drivers rules: each driver must be a SPECIFIC business fact about THIS product or its industry "
+                + "(own price moves with numbers, a concrete news title with its direction, or the strongest factor WITH its evidence) — "
+                + "NEVER list the five dimension names themselves as drivers, and never repeat the same factor twice.\nData:"
                 : "要求：结论先行；必须结合市场情绪、上游供应链、基础原材料、国际化因素、政治与政策五个维度"
-                + "（数据中的“五维因子”），引用具体价格、百分比与资讯；drivers 2-4 条；不得编造数据。\n数据：";
+                + "（见数据中的“五维因子”），引用具体价格、百分比与资讯；drivers 用中文分号分隔的 2-4 条要点纯文本，不要用数组或对象；不得编造数据。\n"
+                + "drivers 规则：每条必须是针对【本商品】的具体业务事实（自身调价幅度带数字、某条具体资讯标题及其方向、"
+                + "或最强因子及其依据线索），禁止把“市场情绪/上游供应链”这类维度名本身当作一条 driver，同一因子不得重复出现。\nData:";
         return (en ? "You are a B2B commodity price analyst. Return strict JSON (no Markdown fences) with fields: "
                 : "你是 B2B 商品价格分析师。根据给定数据输出严格 JSON（不要 Markdown 代码块），字段：")
-                + schema + "。 " + requirement + contextJson(ctx);
+                + schema + "。 " + requirement + contextJson(ctx, en);
     }
 
     private String askPrompt(String question, Ctx ctx, boolean en) {
@@ -861,25 +1525,75 @@ public class PriceMonitorAiService {
                 + "国际化因素、政治与政策的影响；不得编造。\n问题：";
         return (en ? "You are a B2B commodity price analyst. Answer the user's question with strict JSON (no Markdown fences), fields: "
                 : "你是 B2B 商品价格分析师。请回答用户关于价格变化的问题，输出严格 JSON（不要 Markdown 代码块），字段：")
-                + schema + "。 " + requirement + question + "\nData: " + contextJson(ctx);
+                + schema + "。 " + requirement + question + "\nData: " + contextJson(ctx, en);
     }
 
-    private String contextJson(Ctx ctx) {
+    private String contextJson(Ctx ctx, boolean en) {
         try {
             ObjectNode root = JSON.createObjectNode();
+            if (en) {
+                // 英文态：上下文只用英文键、不含任何中文（商品名/资讯标题/因子名一律用英文或省略），
+                // 否则中文小模型会照抄中文，破坏英文界面零中文。因子 basis 由 en=true 计算，天然全英文。
+                root.put("product", "the selected product");
+                root.put("current_price", ctx.currentPrice);
+                root.put("first_price_30d", ctx.firstPrice);
+                root.put("change_30d_pct", ctx.priceChangePct);
+                root.put("price_changes", ctx.changeCount);
+                root.put("benchmark_change_pct", ctx.benchmarkChangePct);
+                root.put("relative_strength_pct", ctx.relativePct);
+                root.put("benchmark_volatility_pct", ctx.volatilityPct);
+                ObjectNode sa = root.putObject("systematic_analysis");
+                sa.put("price_change_30d_pct", ctx.behavior.momentum30dPct());
+                sa.put("relative_pct", ctx.behavior.relativePct());
+                sa.put("volatility_pct", ctx.behavior.volatilityPct());
+                sa.put("price_change_count", ctx.behavior.changeCount());
+                sa.put("range_position_pct", ctx.behavior.rangePositionPct());
+                sa.put("inventory_coverage_days", ctx.behavior.stockCoverageDays());
+                ArrayNode ch = root.putArray("recent_price_moves");
+                ctx.recentChanges.forEach(ch::add);
+                ArrayNode ns = root.putArray("news_signals");
+                for (MarketNews n : ctx.news.subList(0, Math.min(5, ctx.news.size()))) {
+                    ns.addObject().put("category", categoryNameEn(n.getCategory()))
+                            .put("hours_ago", hoursAgo(n.getPublishedAt()))
+                            .put("product_relevance", ctx.profile.relevanceOf(n));
+                }
+                root.put("five_factor_index", sentimentIndex(ctx.factorList));
+                root.put("five_factor_summary", factorSummaryEn(ctx.factorList));
+                ArrayNode fs = root.putArray("five_factors");
+                for (Map<String, Object> f : ctx.factorList) {
+                    ObjectNode o = fs.addObject();
+                    o.put("dimension", factorLabelEn(String.valueOf(f.get("key"))));
+                    o.put("direction", String.valueOf(f.get("impact")));
+                    o.put("score", (int) f.get("score"));
+                    o.put("strength", (int) f.get("strength"));
+                    o.put("news_items", (int) f.get("newsCount"));
+                    o.put("product_news_items", (int) f.get("productNewsCount"));
+                    o.put("news_score", (int) f.get("newsScore"));
+                    o.put("behaviour_score", (int) f.get("behaviorScore"));
+                    o.put("industry_weight", ((Number) f.get("weight")).doubleValue());
+                    o.put("basis", String.valueOf(f.get("basis")));
+                }
+                return JSON.writeValueAsString(root);
+            }
             root.put("商品", ctx.product.getTitle());
             root.put("当前价", ctx.currentPrice);
-            root.put("行业", ctx.product.getIndId() == null ? "未知" :
-                    Optional.ofNullable(industryMapper.selectById(ctx.product.getIndId())).map(i -> i.getName()).orElse("未知"));
+            root.put("行业", ctx.industryName == null ? "未知" : ctx.industryName);
+            root.put("分类", ctx.categoryName == null ? "未知" : ctx.categoryName);
             root.put("近30日首价", ctx.firstPrice);
             root.put("近30日变动%", ctx.priceChangePct);
             root.put("调价次数", ctx.changeCount);
-            root.put("行业基准", ctx.latestBenchmark);
-            root.put("基准变动%", ctx.benchmarkChangePct);
-            root.put("偏离基准%", ctx.deviationPct);
+            root.put("行业基准变动%", ctx.benchmarkChangePct);
+            // 只喂"相对强弱"（商品涨幅−基准涨幅，百分点）这类跨品类可比的口径；
+            // 不再传"现价 vs 行业均价"的绝对偏离与规则建议——不同商品量级差异大，绝对比价会误导模型。
+            root.put("相对强弱(百分点)", ctx.relativePct);
             root.put("基准波动率%", ctx.volatilityPct);
-            root.put("规则建议等级", String.valueOf(ctx.rule.get("level")));
-            root.put("规则建议", String.valueOf(ctx.rule.get("advice")));
+            ObjectNode sa = root.putObject("系统性分析");
+            sa.put("近30日变动%", ctx.behavior.momentum30dPct());
+            sa.put("相对行业百分点", ctx.behavior.relativePct());
+            sa.put("基准波动率%", ctx.behavior.volatilityPct());
+            sa.put("调价次数", ctx.behavior.changeCount());
+            sa.put("区间位置%", ctx.behavior.rangePositionPct());
+            sa.put("库存覆盖天数", ctx.behavior.stockCoverageDays());
             ArrayNode changes = root.putArray("关键调价节点");
             ctx.recentChanges.forEach(changes::add);
             ArrayNode news = root.putArray("近期资讯");
@@ -890,6 +1604,7 @@ public class PriceMonitorAiService {
                 o.put("来源", n.getSource());
                 o.put("时间", n.getPublishedAt().format(TIME_FMT));
                 o.put("摘要", n.getSummary());
+                o.put("本商品相关度", ctx.profile.relevanceOf(n));
             }
             root.put("五维因子综合指数", sentimentIndex(ctx.factorList));
             root.put("五维因子结论", factorSummary(ctx.factorList));
@@ -901,7 +1616,12 @@ public class PriceMonitorAiService {
                 o.put("评分(-100偏空~100偏多)", (int) f.get("score"));
                 o.put("强度(0-100)", (int) f.get("strength"));
                 o.put("资讯数", (int) f.get("newsCount"));
+                o.put("本商品相关资讯数", (int) f.get("productNewsCount"));
+                o.put("资讯加权分", (int) f.get("newsScore"));
+                o.put("行为分", (int) f.get("behaviorScore"));
+                o.put("行业权重", ((Number) f.get("weight")).doubleValue());
                 o.put("依据", joinEvidence(f));
+                o.put("算法依据", String.valueOf(f.get("basis")));
             }
             return JSON.writeValueAsString(root);
         } catch (Exception e) {
@@ -909,11 +1629,12 @@ public class PriceMonitorAiService {
         }
     }
 
-    private JsonNode callAi(String prompt) {
+    private JsonNode callAi(String prompt, boolean en) {
         if (System.currentTimeMillis() < aiDisabledUntil) return null;
         int attempts = 0;
-        for (OutboundModelConfigService.ChannelConfig ch : configService.activeChannels()) {
-            if (attempts >= 2) break;
+        String lastRaw = null;
+        for (OutboundModelConfigService.ChannelConfig ch : orderedChannels()) {
+            if (attempts >= 3) break;
             attempts++;
             try {
                 String url = OutboundModelConfigService.chatCompletionsEndpoint(ch.baseUrl());
@@ -923,11 +1644,17 @@ public class PriceMonitorAiService {
                 body.put("model", model);
                 body.put("temperature", 0.2);
                 body.put("max_tokens", 800);
+                // 兼容 OpenAI JSON 模式：支持的网关会据此强制合法 JSON，不支持的会忽略该扩展字段。
+                body.putObject("response_format").put("type", "json_object");
+                // 本地 AI 网关扩展字段：价格分析要纯模型推理，关闭电商知识库 RAG，避免被客服问答上下文带偏。
+                body.put("use_kb", false);
                 var messages = body.putArray("messages");
-                messages.addObject().put("role", "system").put("content", "你是严谨的 B2B 价格分析师，只输出 JSON。");
+                messages.addObject().put("role", "system").put("content", en
+                        ? "You are a rigorous B2B price analyst. Output ONLY valid JSON, and write every value in English."
+                        : "你是严谨的 B2B 价格分析师，只输出合法 JSON。");
                 messages.addObject().put("role", "user").put("content", prompt);
                 HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                        .timeout(Duration.ofSeconds(8))
+                        .timeout(Duration.ofSeconds(90))
                         .header("Content-Type", "application/json")
                         .header("Authorization", "Bearer " + ch.apiKey())
                         .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)))
@@ -944,13 +1671,45 @@ public class PriceMonitorAiService {
                     aiDisabledUntil = 0;
                     return parsed;
                 }
+                // 模型确实返回了内容但 JSON 不完整（小模型常见）：留作兜底，仍算真实 AI 调用。
+                if (content != null && !content.isBlank()) lastRaw = stripFence(content);
             } catch (Exception e) {
                 log.warn("[price-ai] provider {} failed: {}", ch.channel(), e.getMessage());
             }
         }
-        // 全部失败：熔断 5 分钟，期间直接使用规则引擎
-        aiDisabledUntil = System.currentTimeMillis() + 5 * 60 * 1000L;
+        if (lastRaw != null) {
+            aiDisabledUntil = 0;
+            ObjectNode node = JSON.createObjectNode();
+            String clipped = lastRaw.length() > 600 ? lastRaw.substring(0, 600) + "…" : lastRaw;
+            node.put("summary", clipped);
+            log.info("[price-ai] 模型返回非严格 JSON，已按原文兜底为 AI 结论");
+            return node;
+        }
+        // 全部渠道无有效返回：熔断 2 分钟，期间直接使用规则引擎（本地 Ollama 串行推理慢，
+        // 一次超时不该让后续 5 分钟全部降级，故熔断窗口短于历史 5 分钟）。
+        aiDisabledUntil = System.currentTimeMillis() + 2 * 60 * 1000L;
         return null;
+    }
+
+    /** 本地 AI 网关（mimosa）优先，其次其余启用渠道，避免先撞不可用的外部渠道浪费尝试次数。 */
+    private List<OutboundModelConfigService.ChannelConfig> orderedChannels() {
+        List<OutboundModelConfigService.ChannelConfig> list =
+                new ArrayList<>(configService.activeChannels());
+        list.sort((a, b) -> Integer.compare(
+                "mimosa".equalsIgnoreCase(a.channel()) ? 0 : 1,
+                "mimosa".equalsIgnoreCase(b.channel()) ? 0 : 1));
+        return list;
+    }
+
+    /** 去掉 ```json / ``` 代码围栏与首尾空白。 */
+    private static String stripFence(String content) {
+        String s = content.trim();
+        if (s.startsWith("```")) {
+            int nl = s.indexOf('\n');
+            if (nl > 0) s = s.substring(nl + 1);
+            if (s.endsWith("```")) s = s.substring(0, s.length() - 3);
+        }
+        return s.trim();
     }
 
     private JsonNode extractJson(String content) {
@@ -989,6 +1748,30 @@ public class PriceMonitorAiService {
             m.put("impact", text(item, "impact"));
             m.put("evidence", text(item, "evidence"));
             if (!String.valueOf(m.get("label")).isBlank()) out.add(m);
+        }
+        return out;
+    }
+
+    /**
+     * 兼容模型返回的两种 drivers 形态：数组对象（[{label,impact,evidence}]）或
+     * 分号/换行分隔的纯文本要点（小模型更擅长输出后者）。统一转成前端消费的 [{label,impact,evidence}]。
+     */
+    private static List<Map<String, Object>> driversFrom(JsonNode node, boolean en) {
+        JsonNode d = node.path("drivers");
+        if (d.isArray()) return objects(node, "drivers");
+        List<Map<String, Object>> out = new ArrayList<>();
+        if (d.isTextual()) {
+            for (String part : d.asText("").split("[；;。\n]")) {
+                String t = part.replaceAll("^\\s*[-·•*\\d.、)）]+\\s*", "").trim();
+                if (t.isEmpty()) continue;
+                String impact = t.matches(".*(涨|上行|偏多|走强|收紧|偏紧|上升|利好|紧缺|提速|回暖).*") ? "up"
+                        : t.matches(".*(跌|下行|偏空|走弱|放缓|疲软|回落|宽松|利空|下降|回调).*") ? "down" : "neutral";
+                Map<String, Object> m = new LinkedHashMap<>();
+                m.put("label", t);
+                m.put("impact", impact);
+                m.put("evidence", "");
+                out.add(m);
+            }
         }
         return out;
     }
@@ -1035,8 +1818,25 @@ public class PriceMonitorAiService {
             case "demand" -> "需求";
             case "price" -> "价格";
             case "tech" -> "技术";
+            case "international" -> "国际";
             default -> "市场";
         };
+    }
+
+    private static String categoryNameEn(String c) {
+        return switch (c == null ? "" : c) {
+            case "policy" -> "policy";
+            case "supply" -> "supply";
+            case "demand" -> "demand";
+            case "price" -> "price";
+            case "tech" -> "technology";
+            case "international" -> "global";
+            default -> "market";
+        };
+    }
+
+    private static long hoursAgo(LocalDateTime t) {
+        return t == null ? 0 : Math.max(0, java.time.Duration.between(t, LocalDateTime.now()).toHours());
     }
 
     private Product mustProduct(Long prodId) {

@@ -22,10 +22,13 @@ public class TamperGuardService {
 
     private final TamperAlertMapper mapper;
     private final AuditService auditService;
+    private final com.lanlink.shopping.module.risk.service.RiskEventService riskEventService;
 
-    public TamperGuardService(TamperAlertMapper mapper, AuditService auditService) {
+    public TamperGuardService(TamperAlertMapper mapper, AuditService auditService,
+                              com.lanlink.shopping.module.risk.service.RiskEventService riskEventService) {
         this.mapper = mapper;
         this.auditService = auditService;
+        this.riskEventService = riskEventService;
     }
 
     /**
@@ -83,6 +86,8 @@ public class TamperGuardService {
         mapper.insert(alert);
         log.warn("[tamper-alert] user={} biz={} field={} client={} server={} reason={}",
                 userId, bizType, fieldName, clientValue, serverValue, reason);
+        // 风控旁路：R05 参数篡改（每次告警计 25 分，24h 去重在 RiskEventService 内）
+        try { riskEventService.record(userId, "R05", 25, reason, bizType, fieldName); } catch (Exception ignore) { }
         // 审计链留痕（需求 4：日志记录 + 告警可追溯）
         auditService.record(userId, "TAMPER_ALERT",
                 bizType + "." + fieldName + " client=" + clientValue + " server=" + serverValue

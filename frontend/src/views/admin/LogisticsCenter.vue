@@ -236,31 +236,32 @@ const settleCols = [
 const statusText = (s) => ({ pending_ship: '待发货', picked_up: '已揽收', in_transit: '运输中', out_for_delivery: '派件中', delivered: '已签收', exception: '异常', returned: '已退回', lost: '丢失', cancelled: '已取消' }[s] || s)
 const statusColor = (s) => ({ delivered: 'green', exception: 'red', returned: 'orange', lost: 'red', in_transit: 'blue' }[s] || 'default')
 
-async function loadProviders() { providers.value = (await logisticsApi.adminProviders()).data || [] }
-async function loadTemplates() { templates.value = (await logisticsApi.adminTemplates()).data || [] }
+// request.js 拦截器已剥壳返回 data 层：List 直接用返回值，Page 读 records/total，不再读 .data
+async function loadProviders() { providers.value = (await logisticsApi.adminProviders()) || [] }
+async function loadTemplates() { templates.value = (await logisticsApi.adminTemplates()) || [] }
 async function loadWaybills(page = 1) {
   waybillPage.value.page = page
   const r = await logisticsApi.waybillList({ page, size: 10 })
-  waybills.value = r.data?.records || []
-  waybillPage.value.total = Number(r.data?.total || 0)
+  waybills.value = r?.records || []
+  waybillPage.value.total = Number(r?.total || 0)
 }
 async function loadAlerts(page = 1) {
   alertPage.value.page = page
   const r = await logisticsApi.alerts({ page, size: 10 })
-  alerts.value = r.data?.records || []
-  alertPage.value.total = Number(r.data?.total || 0)
+  alerts.value = r?.records || []
+  alertPage.value.total = Number(r?.total || 0)
 }
 async function loadAftersales(page = 1) {
   afterPage.value.page = page
   const r = await logisticsApi.aftersales({ page, size: 10 })
-  aftersales.value = r.data?.records || []
-  afterPage.value.total = Number(r.data?.total || 0)
+  aftersales.value = r?.records || []
+  afterPage.value.total = Number(r?.total || 0)
 }
 async function loadSettlements(page = 1) {
   settlePage.value.page = page
   const r = await logisticsApi.settlements({ page, size: 10 })
-  settlements.value = r.data?.records || []
-  settlePage.value.total = Number(r.data?.total || 0)
+  settlements.value = r?.records || []
+  settlePage.value.total = Number(r?.total || 0)
 }
 
 function openProvider(record) { providerForm.value = record ? { ...record } : { status: 1, apiType: 'mock' }; providerVisible.value = true }
@@ -280,7 +281,7 @@ async function saveTemplate() {
 }
 async function showTrace(record) {
   const r = await logisticsApi.traces(record.waybillId)
-  traces.value = r.data || []
+  traces.value = Array.isArray(r) ? r : []
   traceVisible.value = true
 }
 async function handleAlert(record) {

@@ -23,7 +23,13 @@ public class LiveRoom {
     private String coverUrl;
     private String streamUrl;
     private Integer status;
+    /** 平台审核：0待审核 1通过 2驳回（开播准入门槛，平台后台批准） */
+    private Integer reviewStatus;
+    /** 审核驳回原因（回显给商户） */
+    private String rejectReason;
     private Integer viewerCount;
+    /** 观看峰值（进出场原子维护，直播复盘核心指标） */
+    private Integer peakViewerCount;
     private Long likeCount;
     private Long pinnedProdId;
     private String notice;
@@ -42,7 +48,7 @@ public class LiveRoom {
 
     /** 关联讲解中商品 (非数据库字段) */
     @TableField(exist = false)
-    private Object pinnedProduct;
+    private Product pinnedProduct;
 
     /** 直播间关联商品总数 (非数据库字段) */
     @TableField(exist = false)

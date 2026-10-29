@@ -80,8 +80,9 @@
           <div>
             <span class="mp-kicker">FIVE FACTORS</span>
             <h3>{{ isEn ? 'Five price factors' : '五维价格因子' }}</h3>
+            <p class="mp-factor-scope">{{ factorScopeNote }}</p>
           </div>
-          <span class="mp-chip subtle">{{ isEn ? 'Market-wide' : '市场级' }}</span>
+          <span class="mp-chip subtle mp-scope-chip" :title="factorScopeChip">{{ factorScopeChip }}</span>
         </header>
 
         <MarketGauge
@@ -91,7 +92,7 @@
           unit="/100"
           :size="262"
         />
-        <p class="mp-factor-brief">{{ factorLine }}</p>
+        <p class="mp-factor-brief">{{ factorSummaryText }}</p>
 
         <ul class="mp-factor-list">
           <li v-for="f in factors" :key="f.key" class="mp-factor-row" :class="f.impact">
@@ -104,14 +105,21 @@
               <span class="f-mid"></span>
               <span class="f-fill" :style="scoreStyle(f)"></span>
             </div>
-            <p v-if="f.newsRefs && f.newsRefs.length" class="f-evidence">
-              {{ f.newsRefs[0].title }}<span class="src">{{ f.newsRefs[0].source }}</span>
-            </p>
-            <p v-else class="f-evidence muted">{{ isEn ? 'No direct signal in recent news.' : '近期资讯中没有直接信号，暂按中性处理。' }}</p>
+            <p v-if="factorBasis(f)" class="f-basis" :title="factorBasis(f)">{{ factorBasis(f) }}</p>
+            <button
+              v-if="f.newsRefs && f.newsRefs.length"
+              type="button"
+              class="f-evidence-link"
+              :title="isEn ? 'Open evidence source' : '打开证据原文'"
+              @click="openFactorRef(f.newsRefs[0])"
+            >
+              <span class="f-evidence">{{ f.newsRefs[0].title }}<span class="src">{{ f.newsRefs[0].source }}</span><span class="f-ext" aria-hidden="true">↗</span></span>
+            </button>
+            <p v-else class="f-evidence muted">{{ isEn ? 'No direct signal for this product in recent news.' : '近期资讯中没有该商品的直接信号，暂按中性处理。' }}</p>
           </li>
         </ul>
         <div class="mp-factor-foot">
-          <p>{{ isEn ? 'Factors are market-wide signals. 50 is neutral; each arc length shows that factor’s strength share.' : '因子为市场级信号，综合指数 50 为中性；弧段长度表示各因子的强度占比。' }}</p>
+          <p>{{ isEn ? '50 marks a neutral composite index; each arc length shows the factor’s product-weighted strength share.' : '综合指数 50 为中性；弧段长度表示各因子按商品权重加权后的强度占比。' }}</p>
           <button type="button" @click="router.push('/price-monitor')">{{ isEn ? 'Full evidence' : '查看完整证据' }} →</button>
         </div>
       </aside>
@@ -130,8 +138,17 @@
         <div v-if="tickerNews.length" class="mp-ticker">
           <span class="mp-ticker-label"><i></i>{{ isEn ? 'BRIEF' : '快讯' }}</span>
           <Marquee :repeat="2" gap="2.6rem" duration="34s" pause-on-hover>
-            <span v-for="n in tickerNews" :key="'t' + n.id" class="mp-ticker-item">
-              <i></i>{{ n.title }}
+            <span
+              v-for="n in tickerNews"
+              :key="'t' + n.id"
+              class="mp-ticker-item"
+              role="button"
+              tabindex="0"
+              :title="n.title"
+              @click="openNews(n)"
+              @keydown.enter.prevent="openNews(n)"
+            >
+              <i></i>{{ n.title }}<span class="f-ext" aria-hidden="true">↗</span>
             </span>
           </Marquee>
         </div>
@@ -144,10 +161,28 @@
           <li v-for="n in news.slice(0, 4)" :key="n.id">
             <div class="news-top">
               <span class="news-cat" :class="n.category">{{ categoryText(n.category) }}</span>
+              <span v-if="newsBadge(n)" class="news-link-badge" :class="'lt-' + newsLinkType(n)">{{ newsBadge(n) }}</span>
               <time>{{ newsTime(n.publishedAt) }}</time>
             </div>
-            <a class="news-title" href="#" @click.prevent="openNews(n)">{{ n.title }}</a>
+            <a
+              class="news-title"
+              :href="newsHref(n)"
+              :target="newsExternal(n) ? '_blank' : undefined"
+              :rel="newsExternal(n) ? 'noopener noreferrer' : undefined"
+              @click="onNewsClick($event, n)"
+            >{{ n.title }}<span v-if="newsExternal(n)" class="f-ext" aria-hidden="true">↗</span></a>
             <p class="news-summary">{{ n.summary }}</p>
+            <div v-if="n.source" class="news-foot">
+              <span v-if="!newsSourceUrl(n)" class="news-src">{{ n.source }}</span>
+              <a
+                v-else
+                class="news-src"
+                :href="newsSourceUrl(n)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="isEn ? 'Open source site' : '打开来源站点'"
+              >{{ n.source }}<span class="f-ext" aria-hidden="true">↗</span></a>
+            </div>
           </li>
         </ul>
         <div v-else class="mp-empty">{{ newsLoading ? (isEn ? 'Loading news…' : '资讯加载中…') : (isEn ? 'No news yet.' : '暂无资讯') }}</div>
@@ -223,6 +258,13 @@ import { useRouter } from 'vue-router'
 import { priceMonitorApi } from '../../api'
 import { useUserStore } from '../../store/user'
 import { locale } from '../../i18n'
+import {
+  isInternalNews,
+  newsLinkLabel,
+  newsLinkUrl,
+  openNewsLink,
+  safeHttpUrl
+} from '../../utils/newsLink'
 import PriceKlineChart from './PriceKlineChart.vue'
 import SegmentedControl from '../ui/SegmentedControl.vue'
 import StatsBand from '../ui/StatsBand.vue'
@@ -286,14 +328,62 @@ const stance = computed(() => {
   if (idx <= 42) return { key: 'down', text: isEn.value ? 'Bearish' : '偏空' }
   return { key: 'neutral', text: isEn.value ? 'Neutral' : '中性' }
 })
+
+/** 因子卡 header chip：明确表达「按商品」而不是市场级 */
+const factorScopeChip = computed(() => {
+  const scope = trend.value?.industryName || selected.value?.title || ''
+  const prefix = isEn.value ? 'Per product' : '按商品'
+  return scope ? `${prefix} · ${scope}` : prefix
+})
+const factorScopeNote = computed(() => isEn.value
+  ? 'Factors are computed from this product’s price track and related news, so each product has its own factors.'
+  : '因子按当前商品的价格轨迹与相关资讯计算，不同商品因子不同。')
+
+/** 主导因子的可读名称（优先用 factors 里的 key 做本地化，兼容后端直接给 label） */
+function dominantLabel() {
+  const dominant = factorData.value?.dominant
+  if (!dominant) return '—'
+  const key = typeof dominant === 'string' ? dominant : dominant.key
+  const matched = factors.value.find(f => f.key === key)
+  if (matched) return factorLabel(matched)
+  if (typeof dominant === 'object' && dominant.label) return dominant.label
+  return '—'
+}
+
 const factorLine = computed(() => {
   const idx = factorIndex.value
-  if (idx == null) return isEn.value ? 'Waiting for the latest factor signals.' : '等待最新的因子信号。'
-  const dom = factors.value.find(f => f.key === factorData.value?.dominant?.key)
+  if (idx == null) return isEn.value ? 'Waiting for this product’s latest factor signals.' : '等待当前商品最新的因子信号。'
   if (isEn.value) {
-    return `Market five-factor index ${idx}/100 — ${stance.value.text.toLowerCase()}. Dominant factor: ${dom ? factorLabel(dom) : '—'}.`
+    return `This product’s five-factor index is ${idx}/100 — ${stance.value.text.toLowerCase()}. Dominant factor: ${dominantLabel()}.`
   }
-  return `市场五维因子综合指数 ${idx}/100，市场信号${stance.value.text}；当前主导因子：${dom ? factorLabel(dom) : '—'}。`
+  return `当前商品五维因子综合指数 ${idx}/100，商品信号${stance.value.text}；当前主导因子：${dominantLabel()}。`
+})
+
+/**
+ * 因子卡摘要：中文态直接用后端 summary；英文态用 systematicAnalysis 的结构化数值
+ * （priceChange30dPct / relativePct / dominant）自己拼英文，避免展示中文 summary。
+ * 后端字段缺失（并行开发 / 旧接口）时回退本地 factorLine 拼接。
+ */
+const factorSummaryText = computed(() => {
+  const data = factorData.value
+  if (!data) return factorLine.value
+  if (!isEn.value) {
+    // 中文态：优先用后端「系统性分析结论」（含自身涨跌 / 相对行业 / 库存等本商品数值），
+    // 其次用综合指数摘要，最后回退本地拼接，避免两行长文案重复播报。
+    const conclusion = typeof data.systematicAnalysis?.conclusion === 'string'
+      ? data.systematicAnalysis.conclusion.trim() : ''
+    const summary = typeof data.summary === 'string' ? data.summary.trim() : ''
+    return conclusion || summary || factorLine.value
+  }
+  const sys = data.systematicAnalysis
+  if (!sys || (sys.priceChange30dPct == null && sys.relativePct == null)) return factorLine.value
+  const bits = []
+  if (sys.priceChange30dPct != null) bits.push(`30-day price ${signedPct(sys.priceChange30dPct)}`)
+  if (sys.relativePct != null) bits.push(`${signedPct(sys.relativePct)} vs industry`)
+  const idx = factorIndex.value
+  if (idx != null) bits.push(`index ${idx}/100 (${stance.value.text.toLowerCase()})`)
+  bits.push(`dominant factor: ${dominantLabel()}`)
+  return `This product — ${bits.join(' · ')}.`
 })
 
 const candles = computed(() => trend.value?.ohlc || [])
@@ -369,12 +459,19 @@ const statItems = computed(() => {
   ]
 })
 
-/** 仪表环：按五维强度占比着色（沿用 Finance Bento Allocation 的占比着色逻辑） */
+/** 仪表环：按五维强度占比着色（沿用 Finance Bento Allocation 的占比着色逻辑）。
+ *  后端新增 per-product 的 weight 时把权重乘进 strength；字段缺失（旧数据）按 strength 原值。 */
 const factorColors = { sentiment: '#C8A45C', supply: '#B5654F', material: '#7E9BB8', international: '#7FA89B', politics: '#13233A' }
 const gaugeSegments = computed(() => {
-  const total = factors.value.reduce((n, f) => n + (Number(f.strength) || 0), 0) || 1
-  return factors.value.map(f => ({
-    share: (Number(f.strength) || 0) / total,
+  const weighted = factors.value.map(f => {
+    const strength = Math.max(0, Number(f.strength) || 0)
+    const weight = Number(f.weight)
+    const value = strength * (Number.isFinite(weight) && weight > 0 ? weight : 1)
+    return { key: f.key, value }
+  })
+  const total = weighted.reduce((n, f) => n + f.value, 0) || 1
+  return weighted.map(f => ({
+    share: f.value / total,
     color: factorColors[f.key] || '#C8A45C'
   }))
 })
@@ -462,10 +559,53 @@ function scoreStyle(f) {
 function filterOption(input, option) {
   return String(option.label || '').toLowerCase().includes(String(input || '').toLowerCase())
 }
-function openNews(n) {
-  if (n?.url) window.open(n.url, '_blank', 'noopener')
-  else router.push('/price-monitor')
+
+/** 因子依据：优先后端 basis，其次 productSignals[0]；缺失时返回空串（行不渲染） */
+function factorBasis(f) {
+  const raw = f?.basis || (Array.isArray(f?.productSignals) && f.productSignals.length ? f.productSignals[0] : '')
+  if (typeof raw === 'string') return raw.trim()
+  if (raw && typeof raw === 'object') return String(raw.text || raw.label || raw.title || '').trim()
+  return ''
 }
+
+/** 资讯标题最终 href：外链原文 / 检索兜底；无合法链接时返回 undefined（按钮态） */
+function newsHref(n) {
+  return newsLinkUrl(n) || undefined
+}
+function newsExternal(n) {
+  return !!newsLinkUrl(n) && !isInternalNews(n)
+}
+function newsSourceUrl(n) {
+  return safeHttpUrl(n?.sourceUrl)
+}
+function newsLinkType(n) {
+  const type = String(n?.linkType || '').toLowerCase()
+  if (type) return type
+  if (isInternalNews(n)) return 'internal'
+  return newsLinkUrl(n) ? 'article' : ''
+}
+function newsBadge(n) {
+  return newsLinkLabel(n, isEn.value)
+}
+function onNewsClick(e, n) {
+  if (!newsLinkUrl(n)) {
+    e.preventDefault()
+    openNews(n)
+    return
+  }
+  if (isInternalNews(n)) {
+    e.preventDefault()
+    openNewsLink(n, router)
+  }
+}
+function openNews(n) {
+  // 后端字段缺失（旧数据）时退化为站内价格情报台，保持原有可用性
+  if (!openNewsLink(n, router)) router.push('/price-monitor')
+}
+function openFactorRef(ref) {
+  if (!openNewsLink(ref, router)) router.push('/price-monitor')
+}
+
 function goLogin() {
   router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
 }
@@ -514,7 +654,8 @@ async function loadFactors() {
   const seq = ++factorSeq
   factorLoading.value = true
   try {
-    const data = await priceMonitorApi.factors(selectedId.value)
+    // 因子按商品计算，lang 让后端本地化 summary / systematicAnalysis 文案
+    const data = await priceMonitorApi.factors(selectedId.value, isEn.value ? 'en' : 'zh')
     if (seq === factorSeq) {
       factorData.value = data
       factors.value = data?.factors || []
@@ -591,6 +732,8 @@ watch(locale, () => {
   ai.value = null
   askResult.value = null
   askInput.value = ''
+  // 因子 summary / 依据随语言变化，切换语言后按新语言重新拉取
+  if (selectedId.value) loadFactors()
 })
 
 onMounted(async () => {
@@ -720,6 +863,15 @@ onBeforeUnmount(() => {
 .f-evidence.muted { color: var(--ll-muted, #94A3B8); }
 .f-evidence .src { margin-left: 4px; color: var(--ll-brand-gold-strong, #80601F); font-size: 9.5px; white-space: nowrap; }
 
+/* 因子按商品：scope 说明 + 每因子依据 + 可点击证据 */
+.mp-factor-scope { margin: 6px 0 0; max-width: 300px; font-size: 10.5px; line-height: 1.55; color: var(--ll-muted, #64748B); }
+.mp-scope-chip { flex: none; max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+.f-basis { margin: 4px 0 0; font-size: 10px; line-height: 1.5; color: var(--ll-muted, #94A3B8); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.f-evidence-link { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+.f-evidence-link:hover .f-evidence { color: var(--ll-brand-blue, #1E6EB8); }
+.f-ext { margin-left: 3px; font-size: 9px; color: var(--ll-brand-gold-strong, #80601F); }
+.f-evidence-link:hover .f-ext { color: var(--ll-brand-blue, #1E6EB8); }
+
 /* 资讯卡 */
 .mp-ticker { display: flex; align-items: center; gap: 12px; margin: 0 -4px 14px; padding-bottom: 12px; border-bottom: 1px solid rgba(19, 35, 58, .06); }
 .mp-ticker-label { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800; letter-spacing: .08em; color: #9B2D20; background: rgba(155, 45, 32, .07); padding: 3px 8px; border-radius: 99px; }
@@ -737,10 +889,21 @@ onBeforeUnmount(() => {
 .news-cat.supply { color: #2E7D5B; background: rgba(46, 125, 91, .09); }
 .news-cat.policy { color: #80601F; background: rgba(200, 164, 92, .16); }
 .news-cat.international { color: #1E6EB8; background: rgba(30, 110, 184, .09); }
-.news-top time { font-size: 9.5px; color: var(--ll-muted, #94A3B8); font-variant-numeric: tabular-nums; }
+.news-top time { font-size: 9.5px; color: var(--ll-muted, #94A3B8); font-variant-numeric: tabular-nums; margin-left: auto; }
 .news-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; line-height: 1.55; font-weight: 650; color: var(--ll-brand-base, #13233A); text-decoration: none; }
 .news-title:hover { color: var(--ll-brand-blue, #1E6EB8); }
 .news-summary { margin: 4px 0 0; font-size: 10.5px; line-height: 1.55; color: var(--ll-muted, #64748B); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 跳转方式徽标 + 来源站点外链 + 快讯可点击 */
+.news-link-badge { font-size: 9px; padding: 1.5px 7px; border-radius: 99px; white-space: nowrap; background: rgba(19, 35, 58, .05); color: var(--ll-muted, #64748B); }
+.news-link-badge.lt-article { color: #9B2D20; background: rgba(155, 45, 32, .08); }
+.news-link-badge.lt-source { color: #1E6EB8; background: rgba(30, 110, 184, .09); }
+.news-link-badge.lt-search { color: #80601F; background: rgba(200, 164, 92, .16); }
+.news-link-badge.lt-internal { color: #2E7D5B; background: rgba(46, 125, 91, .09); }
+.news-foot { display: flex; align-items: center; gap: 8px; margin-top: 5px; min-height: 12px; }
+.news-src { font-size: 9.5px; color: var(--ll-brand-gold-strong, #80601F); text-decoration: none; }
+a.news-src:hover { color: var(--ll-brand-blue, #1E6EB8); text-decoration: underline; }
+.mp-ticker-item { cursor: pointer; transition: color .2s ease; }
+.mp-ticker-item:hover { color: var(--ll-brand-blue, #1E6EB8); }
 .mp-empty { padding: 28px 0; text-align: center; font-size: 12px; color: var(--ll-muted, #94A3B8); }
 
 /* AI 卡 */
@@ -808,6 +971,10 @@ onBeforeUnmount(() => {
   .mp-select { min-width: 100%; max-width: none; }
   .mp-live { margin-left: 0; }
   .mp-news-list { grid-template-columns: 1fr; }
+  /* 窄屏裁剪装饰光晕：560px 模糊色斑溢出视口会让页面横向平移（VmmemWSL 之外的首页适配项） */
+  .mp-section { overflow: hidden; }
+  .mp-tint.a { width: 420px; height: 260px; right: -120px; }
+  .mp-tint.b { width: 360px; height: 250px; left: -140px; }
 }
 @media (max-width: 640px) {
   .mp-section { padding: 30px 0 0; }

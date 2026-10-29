@@ -44,6 +44,9 @@ public class ProductService {
     private final AuditLogMapper auditLogMapper;
     private final AuditService auditService;
     private final com.lanlink.shopping.module.pricemonitor.service.PriceMonitorService priceMonitorService;
+    /** 语义搜索（可空：单参构造/单测兼容；null 时关键词走原 LIKE） */
+    @Autowired(required = false)
+    private com.lanlink.shopping.module.search.SearchService searchService;
 
     @Autowired
     public ProductService(ProductMapper productMapper,
@@ -87,6 +90,22 @@ public class ProductService {
         return productMapper.selectPage(new Page<>(current, size), qw);
     }
 
+    /**
+     * 商品搜索（P1-2 语义搜索）：jieba 分词多词 LIKE + bge-m3 向量 KNN 双路 RRF 融合。
+     * searchService 未注入（单测兼容）时走原 LIKE；SearchService 内部含向量开关与降级链，
+     * catId/indId 结构化筛选存在时仍走原精确过滤链（语义路不带结构化筛选）。
+     */
+    public IPage<Product> searchPage(long current, long size, String keyword, Long catId, Long indId, String sort) {
+        if (StringUtils.hasText(keyword) && catId == null && indId == null && searchService != null) {
+            try {
+                return searchService.search(keyword, current, size);
+            } catch (Exception e) {
+                // 语义搜索任何异常回退原 LIKE（可回滚承诺）
+            }
+        }
+        return page(current, size, keyword, catId, indId, sort);
+    }
+
     public Product detail(Long id) {
         Product p = productMapper.selectById(id);
         if (p == null) throw new BusinessException("商品不存在或已下架");
@@ -99,6 +118,11 @@ public class ProductService {
     public Product detailForPublic(Long id) {
         Product p = detail(id);
         if (p.getStatus() == null || p.getStatus() != 1) throw new BusinessException("商品不存在或已下架");
+        // 回填类目名称：前端习惯画像的类目维度依赖此字段
+        if (p.getCatId() != null) {
+            Category cat = categoryMapper.selectById(p.getCatId());
+            if (cat != null) p.setCatName(cat.getName());
+        }
         return p;
     }
 
@@ -117,6 +141,10 @@ public class ProductService {
         p.setCreateTime(LocalDateTime.now());
         p.setUpdateTime(LocalDateTime.now());
         productMapper.insert(p);
+        // 价格智能监控：记录首发价（走势图起点）
+        if (priceMonitorService != null && p.getPrice() != null) {
+            priceMonitorService.recordPriceChange(p, null, p.getPrice(), "MERCHANT", null);
+        }
         return p;
     }
 
@@ -372,7 +400,7 @@ public class ProductService {
         p.setUpdateTime(LocalDateTime.now());
         productMapper.updateById(p);
         // 价格智能监控：调价留痕 + 预警评估（同事务）
-        if (priceBefore != null && p.getPrice() != null && priceBefore.compareTo(p.getPrice()) != 0) {
+        if (priceMonitorService != null && priceBefore != null && p.getPrice() != null && priceBefore.compareTo(p.getPrice()) != 0) {
             priceMonitorService.recordPriceChange(p, priceBefore, p.getPrice(), "MERCHANT", null);
         }
         return p;

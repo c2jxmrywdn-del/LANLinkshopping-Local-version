@@ -21,6 +21,8 @@ public class LiveProduct {
     private Long prodId;
     private BigDecimal livePrice;
     private Integer liveStock;
+    /** 讲解商品点击数（归因漏斗：曝光→点击→下单） */
+    private Integer clickCount;
     private Integer sortOrder;
     private LocalDateTime createTime;
 

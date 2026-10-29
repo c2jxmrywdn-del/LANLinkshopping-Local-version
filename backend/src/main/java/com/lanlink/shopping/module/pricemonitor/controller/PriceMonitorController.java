@@ -4,7 +4,6 @@ import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.integration.security.RequirePerm;
-import com.lanlink.shopping.module.pricemonitor.entity.MarketNews;
 import com.lanlink.shopping.module.pricemonitor.entity.PriceAlert;
 import com.lanlink.shopping.module.pricemonitor.service.MarketNewsService;
 import com.lanlink.shopping.module.pricemonitor.service.PriceMonitorAiService;
@@ -14,14 +13,16 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 价格智能监控 API（买家 + 商户端）
  *  - GET  /price-monitor/trend/{prodId}?days=30      价格走势+日K+高低价（公开，白名单）
- *  - GET  /price-monitor/factors/{prodId}            五维价格因子看板（公开，白名单）
- *  - GET  /price-monitor/news                        市场资讯（公开，白名单）
+ *  - GET  /price-monitor/factors/{prodId}?lang=zh    五维价格因子看板（公开，白名单）
+ *  - GET  /price-monitor/news?category=&limit=       市场资讯 + 信息源头链接（公开，白名单）
  *  - GET  /price-monitor/analysis/{prodId}           智能调价建议（登录）
  *  - POST /price-monitor/alerts                      订阅价格预警（登录）
  *  - GET  /price-monitor/my/alerts                   我的预警订阅（登录）
@@ -94,16 +95,21 @@ public class PriceMonitorController {
 
     // ===== 市场资讯 + AI 解读 =====
 
+    /**
+     * 每日资讯：每条记录在基础字段外附带 url/sourceUrl/searchUrl/linkType，
+     * 前端按 linkType（article/source/search 新开页签，internal 走站内路由）跳转信息源头。
+     */
     @GetMapping("/news")
-    public R<List<MarketNews>> news(@RequestParam(required = false) String category,
-                                    @RequestParam(defaultValue = "20") int limit) {
-        return R.ok(newsService.list(category, limit));
+    public R<List<Map<String, Object>>> news(@RequestParam(required = false) String category,
+                                             @RequestParam(defaultValue = "20") int limit) {
+        return R.ok(newsService.feed(category, limit));
     }
 
-    /** 五维价格因子看板（公开：首页每日行情、商品详情页均可展示）。 */
+    /** 五维价格因子看板（公开：首页每日行情、商品详情页均可展示；lang 支持 zh/en）。 */
     @GetMapping("/factors/{prodId}")
-    public R<Map<String, Object>> factors(@PathVariable Long prodId) {
-        return R.ok(aiService.factors(prodId));
+    public R<Map<String, Object>> factors(@PathVariable Long prodId,
+                                          @RequestParam(defaultValue = "zh") String lang) {
+        return R.ok(aiService.factors(prodId, lang));
     }
 
     @GetMapping("/ai-analysis/{prodId}")

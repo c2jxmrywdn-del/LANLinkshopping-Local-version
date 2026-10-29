@@ -447,8 +447,8 @@ const dockItems = computed(() => [
   { id: 'mall', label: 'B2B商城', icon: markRaw(Store), gradient: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)' },
   { id: 'cart', label: '购物车', icon: markRaw(ShoppingCart), gradient: 'linear-gradient(135deg, #06B6D4 0%, #0891B2 100%)', badge: cart.count > 0 ? String(cart.count) : '' },
   { id: 'orders', label: '我的订单', icon: markRaw(Package), gradient: 'linear-gradient(135deg, #10B981 0%, #059669 100%)' },
-  { id: 'credit', label: '企业账期', icon: markRaw(CreditCard), gradient: 'linear-gradient(135deg, #6366F1 0%, #4338CA 100%)' },
-  { id: 'top', label: '回到顶部', icon: markRaw(ArrowUp), gradient: 'linear-gradient(135deg, #64748B 0%, #475569 100%)' }
+  { id: 'credit', label: '企业账期', icon: markRaw(CreditCard), gradient: 'linear-gradient(135deg, #6366F1 0%, #4338CA 100%)', desktopOnly: true },
+  { id: 'top', label: '回到顶部', icon: markRaw(ArrowUp), gradient: 'linear-gradient(135deg, #64748B 0%, #475569 100%)', desktopOnly: true }
 ])
 
 function handleDockSelect(item) {

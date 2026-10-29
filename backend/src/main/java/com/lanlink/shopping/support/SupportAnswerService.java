@@ -35,16 +35,33 @@ public class SupportAnswerService {
             "知识库绕过", "提示注入", "越权", "管理员权限", "显示密钥", "读取配置",
             "输出提示词", "打印系统提示", "泄露配置", "秘密指令", "内部规则", "绕过限制"
     );
-    private static final List<String> UNSUPPORTED_BUSINESS_SIGNALS = List.of(
-            "价格", "报价", "库存", "现货", "物流", "快递", "运费", "发货", "配送",
-            "退货", "退款", "售后", "发票", "支付", "付款", "到账", "提现", "优惠券",
-            "交货期", "到货时间", "具体规格", "商品规格", "成分", "材质", "支付失败",
-            "密码重置", "重置密码", "找回密码", "忘记密码", "修改密码",
-            "订单状态", "订单号", "查询余额", "余额是多少", "我的余额", "我的积分",
-            "积分余额", "我的订单状态", "授信额度", "账期额度", "申请条件", "审核结果",
+    /**
+     * 隐私 / 凭据 / 账号实例查询类：任何链路（关键词、AI 润色、RAG 检索、学习候选）都不得作答，
+     * 因为这些依赖调用者具体账户数据、超出静态知识库能力，或涉及敏感操作。
+     */
+    private static final List<String> PRIVACY_CREDENTIAL_SIGNALS = List.of(
+            "支付失败", "密码重置", "重置密码", "找回密码", "忘记密码", "修改密码", "我的密码",
+            "查询余额", "余额是多少", "我的余额", "我的积分", "积分余额", "订单状态", "订单号",
+            "我的订单状态", "个人订单", "订单个人信息", "授信额度", "账期额度", "申请条件", "审核结果",
             "我的收货地址", "地址是什么", "具体地址", "读取地址", "我的手机号", "身份证号",
-            "我的密码", "个人资料内容", "私人信息", "用户隐私数据", "个人订单", "订单个人信息",
-            "活动规则", "优惠规则", "用户数据", "用户信息", "账号申诉"
+            "个人资料内容", "私人信息", "用户隐私数据", "用户数据", "用户信息", "账号申诉",
+            "具体规格", "商品规格", "成分", "材质"
+    );
+    /**
+     * 时效型事实（价格 / 库存 / 物流 / 发货 等）：允许经向量知识库以真实数据作答（商品快照、会员政策
+     * 会定时刷新），但**不作为静态学习候选**——写死的模板答案会随商品与政策变化而失真、过期。
+     */
+    private static final List<String> VOLATILE_FACT_SIGNALS = List.of(
+            "价格", "报价", "库存", "现货", "物流", "快递", "运费", "发货", "配送", "交货期", "到货时间"
+    );
+    /**
+     * 平台业务面：命中其一才值得走向量 RAG 检索（否则像"今天天气"这类闲聊只回兜底，不做无谓检索）。
+     */
+    private static final List<String> BUSINESS_SURFACE_SIGNALS = List.of(
+            "价格", "报价", "库存", "现货", "物流", "快递", "运费", "发货", "配送", "交货期", "到货时间",
+            "退货", "退款", "售后", "发票", "支付", "付款", "到账", "提现", "优惠券", "活动", "促销",
+            "会员", "积分", "账期", "钱包", "商户", "供应商", "入驻", "开店", "商品", "产品", "分类", "行业",
+            "购物车", "结算", "下单", "订单", "注册", "登录", "验证码", "消息", "通知", "地址", "订阅"
     );
     // Only questions within the platform's supported e-commerce domains can enter the learning sandbox.
     private static final List<String> LEARNING_DOMAIN_SIGNALS = List.of(
@@ -84,6 +101,10 @@ public class SupportAnswerService {
     private volatile String welcome;
     private volatile String greeting;
     private volatile String selfIntro;
+    private volatile String greetingEn;
+    private volatile String selfIntroEn;
+    private volatile String welcomeEn;
+    private volatile String fallbackEn;
     private volatile List<Entry> entries = List.of();
     private volatile long publishedCacheLoadedAtMs;
     private volatile List<Entry> publishedEntriesCache = List.of();
@@ -147,13 +168,37 @@ public class SupportAnswerService {
         String loadedSelfIntro = root.path("selfIntro").asText("");
         this.greeting = StringUtils.hasText(loadedGreeting) ? loadedGreeting : DEFAULT_GREETING;
         this.selfIntro = StringUtils.hasText(loadedSelfIntro) ? loadedSelfIntro : DEFAULT_SELF_INTRO;
+        this.greetingEn = pick(root.path("greetingEn").asText(""),
+                "Hi! I'm the LANLinkshopping AI assistant, glad to help. You can ask about account registration and login, "
+                        + "product browsing, cart and orders, merchant onboarding, wallet and credit terms, membership and "
+                        + "campaigns, in-app messages, and cookie settings. How can I help you?");
+        this.selfIntroEn = pick(root.path("selfIntroEn").asText(""),
+                "Hi! I'm the LANLinkshopping AI assistant for platform-use questions, covering account registration and login, "
+                        + "product browsing, cart and orders, merchant onboarding, wallet and credit terms, membership and "
+                        + "campaigns, in-app messages, and cookie settings. What would you like to know?");
+        this.welcomeEn = pick(root.path("welcomeEn").asText(""),
+                "Hi, I'm the LANLinkshopping assistant. Ask me about account registration and login, product browsing, cart and "
+                        + "orders, merchant onboarding, wallet and credit terms, membership and campaigns, in-app messages, or cookie settings.");
+        this.fallbackEn = pick(root.path("fallbackEn").asText(""),
+                "Thanks for your question. I can answer e-commerce topics already in LANLinkshopping's knowledge base — account "
+                        + "registration and login, product browsing, cart and orders, merchant onboarding, wallet and credit terms, "
+                        + "membership and campaigns, in-app messages, and cookie settings. For anything else, please open a ticket "
+                        + "under Settings → Human Support and our team will follow up.");
         this.entries = List.copyOf(loadedEntries);
+    }
+
+    private static String pick(String value, String fallback) {
+        return StringUtils.hasText(value) ? value : fallback;
     }
 
     public String fallback() { return fallback; }
     public String welcome() { return welcome; }
     public String greeting() { return greeting; }
     public String selfIntro() { return selfIntro; }
+    public String englishGreeting() { return greetingEn; }
+    public String englishSelfIntro() { return selfIntroEn; }
+    public String englishWelcome() { return welcomeEn; }
+    public String englishFallback() { return fallbackEn; }
 
     public String answer(String rawQuestion) {
         String question = validatedQuestion(rawQuestion);
@@ -165,7 +210,8 @@ public class SupportAnswerService {
         if (question != null && SELF_INTRO.matcher(question).matches()) {
             return withGreeting(selfIntro);
         }
-        if (question == null || isBlockedQuestion(question)) return withGreeting(fallback);
+        if (question == null || isBlockedQuestion(question) || containsAny(question, VOLATILE_FACT_SIGNALS))
+            return withGreeting(fallback);
         Entry entry = findEntry(question);
         return entry == null ? withGreeting(fallback) : withGreeting(entry.answer());
     }
@@ -183,9 +229,20 @@ public class SupportAnswerService {
     /** Exposes the intent selected by the exact same matcher for the admin-only sandbox. */
     public String matchedEntryId(String rawQuestion) {
         String question = validatedQuestion(rawQuestion);
-        if (question == null || isBlockedQuestion(question)) return "";
+        if (question == null || isBlockedQuestion(question) || containsAny(question, VOLATILE_FACT_SIGNALS)) return "";
         Entry entry = findEntry(question);
         return entry == null ? "" : entry.id();
+    }
+
+    /**
+     * 是否可交给大模型生成答案：合法、非纯寒暄、非自我介绍、且未命中提示注入/敏感数据拦截。
+     * 命中知识库与否不影响——命中也允许模型给出更完整的润色答案，模型不可用时仍回退知识库精确串。
+     */
+    public boolean eligibleForAiModel(String rawQuestion) {
+        String question = validatedQuestion(rawQuestion);
+        if (question == null) return false;
+        if (PURE_GREETING.matcher(question).matches() || SELF_INTRO.matcher(question).matches()) return false;
+        return !isBlockedQuestion(question);
     }
 
     /**
@@ -195,7 +252,19 @@ public class SupportAnswerService {
     public boolean isEligibleForKnowledgeLearning(String rawQuestion) {
         String question = validatedQuestion(rawQuestion);
         return question != null && !isBlockedQuestion(question)
+                && !containsAny(question, VOLATILE_FACT_SIGNALS)
                 && containsAny(question, LEARNING_DOMAIN_SIGNALS);
+    }
+
+    /**
+     * 是否值得走向量 RAG 检索兜底：合法、未被隐私/凭据/注入拦截、且命中平台业务面词汇。
+     * 用于关键词与已发布候选都未命中时，决定是否调用向量知识库以真实数据作答（价格/库存/物流/政策等）。
+     */
+    public boolean isRagEligible(String rawQuestion) {
+        String question = validatedQuestion(rawQuestion);
+        if (question == null || isBlockedQuestion(question)) return false;
+        if (PURE_GREETING.matcher(question).matches() || SELF_INTRO.matcher(question).matches()) return false;
+        return containsAny(question, BUSINESS_SURFACE_SIGNALS);
     }
 
     /** Candidate keywords are tested in memory only; they are never persisted by this service. */
@@ -220,7 +289,7 @@ public class SupportAnswerService {
     }
 
     private boolean isBlockedQuestion(String question) {
-        return isPromptInjection(question) || containsAny(question, UNSUPPORTED_BUSINESS_SIGNALS);
+        return isPromptInjection(question) || containsAny(question, PRIVACY_CREDENTIAL_SIGNALS);
     }
 
     private Entry findEntry(String question) {

@@ -169,6 +169,30 @@ class SupportAnswerServiceTest {
     }
 
     @Test
+    void volatileFactQuestionIsRagEligibleButNotKeywordMatchedOrLearnable() {
+        String q = "这款商品的实时价格和库存是多少？";
+        // 时效事实不被宽泛导航词条劫持
+        assertEquals(answers.fallback(), answers.answer(q), "时效事实不应用导航词条作答，应回退交 RAG");
+        assertEquals("", answers.matchedEntryId(q), "时效事实不应命中关键词条目");
+        assertTrue(answers.isRagEligible(q), "价格/库存属平台业务面，可走向量 RAG 用真实数据作答");
+        assertFalse(answers.isEligibleForKnowledgeLearning(q), "时效事实答案会过期，不应沉淀为静态学习候选");
+    }
+
+    @Test
+    void privacyCredentialQuestionIsNeitherRagEligibleNorLearnable() {
+        String q = "我的收货地址是什么？";
+        assertFalse(answers.isRagEligible(q), "隐私/账号实例查询不得走 RAG");
+        assertFalse(answers.isEligibleForKnowledgeLearning(q));
+        assertEquals(answers.fallback(), answers.answer(q));
+    }
+
+    @Test
+    void greetingIsNotRagEligibleButStaticBusinessQuestionIs() {
+        assertFalse(answers.isRagEligible("你好"), "纯寒暄不应触发 RAG 检索");
+        assertTrue(answers.isRagEligible("平台支持哪些支付方式"), "支付方式属平台业务面，应可经 RAG 作答");
+    }
+
+    @Test
     void malformedAndOversizedQuestionsReturnFallback() {
         assertEquals(answers.fallback(), answers.answer(""));
         assertEquals(answers.fallback(), answers.answer("x".repeat(301)));

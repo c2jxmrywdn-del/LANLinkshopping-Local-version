@@ -35,7 +35,7 @@
           <b>{{ item.name }}</b>
           <small>{{ item.handle }}</small>
         </span>
-        <span class="author-card__arrow">↗</span>
+        <AppleIcon class="author-card__arrow" name="arrowupright" :size="15" />
       </a>
         </div>
       </section>
@@ -60,7 +60,7 @@
               <b>{{ item.name }}</b>
               <small>{{ item.handle }}</small>
             </span>
-            <span class="author-card__arrow">↗</span>
+            <AppleIcon class="author-card__arrow" name="arrowupright" :size="15" />
           </a>
         </div>
       </section>
@@ -70,6 +70,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import AppleIcon from './ui/AppleIcon.vue'
 
 const props = defineProps({
   variant: { type: String, default: 'compact' },

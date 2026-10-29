@@ -575,8 +575,8 @@
               error-text="原件加载失败"
             />
             <div class="cert-tips">
-              <p>✓ 执照经高精度 OCR 初筛，主体名称与工商注册库一致</p>
-              <p>✓ 包含法定代表人章与工商行政管理局电子印章</p>
+              <p><AppleIcon name="confirm" :size="13" /> 执照经高精度 OCR 初筛，主体名称与工商注册库一致</p>
+              <p><AppleIcon name="confirm" :size="13" /> 包含法定代表人章与工商行政管理局电子印章</p>
               <p><a :href="merchantDetail.merchant.licenseUrl" target="_blank">查看原图 ↗</a></p>
             </div>
           </div>
@@ -864,6 +864,7 @@ import {
 } from '@ant-design/icons-vue'
 import { productApi, merchantApi } from '../../api'
 import CertImage from '../../components/ui/CertImage.vue'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 
 // 指标统计
 const stats = reactive({

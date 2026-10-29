@@ -45,10 +45,43 @@
       </a-card>
     </div>
 
+    <a-card :bordered="false" class="habit-card">
+      <div class="habit-head">
+        <strong>用户习惯分析（分析类 Cookie）</strong>
+        <a-tag :color="habit ? 'green' : 'default'">{{ habit ? '已开启' : '未开启' }}</a-tag>
+      </div>
+      <template v-if="habit">
+        <div class="habit-grid">
+          <div class="habit-item"><b>{{ habit.visits }}</b><p>近 30 天访问次数</p></div>
+          <div class="habit-item"><b>{{ habit.topSearches.length }}</b><p>记录的搜索偏好</p></div>
+          <div class="habit-item"><b>{{ habit.recentProducts.length }}</b><p>最近浏览的商品</p></div>
+        </div>
+        <ul v-if="habit.topSearches.length" class="habit-list">
+          <li v-for="s in habit.topSearches" :key="s.term">搜索"{{ s.term }}" × {{ s.count }}</li>
+        </ul>
+        <ul v-if="habit.topCategories.length" class="habit-list">
+          <li v-for="c in habit.topCategories" :key="c.name">偏好类目：{{ c.name }} × {{ c.count }}</li>
+        </ul>
+        <div class="habit-actions">
+          <a-button size="small" @click="clearHabitData">清除我的习惯数据</a-button>
+          <small>登录状态下会同步清除服务端副本；画像仅存浏览偏好，不含凭证信息。</small>
+        </div>
+      </template>
+      <p v-else class="habit-off">
+        未开启分析类 Cookie：平台不会记录你的搜索、浏览与访问习惯。可在上方 Cookie 分类中开启"分析 Cookie"。
+      </p>
+    </a-card>
+
     <a-card :bordered="false">
       <div class="notice">
         <b>说明</b>
         <span>你可以随时修改 Cookie 偏好。撤回分析授权后，平台会同时清除本地分析会话；不会清除服务端登录会话。</span>
+      </div>
+      <div class="doc-links">
+        <strong>相关文档全文：</strong>
+        <a @click.prevent="$router.push({ name: 'legal-doc', params: { docKey: 'privacy' } })">《隐私政策》</a>
+        <a @click.prevent="$router.push({ name: 'legal-doc', params: { docKey: 'cookies' } })">《Cookie 政策》</a>
+        <a @click.prevent="$router.push({ name: 'legal-doc', params: { docKey: 'terms' } })">《用户服务协议》</a>
       </div>
     </a-card>
   </div>
@@ -56,9 +89,25 @@
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { message } from 'ant-design-vue'
 import { openCookiePreferences, readCookieConsent } from '../utils/cookieConsent'
+import { habitSummary, clearHabits } from '../utils/habitTracker'
 
 const consent = ref(readCookieConsent())
+const habit = ref(habitSummary())
+
+async function clearHabitData() {
+  await clearHabits()
+  habit.value = habitSummary()
+  message.success('习惯数据已清除（含服务端副本，如已登录）')
+}
+
+/** 授权撤回联动：关闭"分析 Cookie"即清除习惯画像（本机 + 服务端），个性化推荐随之自动降级 */
+async function withdrawHabitIfRevoked(newConsent) {
+  if (newConsent && newConsent.categories && !newConsent.categories.analytics) {
+    await clearHabits()
+  }
+}
 
 const categories = [
   { key: 'necessary', title: '必要 Cookie', required: true, enabled: true, description: '登录、会话、安全验证、购物车和核心交易流程。', scope: '始终启用' },
@@ -75,6 +124,8 @@ function enabledText(key) {
 
 function sync(event) {
   consent.value = event.detail || readCookieConsent()
+  habit.value = habitSummary()
+  withdrawHabitIfRevoked(consent.value)
 }
 
 onMounted(() => window.addEventListener('ll-cookie-consent-changed', sync))
@@ -104,6 +155,24 @@ onBeforeUnmount(() => window.removeEventListener('ll-cookie-consent-changed', sy
 .category-grid small { color: #98A2B3; font-size: 11px; }
 .notice { display: flex; gap: 14px; color: #667085; font-size: 12px; line-height: 1.7; }
 .notice b { color: #13233A; flex: 0 0 auto; }
+.doc-links { margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f3f6; color: #667085; font-size: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.doc-links strong { color: #13233A; }
+.doc-links a { color: #1E6EB8; cursor: pointer; }
+.doc-links a:hover { text-decoration: underline; }
+.habit-card { margin-bottom: 16px; }
+.habit-head { display: flex; align-items: center; gap: 10px; color: #13233A; }
+.habit-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0 10px; }
+.habit-item { padding: 13px; border: 1px solid #edf0f3; border-radius: 12px; }
+.habit-item b { color: #1E6EB8; font-size: 19px; }
+.habit-item p { margin: 4px 0 0; color: #98A2B3; font-size: 11px; }
+.habit-list { margin: 6px 0; padding-left: 18px; color: #667085; font-size: 12px; line-height: 1.8; }
+.habit-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.habit-actions small { color: #98A2B3; font-size: 11px; line-height: 1.6; }
+.habit-off { margin: 10px 0 0; color: #667085; font-size: 12px; line-height: 1.7; }
+@media (max-width: 575px) {
+  .habit-grid { grid-template-columns: 1fr; }
+  .habit-actions { flex-direction: column; align-items: flex-start; }
+}
 @media (max-width: 767px) {
   .hero-card { flex-direction: column; align-items: stretch; padding: 22px; }
   .status-grid { grid-template-columns: 1fr 1fr; }

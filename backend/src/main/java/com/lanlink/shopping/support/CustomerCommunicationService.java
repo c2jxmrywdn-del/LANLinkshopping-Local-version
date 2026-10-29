@@ -56,6 +56,13 @@ public class CustomerCommunicationService {
     private final AuditService auditService;
     private final OutboundModelConfigService outboundModelConfigService;
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(CustomerCommunicationService.class);
+
+    /** 向量知识库灌装服务：审核通过的学习候选同步回写，供 RAG 检索使用（可选注入，缺失时跳过回填）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.module.aikb.KnowledgeIngestService knowledgeIngest;
+
     public CustomerCommunicationService(JdbcTemplate jdbc, ObjectMapper objectMapper,
                                         SupportAnswerService answers, AuditService auditService) {
         this(jdbc, objectMapper, answers, auditService, null);
@@ -490,7 +497,7 @@ public class CustomerCommunicationService {
         }
         String reviewNote = sanitize(note, 500);
         List<Map<String, Object>> candidateRows = jdbc.queryForList(
-                "SELECT id, entry_id, answer_text, keywords_json FROM t_support_learning_candidate WHERE id = ? AND status = 'pending'", id);
+                "SELECT id, entry_id, question_text, answer_text, keywords_json FROM t_support_learning_candidate WHERE id = ? AND status = 'pending'", id);
         if (candidateRows.isEmpty()) throw new IllegalArgumentException("候选不存在或已审核，请刷新列表。");
 
         // 如果审核人调整了关键词，更新关键词
@@ -532,6 +539,22 @@ public class CustomerCommunicationService {
         }
         auditService.record(admin.getUserId(), "published".equals(newStatus) ? "SUPPORT_KNOWLEDGE_PUBLISHED" : "SUPPORT_KNOWLEDGE_REJECTED",
                 "候选知识 ID " + id + "（" + String.valueOf(candidateRows.get(0).get("entry_id")) + "）审核结果：" + newStatus, request);
+        // 学习闭环回填：审核通过的新知识同步进向量知识库（RAG 可用），拒绝则移除既有学习条目。
+        // 向量库异常绝不影响已发布的 MySQL 状态。
+        try {
+            if (knowledgeIngest != null) {
+                String entryId = String.valueOf(candidateRows.get(0).get("entry_id"));
+                String questionText = candidateRows.get(0).get("question_text") == null
+                        ? "" : String.valueOf(candidateRows.get(0).get("question_text"));
+                if ("published".equals(newStatus)) {
+                    knowledgeIngest.ingestLearned(entryId, questionText, finalAnswer);
+                } else {
+                    knowledgeIngest.removeLearned(entryId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[support-learning] vector backfill skipped for candidate {} : {}", id, e.getMessage());
+        }
     }
 
     @Transactional

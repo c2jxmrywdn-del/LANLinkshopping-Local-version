@@ -19,10 +19,19 @@
       </div>
     </header>
 
-    <div v-if="news.length" class="pi-tape" aria-hidden="true">
+    <div v-if="news.length" class="pi-tape">
       <span class="pi-tape-label"><i></i>{{ isEn ? 'LIVE' : '快讯' }}</span>
       <Marquee :repeat="2" gap="2.6rem" duration="38s" pause-on-hover>
-        <span v-for="n in news" :key="'tp' + n.id" class="tape-item"><i></i>{{ n.title }}</span>
+        <span
+          v-for="n in news"
+          :key="'tp' + n.id"
+          class="tape-item"
+          role="button"
+          tabindex="0"
+          :title="n.title"
+          @click="openNews(n)"
+          @keydown.enter.prevent="openNews(n)"
+        ><i></i>{{ n.title }}<span class="ext" aria-hidden="true">↗</span></span>
       </Marquee>
     </div>
 
@@ -205,11 +214,28 @@
             <div class="news-tag">
               <span class="cat">{{ categoryText(n.category) }}</span>
               <span v-if="n.importance === 3" class="hot">头条</span>
+              <span v-if="newsBadge(n)" class="link-badge" :class="'lt-' + newsLinkType(n)">{{ newsBadge(n) }}</span>
             </div>
-            <h4>{{ n.title }}</h4>
+            <h4>
+              <a
+                class="news-title-link"
+                :href="newsHref(n)"
+                :target="newsExternal(n) ? '_blank' : undefined"
+                :rel="newsExternal(n) ? 'noopener noreferrer' : undefined"
+                @click="onNewsClick($event, n)"
+              >{{ n.title }}<span v-if="newsExternal(n)" class="ext" aria-hidden="true">↗</span></a>
+            </h4>
             <p>{{ n.summary }}</p>
             <div class="news-meta">
-              <span>{{ n.source }}</span>
+              <a
+                v-if="newsSourceUrl(n)"
+                class="news-src"
+                :href="newsSourceUrl(n)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="isEn ? 'Open source site' : '打开来源站点'"
+              >{{ n.source }}<span class="ext" aria-hidden="true">↗</span></a>
+              <span v-else>{{ n.source }}</span>
               <span>{{ timeAgo(n.publishedAt) }}</span>
             </div>
           </article>
@@ -221,17 +247,26 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { useRouter } from 'vue-router'
 import { priceMonitorApi, productApi } from '../api'
 import { useUserStore } from '../store/user'
 import { locale } from '../i18n'
+import {
+  isInternalNews,
+  newsLinkLabel,
+  newsLinkUrl,
+  openNewsLink,
+  safeHttpUrl
+} from '../utils/newsLink'
 import PriceTrendChart from '../components/pricemonitor/PriceTrendChart.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import MagicCard from '../components/ui/MagicCard.vue'
 import NumberTicker from '../components/ui/NumberTicker.vue'
 import Marquee from '../components/ui/Marquee.vue'
 
+const router = useRouter()
 const user = useUserStore()
 const lang = computed(() => String(locale.value || '').toLowerCase().startsWith('en') ? 'en' : 'zh')
 const products = ref([])
@@ -275,6 +310,8 @@ const newsCategories = [
 ]
 // 分段控件（21st.dev Finance Bento .seg 移植）选项
 const rangeOptions = computed(() => [30, 60, 90].map(d => ({ value: d, label: `${d}天` })))
+// 切换时间范围重新拉取走势（图表数据跟随天数）
+watch(days, () => { loadTrend() })
 const newsSegOptions = computed(() => newsCategories.map(c => ({ value: c.key, label: c.label })))
 
 const selected = computed(() => products.value.find(p => p.prodId === selectedId.value) || null)
@@ -341,6 +378,36 @@ function timeAgo(v) {
   if (diff < 3600 * 1000) return Math.floor(diff / 60000) + ' 分钟前'
   if (diff < 86400 * 1000) return Math.floor(diff / 3600000) + ' 小时前'
   return Math.floor(diff / 86400000) + ' 天前'
+}
+
+/* ===== 资讯源头链接（与首页共用 utils/newsLink.js） ===== */
+function newsHref(n) {
+  return newsLinkUrl(n) || undefined
+}
+function newsExternal(n) {
+  return !!newsLinkUrl(n) && !isInternalNews(n)
+}
+function newsSourceUrl(n) {
+  return safeHttpUrl(n?.sourceUrl)
+}
+function newsLinkType(n) {
+  const type = String(n?.linkType || '').toLowerCase()
+  if (type) return type
+  if (isInternalNews(n)) return 'internal'
+  return newsLinkUrl(n) ? 'article' : ''
+}
+function newsBadge(n) {
+  return newsLinkLabel(n, isEn.value)
+}
+function onNewsClick(e, n) {
+  if (!newsLinkUrl(n)) return
+  if (isInternalNews(n)) {
+    e.preventDefault()
+    openNewsLink(n, router)
+  }
+}
+function openNews(n) {
+  openNewsLink(n, router)
 }
 
 async function loadProducts() {
@@ -546,8 +613,10 @@ onBeforeUnmount(() => {
 }
 .pi-tape-label i { width: 5px; height: 5px; border-radius: 50%; background: #9B2D20; animation: pulse 2s infinite; }
 .pi-tape :deep(.mq) { flex: 1; min-width: 0; mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%); }
-.tape-item { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--pi-muted); white-space: nowrap; }
+.tape-item { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--pi-muted); white-space: nowrap; cursor: pointer; transition: color .2s ease; }
+.tape-item:hover { color: #1E6EB8; }
 .tape-item i { width: 4px; height: 4px; border-radius: 50%; background: #C8A45C; flex: none; }
+.ext { margin-left: 2px; font-size: 9px; color: #80601F; }
 .pi-hero {
   position: relative; overflow: hidden;
   display: grid; grid-template-columns: 1fr auto; gap: 24px;
@@ -673,9 +742,20 @@ onBeforeUnmount(() => {
 .news-tag { display: flex; align-items: center; gap: 6px; }
 .news-tag .cat { font-size: 10px; font-weight: 700; color: #1E6EB8; letter-spacing: .06em; }
 .news-tag .hot { font-size: 9.5px; font-weight: 800; color: #9B2D20; background: #F9EDEA; border-radius: 999px; padding: 1px 7px; }
+/* 跳转方式徽标：原文 / 来源站点 / 检索原文 / 站内 */
+.link-badge { font-size: 9px; padding: 1px 7px; border-radius: 999px; background: rgba(19, 35, 58, .05); color: #6B6F76; white-space: nowrap; }
+.link-badge.lt-article { color: #9B2D20; background: #F9EDEA; }
+.link-badge.lt-source { color: #1E6EB8; background: #EAF2FA; }
+.link-badge.lt-search { color: #80601F; background: #FBF2DE; }
+.link-badge.lt-internal { color: #2F6B46; background: #EDF3EE; }
 .news-item h4 { margin: 6px 0 4px; font-size: 12.5px; line-height: 1.5; color: var(--pi-ink); font-weight: 650; }
+.news-item h4 .news-title-link { color: inherit; text-decoration: none; }
+.news-item h4 .news-title-link:hover { color: #1E6EB8; }
+.news-item h4 .ext { margin-left: 2px; font-size: 9.5px; color: #80601F; }
 .news-item p { margin: 0; font-size: 11px; line-height: 1.65; color: #6B6F76; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .news-meta { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 10px; color: #94A3B8; }
+.news-meta .news-src { color: #80601F; text-decoration: none; }
+.news-meta .news-src:hover { color: #1E6EB8; text-decoration: underline; }
 .live-dot { display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: #22C55E; vertical-align: middle; animation: pulse 2s infinite; }
 
 @media (max-width: 1320px) {

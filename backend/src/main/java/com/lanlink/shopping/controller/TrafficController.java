@@ -26,7 +26,7 @@ public class TrafficController {
     @GetMapping("/conversion") @RequirePerm("merchant:manage")
     public R<Map<String,Object>> conversion(@RequestParam(required=false)Integer days,HttpServletRequest r){return R.ok(service.conversion(UserContext.currentUserId(r),days));}
     @PostMapping("/events")
-    public R<Void> track(@RequestBody Map<String,Object> event){ service.track(event); return R.ok(null); }
+    public R<Void> track(@RequestBody Map<String,Object> event, jakarta.servlet.http.HttpServletRequest request){ service.track(event, request); return R.ok(null); }
 
     @GetMapping("/diagnosis") @RequirePerm("merchant:manage")
     public R<List<Map<String,Object>>> diagnosis(@RequestParam(required=false)Integer days,HttpServletRequest r){return R.ok(service.diagnosis(UserContext.currentUserId(r),days));}

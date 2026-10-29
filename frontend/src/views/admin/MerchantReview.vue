@@ -184,7 +184,7 @@
               <div class="cert-chips">
                 <a-tooltip title="营业执照原件">
                   <span class="cert-chip" :class="{ ok: record.licenseUrl }" @click.stop="openDualCertModal(record)">
-                    照 {{ record.licenseUrl ? '✓' : '✗' }}
+                    照 <AppleIcon :name="record.licenseUrl ? 'confirm' : 'close'" :size="12" />
                   </span>
                 </a-tooltip>
                 <a-tooltip :title="`已上传 ${taxCount(record)} 份纳税凭证`">
@@ -194,7 +194,7 @@
                 </a-tooltip>
                 <a-tooltip title="税务登记号核验">
                   <span class="cert-chip" :class="{ ok: record.taxRegNo }">
-                    号 {{ record.taxRegNo ? '✓' : '✗' }}
+                    号 <AppleIcon :name="record.taxRegNo ? 'confirm' : 'close'" :size="12" />
                   </span>
                 </a-tooltip>
               </div>
@@ -546,8 +546,8 @@
           </div>
 
           <div class="dl-footer-tips">
-            <p>✓ 检查发照机关红色公章是否清晰完整</p>
-            <p>✓ 检查营业期限是否在有效期内</p>
+            <p><AppleIcon name="confirm" :size="13" /> 检查发照机关红色公章是否清晰完整</p>
+            <p><AppleIcon name="confirm" :size="13" /> 检查营业期限是否在有效期内</p>
           </div>
         </div>
 
@@ -658,7 +658,7 @@
         </div>
 
         <div class="tax-conclusion">
-          <span>✓ 该商户纳税记录按月连续足额申报，无欠税与虚假抵扣记录，具备优良的企业财务履约能力。</span>
+          <span><AppleIcon name="confirm" :size="14" /> 该商户纳税记录按月连续足额申报，无欠税与虚假抵扣记录，具备优良的企业财务履约能力。</span>
         </div>
       </div>
     </a-modal>
@@ -777,6 +777,7 @@ import {
   SyncOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
+import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const router = useRouter()

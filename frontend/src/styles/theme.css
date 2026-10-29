@@ -3,6 +3,18 @@
    前台 MainLayout 与后台 AdminLayout 共用，改色只动这里。
    与 LOGO 双环 / 汇聚流 / 琥珀火花 取自同一套色。
    ===================================================== */
+
+/* 聊天表情统一字形：Noto Color Emoji 子集（OFL 可商用，鸿蒙系统 emoji 未公开分发、
+   设计谱系与之最近）。子集仅含项目表情面板 68 个字形，146KB；
+   若后续从自有鸿蒙设备提取 HwEmoji.ttf，替换 src 并改 family 即可。 */
+@font-face {
+  font-family: 'LL Emoji';
+  src: url('../assets/fonts/noto-emoji-subset.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* 主色（LOGO 双环渐变） */
   --ll-indigo: #4F46E5;   /* 靛蓝 */
@@ -161,6 +173,66 @@
   /* 缓动曲线（与 motion.css 同源） */
   --ll-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ll-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* =====================================================
+     Semantic Tokens v1（苹果 HIG 语义层）
+     组件优先读取语义令牌；语义令牌再映射到上面的刻度令牌。
+     深色模式只覆盖语义层，业务样式无需感知主题切换。
+     ===================================================== */
+  /* 表面（Surface）：页面 → 卡片 → 凹陷 → 浮层 */
+  --ll-surface-page: var(--ll-page);
+  --ll-surface-raised: var(--ll-card);
+  --ll-surface-sunken: var(--ll-thumb-bg);
+  --ll-surface-overlay: rgba(255, 255, 255, 0.72);
+  --ll-surface-inset: rgba(15, 23, 42, 0.04);
+
+  /* 材质（Material）：苹果式毛玻璃（浅色底白系 / 深色底黑系） */
+  --ll-material-regular: rgba(255, 255, 255, 0.72);
+  --ll-material-thick: rgba(255, 255, 255, 0.86);
+  --ll-material-border: rgba(15, 23, 42, 0.08);
+  --ll-material-blur: 16px;
+
+  /* 文本层级 */
+  --ll-text-primary: var(--ll-ink);
+  --ll-text-secondary: var(--ll-muted);
+  --ll-text-tertiary: #94a3b8;
+  --ll-text-inverse: #ffffff;
+
+  /* 分隔线 / 描边 */
+  --ll-separator: rgba(15, 23, 42, 0.08);
+  --ll-separator-strong: rgba(15, 23, 42, 0.16);
+
+  /* 层级（Elevation）：与阴影刻度同源，按海拔语义命名 */
+  --ll-elev-0: none;
+  --ll-elev-1: var(--ll-shadow-xs);
+  --ll-elev-2: var(--ll-shadow-sm);
+  --ll-elev-3: var(--ll-shadow-md);
+  --ll-elev-4: var(--ll-shadow-lg);
+  --ll-elev-5: var(--ll-shadow-xl);
+
+  /* 字体（苹果系统栈优先，中文回落无衬线） */
+  --ll-font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue',
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --ll-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  --ll-weight-regular: 400;
+  --ll-weight-medium: 500;
+  --ll-weight-semibold: 600;
+
+  /* 动效（Motion）：时长与曲线成对使用 */
+  --ll-dur-instant: 120ms;
+  --ll-dur-fast: 180ms;
+  --ll-dur-base: 280ms;
+  --ll-dur-slow: 450ms;
+  --ll-dur-slower: 650ms;
+  --ll-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ll-ease-decelerate: var(--ll-ease-out);
+  --ll-ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+
+  /* 图标：三种标准尺寸 + 统一描边 */
+  --ll-icon-sm: 16px;
+  --ll-icon-md: 20px;
+  --ll-icon-lg: 24px;
+  --ll-icon-stroke: 1.75;
 }
 
 /* =====================================================
@@ -192,6 +264,16 @@
   --ll-shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.55);
 
   --ll-focus-ring: 0 0 0 3px rgba(56, 189, 248, 0.32);
+
+  /* 语义层深色覆盖（表面 / 材质 / 文本 / 分隔线） */
+  --ll-surface-overlay: rgba(13, 20, 32, 0.72);
+  --ll-surface-inset: rgba(255, 255, 255, 0.06);
+  --ll-material-regular: rgba(22, 32, 46, 0.72);
+  --ll-material-thick: rgba(22, 32, 46, 0.88);
+  --ll-material-border: rgba(255, 255, 255, 0.12);
+  --ll-text-tertiary: #7d8ea6;
+  --ll-separator: rgba(255, 255, 255, 0.10);
+  --ll-separator-strong: rgba(255, 255, 255, 0.20);
 }
 
 /* 品牌字标统一规范：首页、登录、后台、启动过渡共用同一字标效果。 */
@@ -231,6 +313,14 @@ a:active { color: var(--ll-skyblue-active); }
   border-color: var(--ll-skyblue-border);
   box-shadow: 0 4px 16px rgba(91, 143, 181, 0.45);
 }
+
+/* 图标 + 文字按钮：统一 flex 对齐与 6px 间距（内联矢量图标不再压字/错位） */
+.ant-btn:has(> svg):has(> span) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .ant-card-hoverable {
   transition: border-color var(--ll-transition-base) ease,
               box-shadow var(--ll-transition-base) ease;

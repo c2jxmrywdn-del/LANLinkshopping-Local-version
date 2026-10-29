@@ -14,7 +14,7 @@
   >
     <div class="apple-dock-glass-panel hide-scrollbar">
       <div
-        v-for="(item, index) in items"
+        v-for="(item, index) in visibleItems"
         :key="item.id || index"
         class="dock-item-wrapper"
         :class="{ 'has-separator': item.separator }"
@@ -61,7 +61,7 @@
                 v-if="item.icon && (typeof item.icon !== 'string' || (!item.icon.startsWith('http') && !item.icon.startsWith('/')))"
                 :name="item.icon"
                 class="dock-svg-icon"
-                :size="iconSize ? Math.round(iconSize * 0.52) : 22"
+                :size="Math.round(effectiveIconSize * 0.52)"
                 :style="{ color: item.color || (item.gradient ? '#ffffff' : 'inherit') }"
               />
               <img
@@ -75,7 +75,7 @@
                 v-else
                 name="appgrid"
                 class="dock-svg-icon"
-                :size="iconSize ? Math.round(iconSize * 0.52) : 22"
+                :size="Math.round(effectiveIconSize * 0.52)"
                 :style="{ color: item.color || (item.gradient ? '#ffffff' : 'inherit') }"
               />
             </slot>
@@ -150,6 +150,31 @@ const mouseX = ref(Infinity)
 const hoveredIndex = ref(-1)
 const bouncingIndex = ref(-1)
 
+// 移动端图标自适应：隐藏桌面专属项后，用更大的图标（40px）保证可点性与识别度
+const viewportWidth = ref(typeof window === 'undefined' ? 1200 : window.innerWidth)
+const isCompact = computed(() => viewportWidth.value <= 640)
+const visibleItems = computed(() =>
+  isCompact.value ? props.items.filter(item => !item.desktopOnly) : props.items
+)
+const effectiveIconSize = computed(() =>
+  isCompact.value ? Math.min(props.iconSize, 40) : props.iconSize
+)
+const effectiveMagnification = computed(() =>
+  isCompact.value ? effectiveIconSize.value : props.iconMagnification
+)
+
+function onViewportResize() {
+  viewportWidth.value = window.innerWidth
+}
+
+onMounted(() => {
+  window.addEventListener('resize', onViewportResize, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', onViewportResize)
+})
+
 function setItemRef(el, index) {
   if (el) itemElements.value[index] = el
 }
@@ -194,8 +219,8 @@ function getItemStyle(index) {
   const el = itemElements.value[index]
   if (!el || mouseX.value === Infinity) {
     return {
-      width: `${props.iconSize}px`,
-      height: `${props.iconSize}px`
+      width: `${effectiveIconSize.value}px`,
+      height: `${effectiveIconSize.value}px`
     }
   }
 
@@ -205,15 +230,15 @@ function getItemStyle(index) {
 
   if (dist > props.distance) {
     return {
-      width: `${props.iconSize}px`,
-      height: `${props.iconSize}px`
+      width: `${effectiveIconSize.value}px`,
+      height: `${effectiveIconSize.value}px`
     }
   }
 
   // 抛物线高斯平滑插值
   const factor = Math.cos((dist / props.distance) * (Math.PI / 2))
   const smoothFactor = Math.pow(factor, 2)
-  const targetSize = props.iconSize + (props.iconMagnification - props.iconSize) * smoothFactor
+  const targetSize = effectiveIconSize.value + (effectiveMagnification.value - effectiveIconSize.value) * smoothFactor
 
   return {
     width: `${targetSize.toFixed(1)}px`,
@@ -248,6 +273,10 @@ function handleItemClick(item, index) {
 .apple-dock-container.is-fixed {
   bottom: max(12px, env(safe-area-inset-bottom, 12px));
   max-width: calc(100vw - 16px);
+  /* 与上方券卡区域留出呼吸间距，避免玻璃底座压住优惠券 */
+  margin: 45px 0 10px;
+  /* 设计意图为底部居中的 macOS Dock（原 Tailwind 类名在本项目不生效） */
+  justify-content: center;
 }
 
 /* 拟真 macOS 液态毛玻璃底座 */
@@ -473,8 +502,8 @@ function handleItemClick(item, index) {
     max-width: calc(100vw - 12px);
   }
   .apple-dock-glass-panel {
-    gap: 6px;
-    padding: 6px 8px 8px;
+    gap: 4px;
+    padding: 6px;
     border-radius: 20px;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;

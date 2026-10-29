@@ -22,6 +22,9 @@ import org.springframework.web.servlet.HandlerInterceptor;
  *  - 身份已登录但缺少所需权限 → 403 + ACCESS_DENIED 审计日志
  *
  * 权限标识与身份权限矩阵的映射见 common.UserIdentity。
+ *
+ * 语义注记：方法级 @RequirePerm 出现时【整体替换】类级注解（非叠加取严）——
+ * 在类级 admin:all 的控制器内给某方法标弱权限会放行该弱身份，混用时务必确认。
  */
 @Component
 public class PermInterceptor implements HandlerInterceptor {
@@ -37,7 +40,11 @@ public class PermInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         if (!(handler instanceof HandlerMethod hm)) return true;
 
+        // 方法级 @RequirePerm 优先；缺省回退类级注解（类级标注的 Controller 挪离受保护路径时不裸奔）
         RequirePerm need = AnnotatedElementUtils.findMergedAnnotation(hm.getMethod(), RequirePerm.class);
+        if (need == null) {
+            need = AnnotatedElementUtils.findMergedAnnotation(hm.getBeanType(), RequirePerm.class);
+        }
         // 无注解 / 权限值为 null 或空白：视为无需额外权限，直接放行（避免冗余检查与误拦截）
         if (need == null || need.value() == null || need.value().isBlank()) return true;
 

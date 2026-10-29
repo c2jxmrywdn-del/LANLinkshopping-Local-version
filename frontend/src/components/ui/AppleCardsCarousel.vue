@@ -216,7 +216,7 @@
  * - 真实业务闭环: 在 Modal 内内置【加入购物车】与【立即采购下单】真实业务动作
  * - 纯正 Apple Human Interface Guidelines 字体、间距与毛玻璃液态折射
  */
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 
 const props = defineProps({
   /** 卡片数据列表 */
@@ -273,6 +273,16 @@ function scroll(direction) {
   scrollContainerRef.value.scrollBy({ left: offset, behavior: 'smooth' })
 }
 
+// 卡片数据异步到达 / 容器尺寸变化后重新计算翻页可用态，
+// 否则挂载时列表为空会把「向右」永久置灰，导致翻页按钮失效。
+watch(() => props.items, () => nextTick(checkScroll), { deep: false })
+
+let resizeObserver = null
+
+function onResize() {
+  checkScroll()
+}
+
 function openModal(card, index) {
   activeCard.value = card
   activeIndex.value = index
@@ -308,10 +318,21 @@ function handleAddToCart(card) {
 onMounted(() => {
   nextTick(() => {
     checkScroll()
+    if (scrollContainerRef.value && typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(onResize)
+      resizeObserver.observe(scrollContainerRef.value)
+      if (scrollContainerRef.value.firstElementChild) {
+        resizeObserver.observe(scrollContainerRef.value.firstElementChild)
+      }
+    }
   })
 })
 
 onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
   document.body.style.overflow = ''
   window.removeEventListener('keydown', onKeyDown)
 })

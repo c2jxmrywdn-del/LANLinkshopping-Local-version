@@ -58,7 +58,7 @@ const payText={0:'未支付',1:'已支付',2:'已退款'},payColor={0:'orange',1
 const orderText={0:'待发货',1:'已发货',2:'已完成',3:'已取消',4:'已退款'}
 const channelText={wallet:'钱包',mock:'模拟网关',wechat:'微信支付',alipay:'支付宝'}
 const money=v=>Number(v||0).toFixed(2),fmt=v=>v?String(v).replace('T',' ').slice(0,19):'—'
-const refundText=computed(()=>order.value?.refundStatus==='success'?'已退款':order.value?.refundStatus==='processing'?'退款处理中':order.value?.refundStatus==='applied'?'退款申请中 · 待平台处理':order.value?.refundStatus==='rejected'?'退款申请被驳回':'无退款')
+const refundText=computed(()=>order.value?.refundStatus==='success'?'已退款':order.value?.refundStatus==='partial'?`已部分退款 ¥${money(order.value?.refundAmount)}`:order.value?.refundStatus==='processing'?'退款处理中':order.value?.refundStatus==='applied'?'退款申请中 · 待平台处理':order.value?.refundStatus==='rejected'?'退款申请被驳回':'无退款')
 async function load(){
   loading.value=true;
   try{

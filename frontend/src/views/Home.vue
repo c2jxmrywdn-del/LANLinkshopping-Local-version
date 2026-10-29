@@ -14,11 +14,12 @@
       <BrandSymbol class="brand-orbit" size="410px" />
     </section>
     <div class="brand-promise" data-reveal="fade-up"><span>01</span><b>DISCOVER</b><em>→</em><span>02</span><b>TRANSACT</b><em>→</em><span>03</span><b>GROW</b></div>
+
     <BannerCarousel />
 
-    <HomeMarketPulse />
+    <div id="pulse"><HomeMarketPulse /></div>
 
-    <h2 class="sec" data-reveal><span>02</span> 行业解决方案</h2>
+    <h2 id="industries" class="sec" data-reveal><span>02</span> 行业解决方案</h2>
     <a-row v-if="loadingIndustries" :gutter="[16, 16]">
       <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
         <div class="ll-skeleton ind-skeleton"></div>
@@ -33,7 +34,7 @@
       </a-col>
     </a-row>
 
-    <div class="section-head"><h2 class="sec" data-reveal><span>03</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
+    <div id="hot" class="section-head"><h2 class="sec" data-reveal><span>03</span> 热销推荐</h2><button class="section-link" type="button" @click="$router.push('/mall')">查看全部商品 →</button></div>
     <a-row v-if="loadingHot" :gutter="[16, 20]">
       <a-col v-for="n in 8" :key="n" :xs="12" :sm="12" :md="8" :lg="6">
         <div class="ll-skeleton-card home-skeleton-card" aria-hidden="true">
@@ -104,6 +105,8 @@ onMounted(async () => {
 .pprice { color: var(--ll-price); font-weight: 700; font-size: 18px; margin-top: 4px; }
 .pmeta { color: var(--ll-gray); font-size: 12px; }
 .home-page{color:var(--ll-ink)}
+/* 侧栏导航跳转时避开 sticky 头部（64px）遮挡 */
+#industries,#hot{scroll-margin-top:84px}
 .brand-hero{min-height:430px;position:relative;overflow:hidden;border-radius:28px;padding:60px 68px;display:flex;align-items:center;isolation:isolate;border:1px solid rgba(255,255,255,.12);background:radial-gradient(920px 520px at 82% 14%,rgba(246,211,138,.30),transparent 64%),radial-gradient(780px 480px at 102% 92%,rgba(14,165,233,.38),transparent 62%),radial-gradient(640px 440px at 6% 104%,rgba(155,45,32,.30),transparent 60%),radial-gradient(560px 360px at 14% -8%,rgba(34,211,238,.22),transparent 60%),var(--ll-brand-hero-gradient);box-shadow:0 24px 70px rgba(19,35,58,.18)}
 .brand-hero::before{content:"";position:absolute;inset:-30%;z-index:0;background:conic-gradient(from 140deg at 68% 32%,rgba(246,211,138,.22),rgba(30,110,184,.26),rgba(155,45,32,.20),rgba(34,211,238,.18),rgba(246,211,138,.22));filter:blur(64px);opacity:.95;animation:auroraDrift 20s ease-in-out infinite alternate}
 .brand-hero::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.16;mix-blend-mode:soft-light;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");background-size:180px 180px}
@@ -149,6 +152,9 @@ onMounted(async () => {
   .brand-promise{margin:12px 0 22px;padding:10px 12px;font-size:9px}
   .brand-orbit{opacity:.28;transform:scale(.56);bottom:-80px;right:-70px}
   .sec{margin:18px 0 14px}
+  /* 移动端头部两行更高（≈94px），chips 与锚点避让随之上调 */
+  .home-rail-chips{top:92px}
+  #industries,#hot{scroll-margin-top:96px}
   .section-head{margin-top:18px}
   .ind-card,.ind-skeleton{height:96px}
   .ind-name{font-size:15px}

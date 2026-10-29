@@ -44,7 +44,7 @@ public class TrafficService {
         if(rate(p,c)<20)add(out,"PAY_LOSS","加购→支付偏低","检查结算流程、支付渠道及费用提示。","warning");
         if(out.isEmpty())add(out,"HEALTHY","流量转化健康","继续扩大高转化商品与优质来源的曝光。","success");return out;
     }
-    public void track(Map<String,Object> raw){
+    public void track(Map<String,Object> raw, jakarta.servlet.http.HttpServletRequest request){
         String event=String.valueOf(raw.getOrDefault("eventType",""));if(!EVENTS.contains(event))throw new BusinessException("不支持的流量事件");
         String sid=String.valueOf(raw.getOrDefault("sessionId",""));if(sid.length()<8||sid.length()>128)throw new BusinessException("无效会话标识");
         Object mid=raw.get("merchantId");
@@ -56,6 +56,11 @@ public class TrafficService {
             mid=0;
         }
         Map<String,Object> e=new HashMap<>();e.put("merchantId",mid);e.put("productId",raw.get("productId"));e.put("userId",raw.get("userId"));e.put("sessionId",sid);
+        // 归属回填：前端各上报点未携带 userId（协同过滤/个性化依赖此列），登录态下由服务端补齐
+        if(e.get("userId")==null && request!=null){
+            Long uid=com.lanlink.shopping.config.UserContext.currentUserId(request);
+            if(uid!=null)e.put("userId",uid);
+        }
         e.put("eventType",event);e.put("sourceType",clip(raw.getOrDefault("sourceType","direct"),32));e.put("sourceDetail",clip(raw.get("sourceDetail"),255));e.put("pageUrl",clip(raw.get("pageUrl"),500));e.put("deviceType",clip(raw.getOrDefault("deviceType","unknown"),16));mapper.insertEvent(e);
     }
     private Long mustMerId(Long u){Merchant m=merchantService.getByUser(u);if(m==null)throw new BusinessException("仅入驻商户可查看流量数据");return m.getMerId();}

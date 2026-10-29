@@ -31,6 +31,8 @@ public class CheckoutDTO {
     private Integer usePoints;
     /** 本单使用的用户券ID（t_user_coupon.id；null 表示不使用，核销校验与金额由后端重算） */
     private Long couponId;
+    /** 下单归因直播间ID（从直播间讲解商品进入下单链路时由前端携带，后端校验直播间存在） */
+    private Long liveRoomId;
     /**
      * 客户端期望支付金额（防篡改比对：非空时与后端重算总额比对，不一致则告警拒绝）
      */

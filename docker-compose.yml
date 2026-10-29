@@ -1,6 +1,16 @@
+# 统一日志轮转，避免长期运行把宿主磁盘写满（本地开发稳定性）。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
 services:
   mysql:
     image: mysql:8.4
+    logging: *default-logging
+    # 24GB 宿主机 / 8-12GB WSL：限制单服务内存，避免缓冲池/连接把 WSL 内存吃满
+    mem_limit: 1g
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-lanlink_shopping}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
@@ -17,15 +27,23 @@ services:
 
   mailpit:
     image: axllent/mailpit:latest
+    logging: *default-logging
+    mem_limit: 256m
     ports:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8081:8025"
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: docker.m.daocloud.io/redis/redis-stack-server:7.4.0-v8
+    logging: *default-logging
     # requirepass 从环境变量注入（不落镜像/仓库）；appendonly yes 开启 AOF 持久化到数据卷。
-    command: ["sh", "-c", "redis-server --requirepass \"$${REDIS_PASSWORD}\" --appendonly yes"]
+    # 注意：redis-stack-server 默认 dir=/var/lib/redis-stack，必须显式 --dir /data 才能把
+    # RDB/AOF 落到命名卷（否则容器重建后向量库/嵌入缓存全部丢失——本地 AI 稳定性关键修复）。
+    # maxmemory 兜底 + noeviction：向量/嵌入缓存数据极小（约 10MB），禁止被 evict；
+    # AOF(everysec) + RDB 快照双保险；mem_limit 防 Redis 异常膨胀拖垮 WSL。
+    command: ["sh", "-c", "redis-stack-server --requirepass \"$${REDIS_PASSWORD}\" --dir /data --appenddirname appendonlydir --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction --save 900 1 --save 300 10"]
+    mem_limit: 768m
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
     ports:
@@ -39,12 +57,81 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ============================================================
+  # 本地大模型服务（llama.cpp router 模式，Docker 托管、开机自恢复）
+  #   - 同一容器内按需加载 qwen2.5-7b（文本）/ qwen2.5-vl（视觉），--models-max 1 保证单卡互斥；
+  #   - 模型权重：首次启动由 llama-model-init 从宿主机目录（LLAMA_MODELS_DIR，默认
+  #     D:/Docker/toolbox/llama.cpp/models）导入 Docker 命名卷 llama-models（ext4，mmap 快），
+  #     之后直接读卷；Linux 下模型加载 3-8s，避免 Windows bind mount 冷加载 40-60s 的问题；
+  #   - GPU 通过 compose device reservation 透传（Docker Desktop + NVIDIA 驱动，已实测可用）；
+  #   - AI 网关通过项目内 DNS http://llama-cpp:8123/v1 访问，不依赖宿主机进程。
+  # ============================================================
+  llama-model-init:
+    image: docker.m.daocloud.io/library/alpine:3.20
+    container_name: lanlink-llama-model-init
+    restart: "no"
+    volumes:
+      - ${LLAMA_MODELS_DIR:-D:/Docker/toolbox/llama.cpp/models}:/src:ro
+      - llama-models:/models
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        for f in /src/*.gguf; do
+          b=$$(basename "$$f")
+          if [ ! -f "/models/$$b" ]; then
+            echo "[model-init] importing $$b ..."
+            cp "$$f" "/models/$$b"
+          fi
+        done
+        echo "[model-init] volume models:"; ls -lh /models
+    logging: *default-logging
+
+  llama-cpp:
+    # pin digest：floating tag :server-cuda 会被上游悄悄换版（cache-reuse 事故时即被换到 b11913），
+    # 升级需手动改此处并用"网关 thinking x3 + /api/support/ask 端到端"回归后再放开
+    image: ${LLAMA_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda@sha256:8c219fe0367f7e794e3c69da50c5992d474077d60794a218b9e9a3b0c5aed688}
+    container_name: lanlink-llama-cpp
+    restart: unless-stopped
+    depends_on:
+      llama-model-init:
+        condition: service_completed_successfully
+    # 内存上限 6g：模型 mmap 页缓存会计入 cgroup（文本+VL 两个 GGUF 合计可到 ~8GB）；
+    # 6g 足以缓存单模型并留出排队/推理余量，超出部分由内核回收（页缓存可回收，不会 OOM）。
+    mem_limit: 6g
+    command: ["--models-preset", "/preset/router-preset.ini", "--host", "0.0.0.0", "--port", "8123", "--models-max", "1"]
+    volumes:
+      - llama-models:/models:ro
+      - ./scripts/local-ai/llama-container-preset.ini:/preset/router-preset.ini:ro
+    ports:
+      # 宿主机调试端口（8123 曾被宿主机进程占用导致 Docker 端口代理失效，改用 18123）
+      - "127.0.0.1:18123:8123"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      # ubuntu 基础镜像自带 bash；/dev/tcp 探测 HTTP，无需额外安装 curl/wget
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8123 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q '200 OK'"]
+      interval: 20s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    logging: *default-logging
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     image: lanlink-backend:local
+    logging: *default-logging
+    # 24GB 宿主机：JVM 堆上限固定为 1.2g（MaxRAMPercentage 60% of 2g），避免默认 75% 预留过大
+    mem_limit: 2g
     environment:
+      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -Xss512k -Dfile.encoding=UTF-8"
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lanlink_shopping}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: root
@@ -61,9 +148,55 @@ services:
       SUPPORT_SANDBOX_URL: http://support-learning-sandbox:8080
       SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in .env}
       SUPPORT_SANDBOX_MODE: container
-      LANLINK_DEMO_DATA_ENABLED: "true"
+      # 智能客服思考模式：网关内部先推理再作答，最终回答不显示思考过程/来源（默认开启）
+      SUPPORT_AI_THINKING: ${SUPPORT_AI_THINKING:-true}
+      LANLINK_DEMO_DATA_ENABLED: ${LANLINK_DEMO_DATA_ENABLED:-true}
       LANLINK_VERIFY_CODE_DEMO_MODE: "true"
       LANLINK_PAYMENT_MOCK: "true"
+      # ---- AI 专用环境变量组（外部大模型 API Key，仅 AI 调用；留空=渠道禁用回退规则引擎）----
+      AI_MIMO_API_KEY: ${AI_MIMO_API_KEY:-}
+      AI_MIMO_BASE_URL: ${AI_MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      AI_QWEN_API_KEY: ${AI_QWEN_API_KEY:-}
+      AI_QWEN_BASE_URL: ${AI_QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY:-}
+      AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      AI_OUTBOUND_KEY_SECRET: ${AI_OUTBOUND_KEY_SECRET:-lanlink-outbound-key-dev-secret}
+      # ---- 本地向量知识库（AI KB）：本地 Ollama 嵌入 + qwen2.5 RAG ----
+      AI_OLLAMA_BASE_URL: ${AI_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-nomic-embed-text}
+      AI_LOCAL_CHAT_MODEL: ${AI_LOCAL_CHAT_MODEL:-qwen2.5:7b}
+      AI_TEXT_MODEL: ${AI_TEXT_MODEL:-qwen2.5:0.5b}
+      AI_TEXT_NUM_CTX: ${AI_TEXT_NUM_CTX:-16384}
+      AI_TEXT_KEEP_ALIVE: ${AI_TEXT_KEEP_ALIVE:-5m}
+      AI_LONG_CONTEXT_CHARS: ${AI_LONG_CONTEXT_CHARS:-1200}
+      # HNSW 查询期召回参数（RediSearch KNN EF_RUNTIME，默认 64；越大召回越全、延迟略升）
+      AI_KB_EF_RUNTIME: ${AI_KB_EF_RUNTIME:-64}
+      # 出站渠道密钥加密主密钥（代码读取变量名为 OUTBOUND_KEY_SECRET，必须与 .env 一致，否则重启后旧密文解不开）
+      OUTBOUND_KEY_SECRET: ${OUTBOUND_KEY_SECRET:-lanlink-outbound-dev-secret}
+      # ---- 本地 AI 网关（OpenAI 兼容 + Ollama qwen2.5）：价格情报台等真实模型调用走这里 ----
+      AI_GATEWAY_ENABLED: ${AI_GATEWAY_ENABLED:-true}
+      AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-http://host.docker.internal:8090/v1}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-lanlink-local-ai-gateway}
+      AI_GATEWAY_MODEL: ${AI_GATEWAY_MODEL:-qwen2.5-7b}
+      # 本地双模型（llama.cpp router 模式，docker 服务 llama-cpp:8123）：文本 qwen2.5-7b / 视觉 qwen2.5-vl
+      AI_GATEWAY_TEXT_MODEL: ${AI_GATEWAY_TEXT_MODEL:-qwen2.5-7b}
+      AI_GATEWAY_VL_MODEL: ${AI_GATEWAY_VL_MODEL:-qwen2.5-vl}
+      AI_MODEL_ROUTER_URL: ${AI_MODEL_ROUTER_URL:-http://llama-cpp:8123/v1}
+      # ---- 外部资讯自动抓取（RSS -> t_market_news -> Redis 向量库）----
+      AI_EXTERNAL_ENABLED: ${AI_EXTERNAL_ENABLED:-true}
+      AI_EXTERNAL_FEEDS: ${AI_EXTERNAL_FEEDS:-https://www.ithome.com/rss/,https://www.36kr.com/feed,https://rss.huxiu.com/,https://feeds.a.dj.com/rss/RSSMarketsMain.xml}
+      AI_EXTERNAL_LIMIT: ${AI_EXTERNAL_LIMIT:-30}
+      AI_EXTERNAL_LLM_SUMMARY: ${AI_EXTERNAL_LLM_SUMMARY:-true}
+      # ---- 意图理解增强（向量 KNN + 本地 7B 模型，失败回退关键词规则）----
+      AI_INTENT_LLM_ENABLED: ${AI_INTENT_LLM_ENABLED:-true}
+      AI_INTENT_VECTOR_MIN_SCORE: ${AI_INTENT_VECTOR_MIN_SCORE:-0.55}
+      # ---- 共享环境变量组（高频复用，多容器/前后端同源）----
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
+      AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
+    # 让容器内 host.docker.internal 稳定解析到宿主机（Docker Desktop 自带，Linux 靠此行生效）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8080:8080"
     # 上传文件（营业执照/完税凭证/特殊许可/头像）持久化，避免容器重建后丢失
@@ -163,10 +296,14 @@ services:
         # Vite 在构建期把 VITE_* 打进静态产物：批量导入服务地址指向宿主机 3000 端口（见上方 workflow 服务）
         VITE_WORKFLOW_URL: http://127.0.0.1:3000
     image: lanlink-frontend:local
+    logging: *default-logging
+    mem_limit: 128m
     environment:
       SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
     ports:
-      - "127.0.0.1:5173:80"
+      # 生产前端暴露到所有网卡：局域网/远程浏览器可直接用 http://<主机IP>:5173
+      # （此前只绑 127.0.0.1，局域网用户被迫使用 Vite 5174 开发服务器，容易跑到旧页面）
+      - "5173:80"
     depends_on:
       backend:
         condition: service_healthy
@@ -182,3 +319,5 @@ volumes:
   backend-uploads:
   redis-data:
   workflow-data:
+  # 本地大模型 GGUF 权重（由 llama-model-init 从宿主机导入，避免 Windows bind mount 冷加载慢）
+  llama-models:

@@ -27,8 +27,9 @@ spring:
 
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      # 与 application.yml 口径一致（25MB/26MB）：聊天媒体文件档最大 20MB + multipart 开销
+      max-file-size: 25MB
+      max-request-size: 26MB
 
   sql:
     init:

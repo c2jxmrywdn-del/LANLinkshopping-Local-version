@@ -18,7 +18,7 @@ describe('merchantStatus 状态字典', () => {
 
   it('退款状态覆盖后端枚举', () => {
     expect(Object.keys(REFUND_STATUS).sort())
-      .toEqual(['applied', 'none', 'processing', 'rejected', 'success'])
+      .toEqual(['applied', 'none', 'partial', 'processing', 'rejected', 'success'])
   })
 
   it('商品审核状态覆盖 0/1/2', () => {

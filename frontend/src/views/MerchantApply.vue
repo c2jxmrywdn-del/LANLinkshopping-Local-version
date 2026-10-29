@@ -24,7 +24,10 @@
               :class="{ active: currentStep === idx, completed: currentStep > idx }"
               @click="goToStep(idx)"
             >
-              <div class="step-num">{{ currentStep > idx ? '✓' : idx + 1 }}</div>
+              <div class="step-num">
+                <AppleIcon v-if="currentStep > idx" name="confirm" :size="14" />
+                <template v-else>{{ idx + 1 }}</template>
+              </div>
               <div class="step-info">
                 <div class="step-title">{{ st.title }}</div>
                 <div class="step-sub">{{ st.sub }}</div>
@@ -308,7 +311,9 @@
                 </div>
                 <div v-else class="empty-tax">
                   <div class="empty-tax-tip">
-                    <span v-if="form.taxStatus === 1" style="color: #ea580c;">⚠️ 您勾选了有稳定纳税记录：本季度需上传近 3 个月共 3 份企业所得税完税凭证（还差 {{ missingTaxPeriods.length }} 份）</span>
+                    <span v-if="form.taxStatus === 1" style="color: #ea580c; display: inline-flex; align-items: center; gap: 4px;">
+                      <AppleIcon name="warning" :size="14" /> 您勾选了有稳定纳税记录：本季度需上传近 3 个月共 3 份企业所得税完税凭证（还差 {{ missingTaxPeriods.length }} 份）
+                    </span>
                     <span v-else>暂未添加税务证明附件（未申报纳税可跳过）</span>
                   </div>
                   <CertSampleHint kind="tax" />
@@ -331,7 +336,7 @@
               <!-- 提问：是否有特殊经营许可证 -->
               <div class="special-permit-question-box">
                 <div class="question-title-row">
-                  <span class="q-icon">❓</span>
+                  <span class="q-icon"><AppleIcon name="help" :size="24" /></span>
                   <div>
                     <h4 class="q-title">是否有特殊经营许可证 / 行业特许准入资质？</h4>
                     <p class="q-desc">如经营危险化学品、民用爆炸物、食品工业流通、特种劳动防护装备、压力管道、医疗器械、建筑消防工程等国家法定特许经营门类，必须上传特许许可证件才能入驻。</p>
@@ -490,9 +495,9 @@
           <template v-if="mine">
             <div class="status-banner" :class="`st-${mine.reviewStatus}`">
               <div class="status-badge-icon">
-                <span v-if="mine.reviewStatus === 1">✓</span>
-                <span v-else-if="mine.reviewStatus === 2">✕</span>
-                <span v-else>⌛</span>
+                <AppleIcon v-if="mine.reviewStatus === 1" name="confirm" :size="18" />
+                <AppleIcon v-else-if="mine.reviewStatus === 2" name="close" :size="18" />
+                <AppleIcon v-else name="clock" :size="18" />
               </div>
               <div class="status-text-wrap">
                 <div class="status-main">{{ statusText }}</div>
@@ -628,6 +633,7 @@ import {
 import { merchantApi } from '../api'
 import CertImage from '../components/ui/CertImage.vue'
 import CertSampleHint from '../components/ui/CertSampleHint.vue'
+import AppleIcon from '../components/ui/AppleIcon.vue'
 import {
   completedMonths,
   monthKey,

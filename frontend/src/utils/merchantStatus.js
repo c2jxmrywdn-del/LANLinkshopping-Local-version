@@ -25,6 +25,7 @@ export const REFUND_STATUS = {
   applied: { text: '退款申请中 · 待平台处理', color: 'orange' },
   rejected: { text: '退款申请被驳回', color: 'default' },
   processing: { text: '退款处理中', color: 'blue' },
+  partial: { text: '已部分退款 · 剩余可再次申请', color: 'gold' },
   success: { text: '已退款', color: 'purple' }
 }
 

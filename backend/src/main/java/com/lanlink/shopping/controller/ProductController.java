@@ -27,25 +27,77 @@ public class ProductController {
 
     private final ProductService productService;
     private final com.lanlink.shopping.service.MerchantService merchantService;
+    private final com.lanlink.shopping.module.recommend.service.PersonalizeService personalizeService;
+    private final com.lanlink.shopping.module.search.ProductIndexJob productIndexJob;
 
     public ProductController(ProductService productService,
-                             com.lanlink.shopping.service.MerchantService merchantService) {
+                             com.lanlink.shopping.service.MerchantService merchantService,
+                             com.lanlink.shopping.module.recommend.service.PersonalizeService personalizeService,
+                             com.lanlink.shopping.module.search.ProductIndexJob productIndexJob) {
         this.productService = productService;
         this.merchantService = merchantService;
+        this.personalizeService = personalizeService;
+        this.productIndexJob = productIndexJob;
     }
 
     /** 商品图上传目录：{user.dir}/uploads/products（WebConfig 已映射 /uploads/**） */
     private static final String PRODUCT_IMG_DIR = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "products";
     private static final long MAX_IMG_SIZE = 5 * 1024 * 1024;
 
+    /**
+     * 商城商品分页（公开）。personalization=true 且登录且 analytics 已授权时走个性化推流
+     * （习惯类目打分 + 多样性打散）；其余情况原样自然排序——个性化降级在服务端闭环。
+     */
     @GetMapping("/page")
-    public R<IPage<Product>> page(@RequestParam(defaultValue = "1") long current,
-                                  @RequestParam(defaultValue = "12") long size,
-                                  @RequestParam(required = false) String keyword,
-                                  @RequestParam(required = false) Long catId,
-                                  @RequestParam(required = false) Long indId,
-                                  @RequestParam(required = false) String sort) {
-        return R.ok(productService.page(current, size, keyword, catId, indId, sort));
+    public R<Object> page(@RequestParam(defaultValue = "1") long current,
+                          @RequestParam(defaultValue = "12") long size,
+                          @RequestParam(required = false) String keyword,
+                          @RequestParam(required = false) Long catId,
+                          @RequestParam(required = false) Long indId,
+                          @RequestParam(required = false) String sort,
+                          @RequestParam(defaultValue = "false") boolean personalization,
+                          @RequestHeader(value = "Cookie", required = false) String cookie,
+                          HttpServletRequest request) {
+        // 语义搜索：有关键词且无结构化筛选时走 jieba+向量双路 RRF（内部含开关与降级链）
+        IPage<Product> page = hasText(keyword)
+                ? productService.searchPage(current, size, keyword, catId, indId, sort)
+                : productService.page(current, size, keyword, catId, indId, sort);
+        // 仅综合态（无搜索/筛选/显式排序）走个性化推流
+        boolean eligible = personalization
+                && !hasText(keyword) && catId == null && indId == null && !hasText(sort);
+        IPage<Product> personalized = eligible
+                ? personalizeService.page(current, size, UserContext.currentUserId(request), analyticsCookie(cookie),
+                        keyword, catId, indId, sort)
+                : null;
+        if (personalized != null) {
+            Map<String, Object> out = new java.util.LinkedHashMap<>();
+            out.put("records", personalized.getRecords());
+            out.put("total", personalized.getTotal());
+            out.put("current", personalized.getCurrent());
+            out.put("size", personalized.getSize());
+            out.put("pages", personalized.getPages());
+            out.put("personalized", true);
+            return R.ok(out);
+        }
+        return R.ok((Object) page);
+    }
+
+    /** 管理端：手动触发商品向量索引重建（商品发布/批量导入后可立即生效） */
+    @PostMapping("/admin/search/reindex")
+    public R<Map<String, Object>> reindex() {
+        return R.ok(new java.util.LinkedHashMap<>(productIndexJob.reindex()));
+    }
+
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    private static String analyticsCookie(String cookieHeader) {
+        if (cookieHeader == null) return null;
+        for (String part : cookieHeader.split("; ")) {
+            if (part.startsWith("ll_analytics=")) return part.substring("ll_analytics=".length());
+        }
+        return null;
     }
 
     /** 前台详情：仅可售(审核通过)商品可见 */

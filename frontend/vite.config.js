@@ -62,14 +62,33 @@ function injectSupportProxyHeaders(proxy) {
 }
 
 const supportProxy = {
-  target: 'http://localhost:8080',
+  // 显式 IPv4：Windows 上 localhost 可能优先解析 ::1，而后端端口映射只监听 127.0.0.1，
+  // 会导致 Vite 代理偶发 ECONNREFUSED/Network Error（轮询失败时尤其明显）。
+  target: 'http://127.0.0.1:8080',
   changeOrigin: true,
+  // 本地 RAG/7B/VL 推理可能 10-60s，代理侧不允许提前断开
+  timeout: 600000,
+  proxyTimeout: 600000,
   configure: injectSupportProxyHeaders,
   headers: { 'X-Support-Proxy-Secret': process.env.SUPPORT_PROXY_SECRET || LOCAL_DEV_PROXY_SECRET }
 }
 
+// 后端容器重建/重启窗口（docker compose up -d）内的瞬时 ECONNRESET：
+// 输出一条可读提示代替整段 Node 堆栈，避免误判为前端故障（后端就绪后自动恢复）。
+function friendlyProxyError(proxy) {
+  proxy.on('error', (err, req) => {
+    const url = req && req.url ? req.url : ''
+    if (err && /ECONNRESET|ECONNREFUSED|EPIPE/.test(err.code || '')) {
+      console.log(`[vite] 后端暂不可达（重启窗口？）：${url} —— 容器就绪后刷新页面即可`)
+    } else {
+      console.error('[vite] proxy error:', err.code || err.message, url)
+    }
+  })
+}
+
 // 通用 /api 代理同样做 Origin 归一化，避免登录/注册等接口经局域网 IP 访问时被 CORS 拦截。
 function normalizeApiOrigin(proxy) {
+  friendlyProxyError(proxy)
   proxy.on('proxyReq', (proxyReq) => {
     const localOrigin = 'http://127.0.0.1:5173'
     proxyReq.setHeader('Origin', localOrigin)
@@ -79,8 +98,10 @@ function normalizeApiOrigin(proxy) {
 }
 
 const apiProxy = {
-  target: 'http://localhost:8080',
+  target: 'http://127.0.0.1:8080',
   changeOrigin: true,
+  timeout: 600000,
+  proxyTimeout: 600000,
   configure: normalizeApiOrigin
 }
 

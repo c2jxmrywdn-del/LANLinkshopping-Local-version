@@ -13,7 +13,7 @@
 
     <div class="ptc-canvas" @mouseleave="hover = null">
       <svg :viewBox="`0 0 ${W} ${H}`" class="ptc-svg" preserveAspectRatio="none"
-           @mousemove="onMove" @touchmove.prevent="onTouch">
+           @mousemove="onMove" @touchstart="onTouchStart" @touchmove="onTouch">
         <defs>
           <linearGradient id="ptc-area" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stop-color="rgba(19,35,58,.22)" />
@@ -199,9 +199,19 @@ function onMove(e) {
   const i = Math.round(ratio * (points.value.length - 1))
   hover.value = Math.min(points.value.length - 1, Math.max(0, i))
 }
-function onTouch(e) {
+let touchStart = null
+function onTouchStart(e) {
   const t = e.touches?.[0]
-  if (t) onMove({ currentTarget: e.currentTarget, clientX: t.clientX })
+  touchStart = t ? { x: t.clientX, y: t.clientY } : null
+}
+function onTouch(e) {
+  if (!touchStart) return
+  const t = e.touches?.[0]
+  if (!t) return
+  const dx = Math.abs(t.clientX - touchStart.x)
+  const dy = Math.abs(t.clientY - touchStart.y)
+  // 纵向滑动放行页面滚动；横向意图才更新光标
+  if (dx > dy && dx > 12) onMove({ currentTarget: e.currentTarget, clientX: t.clientX })
 }
 </script>
 

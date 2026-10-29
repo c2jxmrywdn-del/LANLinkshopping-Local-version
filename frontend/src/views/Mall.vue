@@ -25,6 +25,7 @@
         <a-select-option value="priceAsc">价格最低</a-select-option>
       </a-select>
       <span v-if="!loading && total > 0" class="toolbar-count">共 {{ total }} 件商品</span>
+      <span v-if="personalized" class="personalized-badge" title="根据你的浏览偏好排序，可在右侧关闭">个性化推荐</span>
     </div>
 
     <!-- 加载态：骨架屏卡片（首次加载与翻页均展示，替代遮罩式 loading） -->
@@ -65,7 +66,7 @@
           :title="p.title"
           :description="p.brand || 'B2B 供应商精选'"
           :price="'¥' + p.price"
-          @click="$router.push('/product/' + p.prodId)"
+          @click="goDetail(p)"
         >
           <template #footer>
             <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
@@ -76,6 +77,9 @@
         </InteractiveProductCard>
       </a-col>
     </a-row>
+
+    <!-- 猜你喜欢/热门商品：个性化在 analytics 授权下生效，关闭按钮一键退回热度 -->
+    <RecGrid v-if="showRec" :personalized="personalized" @personalized="v => (personalized = v)" @disable="turnOffPersonalize" />
 
     <div v-else class="empty-wrap">
       <a-empty description="没有找到相关商品">
@@ -95,12 +99,14 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { productApi, homeApi, campaignApi, adApi, trafficApi } from '../api'
+import RecGrid from '../components/recommend/RecGrid.vue'
 import Marquee from '../components/ui/Marquee.vue'
 import { Search } from 'lucide-vue-next'
 import AnimatedGradientText from '../components/ui/AnimatedGradientText.vue'
 import { Flame } from 'lucide-vue-next'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import * as habitTracker from '../utils/habitTracker'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
 
 const route = useRoute()
@@ -122,6 +128,16 @@ const keyword = ref('')
 const indId = ref(route.query.indId ? Number(route.query.indId) : undefined)
 const catId = ref(route.query.catId ? Number(route.query.catId) : undefined)
 const sort = ref(route.query.sort || '')
+// 个性化推流开关（默认开；用户可一键退回纯热度/综合排序）
+const personalize = ref(true)
+const personalized = ref(false)
+const showRec = computed(() => !keyword.value && !indId.value && !catId.value)
+
+function turnOffPersonalize() {
+  personalize.value = false
+  personalized.value = false
+  message.info('已关闭个性化推荐，为你展示热门商品')
+}
 const current = ref(1)
 const size = 12
 const total = ref(0)
@@ -129,10 +145,26 @@ const total = ref(0)
 async function reload() {
   loading.value = true
   try {
-    const page = await productApi.page({ current: current.value, size, keyword: keyword.value, catId: catId.value, indId: indId.value, sort: sort.value })
+    // 用户习惯收集（analytics 授权门控在 tracker 内部）：记录搜索词偏好
+    if (keyword.value) habitTracker.recordSearch(keyword.value)
+    // 个性化推流仅在综合态请求（后端双信号门控：analytics 授权 + 登录画像，否则自动降级）
+    const usePersonal = personalize.value && !keyword.value && !catId.value && !indId.value && !sort.value
+    const page = await productApi.page({ current: current.value, size, keyword: keyword.value, catId: catId.value, indId: indId.value, sort: sort.value, personalization: usePersonal })
     list.value = page.records
     total.value = page.total
+    personalized.value = !!page.personalized
   } finally { loading.value = false }
+}
+
+/** 自然卡片点击：跳详情 + 点击意图埋点（共现矩阵的强信号，analytics 门控在 trackPage 内） */
+function goDetail(p) {
+  trafficApi.trackPage({
+    merchantId: p.merId,
+    productId: p.prodId,
+    eventType: 'CLICK_PRODUCT',
+    sourceType: 'mall_list'
+  }).catch(() => {})
+  router.push('/product/' + p.prodId)
 }
 
 // 广告位：加载推广商品并按固定位置与自然结果混排（曝光上报，静默失败不影响浏览）
@@ -230,6 +262,8 @@ watch(
            box-shadow: var(--ll-shadow-xs); }
 .toolbar-search { width: 320px; max-width: 100%; }
 .toolbar-count { margin-left: auto; color: var(--ll-muted, #64748b); font-size: 12px; }
+
+.personalized-badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;background:rgba(30,110,184,.10);color:#1E6EB8;font-size:11px;font-weight:700;}
 /* 骨架卡与真实商品卡同比例，避免加载完成时跳动 */
 .mall-skeleton-card { min-height: 330px; display: flex; flex-direction: column; margin-bottom: 16px; }
 .mall-skeleton-card .ll-skeleton-card__img { aspect-ratio: auto; flex: 1; }

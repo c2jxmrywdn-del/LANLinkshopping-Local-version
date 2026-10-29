@@ -18,7 +18,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class SupportRequestGuard {
     private static final Logger log = LoggerFactory.getLogger(SupportRequestGuard.class);
     private static final long WINDOW_MILLIS = 60_000L;
-    private static final int MAX_REQUESTS_PER_WINDOW = 20;
+    // 本地开发/演示环境所有请求共享 127.0.0.1，原 20/min 容易被正常连续提问触发；
+    // 提高到 120/min（未知来源仍单独限制），避免用户看到"客服暂时无法响应"。
+    private static final int MAX_REQUESTS_PER_WINDOW = 120;
     private static final int MAX_UNKNOWN_REQUESTS_PER_WINDOW = 300;
     private static final int MAX_TRACKED_SOURCES = 10_000;
 

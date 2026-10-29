@@ -6,7 +6,9 @@
     class="apple-vector-icon"
     :size="size"
     :stroke-width="strokeWidth"
-    aria-hidden="true"
+    :aria-hidden="label ? undefined : 'true'"
+    :aria-label="label || undefined"
+    :role="label ? 'img' : undefined"
   />
 
   <!-- 如果没有匹配到预设组件，或者默认回退，渲染 Apple 标准 Squircle App Grid 矢量图标 (严禁文字或 Emoji 回退) -->
@@ -21,7 +23,9 @@
     :stroke-width="strokeWidth"
     stroke-linecap="round"
     stroke-linejoin="round"
-    aria-hidden="true"
+    :aria-hidden="label ? undefined : 'true'"
+    :aria-label="label || undefined"
+    :role="label ? 'img' : undefined"
   >
     <rect width="7" height="7" x="3" y="3" rx="1.5" />
     <rect width="7" height="7" x="14" y="3" rx="1.5" />
@@ -73,7 +77,26 @@ import {
   Clock,
   Compass,
   FileSpreadsheet,
-  Rocket
+  Rocket,
+  MessageCircle,
+  Phone,
+  Mail,
+  Timer,
+  AlertTriangle,
+  HelpCircle,
+  Check,
+  X,
+  Star,
+  Gem,
+  CircleDot,
+  ArrowUpRight,
+  RotateCcw,
+  Diamond,
+  Ban,
+  SearchX,
+  RefreshCw,
+  ChevronDown,
+  LineChart
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -90,7 +113,12 @@ const props = defineProps({
   /** 描边粗细 */
   strokeWidth: {
     type: [Number, String],
-    default: 2
+    default: 1.75
+  },
+  /** 可访问名称：传值时作为 role="img" 的形象图标，否则对辅助技术隐藏（装饰图标） */
+  label: {
+    type: String,
+    default: ''
   }
 })
 
@@ -150,6 +178,7 @@ const ICON_MAP = {
   top: ArrowUp,
   arrowup: ArrowUp,
   chevronright: ChevronRight,
+  chevrondown: ChevronDown,
   grid: LayoutGrid,
   appgrid: LayoutGrid,
   
@@ -168,7 +197,45 @@ const ICON_MAP = {
   upload: FolderUp,
   rocket: Rocket,
   check: CheckCircle2,
-  clock: Clock
+  clock: Clock,
+  chart: LineChart,
+  trend: LineChart,
+
+  // 沟通 / 联系
+  message: MessageCircle,
+  chat: MessageCircle,
+  messagecircle: MessageCircle,
+  phone: Phone,
+  mail: Mail,
+  email: Mail,
+  timer: Timer,
+
+  // 提示 / 校验
+  warning: AlertTriangle,
+  alert: AlertTriangle,
+  help: HelpCircle,
+  question: HelpCircle,
+  confirm: Check,
+  success: Check,
+  close: X,
+  error: X,
+  ban: Ban,
+  empty: SearchX,
+
+  // 徽章 / 装饰
+  star: Star,
+  gem: Gem,
+  diamond: Diamond,
+  dot: CircleDot,
+  circledot: CircleDot,
+  target2: CircleDot,
+
+  // 方向
+  arrowupright: ArrowUpRight,
+  up: ArrowUpRight,
+  reset: RotateCcw,
+  refund: RotateCcw,
+  refresh: RefreshCw
 }
 
 const resolvedComponent = computed(() => {

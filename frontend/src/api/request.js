@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 import router from '../router'
-import { showBusyLoading, hideBusyLoading } from '../utils/busy'
+import { hideBusyLoading } from '../utils/busy'
 import { isCsrfProtectedMutation } from './csrfPolicy'
 
 // Production Vercel builds use a same-origin /api rewrite to the Railway backend.
@@ -64,8 +64,9 @@ request.interceptors.response.use(
     const body = res.data
     if (body && body.code !== 200) {
       if ([429, 502, 503, 504].includes(Number(body.code))) {
-        showBusyLoading({ reason: 'congestion' })
-        hideBusyLoading(5200)
+        // 不再弹全屏"系统正在繁忙处理"遮罩：一次失败就遮住整页 3-5 秒体验很差；
+        // 改为轻量 toast，用户可继续操作/重试（本地 AI 请求已单独放宽超时）。
+        message.warning(body.message || '系统繁忙，请稍后重试')
         return Promise.reject(new Error(body.message || '系统繁忙'))
       }
       // CSRF 令牌失效：换新后重放一次；覆盖账号中心与管理员营销邮件接口
@@ -87,19 +88,23 @@ request.interceptors.response.use(
     return body.data
   },
   (err) => {
-    // HTTP 层 403 的 CSRF 失效（后端直接以状态码返回时）
     const resp = err.response
-    const isCongested = !!(resp && [429, 502, 503, 504].includes(Number(resp.status))) || err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')
+    // 局部超时/网络中断不再弹全屏"系统繁忙"遮罩：AI 推理本身可能较慢，超时只提示即可，
+    // 只有服务端明确 429/502/503/504（真拥塞）才显示排队遮罩，避免误伤正常长请求。
+    const isCongested = !!(resp && [429, 502, 503, 504].includes(Number(resp.status)))
     if (isCongested) {
-      showBusyLoading({ reason: 'congestion' })
-      hideBusyLoading(5200)
+      message.warning('系统繁忙，请稍后重试')
+      return Promise.reject(err)
+    }
+    if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
+      if (!err.config?.silent) message.warning('请求超时，请稍后重试')
       return Promise.reject(err)
     }
     if (resp && err.config && isCsrfFailure(resp.status, resp.data) && !err.config._retried && isCsrfProtectedMutation(err.config)) {
       return retryWithCsrf(err.config)
     }
     if (!err.config?.silent) {
-      message.error('网络错误: ' + (err.message || ''))
+      message.warning('网络异常，请稍后重试')
     }
     return Promise.reject(err)
   }

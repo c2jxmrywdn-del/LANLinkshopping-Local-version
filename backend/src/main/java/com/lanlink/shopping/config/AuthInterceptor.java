@@ -76,6 +76,10 @@ public class AuthInterceptor implements HandlerInterceptor {
     private boolean isWhiteList(String uri) {
         return uri.startsWith("/auth/login")
                 || uri.startsWith("/auth/register")
+                // 商品推荐位公开浏览（个性化仅在 analytics 授权下生效，服务端自动降级）
+                || uri.startsWith("/recommendations/")
+                // A/B 实验：分流/曝光/转化公开上报（匿名用 sessionId 分桶，管理端 CRUD 在 /admin/**）
+                || uri.startsWith("/ab/")
                 // 社交登录：仅放行匿名可达的入口；/auth/social/bind/** 需登录（绑定动作挂在当前账号下）
                 || uri.equals("/auth/social/providers")
                 || uri.startsWith("/auth/social/authorize/")
@@ -96,6 +100,11 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || uri.startsWith("/price-monitor/factors/")
                 || uri.startsWith("/price-monitor/market/")
                 || uri.equals("/price-monitor/news")
+                // 直播间公开浏览（广场/详情/商品/弹幕/进出场/点击埋点）；点赞评论可匿名（昵称降级），商户端与复盘需权限
+                || uri.equals("/live/rooms")
+                || uri.startsWith("/live/room/")
+                || uri.startsWith("/live/product/")
+                || uri.startsWith("/live/room-by-product/")
                 // 订阅方案列表公开浏览；购买/我的/取消需登录
                 || uri.equals("/subscription/plans")
                 // 支付渠道异步通知与同步回跳：无登录态，公开放行（内部已做签名校验）
@@ -107,6 +116,8 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 商品直播：直播广场、直播间详情、商品柜、互动弹幕、点赞公开放行
                 || uri.equals("/live/rooms")
                 || uri.startsWith("/live/room/")
+                // 商品详情页按商品取直播间（游客可看生产线直播）
+                || uri.startsWith("/live/room-by-product/")
                 // Public one-click marketing unsubscribe uses a signed, account-bound token.
                 || uri.equals("/marketing-email/unsubscribe");
     }

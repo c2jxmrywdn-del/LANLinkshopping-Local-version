@@ -71,3 +71,30 @@ initRipple()
 initScrollReveal()
 // 性能治理：帧率自适应/渲染节流/软硬解码切换/熔断降级（保护渲染线程）
 initPerfGovernor()
+
+// 发版检测：长开标签页可能一直运行旧 bundle（旧 15s 超时、旧"系统繁忙"遮罩），
+// 发现服务端 index.html 引用的新构建时提示刷新，避免"明明已修复但页面仍报错"。
+if (import.meta.env.PROD && typeof window !== 'undefined' && !window.__lanlinkUpdateWatch) {
+  window.__lanlinkUpdateWatch = true
+  const currentAsset = (Array.from(document.querySelectorAll('script[type="module"]'))
+    .map(s => s.src || '')
+    .find(src => /\/assets\/index-[\w-]+\.js/.test(src)) || '').split('/').pop()
+  if (currentAsset) {
+    let dismissed = false
+    window.setInterval(async () => {
+      if (dismissed || document.visibilityState === 'hidden') return
+      try {
+        const html = await (await fetch(`/index.html?t=${Date.now()}`, { cache: 'no-store' })).text()
+        const m = html.match(/\/assets\/(index-[\w-]+\.js)/)
+        if (!m || m[1] === currentAsset) return
+        if (window.confirm('系统已更新，是否刷新页面加载最新版本？')) {
+          window.location.reload()
+        } else {
+          dismissed = true // 用户选择稍后刷新，本次会话不再打扰
+        }
+      } catch (e) {
+        // 离线/后端重启窗口：静默，下次轮询再试
+      }
+    }, 60_000)
+  }
+}

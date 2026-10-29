@@ -11,7 +11,7 @@ public interface ProductMapper extends BaseMapper<Product> {
 
     /** 当前有在售商品的行业 ID（行业基准聚合用，避免在服务层构造 Lambda 查询）。 */
     @Select("SELECT DISTINCT ind_id FROM t_product " +
-            "WHERE status = 1 AND review_status = 1 AND ind_id IS NOT NULL")
+            "WHERE status = 1 AND review_status = 1 AND deleted = 0 AND ind_id IS NOT NULL")
     List<Long> distinctIndustryIds();
 
     /**

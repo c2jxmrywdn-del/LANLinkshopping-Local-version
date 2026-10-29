@@ -54,7 +54,8 @@ class TamperAttackSimulationTest {
             capturedAlerts.add(inv.getArgument(0));
             return 1;
         });
-        tamperGuardService = new TamperGuardService(tamperAlertMapper, mock(AuditService.class));
+        tamperGuardService = new TamperGuardService(tamperAlertMapper, mock(AuditService.class),
+                mock(com.lanlink.shopping.module.risk.service.RiskEventService.class));
         idempotentTokenMapper = mock(IdempotentTokenMapper.class);
         idempotentService = new IdempotentService(idempotentTokenMapper);
 
@@ -64,7 +65,8 @@ class TamperAttackSimulationTest {
                 mock(AuditService.class), mock(PricingFacade.class), mock(ApplicationEventPublisher.class),
                 mock(MembershipService.class), mock(CreditTermService.class),
                 idempotentService, tamperGuardService,
-                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class));
+                mock(com.lanlink.shopping.module.campaign.service.CampaignService.class),
+                mock(com.lanlink.shopping.module.risk.service.RiskEventService.class));
     }
 
     private void assertAlertOn(String fieldName) {
