@@ -13,8 +13,10 @@
 ![MySQL](https://img.shields.io/badge/MySQL-8.0-blue)
 ![Redis](https://img.shields.io/badge/Redis-Stack%20HNSW-dc382d)
 ![License](https://img.shields.io/badge/License-GNU%20GPL%20v3-blue)
+[![Twitter / X](https://img.shields.io/badge/X-@Orion__Yves__Jude-000000?logo=x&logoColor=white)](https://x.com/Orion_Yves_Jude)
+[![Facebook](https://img.shields.io/badge/Facebook-Jason_Ouyang-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61590596057471)
 
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [架构与亮点](#-架构与系统亮点) · [使用说明](#-使用说明) · [接口速览](#-核心接口速览) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证)
+[功能特性](#-功能特性) · [快速开始](#-快速开始) · [架构与亮点](#-架构与系统亮点) · [使用说明](#-使用说明) · [接口速览](#-核心接口速览) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证)
 
 </div>
 
