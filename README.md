@@ -287,7 +287,6 @@ npm run build
 
 - **作者身份**：项目发起人 / 独立研发者（GitHub: [@c2jxmrywdn-del](https://github.com/c2jxmrywdn-del)）
 - **主要邮箱**：[3514485358@qq.com](mailto:3514485358@qq.com)（日常项目交流、学术探讨与技术沟通）
-- **商务/海外邮箱**：[ouyangjason001@gmail.com](mailto:ouyangjason001@gmail.com)（合作咨询与对外联络）
 - **X / Twitter**：[@Orion_Yves_Jude](https://x.com/Orion_Yves_Jude)
 - **Facebook**：[Jason Ouyang](https://www.facebook.com/profile.php?id=61590596057471)
 - **即时通讯**：WhatsApp · [OuyangJason](https://wa.me/OuyangJason?s=t) / 微信：`O19111295446`
