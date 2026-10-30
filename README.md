@@ -2,9 +2,9 @@
 
 # LANLinkshopping
 
-### 聚合型一体多元化解决方案 · B2B 电商全栈中台平台
+### 聚合型一体多元化解决方案 · B2B 电商全栈平台
 
-**Spring Boot 3.5.3 + Vue 3 + Vite 6 + Redis Stack + 本地双大模型编排 + 21st.dev Apple UI 风格交互**
+**Spring Boot 3.5.3 + Vue 3 + Vite 6 + Redis Stack + 本地双大模型编排**
 
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.3-brightgreen)
@@ -14,7 +14,7 @@
 ![Redis](https://img.shields.io/badge/Redis-Stack%20HNSW-dc382d)
 ![License](https://img.shields.io/badge/License-GNU%20GPL%20v3-blue)
 
-[功能特性](#-功能特性) · [快速开始](#-快速开始) · [架构与亮点](#-架构与系统亮点) · [使用说明](#-使用说明) · [接口速览](#-核心接口速览) · [许可证](#-许可证)
+[功能特性](#-功能特性) · [快速开始](#-快速开始) · [架构与亮点](#-架构与系统亮点) · [使用说明](#-使用说明) · [接口速览](#-核心接口速览) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证)
 
 </div>
 
@@ -27,7 +27,7 @@
 项目交付包含：
 - **Web 业务主线**：Spring Boot 3.5.3 + MyBatis-Plus + Vue 3 (Vite 6 + Pinia + Ant Design Vue + Lucide 矢量图标)
 - **直播带货系统**：支持商户在线开播、商品货架边播边买、毫秒级实时互动弹幕与点赞人气流
-- **Apple UI 体验规范**：基于 21st.dev 风格打造的高斯毛玻璃、拟态物理流体悬浮 Dock、iPhone 灵动岛通知胶囊与 3D 景深卡片轮播，全端（含手机浏览器 H5）自适应
+- **Apple UI 体验规范**：基于APPLE风格打造的高斯毛玻璃、拟态物理流体悬浮 Dock、iPhone 灵动岛通知胶囊与 3D 景深卡片轮播，全端（含手机浏览器 H5）自适应
 - **本地 AI 中枢沙盒**：基于 Docker 托管 llama.cpp 实现 Qwen2.5-7B（文本）与 Qwen2.5-VL（多模态视觉）双模型 Router 热切换调度，集成硬件显存感知调度器与 Redis Stack HNSW 向量知识库（bge-m3 1024 维密集嵌入）
 - **微服务演进骨架**（`cloud/`）：Spring Cloud + Nacos + Spring Cloud Gateway + OpenFeign 8 大微服务模块预研骨架
 - **供应链与安全防护**：TOTP 双因素安全验证、Google / Apple 社交登录集成、BCrypt 密码散列、AES-256-GCM 敏感字段加密、CodeQL 与 Dependabot 自动化审计
@@ -279,13 +279,39 @@ npm run build
 
 ---
 
+## 📬 联系方式与原创声明
+
+### 👨‍💻 项目作者与联系方式
+
+本项目由 **Jason Ouyang（欧阳）** 独立构思、设计与开发完成：
+
+- **作者身份**：项目发起人 / 独立研发者（GitHub: [@c2jxmrywdn-del](https://github.com/c2jxmrywdn-del)）
+- **主要邮箱**：[3514485358@qq.com](mailto:3514485358@qq.com)（日常项目交流、学术探讨与技术沟通）
+- **商务/备用邮箱**：[ouyangjason001@gmail.com](mailto:ouyangjason001@gmail.com)（合作咨询与对外联络）
+- **即时通讯**：WhatsApp · [OuyangJason](https://wa.me/OuyangJason?s=t)
+- **开源主页**：[https://github.com/c2jxmrywdn-del/LANLinkshopping-Local-version](https://github.com/c2jxmrywdn-del/LANLinkshopping-Local-version)
+
+---
+
+### ⚠️ 原创性与法律权益严正声明（严禁商业化、冒用与盗用）
+
+> [!CAUTION]
+> **知识产权与维权警告**
+> 
+> 1. **原创毕业设计成果归属**：本项目（包含但不限于平台架构设计、技术选型方案、功能业务闭环、前端与移动端 UI/UX 视觉体系、Apple UI 组件库、后端微服务与 AI 沙盒代码实现、接口定义、数据库结构及相关说明文档）均为作者本人拥有独立知识产权与著作权的原创毕业设计成果。
+> 2. **严禁商业化与营利性使用**：本项目仅限用于**个人技术学习、学术交流与毕业设计演示**用途。**未经作者本人明确的书面授权许可，任何组织、机构、团队或个人严禁将本项目源码、架构或衍生作品用于任何商业营利活动、付费课程、外包交付、商业 SaaS 售卖或商业产品包装推广**。
+> 3. **严禁冒用、抄袭与剽窃盗用**：严禁任何人对本项目进行署名篡改、冒用作者身份、去除原作者版权信息、伪造成自身独立原创成果（包括但不限于将本项目用于各类高校毕业设计答辩、课程大作业提报、技术竞赛作品评奖等欺瞒行为）。
+> 4. **维权与法律追责**：对于任何未经许可的盗用、剽窃、商业倒卖或冒用侵权行为，作者已对项目完整研发历程、代码提交历史及相关成果进行全网公证固证，并**保留采取发送律师函、向所在高校/工作单位/托管平台进行侵权举证下架，乃至依法向人民法院提起知识产权侵权诉讼追究法律赔偿责任等一切合法维权措施**。请共同尊重原创知识成果！
+
+---
+
 ## 📄 许可证说明
 
 本项目依据 **GNU General Public License v3.0（GNU GPL-3.0）** 开源协议授权发布。
 
 ```text
 LANLinkshopping — 聚合型一体多元化解决方案 B2B 电商平台
-Copyright (C) 2026 LANLinkshopping Contributors
+Copyright (C) 2026 LANLinkshopping the sole editor
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -294,7 +320,7 @@ the Free Software Foundation, either version 3 of the License, or
 ```
 
 - 完整许可证协议文本详见根目录 [LICENSE](./LICENSE) 文件。
-- 允许自由学习、修改与衍生，但**任何包含本项目源代码的衍生作品必须以相同的 GPL-3.0 协议开源**（强传染性 Copyleft 保障）。
+- **任何包含本项目源代码的衍生作品必须以相同的 GPL-3.0 协议开源**（强传染性 Copyleft 保障）。
 
 ---
 
@@ -302,6 +328,6 @@ the Free Software Foundation, either version 3 of the License, or
 
 **感谢所有为 LANLinkshopping 提供支持的开源项目与生态技术社区！**
 
-Made with ❤️ for Modern B2B E-Commerce & Open Innovation · 2026
+Made with ❤️ for Modern B2B E-Commerce & Open Innovation · 12/9/2026
 
 </div>
