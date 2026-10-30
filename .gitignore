@@ -82,3 +82,22 @@ __pycache__/
 skills-lock.json
 ai-gateway/metrics/
 *.tmp
+
+# 文档目录与办公文档（严禁上传）
+docs/
+*.doc
+*.docx
+*.pdf
+*.ppt
+*.pptx
+*.xls
+*.xlsx
+
+# 临时探针、基准与验证脚本
+probe*.mjs
+bench-*.mjs
+verify-*.mjs
+patch-*.mjs
+pull-*.mjs
+*.mjs.tmp
+probe-out.txt
