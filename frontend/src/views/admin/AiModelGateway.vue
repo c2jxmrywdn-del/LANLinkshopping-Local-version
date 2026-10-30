@@ -34,6 +34,24 @@
       </div>
     </a-card>
 
+    <!-- AI 备用链路状态（/support/fallback/status）：本地知识库兜底是否激活、违规拦截计数与当前策略 -->
+    <a-card :bordered="false" class="switch-card fallback-card">
+      <div class="switch-row">
+        <div class="switch-copy">
+          <strong>
+            <span class="fb-dot" :class="fallback?.backupActive ? 'fb-on' : 'fb-off'"></span>
+            AI 备用链路{{ fallback?.backupActive ? '已激活' : '未激活' }}
+          </strong>
+          <p>
+            违规拦截 {{ fallback?.violationCount ?? '—' }} 次 · 外部渠道
+            {{ fallback?.externalChannelConfigured ? '已配置' : '未配置' }} ·
+            <code class="fb-policy">{{ fallback?.policy || '—' }}</code>
+          </p>
+        </div>
+        <a-button size="small" :loading="fallbackLoading" @click="loadFallback">查询状态</a-button>
+      </div>
+    </a-card>
+
     <a-row :gutter="[16, 16]" class="channel-grid">
       <a-col v-for="ch in channels" :key="ch.channel" :xs="24" :md="12" :xl="8">
         <a-card class="channel-card" :bordered="false">
@@ -213,6 +231,18 @@ const channels = ref([])
 const intentExternalEnabled = ref(false)
 const toggleLoading = ref(false)
 
+// 备用链路状态
+const fallback = ref(null)
+const fallbackLoading = ref(false)
+
+async function loadFallback() {
+  fallbackLoading.value = true
+  try {
+    fallback.value = await adminApi.fallbackStatus()
+  } catch (e) { /* 拦截器已提示 */ }
+  fallbackLoading.value = false
+}
+
 const testingChannel = ref('')
 const testingInline = ref(false)
 const inlineResult = ref(null)
@@ -382,7 +412,10 @@ async function runInvoke() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadFallback()
+})
 </script>
 
 <style scoped>
@@ -390,6 +423,10 @@ onMounted(load)
 .security-banner { border-radius: 12px; }
 .switch-card, .preset-card, .channel-card { border-radius: 14px; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.fallback-card .fb-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+.fb-dot.fb-on { background: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, .15); }
+.fb-dot.fb-off { background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .15); }
+.fb-policy { font-size: 12px; color: #475569; }
 .switch-copy strong { display: block; color: #0f172a; font-size: 15px; margin-bottom: 6px; }
 .switch-copy p { margin: 0; color: #667085; font-size: 12px; line-height: 1.7; max-width: 760px; }
 .channel-grid { margin: 0; }

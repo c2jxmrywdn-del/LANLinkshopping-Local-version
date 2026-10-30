@@ -54,6 +54,7 @@
         </a-tab-pane>
 
         <a-tab-pane key="aftersale" tab="物流售后">
+          <a-button type="primary" @click="openAftersale()">新建售后单</a-button>
           <a-table :data-source="aftersales" :columns="aftersaleCols" row-key="aftersaleId" size="middle"
             :pagination="{ current: afterPage.page, pageSize: afterPage.size, total: afterPage.total, onChange: loadAftersales }">
             <template #bodyCell="{ column, record }">
@@ -78,16 +79,17 @@
             :pagination="{ current: settlePage.page, pageSize: settlePage.size, total: settlePage.total, onChange: loadSettlements }">
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'action'">
-              <a-space>
-                <a v-if="record.status === 'draft'" @click="reviewSettle(record, 'submit')">提交</a>
-                <a v-if="record.status === 'pending_review'" @click="reviewSettle(record, 'approve')">通过</a>
-                <a-popconfirm v-if="record.status === 'pending_review'" title="确认驳回该结算单？驳回后将退回草稿。" ok-text="驳回" cancel-text="取消"
-                              @confirm="reviewSettle(record, 'reject')">
-                  <a style="color:#d93025">驳回</a>
-                </a-popconfirm>
-                <a v-if="record.status === 'approved'" @click="reviewSettle(record, 'pay')">打款</a>
-              </a-space>
-            </template>
+                <a-space>
+                  <a v-if="record.status === 'draft'" @click="reviewSettle(record, 'submit')">提交</a>
+                  <a v-if="record.status === 'pending_review'" @click="reviewSettle(record, 'approve')">通过</a>
+                  <a-popconfirm v-if="record.status === 'pending_review'" title="确认驳回该结算单？驳回后将退回草稿。" ok-text="驳回" cancel-text="取消"
+                                @confirm="reviewSettle(record, 'reject')">
+                    <a style="color:#d93025">驳回</a>
+                  </a-popconfirm>
+                  <a v-if="record.status === 'approved'" @click="reviewSettle(record, 'pay')">打款</a>
+                  <a @click="showItems(record)">明细</a>
+                </a-space>
+              </template>
             </template>
           </a-table>
         </a-tab-pane>
@@ -146,15 +148,72 @@
       </a-form>
     </a-modal>
 
-    <!-- 轨迹弹窗 -->
-    <a-modal v-model:open="traceVisible" title="物流轨迹" :footer="null">
-      <a-timeline>
+    <!-- 轨迹弹窗：查看 + 运营同步节点（后端按描述关键词流转状态机，签收会联动订单完成） -->
+    <a-modal v-model:open="traceVisible" :title="`物流轨迹 · ${traceWaybill?.waybillNo || ''}`" :footer="null">
+      <a-divider orientation="left" orientation-margin="0" style="font-size:12px">同步轨迹节点</a-divider>
+      <a-space compact style="width:100%; margin-bottom:6px; flex-wrap:wrap" >
+        <a-select v-model:value="syncForm.node" style="width:150px">
+          <a-select-option v-for="n in syncNodeOptions" :key="n.value" :value="n.value">{{ n.label }}</a-select-option>
+        </a-select>
+        <a-input v-model:value="syncForm.location" placeholder="地点，如 重庆转运中心" style="width:180px" />
+        <a-button type="primary" :loading="syncing" @click="doSync">同步</a-button>
+      </a-space>
+      <a-timeline style="margin-top:12px">
         <a-timeline-item v-for="t in traces" :key="t.traceId" :color="t.isAbnormal ? 'red' : 'blue'">
           <p>{{ t.description }}</p>
           <small>{{ t.traceTime }}</small>
         </a-timeline-item>
+        <a-timeline-item v-if="!traces.length" color="gray">暂无轨迹，可先在上方同步一个节点</a-timeline-item>
       </a-timeline>
     </a-modal>
+
+    <!-- 生成对账单：按服务商+账期聚合已签收/退回/丢失运单（后端幂等防重复生成） -->
+    <a-modal v-model:open="generateVisible" title="生成物流对账单" @ok="submitGenerate" :confirm-loading="generating">
+      <a-form layout="vertical">
+        <a-form-item label="物流服务商" required>
+          <a-select v-model:value="generateForm.providerId" placeholder="选择服务商">
+            <a-select-option v-for="p in providers" :key="p.providerId" :value="p.providerId">{{ p.providerName }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="账期区间" required>
+          <a-range-picker v-model:value="generateForm.range" style="width:100%" value-format="YYYY-MM-DD" />
+        </a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12"><a-form-item label="扣减金额(元)"><a-input-number v-model:value="generateForm.deduction" :min="0" style="width:100%" placeholder="可选" /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="附加费用(元)"><a-input-number v-model:value="generateForm.extraFee" :min="0" style="width:100%" placeholder="可选" /></a-form-item></a-col>
+        </a-row>
+        <a-typography-text type="secondary" style="font-size:12px">
+          仅聚合账期内「已签收 / 已退回 / 丢失」的运单；同服务商同账期只允许生成一次。
+        </a-typography-text>
+      </a-form>
+    </a-modal>
+
+    <!-- 新建物流售后单 -->
+    <a-modal v-model:open="aftersaleVisible" title="新建物流售后单" @ok="submitAftersale" :confirm-loading="aftersaleSaving">
+      <a-form layout="vertical">
+        <a-form-item label="运单" required>
+          <a-select v-model:value="aftersaleForm.waybillId" placeholder="选择运单" show-search option-filter-prop="label"
+                    @change="onAftersaleWaybill">
+            <a-select-option v-for="w in waybills" :key="w.waybillId" :value="w.waybillId" :label="w.waybillNo">
+              {{ w.waybillNo }}（{{ statusText(w.status) }}）
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="售后类型" required>
+          <a-select v-model:value="aftersaleForm.aftersaleType">
+            <a-select-option v-for="t in aftersaleTypes" :key="t.value" :value="t.value">{{ t.label }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="关联订单号"><a-input v-model:value="aftersaleForm.orderNo" disabled /></a-form-item>
+        <a-form-item label="问题描述"><a-textarea v-model:value="aftersaleForm.description" :rows="3" maxlength="200" /></a-form-item>
+        <a-form-item label="赔付金额(元)"><a-input-number v-model:value="aftersaleForm.claimAmount" :min="0" :precision="2" style="width:100%" placeholder="可选" /></a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- 结算明细抽屉 -->
+    <a-drawer v-model:open="itemsVisible" :title="`结算明细 · ${itemsSettleNo}`" width="520">
+      <a-table :data-source="items" :columns="itemCols" row-key="itemId" size="small" :loading="itemsLoading" :pagination="false" />
+    </a-drawer>
   </div>
 </template>
 
@@ -181,6 +240,40 @@ const templateVisible = ref(false)
 const traceVisible = ref(false)
 const providerForm = ref({})
 const templateForm = ref({})
+
+// 生成对账单 / 新建售后 / 结算明细 / 轨迹同步
+const generateVisible = ref(false)
+const generating = ref(false)
+const generateForm = ref({ providerId: null, range: [], deduction: null, extraFee: null })
+const aftersaleVisible = ref(false)
+const aftersaleSaving = ref(false)
+const aftersaleForm = ref({ waybillId: null, aftersaleType: 'trace', orderNo: '', description: '', claimAmount: null })
+const itemsVisible = ref(false)
+const itemsLoading = ref(false)
+const items = ref([])
+const itemsSettleNo = ref('')
+const traceWaybill = ref(null)
+const syncing = ref(false)
+const syncForm = ref({ node: 'in_transit', location: '' })
+
+const aftersaleTypes = [
+  { value: 'expedite', label: '催件' },
+  { value: 'trace', label: '查件' },
+  { value: 'claim', label: '赔付' },
+  { value: 'reship', label: '补发' },
+  { value: 'return_freight', label: '退回运费' }
+]
+/** 轨迹节点预设：描述模板中的关键词由后端 LogisticsTraceParser 识别并推进运单状态机 */
+const syncNodeOptions = [
+  { value: 'picked_up', label: '已揽收', desc: '已揽收' },
+  { value: 'in_transit', label: '运输中', desc: '运输中' },
+  { value: 'out_for_delivery', label: '派件中', desc: '派件中' },
+  { value: 'delivered', label: '已签收', desc: '已签收' },
+  { value: 'refused', label: '异常·拒收', desc: '用户拒收' },
+  { value: 'damaged', label: '异常·破损', desc: '包裹破损' },
+  { value: 'lost', label: '丢失', desc: '包裹丢失' },
+  { value: 'returned', label: '已退回', desc: '包裹退回' }
+]
 
 const providerCols = [
   { title: 'ID', dataIndex: 'providerId' },
@@ -232,6 +325,12 @@ const settleCols = [
   { title: '状态', dataIndex: 'status' },
   { title: '操作', key: 'action' }
 ]
+const itemCols = [
+  { title: '运单号', dataIndex: 'waybillNo' },
+  { title: '运费', dataIndex: 'freight' },
+  { title: '备注', dataIndex: 'remark' },
+  { title: '生成时间', dataIndex: 'createTime' }
+]
 
 const statusText = (s) => ({ pending_ship: '待发货', picked_up: '已揽收', in_transit: '运输中', out_for_delivery: '派件中', delivered: '已签收', exception: '异常', returned: '已退回', lost: '丢失', cancelled: '已取消' }[s] || s)
 const statusColor = (s) => ({ delivered: 'green', exception: 'red', returned: 'orange', lost: 'red', in_transit: 'blue' }[s] || 'default')
@@ -279,11 +378,6 @@ async function saveTemplate() {
   templateVisible.value = false
   loadTemplates()
 }
-async function showTrace(record) {
-  const r = await logisticsApi.traces(record.waybillId)
-  traces.value = Array.isArray(r) ? r : []
-  traceVisible.value = true
-}
 async function handleAlert(record) {
   await logisticsApi.handleAlert(record.alertId, '已人工处理')
   message.success('告警已处理')
@@ -300,8 +394,94 @@ async function reviewSettle(record, action) {
   message.success(action === 'reject' ? '已驳回，结算单退回草稿' : '结算操作成功')
   loadSettlements()
 }
+async function showTrace(record) {
+  traceWaybill.value = record
+  syncForm.value = { node: 'in_transit', location: '' }
+  const r = await logisticsApi.traces(record.waybillId)
+  traces.value = Array.isArray(r) ? r : []
+  traceVisible.value = true
+}
+/** 同步一个轨迹节点：description 关键词由后端解析推进状态机（签收→联动订单完成） */
+async function doSync() {
+  if (!traceWaybill.value || syncing.value) return
+  const preset = syncNodeOptions.find(n => n.value === syncForm.value.node)
+  if (!preset) return
+  const location = syncForm.value.location?.trim() || '重庆转运中心'
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const traceTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  syncing.value = true
+  try {
+    const r = await logisticsApi.syncTrace(traceWaybill.value.waybillId, [{
+      traceTime, location, description: `【${location}】${preset.desc}`
+    }])
+    message.success(`已同步（导入 ${r?.imported ?? 1} 条，运单状态：${statusText(r?.status) || r?.status || '—'}）`)
+    const t = await logisticsApi.traces(traceWaybill.value.waybillId)
+    traces.value = Array.isArray(t) ? t : []
+    loadWaybills(waybillPage.value.page)
+  } catch (e) { /* 拦截器已提示 */ }
+  syncing.value = false
+}
 function openGenerate() {
-  message.info('生成对账单：请在结算页选择服务商与账期（示例入口）')
+  generateForm.value = { providerId: null, range: [], deduction: null, extraFee: null }
+  generateVisible.value = true
+}
+async function submitGenerate() {
+  const f = generateForm.value
+  if (!f.providerId) { message.warning('请选择服务商'); return }
+  if (!Array.isArray(f.range) || f.range.length !== 2) { message.warning('请选择账期区间'); return }
+  generating.value = true
+  try {
+    await logisticsApi.generateSettlement({
+      providerId: f.providerId,
+      periodStart: f.range[0],
+      periodEnd: f.range[1],
+      ...(f.deduction != null ? { deduction: f.deduction } : {}),
+      ...(f.extraFee != null ? { extraFee: f.extraFee } : {})
+    })
+    message.success('对账单已生成')
+    generateVisible.value = false
+    loadSettlements(1)
+  } catch (e) { /* 拦截器已提示 */ }
+  generating.value = false
+}
+function openAftersale() {
+  aftersaleForm.value = { waybillId: null, aftersaleType: 'trace', orderNo: '', description: '', claimAmount: null }
+  aftersaleVisible.value = true
+  if (!waybills.value.length) loadWaybills(1)
+}
+function onAftersaleWaybill(waybillId) {
+  const w = waybills.value.find(x => x.waybillId === waybillId)
+  aftersaleForm.value.orderNo = w?.orderNo || ''
+}
+async function submitAftersale() {
+  const f = aftersaleForm.value
+  if (!f.waybillId) { message.warning('请选择运单'); return }
+  aftersaleSaving.value = true
+  try {
+    await logisticsApi.createAftersale({
+      waybillId: f.waybillId,
+      aftersaleType: f.aftersaleType,
+      orderNo: f.orderNo || undefined,
+      description: f.description?.trim() || undefined,
+      ...(f.claimAmount != null ? { claimAmount: f.claimAmount } : {})
+    })
+    message.success('售后单已创建')
+    aftersaleVisible.value = false
+    loadAftersales(1)
+  } catch (e) { /* 拦截器已提示 */ }
+  aftersaleSaving.value = false
+}
+async function showItems(record) {
+  itemsSettleNo.value = record.settlementNo
+  itemsVisible.value = true
+  itemsLoading.value = true
+  items.value = []
+  try {
+    const r = await logisticsApi.settlementItems(record.settlementId)
+    items.value = Array.isArray(r) ? r : []
+  } catch (e) { /* 拦截器已提示 */ }
+  itemsLoading.value = false
 }
 
 watch(tab, (t) => {

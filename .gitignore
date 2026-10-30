@@ -80,4 +80,5 @@ __pycache__/
 .trae/
 .zwork/
 skills-lock.json
-ai-gateway/metrics/*.txt
+ai-gateway/metrics/
+*.tmp

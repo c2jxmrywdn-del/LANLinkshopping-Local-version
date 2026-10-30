@@ -162,6 +162,31 @@
       </div>
     </div>
 
+    <!-- 系统配置：动态运行时开关（site.maintenance 为全站维护开关，保存需二次确认） -->
+    <a-card :bordered="false" class="cfg-card" title="系统配置">
+      <template #extra>
+        <a-space>
+          <a-button size="small" :loading="cfgRefreshing" @click="refreshCfgCache">刷新缓存</a-button>
+          <a-button size="small" type="primary" ghost :loading="cfgLoading" @click="loadCfg">刷新</a-button>
+        </a-space>
+      </template>
+      <a-table :data-source="cfgRows" :columns="cfgCols" row-key="cfgKey" size="small" :loading="cfgLoading" :pagination="false">
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'cfgValue'">
+            <a-input v-model:value="record.cfgValue" size="small" style="max-width:220px" class="cfg-value-input" />
+          </template>
+          <template v-if="column.key === 'cfgAction'">
+            <a-popconfirm v-if="record.cfgKey === 'site.maintenance' && String(record.cfgValue) === 'true'"
+                          title="开启维护模式后全站暂停对外服务（后台与登录不受影响），确认？"
+                          ok-text="确认开启" cancel-text="取消" @confirm="saveCfg(record)">
+              <a-button size="small" danger :loading="cfgSaving === record.cfgKey">保存</a-button>
+            </a-popconfirm>
+            <a-button v-else size="small" type="link" :loading="cfgSaving === record.cfgKey" @click="saveCfg(record)">保存</a-button>
+          </template>
+        </template>
+      </a-table>
+    </a-card>
+
     <!-- 底部区域：数据安全体系与快捷工具 -->
     <div class="security-tools-grid">
       <div class="sec-box">
@@ -191,6 +216,7 @@
 
 <script setup>
 import { ref, reactive, onMounted, markRaw } from 'vue'
+import { message } from 'ant-design-vue'
 import { ShieldAlert } from 'lucide-vue-next'
 import {
   ShopOutlined,
@@ -198,9 +224,50 @@ import {
   SafetyCertificateOutlined,
   CheckCircleOutlined
 } from '@ant-design/icons-vue'
-import { merchantApi, productApi } from '../../api'
+import { merchantApi, productApi, adminApi } from '../../api'
 import AppleDynamicIsland from '../../components/ui/AppleDynamicIsland.vue'
 import AppleGlassCard from '../../components/ui/AppleGlassCard.vue'
+
+// ===== 系统配置（AdminConfigController：list/set/refresh；set 走 query 参数） =====
+const cfgRows = ref([])
+const cfgLoading = ref(false)
+const cfgSaving = ref('')
+const cfgRefreshing = ref(false)
+const cfgCols = [
+  { title: '配置键', dataIndex: 'cfgKey' },
+  { title: '当前值', key: 'cfgValue' },
+  { title: '说明', dataIndex: 'remark' },
+  { title: '操作', key: 'cfgAction', width: 90 }
+]
+
+async function loadCfg() {
+  cfgLoading.value = true
+  try {
+    const r = await adminApi.configList()
+    cfgRows.value = Array.isArray(r) ? r : []
+  } catch (e) { /* 拦截器已提示 */ }
+  cfgLoading.value = false
+}
+
+async function saveCfg(record) {
+  cfgSaving.value = record.cfgKey
+  try {
+    await adminApi.configSet(record.cfgKey, record.cfgValue)
+    message.success(`已保存：${record.cfgKey} = ${record.cfgValue}`)
+    loadCfg()
+  } catch (e) { /* 拦截器已提示 */ }
+  cfgSaving.value = ''
+}
+
+async function refreshCfgCache() {
+  cfgRefreshing.value = true
+  try {
+    await adminApi.configRefresh()
+    message.success('配置缓存已刷新')
+    loadCfg()
+  } catch (e) { /* 拦截器已提示 */ }
+  cfgRefreshing.value = false
+}
 
 const loading = ref(false)
 const stats = reactive({

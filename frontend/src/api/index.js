@@ -500,7 +500,13 @@ export const adminApi = {
   aiApiKeyCreate: (payload) => request.post('/admin/ai-api-keys', payload),
   aiApiKeyDisable: (id) => request.post(`/admin/ai-api-keys/${encodeURIComponent(id)}/disable`),
   supportIntentStats: () => request.get('/support/intent/stats'),
-  supportIntentAnalyze: (payload) => request.post('/support/intent/analyze', payload)
+  supportIntentAnalyze: (payload) => request.post('/support/intent/analyze', payload),
+  // AI 备用链路状态（SupportController /support/fallback/status，admin:all）
+  fallbackStatus: () => request.post('/support/fallback/status'),
+  // 动态系统配置（AdminConfigController；set/refresh 为 query 参数而非 body）
+  configList: () => request.get('/admin/config/list'),
+  configSet: (cfgKey, cfgValue) => request.post('/admin/config/set', null, { params: { cfgKey, cfgValue } }),
+  configRefresh: () => request.post('/admin/config/refresh')
 }
 
 // ===== 营销中台：统一活动系统（领券/促销/激励/商户报名） =====
