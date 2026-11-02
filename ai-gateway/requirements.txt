@@ -9,4 +9,4 @@ pymysql>=1.1
 httpx>=0.27
 redis>=5.0
 # 工具 fetch_page 的正文提取（过滤广告/导航；musllinux 轮子已实测齐备）
-trafilatura>=1.12
+trafilatura>=2.3.1
