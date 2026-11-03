@@ -114,7 +114,7 @@ flowchart TD
 | **前端主线** | Vue.js | 3.5.x (组合式 API) | 现代化响应式前端框架 |
 | | 构建工具 | Vite 6.4.5 | 极速冷启动、HMR 与生产环境 Rollup 分包优化 |
 | | UI 组件库 | Ant Design Vue 4.x | 企业级设计语言与基础组件 |
-| | 矢量图标 | Lucide Vue Next | 全站 21st.dev 风格纯矢量 SVG，彻底摒弃原生 Emoji |
+| | 矢量图标 | Lucide Vue Next | 全站 Lucide 风格纯矢量 SVG，彻底摒弃原生 Emoji |
 | | 状态与路由 | Pinia + Vue Router 4.x | 集中式响应式状态管理与导航守卫 |
 | **AI / 大模型** | 推理底座 | llama.cpp (Docker) | 支持 GGUF 格式 Qwen2.5-7B 与 Qwen2.5-VL 热切换 |
 | | AI 网关 | FastAPI + Uvicorn | 兼容 OpenAI `/v1/chat/completions`，支持工具调用与流式响应 |
@@ -151,8 +151,8 @@ flowchart TD
 - **边播边卖互动货架**：主播端一键推送正在讲解的爆款商品，买家端弹窗即时查看规格并快捷下单。
 - **商户与监管治理**：商户后台自主配置开播信息与关联带货商品，平台运营管理端实时巡查监管。
 
-#### 🍎 Apple UI 交互规范与 21st.dev 纯矢量图标系统
-- **纯矢量图标治理**：全面摒弃原生 Emoji 与字符替代方案，深度集成 21st.dev 风格的 Lucide SVG 矢量图标库，封装 [`AppleIcon.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleIcon.vue) 实现全站图标集中映射与规范化渲染。
+#### 🍎 Apple UI 交互规范与  纯矢量图标系统
+- **纯矢量图标治理**：全面摒弃原生 Emoji 与字符替代方案，深度集成的 Lucide 风格 SVG 矢量图标库，封装 [`AppleIcon.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleIcon.vue) 实现全站图标集中映射与规范化渲染。
 - **macOS 拟态悬浮 Dock**（[`AppleDock.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDock.vue)）：流体物理弹性缩放动画、平滑贝塞尔曲线微交互。
 - **iPhone 灵动岛交互**（[`AppleDynamicIsland.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDynamicIsland.vue)）：悬浮消息通知胶囊、状态变换弹性伸缩动效。
 - **3D 景深卡片轮播**（[`AppleCardsCarousel.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleCardsCarousel.vue)）：视差平移动态光影、手势滑动支持。
