@@ -27,7 +27,7 @@
 **LANLinkshopping** 是一个专为现代化数字供应链、大宗工业品采购与多企业协同场景设计的**聚合型、多行业、B2B 一体化全栈电商中台平台**。项目深度覆盖 **“统一身份鉴权 · 商户自主入驻与资质审核 · 24 大行业商品商城 · 智能协同推荐 · 购物车 · 下单支付与对账履约”** 五大基础交易闭环，并深度集成了 **商品直播带货、Apple 拟态物理流体交互体系、本地大模型微调与强化学习、Dify 多智能体编排、全栈可观测性与监控预警** 等现代化生产级工程能力。
 
 项目交付体系涵盖六大形态：
-1. **Web 电商全栈主线**：基于 Spring Boot 3.5.3 + MyBatis-Plus + Vue 3（Vite 6 + Pinia + Ant Design Vue + 21st.dev 风格 Lucide 纯矢量图标）打造的高性能自适应平台。
+1. **Web 电商全栈主线**：基于 Spring Boot 3.5.3 + MyBatis-Plus + Vue 3（Vite 6 + Pinia + Ant Design Vue + Lucide 风格纯矢量图标）打造的高性能自适应平台。
 2. **商品直播带货系统 (Live Commerce)**：支持企业开播、边播边卖互动商品货架、实时弹幕推流与观众互动热度统计。
 3. **Apple UI 交互体验规范**：基于 Apple 设计语言打造的高斯毛玻璃、macOS 拟态物理流体 Dock 栏、iPhone 灵动岛通知胶囊与 3D 景深卡片轮播，全端（含手机浏览器 H5）自适应。
 4. **企业级 AI 中枢与多智能体系统**：Docker 托管 llama.cpp 实现 Qwen2.5-7B（文本）与 Qwen2.5-VL（视觉多模态）双模型 Router 热切换调度，集成硬件显存感知调度器、Redis Stack HNSW 向量知识库（bge-m3 1024 维密集嵌入）与 Dify 多智能体工作流。
