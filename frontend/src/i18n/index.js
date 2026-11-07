@@ -300,6 +300,9 @@ const zh = {
       srcNews: '市场资讯',
       srcLearned: '学习候选',
       srcManual: '手工录入',
+      srcTechExpert: '技术专家', srcTechOrg: '专业机构', srcTechService: '服务产品',
+      srcTechDemand: '技术需求', srcTechAchievement: '技术成果', srcTechPolicy: '技术政策',
+      srcTechPost: '技术社区', srcTechManual: '技术服务机制',
       srcIntent: '意图示例'
     }
   }
@@ -600,6 +603,9 @@ const en = {
       srcNews: 'Market News',
       srcLearned: 'Learned',
       srcManual: 'Manual',
+      srcTechExpert: 'Experts', srcTechOrg: 'Institutions', srcTechService: 'Services',
+      srcTechDemand: 'Demands', srcTechAchievement: 'Achievements', srcTechPolicy: 'Policies',
+      srcTechPost: 'Community', srcTechManual: 'How it works',
       srcIntent: 'Intent examples'
     }
   }
@@ -641,7 +647,7 @@ export function setLocale(l) {
 
 // ===== 全站双语层（无需第三方运行时依赖） =====
 const UI_ZH_EN = {
-  '首页':'Home','商城':'Mall','优惠':'Promotions','账期':'Credit Terms','我的订单':'My Orders','商户管理':'Merchant Management','商户入驻':'Become a Merchant','流量管理':'Traffic Management','我的商品':'My Products','关于我们':'About Us',
+  '首页':'Home','商城':'Mall','账期':'Credit Terms','我的订单':'My Orders','商户管理':'Merchant Management','商户入驻':'Become a Merchant','流量管理':'Traffic Management','我的商品':'My Products','关于我们':'About Us',
   '消息':'Messages','购物车':'Cart','登录 / 注册':'Login / Register','退出登录':'Log out','退出':'Log out','返回前台':'Back to Storefront',
   '当前身份':'Current Identity','我的钱包':'My Wallet','企业账期':'Business Credit','活动中心':'Activity Center','会员中心':'Membership Center','个人资料':'Profile','消息中心':'Messages','收货地址':'Shipping Addresses','登录安全':'Login Security','账户设置':'Account Settings',
   '让每一次连接，都产生价值。':'Make every connection create value.','隐私与 Cookie':'Privacy & Cookies','知识产权声明':'Intellectual Property',
@@ -698,7 +704,7 @@ const UI_ZH_EN = {
   '毕业设计原创性及知识产权声明':'Originality & Intellectual Property Statement','请尊重知识产权':'Please Respect Intellectual Property','未经许可请勿使用、冒用或商业化。':'Do not use, impersonate or commercialize without permission.',
   '开发者社区':'Developer Community',
   '聚合 · 连接 · 一体多元解决方案':'Aggregate · Connect · Integrated Multi-Solution','关于 LANLinkshopping':'About LANLinkshopping','查看详情':'View Details',
-  '行业':'Industry','行业列表':'Industry List','全部行业':'All Industries','行业数据暂时无法更新':'Industry data is temporarily unavailable','自动同步':'Auto Sync','同步中…':'Syncing…','该行业暂无细分分类':'No subcategories in this industry yet','行业已自动接入，等待商品分类配置。':'This industry is connected automatically and is waiting for category configuration.','综合商品中心':'All-Industry Product Center','覆盖平台当前全部行业采购供给。':'Covers procurement supply across all industries on the platform.','采购入口':'Procurement','热销采购':'Best-Selling Procurement','查看全平台供给':'View platform-wide supply','按销量快速筛选':'Quickly filter by sales','采购优惠':'Procurement Offers','满减与行业折扣':'Threshold discounts and industry offers','类':'categories','进入':'Enter',
+  '行业':'Industry','行业列表':'Industry List','全部行业':'All Industries','行业数据暂时无法更新':'Industry data is temporarily unavailable','自动同步':'Auto Sync','同步中…':'Syncing…','该行业暂无细分分类':'No subcategories in this industry yet','行业已自动接入，等待商品分类配置。':'This industry is connected automatically and is waiting for category configuration.','综合商品中心':'All-Industry Product Center','覆盖平台当前全部行业采购供给。':'Covers procurement supply across all industries on the platform.','采购入口':'Procurement','热销采购':'Best-Selling Procurement','查看全平台供给':'View platform-wide supply','按销量快速筛选':'Quickly filter by sales','采购活动':'Procurement Campaigns','满减与行业折扣':'Threshold discounts and industry offers','类':'categories','进入':'Enter',
   '待审核':'Pending Review','已通过':'Approved','已驳回':'Rejected','审核通过':'Approve','审核完成':'Review Completed','资质核验':'Qualification Check','提交申请':'Application Submitted','材料':'Materials','已入驻':'Onboarded','原因':'Reason','工商信息':'Business Registration','主体类型':'Entity Type','注册资本':'Registered Capital','入驻方式':'Onboarding Method','企业ID':'Enterprise ID','商户ID':'Merchant ID','纳税申报':'Tax Filing','证照材料':'Licensing Documents','申请时间':'Application Time','营业执照':'Business License','查看原件':'View Original','近期纳税记录':'Recent Tax Records','税务登记号':'Tax Registration No.','纳税记录材料':'Tax Record Documents','记录':'Record','已具备资质':'Existing Qualifications','驳回原因':'Rejection Reason','操作':'Actions','快速查看':'Quick View','档案':'Profile','通过':'Approve','驳回':'Reject','商户档案详情':'Merchant Profile Details','驳回入驻申请':'Reject Onboarding Application','驳回原因（必填，将展示给商户用于整改）':'Rejection reason (required; shown to the merchant for remediation)','请输入驳回原因':'Please enter a rejection reason','确认通过':'Confirm Approval','审核通过该商户入驻申请':'Approve this merchant onboarding application',
   // 入驻证照：示例照片与图片回退（CertSampleHint / CertImage）
   '示例':'Sample',

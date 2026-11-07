@@ -66,7 +66,7 @@
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../../store/user'
 // 服务图标：Lucide 图标体系（21st.dev shadcn 生态标配，与全站 lucide-vue-next 同源）
-import { MonitorPlay, LineChart, Gift, ReceiptText } from 'lucide-vue-next'
+import { MonitorPlay, LineChart, Gift, ReceiptText, FlaskConical, Ticket, ListChecks, Flame } from 'lucide-vue-next'
 
 const props = defineProps({
   /** 面板关闭回调：交给 MainLayout 统一管理开关状态 */
@@ -82,11 +82,15 @@ const sections = [
   { id: 'hot', label: '热销推荐' }
 ]
 
-/** tint 决定图标色块底色（柔和浅色系，Apple 设置页分组图标风格）；顺序按买家动线：发现 → 优惠 → 决策 → 支付 */
+/** tint 决定图标色块底色（柔和浅色系，Apple 设置页分组图标风格）；顺序按买家动线：发现 → 活动 → 决策 → 支付 */
 const services = [
   { path: '/live', label: '直播广场', desc: '生产线实时直播与讲解', icon: MonitorPlay, tint: 'sky' },
   { path: '/activity', label: '活动中心', desc: '领券、限时秒杀与积分', icon: Gift, tint: 'gold' },
+  { path: '/coupons', label: '领券中心', desc: '海量券池一键批量领取', icon: Ticket, tint: 'gold' },
+  { path: '/tasks', label: '任务中心', desc: '做任务赢积分与成长值', icon: ListChecks, tint: 'teal' },
+  { path: '/venue', label: '大促会场', desc: '行业大促一站逛齐', icon: Flame, tint: 'rose' },
   { path: '/price-monitor', label: '价格情报台', desc: '价格走势 · AI 实时分析', icon: LineChart, tint: 'indigo' },
+  { path: '/tech', label: '技术服务', desc: '技术交易与专利运营', icon: FlaskConical, tint: 'teal' },
   { path: '/credit-term', label: '企业账期', desc: '授信 · 账单 · 还款', icon: ReceiptText, tint: 'teal' }
 ]
 
@@ -176,10 +180,12 @@ function goSection(id) {
 .tint-indigo { color: #4338ca; background: linear-gradient(135deg, #e0e7ff, #c7d2fe); }
 .tint-gold { color: #92650e; background: linear-gradient(135deg, #fef3c7, #fde68a); }
 .tint-teal { color: #0f766e; background: linear-gradient(135deg, #ccfbf1, #99f6e4); }
+.tint-rose { color: #be123c; background: linear-gradient(135deg, #ffe4e6, #fecdd3); }
 [data-theme='dark'] .tint-sky { color: #7dd3fc; background: rgba(14, 165, 233, .16); }
 [data-theme='dark'] .tint-indigo { color: #a5b4fc; background: rgba(99, 102, 241, .16); }
 [data-theme='dark'] .tint-gold { color: var(--ll-brand-gold, #C8A45C); background: rgba(200, 164, 92, .14); }
 [data-theme='dark'] .tint-teal { color: #5eead4; background: rgba(20, 184, 166, .14); }
+[data-theme='dark'] .tint-rose { color: #fda4af; background: rgba(244, 63, 94, .16); }
 .service-copy { flex: 1; min-width: 0; }
 .service-copy b { display: block; font-size: 13px; font-weight: 650; color: var(--ll-ink, #0f172a); }
 .service-copy small { display: block; margin-top: 2px; color: #a0aec0; font-size: 11px;

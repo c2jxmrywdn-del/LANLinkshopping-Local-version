@@ -52,6 +52,44 @@ function loggedInUser() {
 
 let lastReportAt = 0
 let reportTimer = null
+let serverSynced = false // 每次页面加载最多回读一次（登录状态变化靠下一次路由触发重查）
+
+/**
+ * 登录且已授权时，从服务端拉回画像副本与本地 Cookie 合并（跨设备续用的"读"侧）。
+ * 服务端 updatedAt 较新才回写本机；期间本机新增的增量按次数取大/并集兜底，不丢失。
+ */
+async function syncFromServer() {
+  if (serverSynced) return
+  if (typeof window === 'undefined') return
+  if (!hasCookieConsent('analytics') || !loggedInUser()) return
+  serverSynced = true
+  try {
+    const { default: request } = await import('../api/request')
+    const data = await request.get('/user/habits', { silent: true })
+    const remote = data && data.payload ? data.payload : data
+    if (!remote || remote.v !== 1) return
+    const local = readProfile() || emptyProfile()
+    if (local.updatedAt && remote.updatedAt && local.updatedAt >= remote.updatedAt) return
+    const merged = { ...emptyProfile(), ...remote }
+    for (const [k, v] of Object.entries(local.searchTerms || {})) {
+      merged.searchTerms[k] = Math.max(merged.searchTerms[k] || 0, v)
+    }
+    for (const [k, v] of Object.entries(local.categories || {})) {
+      merged.categories[k] = Math.max(merged.categories[k] || 0, v)
+    }
+    const seen = new Set((merged.recentProducts || []).map(x => x.id))
+    for (const it of (local.recentProducts || [])) {
+      if (!seen.has(it.id)) merged.recentProducts.push(it)
+    }
+    merged.recentProducts = (merged.recentProducts || [])
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+      .slice(0, LIMITS.recentProducts)
+    merged.updatedAt = remote.updatedAt || new Date().toISOString()
+    // 手写 Cookie：不经过 writeProfile，避免盖掉服务端 updatedAt 破坏下次比较
+    document.cookie = COOKIE_KEY + '=' + encodeURIComponent(JSON.stringify(merged)) +
+      '; Max-Age=' + MAX_AGE + '; Path=/; SameSite=Lax'
+  } catch (e) { /* 服务端画像不可用时继续用本机副本 */ }
+}
 
 /** 节流上报到服务端（仅登录用户；游客画像只留在本机 Cookie） */
 function scheduleReport() {
@@ -110,8 +148,9 @@ export function recordProductView(product) {
   scheduleReport()
 }
 
-/** 记录一次访问（路由切换时调用；30 分钟窗口去重） */
+/** 记录一次访问（路由切换时调用；30 分钟窗口去重）。首访触发一次服务端画像回读 */
 export function recordVisit() {
+  syncFromServer()
   const p = gate()
   if (!p) return
   const now = Date.now()

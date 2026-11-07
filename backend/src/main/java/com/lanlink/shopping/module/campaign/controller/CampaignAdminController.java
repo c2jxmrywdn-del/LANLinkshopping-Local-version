@@ -1,10 +1,13 @@
 package com.lanlink.shopping.module.campaign.controller;
 
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.R;
+import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.integration.security.RequirePerm;
-import com.lanlink.shopping.module.campaign.entity.Campaign;
+import com.lanlink.shopping.module.campaign.dto.CampaignUpsertRequest;
+import com.lanlink.shopping.module.campaign.dto.CampaignView;
 import com.lanlink.shopping.module.campaign.service.CampaignService;
+import com.lanlink.shopping.service.AuditService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -17,6 +20,8 @@ import java.util.Map;
  *  - PUT    /admin/campaign/{id}           更新活动
  *  - POST   /admin/campaign/{id}/status    上架/下架
  *  - DELETE /admin/campaign/{id}           删除活动（有参与记录时禁止，应下架）
+ *  - GET    /admin/campaign/audit/page     商户促销审核分页（reviewStatus 可空=全部）
+ *  - POST   /admin/campaign/audit/{id}/review 商户促销审核（通过/驳回）
  */
 @RestController
 @RequestMapping("/admin/campaign")
@@ -24,18 +29,20 @@ import java.util.Map;
 public class CampaignAdminController {
 
     private final CampaignService campaignService;
+    private final AuditService auditService;
 
-    public CampaignAdminController(CampaignService campaignService) {
+    public CampaignAdminController(CampaignService campaignService, AuditService auditService) {
         this.campaignService = campaignService;
+        this.auditService = auditService;
     }
 
     @GetMapping("/page")
-    public R<Page<Campaign>> page(@RequestParam(defaultValue = "1") long page,
-                                  @RequestParam(defaultValue = "10") long size,
-                                  @RequestParam(required = false) String type,
-                                  @RequestParam(required = false) Integer status,
-                                  @RequestParam(required = false) String keyword) {
-        return R.ok(campaignService.adminPage(page, size, type, status, keyword));
+    public R<Map<String, Object>> page(@RequestParam(defaultValue = "1") long page,
+                                       @RequestParam(defaultValue = "10") long size,
+                                       @RequestParam(required = false) String type,
+                                       @RequestParam(required = false) Integer status,
+                                       @RequestParam(required = false) String keyword) {
+        return R.ok(CampaignView.page(campaignService.adminPage(page, size, type, status, keyword)));
     }
 
     @GetMapping("/{id}")
@@ -44,13 +51,13 @@ public class CampaignAdminController {
     }
 
     @PostMapping
-    public R<Campaign> create(@RequestBody Campaign campaign) {
-        return R.ok("活动已创建", campaignService.adminCreate(campaign));
+    public R<CampaignView> create(@RequestBody CampaignUpsertRequest campaign) {
+        return R.ok("活动已创建", CampaignView.of(campaignService.adminCreate(campaign)));
     }
 
     @PutMapping("/{id}")
-    public R<Campaign> update(@PathVariable Long id, @RequestBody Campaign campaign) {
-        return R.ok("活动已更新", campaignService.adminUpdate(id, campaign));
+    public R<CampaignView> update(@PathVariable Long id, @RequestBody CampaignUpsertRequest campaign) {
+        return R.ok("活动已更新", CampaignView.of(campaignService.adminUpdate(id, campaign)));
     }
 
     /** 上架(status=1)/下架(status=0) */
@@ -64,5 +71,29 @@ public class CampaignAdminController {
     public R<Void> delete(@PathVariable Long id) {
         campaignService.adminDelete(id);
         return R.ok("活动已删除", null);
+    }
+
+    // ==================== 商户促销审核 ====================
+
+    /** 商户活动审核分页（reviewStatus 可空=全部：0待审 1通过 2驳回） */
+    @GetMapping("/audit/page")
+    public R<Map<String, Object>> auditPage(@RequestParam(required = false) Integer reviewStatus,
+                                            @RequestParam(defaultValue = "1") long page,
+                                            @RequestParam(defaultValue = "10") long size) {
+        return R.ok(CampaignView.page(campaignService.merchantAuditPage(page, size, reviewStatus)));
+    }
+
+    /** 审核商户促销：approved=true 通过（reviewStatus=1）/ 驳回（reviewStatus=2，note 必填） */
+    @PostMapping("/audit/{id}/review")
+    public R<CampaignView> review(@PathVariable Long id,
+                                  @RequestBody Map<String, Object> body,
+                                  HttpServletRequest request) {
+        boolean approved = Boolean.TRUE.equals(body == null ? null : body.get("approved"));
+        String note = body == null || body.get("note") == null ? null : String.valueOf(body.get("note"));
+        var c = campaignService.merchantReview(id, approved, note);
+        auditService.record(UserContext.currentUserId(request), "CAMPAIGN_REVIEW",
+                (approved ? "商户促销审核通过" : "商户促销驳回") + " #" + id
+                        + (note == null || note.isBlank() ? "" : "：" + note), request);
+        return R.ok(approved ? "审核通过" : "已驳回", CampaignView.of(c));
     }
 }

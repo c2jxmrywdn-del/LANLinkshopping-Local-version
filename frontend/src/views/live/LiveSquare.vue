@@ -14,7 +14,7 @@
                  :aria-label="'进入直播间：' + r.title"
                  @click="goRoom(r)" @keydown.enter.prevent="goRoom(r)">
           <div class="ls-cover">
-            <img v-if="r.coverUrl" :src="r.coverUrl" :alt="r.title" loading="lazy" @error="onCoverError($event)" />
+            <img v-if="r.coverUrl" :src="resolveStorageUrl(r.coverUrl)" :alt="r.title" loading="lazy" @error="onCoverError($event)" />
             <div v-else class="ls-cover-fallback"><Video :size="30" :stroke-width="1.5" /></div>
             <span class="ls-flag" :class="'st-' + Number(r.status)">
               <i v-if="Number(r.status) === 1" class="ls-dot" aria-hidden="true"></i>
@@ -52,6 +52,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Eye, Store, Clock, Video } from 'lucide-vue-next'
 import { liveApi } from '../../api'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import SegmentedControl from '../../components/ui/SegmentedControl.vue'
 
 const STATUS_OPTIONS = [

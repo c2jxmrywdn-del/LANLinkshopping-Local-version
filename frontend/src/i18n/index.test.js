@@ -38,6 +38,24 @@ describe('轻量 i18n', () => {
     expect(document.body.textContent).toContain('记录')
   })
 
+  it('快照覆盖状态词条（已分析徽标 / 未分析指引 / 网络资讯降级标注）', () => {
+    document.body.innerHTML =
+      '<div class="a">已分析 379/379</div>' +
+      '<span class="b" title="未分析 · 整点 50 分后自动纳入">未分析 · 整点 50 分后自动纳入</span>' +
+      '<span class="c">网络资讯暂缺（降级）</span>'
+    setLocale('en-US')
+    // 已分析 N/M：动态数字部分保留，词条部分整译
+    expect(document.querySelector('.a').textContent).toBe('Analyzed 379/379')
+    expect(document.querySelector('.b').textContent).toBe('Not analyzed · joins the auto chain at :50')
+    expect(document.querySelector('.b').getAttribute('title')).toBe('Not analyzed · joins the auto chain at :50')
+    expect(document.querySelector('.c').textContent).toBe('Web info unavailable (degraded)')
+
+    setLocale('zh-CN')
+    expect(document.querySelector('.a').textContent).toBe('已分析 379/379')
+    expect(document.querySelector('.b').textContent).toBe('未分析 · 整点 50 分后自动纳入')
+    expect(document.querySelector('.c').textContent).toBe('网络资讯暂缺（降级）')
+  })
+
   it('非法语言回退中文', () => {
     setLocale('fr-FR')
     expect(t('acct.nav.profile')).toBe('个人信息')

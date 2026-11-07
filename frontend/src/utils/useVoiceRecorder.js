@@ -3,11 +3,16 @@ import { getCurrentInstance, onBeforeUnmount, ref } from 'vue'
 /** 后端语音时长上限（秒）：达到后自动停止录制，避免超出 voiceSeconds 1~300 校验 */
 const MAX_SECONDS = 300
 
+/** getUserMedia 权限气泡超时：气泡未应答时 getUserMedia 永久挂起，必须兜底 */
+const MIC_TIMEOUT_MS = 10000
+
 /**
  * 语音录音组合式函数：MediaRecorder 封装。
  *
  * - start()：申请麦克风权限并开始录音；环境不支持（如 jsdom/老浏览器）或权限被拒时，
  *   通过 onError 回调中文文案并抛出 Error，调用方 catch 后无需重复提示；
+ *   申请期间 requesting=true（UI 显示"申请中"），resolve/fail 后复位；
+ *   权限气泡 10s 未应答按超时失败（否则 await getUserMedia 会永久挂起、零反馈）；
  * - stop()：返回 Promise<{ blob, seconds }>，未在录音/已停止时返回 null；
  * - cancel()：丢弃录音并释放麦克风；挂起的 stop() 会 resolve(null)；
  * - 组件卸载时自动 cancel 释放麦克风（在 setup 上下文中调用时注册）。
@@ -18,6 +23,8 @@ const MAX_SECONDS = 300
 export function useVoiceRecorder({ onError } = {}) {
   const recording = ref(false)
   const seconds = ref(0)
+  // 权限申请中（getUserMedia 未决）：用于 UI"申请中"形态，避免静默无反应
+  const requesting = ref(false)
 
   let recorder = null
   let stream = null
@@ -52,6 +59,7 @@ export function useVoiceRecorder({ onError } = {}) {
     recorder = null
     chunks = []
     recording.value = false
+    requesting.value = false
   }
 
   /** 统一失败出口：清理资源 → 中文错误回调 → 抛错让调用方 catch */
@@ -62,13 +70,37 @@ export function useVoiceRecorder({ onError } = {}) {
   }
 
   async function start() {
-    if (recording.value) return true
+    if (recording.value || requesting.value) return true
+    // 非安全上下文预检（先于 supported() 兜底）：LAN HTTP 下 navigator.mediaDevices
+    // 整体不存在，走下面通用文案会把"浏览器禁用麦克风"误报成"浏览器不支持录音"
+    if (!window.isSecureContext || !navigator.mediaDevices) {
+      return fail('当前页面通过局域网 IP 打开，浏览器已禁用麦克风：请改用 http://localhost:5174 访问，或为站点启用 HTTPS 后重试')
+    }
     if (!supported()) return fail('当前浏览器不支持录音，请改用 Chrome / Edge 等桌面浏览器')
+    requesting.value = true
+    // 权限气泡未应答时 getUserMedia 永久挂起（catch 仅在 reject 时触发）：
+    // 10s 超时兜底，超时后给可操作指引；成功/失败都清定时器防悬挂 rejection
+    let micTimeout = null
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
+      stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia({ audio: true }),
+        new Promise((_, rej) => {
+          micTimeout = setTimeout(() => rej(new Error('timeout')), MIC_TIMEOUT_MS)
+        }),
+      ])
+    } catch (e) {
+      if (micTimeout) clearTimeout(micTimeout)
+      requesting.value = false
+      if (e && e.message === 'timeout') {
+        return fail('麦克风授权超时：请点击地址栏左侧麦克风图标选择「允许」后重试')
+      }
+      if (e && e.name === 'NotAllowedError') {
+        return fail('您已拒绝麦克风权限，请在浏览器设置中允许')
+      }
       return fail('无法访问麦克风：请在浏览器设置中允许麦克风权限后重试')
     }
+    clearTimeout(micTimeout)
+    requesting.value = false
     const mime = pickMime()
     try {
       recorder = new window.MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
@@ -135,5 +167,5 @@ export function useVoiceRecorder({ onError } = {}) {
     onBeforeUnmount(() => { cancel() })
   }
 
-  return { recording, seconds, start, stop, cancel, supported }
+  return { recording, seconds, requesting, start, stop, cancel, supported }
 }

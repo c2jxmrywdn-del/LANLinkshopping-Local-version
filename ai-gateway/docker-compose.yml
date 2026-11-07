@@ -1,5 +1,7 @@
 # LANLink AI 网关沙盒：OpenAI 兼容网关 + 本地大模型(llama.cpp router / Ollama) + 共享 Redis 向量知识库
-# 一键启动：docker compose -f ai-gateway/docker-compose.yml up -d --build
+# 一键启动（--env-file 使 GATEWAY_API_KEY / AI_EMBED_MODEL 插值与根 .env 同源，轮换即生效）：
+#   docker compose --env-file ../.env -f ai-gateway/docker-compose.yml up -d --build
+#   （shell 环境变量 AI_GATEWAY_API_KEY 的优先级高于 .env 文件，编排注入亦可用）
 # 模型常驻模式：OLLAMA_KEEP_ALIVE=-1 + model-warmup 启动即预加载，无需手动唤醒
 #
 # 知识库说明：共享向量库 aikb-idx（92 docs / 768 维，后端 Java 写入）位于根 docker-compose.yml
@@ -11,8 +13,11 @@ services:
   ollama:
     image: docker.m.daocloud.io/ollama/ollama:latest
     container_name: lanlink-ollama
+    # 仅绑回环：Ollama API 无内置鉴权，0.0.0.0 暴露 = 局域网可 /api/pull 塞满磁盘、
+    # /api/delete 删 bge-m3/qwen2.5 摧毁嵌入/RAG/价格 AI 链。容器互访走 shopping_default
+    # 网络（服务名 ollama），本机进程/裸跑后端仍可用 127.0.0.1:11434。
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     environment:
       OLLAMA_KEEP_ALIVE: "-1"   # 服务端默认：模型加载后永久常驻，不再 5 分钟自动卸载
       # 24GB 宿主机/单张 8GB 显卡：单请求串行 + 只驻留一个模型，避免多 runner 争内存/CPU
@@ -23,6 +28,11 @@ services:
       OLLAMA_KV_CACHE_TYPE: "q8_0"
     volumes:
       - lanlink-ollama-models:/root/.ollama
+    # 加入 shopping_default（external 名见文末 networks）：后端容器经服务名 ollama:11434
+    # 直连（收敛后 AI_OLLAMA_BASE_URL 改 http://ollama:11434，不再绕 host.docker.internal）
+    networks:
+      - default
+      - shopping-kb
     restart: unless-stopped
     # 5G 内存上限（memswap 7G）：7b 兜底实测可用档（4G 会 mmap 换页抖动打满磁盘 240MB/s，
     # 累计可读出数百 GB——compose 重建会重置 docker update 的运行时修改，必须写死在这里）
@@ -95,17 +105,38 @@ services:
     build: .
     image: lanlink-ai-gateway:latest
     container_name: lanlink-ai-gateway
+    # 仅绑回环（与 llama-cpp 18123、后端 127.0.0.1:8080 同规格）：网关自带 API Key 鉴权，
+    # 后端容器经 shopping_default 网络以服务名/容器名访问（AI_GATEWAY_BASE_URL 改
+    # http://lanlink-ai-gateway:8090/v1），本机调试仍可用 127.0.0.1:8090。
     ports:
-      - "8090:8090"
-    # 从仓库根 .env 注入 REDIS_PASSWORD 等敏感配置（不写进仓库、不烘焙进镜像）。
+      - "127.0.0.1:8090:8090"
+    # 从仓库根 .env 注入 REDIS_PASSWORD（不写进仓库、不烘焙进镜像）。
     # 路径相对本 compose 文件所在目录；Compose 插值读不到 env_file，故 Redis 连接串在 Python 侧拼装。
     env_file:
       - ../.env
     environment:
       PORT: "8090"
+      # 网关 API Key（GATEWAY_API_KEY，见 app/main.py require_gateway_key）：后端与直连脚本
+      # 须携带同一值（Authorization: Bearer <key> 或 X-API-Key）。插值来源 = shell 环境变量
+      # AI_GATEWAY_API_KEY（编排注入）> 根 .env（--env-file ../.env 启动时）> 历史默认值；
+      # 与根 docker-compose.yml 后端侧的 ${AI_GATEWAY_API_KEY:-...} 完全同源，不断链。
+      # 注意：轮换根 .env 后请按文件头命令（--env-file ../.env）重建，纯 `docker compose up`
+      # 读不到 ../.env，会退回历史默认值导致与后端不一致。
+      GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env before starting the AI gateway}
+      # 覆盖 env_file 注入的 AI_GATEWAY_API_KEY，使容器内两个变量恒为同一值。
+      # 生产/局域网暴露前必须轮换 .env；网关代码不再接受仓库内公开默认值。
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env before starting the AI gateway}
+      # 与后端 Java 工具网关内部密钥保持一致；空值仅适用于本地演示，生产 profile 必须显式轮换。
+      INTERNAL_GATEWAY_SECRET: ${INTERNAL_GATEWAY_SECRET:-}
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8080}
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
+      GATEWAY_RATE_LIMIT_PER_MIN: ${GATEWAY_RATE_LIMIT_PER_MIN:-120}
+      GATEWAY_RATE_LIMIT_BURST: ${GATEWAY_RATE_LIMIT_BURST:-30}
       OLLAMA_BASE_URL: http://ollama:11434
       LLM_MODEL: qwen2.5:0.5b
-      LLM_BACKEND: llamacpp
+      # 后端优先级开关：llamacpp(GPU) / ollama(CPU兜底) / auto / mock。
+      # 默认 ollama = 暂停 GPU 模型期间的 CPU 兜底；恢复 GPU 时在根 .env 设 LLM_BACKEND=llamacpp 或 auto。
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
       # llama.cpp router（Docker 服务 llama-cpp:8123，随主项目 compose 启动）：
       # 同容器内按需加载 qwen2.5-7b(text) / qwen2.5-vl(vision)，--models-max 1 自动切换
       LLAMA_CPP_URL: http://llama-cpp:8123
@@ -114,15 +145,22 @@ services:
       # 硬件调度：CPU 轻量辅助模型（显存轻微溢出时仅 3/29 层放 CPU）+ 长文本阈值
       LLAMA_MODEL_CPU_ASSIST: qwen2.5-7b-cpu-assist
       HARDWARE_LONG_TEXT_CHARS: "6000"
-      # 32K ctx 档实测校准：text ~6.7G / cpu-assist ~6.0G（KV +476MB），margin 提到 300
-      HARDWARE_GPU_MARGIN_MB: "300"
+      # 32K ctx 档实测校准：text ~6.7G / cpu-assist ~6.0G（KV +476MB），margin 提到 250
+      # （8GB 卡上文本模型常驻时切 VL：卸载文本后有 ~7.5G 可用，VL 估算 7.3G + 200 余量可放行）
+      HARDWARE_GPU_MARGIN_MB: "200"
       HARDWARE_VRAM_TEXT_MB: "6700"
       HARDWARE_VRAM_CPU_ASSIST_MB: "6050"
       # 切换防抖：进入 cpu-assist 后冷却 120s，期间不回 GPU；回切需额外 500MB 滞回余量
       HARDWARE_SWITCH_COOLDOWN_SEC: "120"
       HARDWARE_RETURN_HYSTERESIS_MB: "500"
       LLAMA_TIMEOUT: "240"          # 文本推理超时（含 router 冷加载）
+      LLAMA_FAST_TIMEOUT: "20"      # 单次文本推理快速失败阈值：商品审核等结构化输出需要 7B 完整生成，3s 会误判超时
       LLAMA_VISION_TIMEOUT: "300"   # VL 视觉推理超时（冷加载 + 推理约 40-60s）
+      # router 正在生成时 /v1/models 探测会变慢：1.5s 超时极易误判"不可用"，
+      # 而失败冷却 30s 会把这期间全部请求打到 mock（返回 200 + 看似正常的文本）。
+      MODEL_PROBE_TIMEOUT: "6"
+      MODEL_PROBE_CACHE: "5"
+      MODEL_PROBE_COOLDOWN: "5"
       MODEL_MANAGER_URL: ""         # 可选外部模型管理器；router 模式留空即可
       # ---- 共享 Redis 向量知识库（容器内直连 shopping 项目的 redis 服务）----
       REDIS_HOST: redis
@@ -139,9 +177,22 @@ services:
       SESSION_TOKEN_BUDGET: "12000"   # 会话历史预算(配合模型 16384 上下文，多轮可塞更多原文再摘要)
       # 硬件调度：读取 gpu-metrics sidecar 写入的显存/利用率指标
       HARDWARE_GPU_METRICS_FILE: /metrics/gpu.txt
+      # ---- env_file 爆炸半径收敛（A2③）：env_file 注入整个根 .env，但网关只用 REDIS_PASSWORD。
+      # environment 优先级高于 env_file，以下显式清空网关用不到的敏感变量，缩小万一出现
+      # 本地文件读取/信息回显类漏洞时可被外带的密钥面（新增密钥请在此补列）。
+      SPRING_DATASOURCE_PASSWORD: ""
+      MYSQL_ROOT_PASSWORD: ""
+      SUPPORT_SANDBOX_TOKEN: ""
+      MAIL_PASSWORD: ""
+      SUPPORT_PROXY_SECRET: ""
+      OUTBOUND_KEY_SECRET: ""
     volumes:
       - ./metrics:/metrics:ro
+      # 训练旁路 trace（prompt/response 语料）持久化到宿主机 ai-gateway/data/traces
+      - ./data:/app/data
     extra_hosts:
+      # 仅保留宿主机解析；llama-cpp 已作为 shopping_default 网络内服务运行，
+      # 不能再把 llama-cpp 映射到 host-gateway（会覆盖容器 DNS 名称，导致视觉请求 Network unreachable）。
       - "host.docker.internal:host-gateway"
     networks:
       - default
@@ -154,13 +205,16 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "3" }
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health',timeout=3).read()"]
+      # TCP 探活：只验证 8090 监听可用，避免 CPU 兜底期间长请求导致 HTTP 探针读超时误判
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8090), 3).close()"]
       interval: 30s
       timeout: 5s
       retries: 3
 
 networks:
   # 根 docker-compose.yml 创建的项目网络，服务名 redis 可直接解析（后端 Java 也在此网络写向量库）。
+  # ai-gateway 与 ollama 均加入：后端收敛后经服务名访问 http://ollama:11434 与
+  # http://lanlink-ai-gateway:8090/v1（container_name 在用户网络上同样可解析）。
   # 若共享 Redis 改为宿主机端口映射，可删除本网络与上方 ai-gateway.networks，改用 REDIS_URL。
   shopping-kb:
     external: true

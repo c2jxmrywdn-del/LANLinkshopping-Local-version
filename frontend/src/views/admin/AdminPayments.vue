@@ -27,7 +27,7 @@
         <template v-else-if="column.key === 'refund'">
           <a-tag v-if="record.refundStatus === 'success'" color="green">已全额退款 ¥{{ record.refundAmount }}</a-tag>
           <a-tooltip v-else-if="record.refundStatus === 'applied'"
-                     :title="'申请原因：' + (record.refundReason || '—') + (record.refundApplyTime ? ' ｜ 申请时间：' + String(record.refundApplyTime).replace('T', ' ') : '')">
+                     :title="'申请原因：' + (record.refundReason || '—') + (record.refundApplyTime ? ' ｜ 申请时间：' + String(record.refundApplyTime).replace('T', ' ') : '') + (evidenceCount(record) > 0 ? (' ｜ ' + t('买家提交的退款凭证') + ' ' + evidenceCount(record)) : '')">
             <a-tag color="blue">退款申请中 ⓘ</a-tag>
           </a-tooltip>
           <a-tag v-else-if="record.refundStatus === 'rejected'" color="default">申请已驳回</a-tag>
@@ -92,6 +92,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { orderApi, paymentApi } from '../../api'
+import { t } from '../../i18n'
+import { parseEvidences } from '../../utils/refundEvidence'
 
 const rows = ref([])
 const loading = ref(false)
@@ -111,6 +113,11 @@ const payColor = { 0: 'orange', 1: 'green', 2: 'purple' }
 const orderText = { 0: '待发货', 1: '已发货', 2: '已完成', 3: '已取消', 4: '已退款' }
 const channelText = { wallet: '钱包', mock: '模拟', wechat: '微信', alipay: '支付宝' }
 const channelColor = { wallet: 'blue', mock: 'default', wechat: 'green', alipay: 'blue' }
+
+// 链A退款凭证摘要计数（t_order.refund_evidences；链B（RMA）凭证在详情页经 rmaApi 取）
+function evidenceCount(record) {
+  return parseEvidences(record?.refundEvidences).length
+}
 
 const cols = [
   { title: '订单号', dataIndex: 'orderNo', key: 'orderNo', width: 190 },

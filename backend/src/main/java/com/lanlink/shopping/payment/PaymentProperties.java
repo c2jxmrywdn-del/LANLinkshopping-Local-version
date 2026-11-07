@@ -20,6 +20,19 @@ public class PaymentProperties {
 
     private Wechat wechat = new Wechat();
     private Alipay alipay = new Alipay();
+    private Stripe stripe = new Stripe();
+
+    @Data
+    public static class Stripe {
+        /** API 私钥：sk_test_... 或 sk_live_...（切勿入库） */
+        private String secretKey = "";
+        /** 前端公钥：pk_test_... 或 pk_live_...（用于 Elements / Apple Pay 挂载） */
+        private String publishableKey = "";
+        /** Webhook 异步回调验签密钥：whsec_... */
+        private String webhookSecret = "";
+        /** 默认结算货币代码（小写 ISO 代码，如 cny, usd, eur） */
+        private String currency = "cny";
+    }
 
     @Data
     public static class Wechat {

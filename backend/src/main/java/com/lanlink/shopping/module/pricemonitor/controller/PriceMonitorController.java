@@ -4,7 +4,7 @@ import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.integration.security.RequirePerm;
-import com.lanlink.shopping.module.pricemonitor.entity.PriceAlert;
+import com.lanlink.shopping.module.pricemonitor.dto.PriceAlertView;
 import com.lanlink.shopping.module.pricemonitor.service.MarketNewsService;
 import com.lanlink.shopping.module.pricemonitor.service.PriceMonitorAiService;
 import com.lanlink.shopping.module.pricemonitor.service.PriceMonitorService;
@@ -39,13 +39,16 @@ public class PriceMonitorController {
     private final PriceMonitorAiService aiService;
     private final MarketNewsService newsService;
     private final MerchantService merchantService;
+    private final com.lanlink.shopping.module.pricemonitor.service.ProductFactorAutoService factorAutoService;
 
     public PriceMonitorController(PriceMonitorService service, PriceMonitorAiService aiService,
-                                  MarketNewsService newsService, MerchantService merchantService) {
+                                  MarketNewsService newsService, MerchantService merchantService,
+                                  com.lanlink.shopping.module.pricemonitor.service.ProductFactorAutoService factorAutoService) {
         this.service = service;
         this.aiService = aiService;
         this.newsService = newsService;
         this.merchantService = merchantService;
+        this.factorAutoService = factorAutoService;
     }
 
     @GetMapping("/trend/{prodId}")
@@ -78,13 +81,15 @@ public class PriceMonitorController {
     }
 
     @GetMapping("/my/alerts")
-    public R<List<PriceAlert>> myAlerts(HttpServletRequest request) {
-        return R.ok(service.myAlerts(UserContext.currentUserId(request)));
+    public R<List<PriceAlertView>> myAlerts(HttpServletRequest request) {
+        return R.ok(service.myAlerts(UserContext.currentUserId(request)).stream()
+                .map(PriceAlertView::of).toList());
     }
 
     @GetMapping("/product/{prodId}/alerts")
-    public R<List<PriceAlert>> productAlerts(@PathVariable Long prodId, HttpServletRequest request) {
-        return R.ok(service.productAlerts(UserContext.currentUserId(request), prodId));
+    public R<List<PriceAlertView>> productAlerts(@PathVariable Long prodId, HttpServletRequest request) {
+        return R.ok(service.productAlerts(UserContext.currentUserId(request), prodId).stream()
+                .map(PriceAlertView::of).toList());
     }
 
     @DeleteMapping("/alerts/{id}")
@@ -108,8 +113,47 @@ public class PriceMonitorController {
     /** 五维价格因子看板（公开：首页每日行情、商品详情页均可展示；lang 支持 zh/en）。 */
     @GetMapping("/factors/{prodId}")
     public R<Map<String, Object>> factors(@PathVariable Long prodId,
-                                          @RequestParam(defaultValue = "zh") String lang) {
-        return R.ok(aiService.factors(prodId, lang));
+                                          @RequestParam(required = false) String lang) {
+        return R.ok(aiService.factors(prodId, lang == null || lang.isBlank() ? "zh" : lang));
+    }
+
+    /**
+     * 自主分析快照：自动分析链（定时任务）为商品生成的五维因子 + 网络检索信息（经有害过滤）。
+     * 无快照时返回 data=null——自动分析链每小时纳入未来发布的新商品。
+     */
+    @GetMapping("/auto-profile/{prodId}")
+    public R<Map<String, Object>> autoProfile(@PathVariable Long prodId) {
+        return R.ok(factorAutoService.profileOf(prodId));
+    }
+
+    /**
+     * 管理端：全量重建自主分析快照（异步提交立即返回）。
+     * daemon 线程清快照与失败隔离后重算全部在售商品（复用 rebuildAll 的 synchronized 串行与
+     * analyzeMissing 的 running 守卫防并发），避免全量重算在检索降级场景阻塞 HTTP 请求线程。
+     * 返回 {analyzed:0, skipped:-3}=已受理异步执行；重建进度经 GET /price-monitor/auto-profile/index 观测。
+     */
+    @PostMapping("/admin/factor-auto/rebuild")
+    public R<Map<String, Integer>> rebuildFactorAuto() {
+        return R.ok(factorAutoService.rebuildAllAsync());
+    }
+
+    /** 快照索引（公开白名单）：商品列表"已分析"徽标数据源，一次请求覆盖全量 */
+    @GetMapping("/auto-profile/index")
+    public R<List<Map<String, Object>>> autoProfileIndex() {
+        return R.ok(factorAutoService.indexOfAll());
+    }
+
+    /** 管理端：单商品立即重算（配合前端"待分析→立即分析"） */
+    @PostMapping("/admin/factor-auto/refresh/{prodId}")
+    public R<Void> refreshFactorAuto(@PathVariable Long prodId) {
+        factorAutoService.analyzeOneSafe(prodId);
+        return R.ok("已重新分析", null);
+    }
+
+    /** 管理端：失败隔离清单（连续失败 3 次停止自动重试的商品） */
+    @GetMapping("/admin/factor-auto/failed")
+    public R<List<Map<String, Object>>> failedList() {
+        return R.ok(factorAutoService.failedList());
     }
 
     @GetMapping("/ai-analysis/{prodId}")

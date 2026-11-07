@@ -7,11 +7,16 @@ import java.util.Map;
 /**
  * 推荐统计 SQL（共现矩阵/热度榜的物化与查询）。
  * 物化策略：数据量小（万级行内），直接 MySQL 全量重算 + ON DUPLICATE KEY 覆盖，幂等可回滚。
+ *
+ * 有机统计隔离（NULL 安全）：source_type 是自由列，公开端点 /merchant/traffic/events 可落
+ * 显式 null 行（getOrDefault 对显式 null 不回退默认值），因此排除推荐位流量必须写
+ * COALESCE(source_type,'')<>'recommend'——裸 <> 在 SQL 三值逻辑下对 NULL 判 UNKNOWN，
+ * 会把 NULL source 的有机行为一并误杀出共现矩阵/热度榜。
  */
 @Mapper
 public interface RecommendStatMapper {
 
-    /** 共现矩阵：近 30 天 session 内加权共现（VIEW=1,CLICK=2,ADD_CART=3,PAY=5），全量重建 */
+    /** 共现矩阵：近 30 天 session 内加权共现（VIEW=1,CLICK=2,ADD_CART=3,PAY=5），全量重建；排除推荐位流量（NULL 安全） */
     @Delete("DELETE FROM t_prod_cooccur")
     int clearCooccur();
 
@@ -24,6 +29,7 @@ public interface RecommendStatMapper {
             "  WHERE t1.event_time>=DATE_SUB(NOW(),INTERVAL 30 DAY) " +
             "    AND t2.event_time>=DATE_SUB(NOW(),INTERVAL 30 DAY) " +
             "    AND t1.product_id IS NOT NULL AND t2.product_id IS NOT NULL " +
+            "    AND COALESCE(t1.source_type,'')<>'recommend' AND COALESCE(t2.source_type,'')<>'recommend' " +
             "    AND t1.event_type IN ('VIEW_PRODUCT','CLICK_PRODUCT','ADD_CART','PAY') " +
             "    AND t2.event_type IN ('VIEW_PRODUCT','CLICK_PRODUCT','ADD_CART','PAY')" +
             ") pairs GROUP BY pairs.a_id, pairs.b_id " +
@@ -54,7 +60,7 @@ public interface RecommendStatMapper {
             "ORDER BY hot_score DESC LIMIT #{n}")
     List<Map<String, Object>> hotTopWithScores(@Param("n") int n);
 
-    /** 热度榜全量重算：VIEW/CART/PAY 汇总 + Wilson 下界×时间衰减（30 天窗口） */
+    /** 热度榜全量重算：VIEW/CART/PAY 汇总 + Wilson 下界×时间衰减（30 天窗口）；排除推荐位流量（NULL 安全，条件在 ON 上，避免 LEFT JOIN 退化为内连接丢行） */
     @Delete("DELETE FROM t_prod_hot_stat")
     int clearHotStat();
 
@@ -64,6 +70,7 @@ public interface RecommendStatMapper {
             "FROM t_product p LEFT JOIN t_traffic_event e " +
             "  ON e.product_id=p.prod_id AND e.event_time>=DATE_SUB(NOW(),INTERVAL 30 DAY) " +
             "   AND e.event_type IN ('VIEW_PRODUCT','ADD_CART','PAY') " +
+            "   AND COALESCE(e.source_type,'')<>'recommend' " +
             "WHERE p.status=1 AND p.review_status=1 AND p.deleted=0 " +
             "GROUP BY p.prod_id, p.ind_id, p.cat_id")
     int loadHotCounters();

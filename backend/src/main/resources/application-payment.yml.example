@@ -65,3 +65,14 @@ lanlink:
       alipay-public-cert-path: ""
       # 鏀粯瀹濇牴璇佷功 alipayRootCert.crt
       root-cert-path: ""
+
+    # -------------------- Stripe 国际跨境支付（Payment Intents / 信用卡 / Apple Pay / Google Pay） --------------------
+    stripe:
+      # API 私钥：sk_test_... 或 sk_live_...
+      secret-key: ${STRIPE_SECRET_KEY:}
+      # 公钥（用于前端挂载 Elements）：pk_test_... 或 pk_live_...
+      publishable-key: ${VITE_STRIPE_PUBLISHABLE_KEY:${STRIPE_PUBLISHABLE_KEY:}}
+      # Webhook 异步通知验签私钥：whsec_...
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+      # 默认结算货币代码（cny, usd, eur 等）
+      currency: ${STRIPE_CURRENCY:cny}

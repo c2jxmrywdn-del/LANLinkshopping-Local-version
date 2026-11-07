@@ -6,10 +6,11 @@ import {
 
 describe('merchantStatus 状态字典', () => {
   it('订单状态覆盖后端全部取值且文案与买家侧口径一致', () => {
-    expect(Object.keys(ORDER_STATUS).sort()).toEqual(['0', '1', '2', '3', '4'])
+    expect(Object.keys(ORDER_STATUS).sort()).toEqual(['0', '1', '2', '3', '4', '5'])
     expect(ORDER_STATUS[0].text).toBe('待发货')
     expect(ORDER_STATUS[2].text).toBe('已完成')
-    expect(ORDER_STATUS[4].text).toBe('已退款')
+    expect(ORDER_STATUS[4].text).toBe('部分发货')
+    expect(ORDER_STATUS[5].text).toBe('已关闭')
   })
 
   it('支付状态 0/1/2 齐全', () => {
@@ -18,7 +19,7 @@ describe('merchantStatus 状态字典', () => {
 
   it('退款状态覆盖后端枚举', () => {
     expect(Object.keys(REFUND_STATUS).sort())
-      .toEqual(['applied', 'none', 'partial', 'processing', 'rejected', 'success'])
+      .toEqual(['applied', 'dispute', 'merchant_approved', 'none', 'partial', 'processing', 'received', 'rejected', 'shipping_back', 'success'])
   })
 
   it('商品审核状态覆盖 0/1/2', () => {

@@ -53,7 +53,7 @@
                   <a-form-item label="主体注册类型" required>
                     <a-select v-model:value="form.regType" size="large">
                       <a-select-option value="公司">公司 (有限责任/股份等)</a-select-option>
-                      <a-select-option value="个体工商户">个体工商户 (需注册资本>10万)</a-select-option>
+                      <a-select-option value="个体工商户">个体工商户 (需实缴资本≥10万)</a-select-option>
                     </a-select>
                   </a-form-item>
                 </a-col>
@@ -73,8 +73,8 @@
                   </a-form-item>
                 </a-col>
                 <a-col :span="10">
-                  <a-form-item label="注册资本（人民币/元）" required extra="有限责任公司或注册资本高于10万元个体工商户">
-                    <a-input-number v-model:value="form.regCapital" :min="0" :step="100000" size="large" style="width:100%" placeholder="例如 5000000" />
+                  <a-form-item label="实缴资本（人民币/元）" required extra="平台准入规则：商户实缴资本须达到 10 万元及以上（≥ 100,000 元）">
+                    <a-input-number v-model:value="form.regCapital" :min="100000" :step="100000" size="large" style="width:100%" placeholder="例如 5000000（最低 100000）" />
                   </a-form-item>
                 </a-col>
               </a-row>
@@ -474,7 +474,7 @@
 
               <div class="agreement-box">
                 <a-checkbox v-model:checked="agreed">
-                  我已仔细核对上述全部信息，阅读并同意 <a href="javascript:;">《LANLink 平台商户服务入驻协议》</a> 及 <a href="javascript:;">《商户敏感数据加密与安全声明》</a>，承诺所填材料与证件真实合法。
+                  我已仔细核对上述全部信息，阅读并同意 <router-link :to="{ name: 'legal-doc', params: { docKey: 'merchant-agreement' } }" target="_blank">《LANLink 平台商户入驻及经营合规准则》</router-link> 与 <router-link :to="{ name: 'legal-doc', params: { docKey: 'terms' } }" target="_blank">《平台用户服务协议》</router-link>，承诺所填材料、证件及实缴资本真实合法有效。
                 </a-checkbox>
               </div>
 
@@ -529,7 +529,7 @@
                 <span class="v font-mono">{{ mine.bankAccount ? maskBank(mine.bankAccount) : '已安全加密' }}</span>
               </div>
               <div class="sec-item">
-                <span class="k">注册资本：</span>
+                <span class="k">实缴资本：</span>
                 <span class="v">¥{{ mine.regCapital || '0.00' }}</span>
               </div>
               <div class="sec-item">
@@ -603,7 +603,7 @@
 
         <a-card :bordered="false" class="policy-card glass-panel" style="margin-top:16px" title="平台入驻准入标准">
           <ul class="policy-list">
-            <li><strong>公司主体优先</strong>：有限责任公司或注册资本高于 10 万元的个体工商户。</li>
+            <li><strong>主体资质与实缴资本</strong>：支持有限责任公司或合规个体工商户，实缴资本须达到 10 万元及以上（≥ 100,000 元）。</li>
             <li><strong>渠道准入校验</strong>：平台战略邀约需核验专属邀约码，特约加盟需核验渠道授权码。</li>
             <li><strong>真实证件核查</strong>：营业执照统一社会信用代码需与国家公示系统一致。</li>
             <li><strong>特许合规管理</strong>：涉及特殊行业范围必须上传有效行政许可证书。</li>
@@ -648,7 +648,7 @@ import {
 const loading = ref(false)
 const mine = ref(null)
 const currentStep = ref(0)
-const agreed = ref(true)
+const agreed = ref(false)
 
 const steps = [
   { title: '工商主体', sub: '主体类型与模式' },
@@ -794,12 +794,8 @@ function validateStep(stepIdx) {
       return false
     }
 
-    if (!form.regCapital || Number(form.regCapital) <= 0) {
-      message.warning('注册资本必须为大于 0 的数值')
-      return false
-    }
-    if (form.regType === '个体工商户' && Number(form.regCapital) < 100000) {
-      message.warning('根据平台准入标准，个体工商户注册资本需高于 10 万元')
+    if (!form.regCapital || Number(form.regCapital) < 100000) {
+      message.warning('根据平台准入标准，商户实缴资本需达到 10 万元及以上（≥ 100,000 元）')
       return false
     }
 

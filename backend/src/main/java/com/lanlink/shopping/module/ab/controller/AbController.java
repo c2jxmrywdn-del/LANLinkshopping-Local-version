@@ -21,6 +21,9 @@ import java.util.Map;
 @RestController
 public class AbController {
 
+    /** 转化金额上限（元）：value 为任意 BigDecimal 时可无限刷高 GMV 指标 */
+    private static final BigDecimal MAX_CONVERT_VALUE = new BigDecimal("999999");
+
     private final AbTestService abTestService;
     private final AbStatService abStatService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
@@ -55,7 +58,18 @@ public class AbController {
     @PostMapping("/ab/convert")
     public R<Void> convert(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long userId = currentUserIdOrNull(request);
-        BigDecimal value = body.get("value") == null ? null : new BigDecimal(String.valueOf(body.get("value")));
+        BigDecimal value = null;
+        if (body.get("value") != null) {
+            try {
+                value = new BigDecimal(String.valueOf(body.get("value")));
+            } catch (NumberFormatException e) {
+                return R.fail("转化金额格式非法");
+            }
+            // 任意金额会直接污染 GMV 指标：限制 0 ~ 999999 元
+            if (value.signum() < 0 || value.compareTo(MAX_CONVERT_VALUE) > 0) {
+                return R.fail("转化金额超出允许范围");
+            }
+        }
         abTestService.convert(str(body.get("expKey")), str(body.get("variant")), userId,
                 str(body.get("sessionId")), value);
         return R.ok(null);

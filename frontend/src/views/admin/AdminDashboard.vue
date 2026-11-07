@@ -285,7 +285,7 @@ const recentProducts = ref([])
 const merCols = [
   { title: '企业主体', key: 'enterprise' },
   { title: '法人姓名', key: 'legal', width: 90 },
-  { title: '注册资本', key: 'cap', width: 110 },
+  { title: '实缴资本', key: 'cap', width: 110 },
   { title: '状态', key: 'st', width: 90 },
   { title: '操作', key: 'act', width: 110 }
 ]
@@ -335,6 +335,8 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // 系统配置独立加载，失败不影响看板主数据
+  loadCfg()
 })
 </script>
 

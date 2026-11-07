@@ -48,6 +48,22 @@
       </a-card>
     </div>
 
+    <!-- 企业对公收款账户 -->
+    <a-card :bordered="false" class="panel bank-account-panel">
+      <template #title>
+        <div class="panel-title">
+          <div>
+            <strong>企业对公收款账户</strong>
+            <small>用于接收买家对公转账电汇款项及平台资金周期结算</small>
+          </div>
+          <a-button type="default" size="small" class="edit-bank-btn" @click="openEditBank">
+            <Edit3 :size="13" class="inline-block mr-1 align-middle" /> 更新对公账户
+          </a-button>
+        </div>
+      </template>
+      <MerchantCorporateBankCard :bank-info="store.receivingAccount || {}" />
+    </a-card>
+
     <!-- 资质证照 -->
     <a-card :bordered="false" class="panel">
       <template #title>
@@ -108,6 +124,20 @@
       </div>
     </a-card>
 
+    <!-- 材料原件存档：走 /attachment 对象存储链路，与上方 legacy 图片字段并存 -->
+    <a-card :bordered="false" class="panel">
+      <template #title>
+        <div class="panel-title">
+          <div><strong>材料原件存档</strong><small>原件上传后需绑定本店，平台审核台才能看到</small></div>
+        </div>
+      </template>
+      <div class="attach-stack">
+        <AttachmentPanel biz-type="merchant-license" :biz-id="store.merId" title="营业执照" :can-bind="true" />
+        <a-divider class="attach-divider" />
+        <AttachmentPanel biz-type="merchant-tax-proof" :biz-id="store.merId" title="税务缴纳证明" :can-bind="true" />
+      </div>
+    </a-card>
+
     <!-- 税务登记核验 -->
     <a-card :bordered="false" class="panel">
       <template #title>
@@ -139,17 +169,47 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 对公账户编辑模态框 -->
+    <a-modal
+      v-model:open="editBankOpen"
+      title="更新企业对公收款账户"
+      :confirm-loading="submittingBank"
+      ok-text="确认更新"
+      cancel-text="取消"
+      @ok="handleUpdateBank"
+    >
+      <div class="bank-edit-form">
+        <p class="edit-tip">对公账户信息经 AES-256-GCM 工业级加密存储，更新后将作为买家对公电汇及平台结算汇款凭据。</p>
+        <a-form layout="vertical">
+          <a-form-item label="开户银行全称（含支行）" required>
+            <a-input
+              v-model:value="bankForm.bankName"
+              placeholder="如：中国工商银行股份有限公司深圳科技园支行"
+            />
+          </a-form-item>
+          <a-form-item label="对公银行账号" required>
+            <a-input
+              v-model:value="bankForm.bankAccount"
+              placeholder="请输入 8~35 位数字或字母银行账号"
+            />
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Lock, FileText, Image } from 'lucide-vue-next'
+import { Lock, FileText, Image, Edit3 } from 'lucide-vue-next'
 import { merchantApi, merchantCenterApi } from '../../api'
 import { MERCHANT_REVIEW, fmtMoney } from '../../utils/merchantStatus'
 import { useUserStore } from '../../store/user'
 import UserAvatar from '../../components/ui/UserAvatar.vue'
+import AttachmentPanel from '../../components/AttachmentPanel.vue'
+import MerchantCorporateBankCard from '../../components/payment/MerchantCorporateBankCard.vue'
 import { orgInitialsOf } from '../../utils/avatarIdentity'
 
 const user = useUserStore()
@@ -273,6 +333,46 @@ async function queryTax() {
   taxQuerying.value = false
 }
 
+// ===== 对公收款账户管理 =====
+const editBankOpen = ref(false)
+const submittingBank = ref(false)
+const bankForm = reactive({
+  bankName: '',
+  bankAccount: ''
+})
+
+function openEditBank() {
+  bankForm.bankName = store.value.receivingAccount?.bankName || ''
+  bankForm.bankAccount = ''
+  editBankOpen.value = true
+}
+
+async function handleUpdateBank() {
+  if (!bankForm.bankName.trim()) {
+    message.warning('请输入开户银行全称')
+    return
+  }
+  if (!bankForm.bankAccount.trim() || bankForm.bankAccount.trim().length < 8) {
+    message.warning('请输入合法的 8~35 位对公银行账号')
+    return
+  }
+
+  submittingBank.value = true
+  try {
+    await merchantCenterApi.updateBankAccount({
+      bankName: bankForm.bankName.trim(),
+      bankAccount: bankForm.bankAccount.trim()
+    })
+    message.success('企业对公收款账户已更新并加密存储')
+    editBankOpen.value = false
+    await load()
+  } catch (err) {
+    // 拦截器提示
+  } finally {
+    submittingBank.value = false
+  }
+}
+
 async function load() {
   // my()：商户档案（联系方式/证照）；summary().store：企业名与信用代码（档案实体不含企业表字段）
   try {
@@ -280,7 +380,10 @@ async function load() {
       merchantApi.my(),
       merchantCenterApi.summary().catch(() => null)
     ])
-    store.value = { ...(m || {}), ...(s?.store ? { entName: s.store.entName, creditCode: s.store.creditCode } : {}) }
+    store.value = {
+      ...(m || {}),
+      ...(s?.store ? { entName: s.store.entName, creditCode: s.store.creditCode, receivingAccount: s.store.receivingAccount } : {})
+    }
   } catch (e) { /* 拦截器已提示 */ }
 }
 onMounted(load)
@@ -323,11 +426,30 @@ onMounted(load)
 .cert-upload { display: flex; gap: 8px; }
 .period-select { width: 140px; }
 
+.attach-stack { display: flex; flex-direction: column; }
+.attach-divider { margin: 14px 0; }
+
 .tax-row { display: flex; gap: 10px; margin-bottom: 14px; }
 .tax-input { max-width: 360px; }
 .tax-alert { margin-bottom: 12px; border-radius: 12px; }
 
 .contact-form :deep(.ant-form-item) { margin-bottom: 14px; }
+
+.bank-account-panel { margin-top: 4px; }
+.edit-bank-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.bank-edit-form { padding: 4px 0; }
+.edit-tip {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
 
 @media (max-width: 900px) {
   .hero h1 { font-size: 22px; }

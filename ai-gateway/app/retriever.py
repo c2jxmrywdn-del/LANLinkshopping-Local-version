@@ -44,17 +44,25 @@ def _bigrams(s: str) -> list:
 
 def _embed(texts: list, base_url: str, model: str) -> list:
     """调用 Ollama /api/embed 批量取向量（bge-m3 等）。失败返回 []。"""
-    import urllib.request
-    try:
-        payload = json.dumps({"model": model, "input": texts}).encode("utf-8")
-        req = urllib.request.Request(base_url.rstrip("/") + "/api/embed", data=payload,
-                                     headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            data = json.loads(r.read().decode("utf-8"))
-        embs = data.get("embeddings") or []
-        return embs if len(embs) == len(texts) else []
-    except Exception:
+    if os.environ.get("LLM_BACKEND") == "mock" or not base_url:
         return []
+    import urllib.request
+    candidate_urls = [base_url]
+    if "localhost" in base_url:
+        candidate_urls.insert(0, base_url.replace("localhost", "127.0.0.1"))
+    for url in candidate_urls:
+        try:
+            payload = json.dumps({"model": model, "input": texts}).encode("utf-8")
+            req = urllib.request.Request(url.rstrip("/") + "/api/embed", data=payload,
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=3.0) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            embs = data.get("embeddings") or []
+            if len(embs) == len(texts):
+                return embs
+        except Exception:
+            continue
+    return []
 
 
 def _norm(vec: list) -> list:
@@ -155,7 +163,7 @@ class KnowledgeBase:
 
     def __init__(self, kb_path: str):
         self.kb_path = kb_path
-        self.ollama_base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        self.ollama_base = os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
         self.emb_model = os.environ.get("EMBED_MODEL", "bge-m3:latest")
         self.doc_embs = []
         self.reload()

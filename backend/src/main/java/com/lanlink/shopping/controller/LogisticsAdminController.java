@@ -9,9 +9,17 @@ import com.lanlink.shopping.entity.LogisticsProvider;
 import com.lanlink.shopping.entity.LogisticsSettlement;
 import com.lanlink.shopping.entity.LogisticsSettlementItem;
 import com.lanlink.shopping.entity.LogisticsTemplate;
+import com.lanlink.shopping.entity.LogisticsReconciliation;
+import com.lanlink.shopping.entity.LogisticsInvoice;
+import com.lanlink.shopping.dto.LogisticsReconciliationDTO.ReconciliationImportDTO;
+import com.lanlink.shopping.dto.LogisticsReconciliationDTO.DisputeResolveDTO;
+import com.lanlink.shopping.dto.LogisticsInvoiceDTO.InvoiceUploadDTO;
+import com.lanlink.shopping.dto.LogisticsInvoiceDTO.InvoiceBindDTO;
 import com.lanlink.shopping.integration.security.RequirePerm;
 import com.lanlink.shopping.service.LogisticsAdminService;
 import com.lanlink.shopping.service.LogisticsSettlementService;
+import com.lanlink.shopping.service.LogisticsReconciliationService;
+import com.lanlink.shopping.service.LogisticsInvoiceService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 物流运营后台（服务商管理 / 运费模板 / 异常告警 / 物流售后 / 物流结算）
@@ -31,11 +40,17 @@ public class LogisticsAdminController {
 
     private final LogisticsAdminService adminService;
     private final LogisticsSettlementService settlementService;
+    private final LogisticsReconciliationService reconService;
+    private final LogisticsInvoiceService invoiceService;
 
     public LogisticsAdminController(LogisticsAdminService adminService,
-                                    LogisticsSettlementService settlementService) {
+                                    LogisticsSettlementService settlementService,
+                                    LogisticsReconciliationService reconService,
+                                    LogisticsInvoiceService invoiceService) {
         this.adminService = adminService;
         this.settlementService = settlementService;
+        this.reconService = reconService;
+        this.invoiceService = invoiceService;
     }
 
     /* ==================== 服务商 ==================== */
@@ -143,5 +158,54 @@ public class LogisticsAdminController {
                                                    HttpServletRequest request) {
         Long userId = UserContext.currentUserId(request);
         return R.ok("结算操作成功", settlementService.review(settlementId, action, note, userId, request));
+    }
+
+    /* ==================== 承运商月结对账单勾稽 ==================== */
+
+    @PostMapping("/recon/import")
+    public R<LogisticsReconciliation> importRecon(@RequestBody ReconciliationImportDTO req, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok("对账单导入成功", reconService.importCarrierBill(req, userId));
+    }
+
+    @PostMapping("/recon/match/{reconId}")
+    public R<Map<String, Object>> runReconMatching(@PathVariable Long reconId) {
+        return R.ok("三单勾稽核对完成", reconService.runMatching(reconId));
+    }
+
+    @GetMapping("/recon/detail/{reconId}")
+    public R<Map<String, Object>> reconDetail(@PathVariable Long reconId) {
+        return R.ok(reconService.getReconciliationDetail(reconId));
+    }
+
+    @PostMapping("/recon/resolve-dispute")
+    public R<Void> resolveReconDispute(@RequestBody DisputeResolveDTO req) {
+        reconService.resolveDispute(req.getItemId(), req.getAdjustmentAmount(), req.getAdjustNote());
+        return R.ok("争议已调解平账", null);
+    }
+
+    /* ==================== 6% 交通运输专票进池与冲抵 ==================== */
+
+    @PostMapping("/invoice/upload")
+    public R<LogisticsInvoice> uploadInvoice(@RequestBody InvoiceUploadDTO req) {
+        return R.ok("专票成功入池", invoiceService.uploadInvoice(req));
+    }
+
+    @PostMapping("/invoice/verify/{invoiceId}")
+    public R<LogisticsInvoice> verifyInvoice(@PathVariable Long invoiceId) {
+        return R.ok("税局查验完成", invoiceService.verifyInvoice(invoiceId));
+    }
+
+    @GetMapping("/invoice/pool")
+    public R<List<LogisticsInvoice>> invoicePool(@RequestParam(required = false) Long providerId,
+                                                @RequestParam(required = false) String verifyStatus,
+                                                @RequestParam(required = false) String offsetStatus) {
+        return R.ok(invoiceService.listInvoicePool(providerId, verifyStatus, offsetStatus));
+    }
+
+    @PostMapping("/invoice/bind-settlement")
+    public R<Void> bindSettlement(@RequestBody InvoiceBindDTO req) {
+        invoiceService.bindSettlement(req.getInvoiceId(), req.getSettlementId());
+        return R.ok("专票冲抵核销成功", null);
     }
 }

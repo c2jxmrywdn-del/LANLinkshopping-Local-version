@@ -55,6 +55,14 @@ SOURCE_CATEGORY_LABELS = {
     "intent": "意图",
     "manual": "人工录入",
     "learned": "学习知识",
+    "tech-expert": "技术服务专家",
+    "tech-org": "专业服务机构",
+    "tech-service": "技术服务产品",
+    "tech-demand": "技术需求",
+    "tech-achievement": "技术成果",
+    "tech-policy": "技术政策",
+    "tech-post": "技术社区",
+    "tech-manual": "技术服务机制",
 }
 
 _EMBED_DIM_FALLBACK = 256  # 本地 TF-IDF 哈希向量维度（仅兜底时使用）
@@ -111,11 +119,98 @@ HYBRID_CANDIDATE_MULTIPLIER_UNFILTERED = 6
 SOURCE_AUTHORITY_WEIGHTS = {
     "news": 0.75,
     "manual": 0.95,
+    # 技术服务源：库内主体多为演示/未签约数据，必须显式降权，
+    # 否则未列出的 source 取 DEFAULT_SOURCE_AUTHORITY，会盖过真实政策文本。
+    # 与后端 KnowledgeRagService.SOURCE_WEIGHTS 保持一致。
+    "tech-expert": 0.70, "tech-org": 0.70, "tech-service": 0.70,
+    "tech-demand": 0.70, "tech-achievement": 0.70,
+    "tech-policy": 0.85, "tech-post": 0.60, "tech-manual": 0.90,
 }
 DEFAULT_SOURCE_AUTHORITY = 1.0
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]+")
 _ASCII_RE = re.compile(r"[A-Za-z0-9]+(?:\.[0-9]+)?")
+
+# --------------------- 工业品与复合型号模式识别 ---------------------
+MODEL_SPEC_PATTERN = re.compile(
+    r'(?i)\b(?:DN\d+|PN\d+|SC\d+|HRB\d+[A-Z]?|Q\d+[A-Z]?|PPR|PE\d*|PVC\d*|[A-Z]+\d+[-/]\w+|\d+(?:\.\d+)?(?:mm|cm|m|kg|t|mpa|kpa|kw|v|a|寸|分))\b|(?:\d{3}[A-Za-z]?(?:不锈钢|钢板|圆钢|无缝管))'
+)
+
+# 动态自适应 RRF 权重配置
+DEFAULT_SPARSE_SPEC_WEIGHT = float(os.environ.get("KB_HYBRID_SPARSE_SPEC_WEIGHT", "0.80"))
+DEFAULT_DENSE_SPEC_WEIGHT = float(os.environ.get("KB_HYBRID_DENSE_SPEC_WEIGHT", "0.20"))
+DEFAULT_SPARSE_QA_WEIGHT = float(os.environ.get("KB_HYBRID_SPARSE_QA_WEIGHT", "0.25"))
+DEFAULT_DENSE_QA_WEIGHT = float(os.environ.get("KB_HYBRID_DENSE_QA_WEIGHT", "0.75"))
+RRF_K_CONSTANT = int(os.environ.get("KB_RRF_K", "60"))
+
+# RediSearch 查询保留符号（必须安全清洗以防语法解析错误）
+REDISEARCH_SYNTAX_CHARS = re.compile(r'["\'\(\)\[\]\{\}\~\^\!\:\;\@\+\=\\\<\>\?]')
+
+
+def sanitize_sparse_query(query: str, source: str | None = None) -> str:
+    """针对 RediSearch BM25 全文检索构建安全的稀疏查询表达式。
+
+    核心特性：
+    1. 连字符与分隔符安全化：RediSearch 将 - 视作逻辑否定运算符，
+       将复合型号（如 DN100-PN16、Q611F/16P、304/2.0mm）中的分隔符替换为空格分词；
+    2. 语法保留符号过滤：剔除引起 Syntax Error 的括号、引号、冒号等；
+    3. 提取英数 Token 与中文片段，构造联合检索子句；
+    4. 附加可选的 source TAG 过滤。
+    """
+    if not query or not query.strip():
+        return ""
+
+    cleaned = re.sub(r'[-/*_+]+', ' ', query)
+    cleaned = REDISEARCH_SYNTAX_CHARS.sub(' ', cleaned)
+
+    ascii_tokens = _ASCII_RE.findall(cleaned)
+
+    cjk_tokens = []
+    for run in _CJK_RE.findall(cleaned):
+        run = run.strip()
+        if len(run) == 1:
+            cjk_tokens.append(run)
+        elif len(run) <= 4:
+            cjk_tokens.append(run)
+        else:
+            for i in range(0, len(run), 2):
+                piece = run[i:i + 3]
+                if piece:
+                    cjk_tokens.append(piece)
+
+    all_terms = []
+    seen = set()
+    for t in ascii_tokens + cjk_tokens:
+        t_clean = t.strip()
+        if t_clean and t_clean.lower() not in seen:
+            seen.add(t_clean.lower())
+            all_terms.append(t_clean)
+
+    if not all_terms:
+        return ""
+
+    terms_expr = " | ".join(all_terms)
+    body_expr = f"({terms_expr})"
+
+    if source:
+        safe_src = re.sub(r"[^A-Za-z0-9_\-]", "", source.strip())
+        if safe_src:
+            return f"(@source:{{{safe_src}}}) {body_expr}"
+
+    return body_expr
+
+
+def detect_adaptive_weights(query: str) -> tuple[float, float]:
+    """根据查询文本类型动态决策 Dense 与 Sparse 的加权比例。
+
+    - 包含工业型号、规格、材质等强特征时：提升 Sparse 权重至 0.80，降低 Dense 至 0.20；
+    - 普通政策、业务问答时：保持 Dense 语义泛化主导（0.75），Sparse 辅助（0.25）。
+    """
+    if not query:
+        return DEFAULT_DENSE_QA_WEIGHT, DEFAULT_SPARSE_QA_WEIGHT
+    if MODEL_SPEC_PATTERN.search(query):
+        return DEFAULT_DENSE_SPEC_WEIGHT, DEFAULT_SPARSE_SPEC_WEIGHT
+    return DEFAULT_DENSE_QA_WEIGHT, DEFAULT_SPARSE_QA_WEIGHT
 
 
 def lexical_terms(query: str) -> set:
@@ -168,15 +263,23 @@ class OllamaEmbedder:
     """Ollama /api/embed 客户端（批量），失败返回 None 由上层兜底。"""
 
     def __init__(self, base_url: str | None = None, model: str | None = None):
-        self.base_url = (base_url or os.environ.get("OLLAMA_BASE_URL")
-                         or "http://ollama:11434").strip().rstrip("/")
+        explicit = (base_url or os.environ.get("OLLAMA_BASE_URL") or "").strip().rstrip("/")
+        if explicit:
+            self.candidate_urls = [explicit]
+        else:
+            self.candidate_urls = [
+                "http://127.0.0.1:11434",
+                "http://ollama:11434",
+                "http://localhost:11434",
+            ]
+        self.base_url = self.candidate_urls[0]
         self.model = (model or os.environ.get("AI_EMBED_MODEL")
                       or "nomic-embed-text").strip()
         self.embed_path = (os.environ.get("AI_EMBED_PATH") or "/api/embed").strip()
         try:
-            self.timeout = float(os.environ.get("AI_EMBED_TIMEOUT", "10"))
+            self.timeout = float(os.environ.get("AI_EMBED_TIMEOUT", "3"))
         except ValueError:
-            self.timeout = 10.0
+            self.timeout = 3.0
 
     @property
     def provider(self) -> str:
@@ -188,15 +291,20 @@ class OllamaEmbedder:
             return []
         safe_inputs = [t if isinstance(t, str) and t.strip() else " " for t in texts]
         payload = {"model": self.model, "input": safe_inputs}
-        req = urllib.request.Request(
-            self.base_url + self.embed_path,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8", "replace"))
-        except Exception as exc:
-            logger.debug("Ollama embed 调用失败: %s", exc)
+        data = None
+        for base in self.candidate_urls:
+            req = urllib.request.Request(
+                base + self.embed_path,
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    data = json.loads(resp.read().decode("utf-8", "replace"))
+                self.base_url = base
+                break
+            except Exception as exc:
+                continue
+        if data is None:
             return None
         embeddings = data.get("embeddings")
         if not embeddings:
@@ -250,6 +358,7 @@ class RedisVectorKB:
         self._error = None
         self._active_url = None
         self._dim = None
+        self._sparse_ready = False
         self._lock = threading.Lock()
 
     # --------------------------- 连接与可用性 ---------------------------
@@ -336,6 +445,7 @@ class RedisVectorKB:
             names = [_decode(name) for name in names]
             if self.index not in names:
                 raise RuntimeError(f"索引 {self.index} 不存在")
+            self._ensure_sparse_schema(client)
         except Exception as exc:
             self._mark_down(exc)
             logger.info("Redis 向量知识库不可用，回退 TF-IDF: %s", exc)
@@ -344,6 +454,25 @@ class RedisVectorKB:
         self._error = None
         return True
 
+    def _ensure_sparse_schema(self, client) -> None:
+        """检查并确保 RediSearch 索引包含 title 和 text 全文倒排字段（自愈补全）。"""
+        if self._sparse_ready:
+            return
+        try:
+            try:
+                client.execute_command("FT.ALTER", self.index, "SCHEMA", "ADD", "title", "TEXT", "WEIGHT", "2.0")
+                logger.info("已通过 FT.ALTER 为索引 %s 补充 title TEXT 倒排字段", self.index)
+            except Exception as e:
+                logger.debug("FT.ALTER title TEXT 响应: %s", e)
+            try:
+                client.execute_command("FT.ALTER", self.index, "SCHEMA", "ADD", "text", "TEXT", "WEIGHT", "1.0")
+                logger.info("已通过 FT.ALTER 为索引 %s 补充 text TEXT 倒排字段", self.index)
+            except Exception as e:
+                logger.debug("FT.ALTER text TEXT 响应: %s", e)
+            self._sparse_ready = True
+        except Exception as exc:
+            logger.warning("检查/补全 RediSearch 稀疏倒排索引异常: %s", exc)
+
     def reset(self) -> None:
         """清空连接与冷却状态（/kb/reload 用）。"""
         client, self._client = self._client, None
@@ -351,6 +480,7 @@ class RedisVectorKB:
         self._next_probe = 0.0
         self._error = None
         self._dim = None
+        self._sparse_ready = False
         if client is not None:
             try:
                 client.close()
@@ -598,8 +728,137 @@ class RedisVectorKB:
         rescored.sort(key=lambda row: (row["score"], row["vector_score"]), reverse=True)
         return rescored[:max(int(top_k), 0)]
 
+    @staticmethod
+    def rrf_fuse(
+        dense_hits: list,
+        sparse_hits: list,
+        docs_by_id: dict,
+        w_dense: float,
+        w_sparse: float,
+        k: int = RRF_K_CONSTANT,
+        top_k: int = 4,
+        source: str | None = None,
+    ) -> list:
+        """倒数排名融合算法（Reciprocal Rank Fusion, k=60）与自适应加权。
+
+        RRF(d) = w_dense / (k + rank_dense(d)) + w_sparse / (k + rank_sparse(d))
+        """
+        ranks_dense = {}
+        dense_map = {}
+        for idx, hit in enumerate(dense_hits or []):
+            doc_id = hit["id"]
+            ranks_dense[doc_id] = idx + 1
+            dense_map[doc_id] = hit
+
+        ranks_sparse = {}
+        sparse_map = {}
+        for idx, hit in enumerate(sparse_hits or []):
+            doc_id = hit["id"]
+            ranks_sparse[doc_id] = idx + 1
+            sparse_map[doc_id] = hit
+
+        all_doc_ids = list(dict.fromkeys(list(ranks_dense.keys()) + list(ranks_sparse.keys())))
+        if not all_doc_ids:
+            return []
+
+        fused = []
+        for doc_id in all_doc_ids:
+            r_d = ranks_dense.get(doc_id)
+            r_s = ranks_sparse.get(doc_id)
+
+            score_dense_comp = (w_dense / (k + r_d)) if r_d is not None else 0.0
+            score_sparse_comp = (w_sparse / (k + r_s)) if r_s is not None else 0.0
+            rrf_score = score_dense_comp + score_sparse_comp
+
+            # 归一化映射到 [0.0, 1.0]：单路第 1 名最大权重分约等于 (k+1)
+            norm_score = min(1.0, rrf_score * (k + 1))
+
+            meta = docs_by_id.get(doc_id) or {}
+            d_hit = dense_map.get(doc_id) or {}
+            s_hit = sparse_map.get(doc_id) or {}
+            fields = d_hit.get("fields") or s_hit.get("fields") or {}
+
+            source_tag = meta.get("source") or _decode(fields.get("source")) or ""
+            authority = source_authority(source_tag)
+            final_score = round(norm_score * authority, 4)
+
+            title = meta.get("title") or _decode(fields.get("title")) or doc_id
+            content = meta.get("text") or _decode(fields.get("text")) or ""
+
+            fused.append({
+                "id": doc_id,
+                "title": title,
+                "category": category_label(source_tag),
+                "content": content,
+                "source": source_tag,
+                "score": final_score,
+                "rrf_score": round(rrf_score, 6),
+                "vector_score": d_hit.get("score"),
+                "sparse_score": s_hit.get("score"),
+                "dense_rank": r_d,
+                "sparse_rank": r_s,
+                "authority": round(authority, 4),
+                "distance": d_hit.get("distance"),
+                "refId": meta.get("refId") or _decode(fields.get("refId")),
+            })
+
+        fused.sort(key=lambda item: (item["score"], item["rrf_score"]), reverse=True)
+        return fused[:max(int(top_k), 0)]
+
+    def _search_dense(self, client, query: str, candidate_k: int, source: str | None = None) -> list:
+        vector = self.embed_query(query)
+        if not vector:
+            return []
+        raw = client.execute_command(
+            "FT.SEARCH", self.index, self.build_search_query(candidate_k, source),
+            "PARAMS", 4, "vec", self._vector_bytes(vector), "k", candidate_k,
+            "LIMIT", 0, candidate_k, "DIALECT", 2)
+        hits = self.parse_search_response(raw)
+        out = []
+        for hit in hits:
+            key = _decode(hit.get("key"))
+            doc_id = key[len(VECTOR_PREFIX):] if key.startswith(VECTOR_PREFIX) else key
+            fields = hit.get("fields") or {}
+            distance = _to_float(fields.get("score"))
+            score = round(max(0.0, 1.0 - distance), 4) if distance is not None else 0.0
+            out.append({
+                "id": doc_id,
+                "score": score,
+                "distance": distance,
+                "fields": fields,
+            })
+        return out
+
+    def _search_sparse(self, client, query: str, candidate_k: int, source: str | None = None) -> list:
+        sparse_query = sanitize_sparse_query(query, source)
+        if not sparse_query:
+            return []
+        raw = client.execute_command(
+            "FT.SEARCH", self.index, sparse_query,
+            "LIMIT", 0, candidate_k, "DIALECT", 2)
+        hits = self.parse_search_response(raw)
+        out = []
+        for hit in hits:
+            key = _decode(hit.get("key"))
+            doc_id = key[len(VECTOR_PREFIX):] if key.startswith(VECTOR_PREFIX) else key
+            fields = hit.get("fields") or {}
+            score = _to_float(fields.get("score")) or 1.0
+            out.append({
+                "id": doc_id,
+                "score": score,
+                "distance": None,
+                "fields": fields,
+            })
+        return out
+
     def search(self, query: str, top_k: int = 4, source: str | None = None) -> list:
-        """向量检索 + 词面 hybrid 重排；任何异常都返回 []（由 HybridKB 回退 TF-IDF）。"""
+        """双路检索（Dense Vector KNN + Sparse BM25）+ 自适应加权 RRF 融合。
+
+        任何单路异常均优雅容灾：
+        - Ollama 离线/超时 -> Sparse 文本倒排路独立支撑，保障精准型号召回；
+        - 分词或纯语义问答 -> Dense 向量路主导；
+        - 两路均无或 Redis 异常 -> 返回 [] 由 HybridKB 回退本地 TF-IDF，绝不报 500。
+        """
         if not query or not query.strip() or top_k <= 0:
             return []
         if not self.available():
@@ -607,39 +866,57 @@ class RedisVectorKB:
         client = self._client
         if client is None:
             return []
-        vector = self.embed_query(query)
-        if not vector:
-            return []
-        # 先多取候选（top_k*4，至少 12）再做 hybrid 重排，避免向量噪声挤掉词面精确命中。
-        # 注意：FT.SEARCH 默认 LIMIT 0 10，必须显式 LIMIT 否则候选池永远只有 10 条。
+
+        w_dense, w_sparse = detect_adaptive_weights(query)
         multiplier = (HYBRID_CANDIDATE_MULTIPLIER if source
                       else HYBRID_CANDIDATE_MULTIPLIER_UNFILTERED)
         candidate_k = min(max(int(top_k) * multiplier, HYBRID_MIN_CANDIDATES), 60)
+
+        # 1. 密集向量召回 (Dense KNN)
+        dense_hits = []
         try:
-            raw = client.execute_command(
-                "FT.SEARCH", self.index, self.build_search_query(candidate_k, source),
-                "PARAMS", 4, "vec", self._vector_bytes(vector), "k", candidate_k,
-                "LIMIT", 0, candidate_k, "DIALECT", 2)
-            hits = self.parse_search_response(raw)
-            if not hits:
-                return []
-            ids = []
-            for hit in hits:
-                key = _decode(hit.get("key"))
-                ids.append(key[len(VECTOR_PREFIX):] if key.startswith(VECTOR_PREFIX) else key)
-            docs = self._fetch_docs(client, ids)
-            results = self.build_results(hits, docs)
-            # 无来源过滤时先重排全部候选，再排除意图示例语料，最后截断到 top_k。
-            rerank_k = len(results) if source is None else top_k
-            reranked = self.rerank_results(query, results, top_k=rerank_k, alpha=self.hybrid_alpha)
-            if source is None:
-                reranked = [row for row in reranked
-                            if str(row.get("source") or "").strip().lower() not in RAG_EXCLUDED_SOURCES]
-            return reranked[:max(int(top_k), 0)]
+            dense_hits = self._search_dense(client, query, candidate_k, source)
         except Exception as exc:
-            logger.warning("Redis 向量检索失败，回退 TF-IDF: %s", exc)
-            self._mark_down(exc)
+            logger.warning("Dense KNN 召回异常: %s", exc)
+
+        # 2. 稀疏文本召回 (Sparse BM25)
+        sparse_hits = []
+        try:
+            sparse_hits = self._search_sparse(client, query, candidate_k, source)
+        except Exception as exc:
+            logger.warning("Sparse BM25 召回异常: %s", exc)
+
+        # 3. 兜底回退：若两路都无命中，直接返回空由 HybridKB 回退 TF-IDF
+        if not dense_hits and not sparse_hits:
             return []
+
+        # 4. 收集元数据并融合
+        all_ids = []
+        for h in dense_hits:
+            if h["id"] not in all_ids:
+                all_ids.append(h["id"])
+        for h in sparse_hits:
+            if h["id"] not in all_ids:
+                all_ids.append(h["id"])
+
+        docs = self._fetch_docs(client, all_ids)
+        rerank_k = len(all_ids) if source is None else top_k
+        fused = self.rrf_fuse(
+            dense_hits=dense_hits,
+            sparse_hits=sparse_hits,
+            docs_by_id=docs,
+            w_dense=w_dense,
+            w_sparse=w_sparse,
+            k=RRF_K_CONSTANT,
+            top_k=rerank_k,
+            source=source,
+        )
+
+        if source is None:
+            fused = [row for row in fused
+                     if str(row.get("source") or "").strip().lower() not in RAG_EXCLUDED_SOURCES]
+
+        return fused[:max(int(top_k), 0)]
 
     # ------------------------------ 统计 ------------------------------
 
@@ -666,6 +943,12 @@ class RedisVectorKB:
             "redis_url": self._active_url,
             "cooldown_sec": self.cooldown_sec,
             "hybrid": {
+                "mode": "dual-path-rrf",
+                "rrf_k": RRF_K_CONSTANT,
+                "adaptive_weights": {
+                    "spec": {"dense": DEFAULT_DENSE_SPEC_WEIGHT, "sparse": DEFAULT_SPARSE_SPEC_WEIGHT},
+                    "qa": {"dense": DEFAULT_DENSE_QA_WEIGHT, "sparse": DEFAULT_SPARSE_QA_WEIGHT},
+                },
                 "vector_weight": round(self.hybrid_alpha, 4),
                 "lexical_weight": round(1.0 - self.hybrid_alpha, 4),
                 "candidate_multiplier": HYBRID_CANDIDATE_MULTIPLIER,
@@ -708,11 +991,15 @@ class HybridKB:
         self.redis_kb = redis_kb or RedisVectorKB(embedder=embedder)
         self.last_backend = "tfidf"
 
-    def search(self, query: str, top_k: int = 4, with_context: bool = True) -> list:
-        """统一检索入口：优先 Redis 向量库，无命中/异常回退 TF-IDF。"""
+    def search(self, query: str, top_k: int = 4, with_context: bool = True,
+               source: str | None = None) -> list:
+        """统一检索入口：优先 Redis 向量库，无命中/异常回退 TF-IDF。
+
+        source 为可选来源过滤（Redis 走索引 TAG，TF-IDF 只能按分类字段事后筛）。
+        """
         try:
             if self.redis_kb.available():
-                hits = self.redis_kb.search(query, top_k=top_k)
+                hits = self.redis_kb.search(query, top_k=top_k, source=source)
                 if hits:
                     self.last_backend = "redis-vector"
                     return hits
@@ -720,7 +1007,13 @@ class HybridKB:
             logger.warning("Redis 知识库检索异常，回退 TF-IDF: %s", exc)
         self.last_backend = "tfidf"
         try:
-            return self.fallback.search(query, top_k=top_k, with_context=with_context)
+            rows = self.fallback.search(query, top_k=top_k, with_context=with_context)
+            if source:
+                want = source.strip().lower()
+                rows = [r for r in rows
+                        if want in {str(r.get("source") or "").strip().lower(),
+                                    str(r.get("category") or "").strip().lower()}]
+            return rows
         except Exception as exc:  # pragma: no cover - 防御性
             logger.error("TF-IDF 知识库检索失败: %s", exc)
             return []

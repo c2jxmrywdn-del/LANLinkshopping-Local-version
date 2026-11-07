@@ -3,7 +3,7 @@
     <!-- ===== 播放器区（21st.dev HLS Video Player：headless 自绘控制层） ===== -->
     <div class="player-box" ref="playerBox">
       <video v-if="room" ref="videoRef" class="player-video" playsinline
-             :poster="room.coverUrl || ''" @play="onPlay" @pause="onPaused" />
+             :poster="resolveStorageUrl(room.coverUrl) || ''" @play="onPlay" @pause="onPaused" />
       <div class="player-shade" aria-hidden="true"></div>
 
       <!-- 左上：LIVE 脉冲徽标（21st.dev Status Dot 模式，品牌蓝脉冲）+ 观看人数 -->
@@ -75,6 +75,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import Hls from 'hls.js'
 import { liveApi } from '../../api'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import { useUserStore } from '../../store/user'
 
 const props = defineProps({

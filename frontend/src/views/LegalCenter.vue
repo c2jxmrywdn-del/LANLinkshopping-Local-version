@@ -74,7 +74,10 @@ const heroSub = computed(() => {
     privacy: { zh: '我们收集哪些信息、如何使用与保护，以及您对自己的数据拥有的权利。', en: 'What we collect, how we use and protect it, and your rights over your data.' },
     cookies: { zh: '平台 Cookie 的分类、用途与管理方式。', en: 'Categories, purposes and management of cookies on the Platform.' },
     platform: { zh: '平台定位、身份协同、演示环境与 AI 能力说明。', en: 'Positioning, role collaboration, demo environment and AI capabilities.' },
-    disclaimer: { zh: '行情数据、交易主体、AI 内容与外部链接的责任边界。', en: 'Responsibility boundaries for market data, transactions, AI content and external links.' }
+    disclaimer: { zh: '行情数据、交易主体、AI 内容与外部链接的责任边界。', en: 'Responsibility boundaries for market data, transactions, AI content and external links.' },
+    'merchant-agreement': { zh: '商户入驻准入资质、实缴资本十万元门槛、品质保真与违规处罚实施细则。', en: 'Merchant eligibility, RMB 100,000 paid-in capital threshold, quality warranty and penalty rules.' },
+    'buyer-rules': { zh: '买家交易诚信、企业账期履约规范、违规行为分级认定与阶梯处罚标准。', en: 'Buyer conduct standards, credit term compliance, violation grading and penalty rules.' },
+    'tech-service': { zh: '技术服务的平台角色、鉴定与托管边界、资金与存证规则。', en: 'Platform role, appraisal and hosting boundaries, funds and evidence rules for technical services.' }
   }
   const m = map[docKey.value] || map.terms
   return locale.value === 'en-US' ? m.en : m.zh
@@ -92,21 +95,22 @@ function goCookiePrefs() {
 .legal-page { max-width: 1120px; margin: 0 auto; padding-bottom: 30px; }
 .legal-hero {
   margin: 8px 0 18px; padding: 30px 28px 24px;
-  border-radius: 20px; color: #fff; overflow: hidden;
-  background: linear-gradient(135deg, rgba(19,35,58,.97), rgba(31,56,100,.92));
-  box-shadow: 0 14px 36px rgba(15,23,42,.08);
+  border-radius: 20px; color: #13233A; overflow: hidden;
+  background: linear-gradient(135deg, #EAF5FE, #D6ECFA);
+  border: 1px solid #C9E2F6;
+  box-shadow: 0 14px 36px rgba(30, 110, 184, .10);
 }
-.eyebrow { color: #F6D38A; font-size: 10px; letter-spacing: .16em; font-weight: 800; }
+.eyebrow { color: #1E6EB8; font-size: 10px; letter-spacing: .16em; font-weight: 800; }
 .legal-hero h1 { margin: 9px 0 7px; font-size: 27px; line-height: 1.25; }
-.hero-sub { margin: 0; max-width: 720px; color: rgba(255,255,255,.78); font-size: 13px; line-height: 1.75; }
+.hero-sub { margin: 0; max-width: 720px; color: #4A6B8A; font-size: 13px; line-height: 1.75; }
 .doc-switch { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .doc-chip {
-  border: 1px solid rgba(255,255,255,.28); background: rgba(255,255,255,.08);
-  color: rgba(255,255,255,.86); font: inherit; font-size: 12px; font-weight: 600;
+  border: 1px solid #B9D9F2; background: rgba(255,255,255,.65);
+  color: #33618E; font: inherit; font-size: 12px; font-weight: 600;
   padding: 7px 14px; border-radius: 999px; cursor: pointer; transition: .2s ease;
 }
-.doc-chip:hover { background: rgba(255,255,255,.16); color: #fff; }
-.doc-chip.active { background: #fff; border-color: #fff; color: #13233A; }
+.doc-chip:hover { background: rgba(255,255,255,.95); color: #13233A; }
+.doc-chip.active { background: #1E6EB8; border-color: #1E6EB8; color: #fff; }
 
 .legal-body { display: grid; grid-template-columns: 250px 1fr; gap: 22px; align-items: start; }
 .section-nav {

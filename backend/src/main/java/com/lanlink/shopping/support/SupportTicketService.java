@@ -33,14 +33,25 @@ public class SupportTicketService {
     private static final Set<String> CATEGORIES = Set.of("account", "order", "payment", "merchant", "other");
     private static final Set<String> STATUSES = Set.of("OPEN", "PROCESSING", "REPLIED", "CLOSED");
 
+    /** D7 订阅专属客服通道：工单优先级标记（VIP=有效订阅用户，工作台优先处理） */
+    public static final String PRIORITY_VIP = "VIP";
+    public static final String PRIORITY_NORMAL = "NORMAL";
+
     private final SupportTicketMapper mapper;
     private final UserMapper userMapper;
     private final MessageService messageService;
+    /** 订阅身份判定（D7 gating）：setter 注入，缺省（既有单测构造）时一律 NORMAL */
+    private volatile com.lanlink.shopping.module.membership.service.SubscriptionService subscriptionService;
 
     public SupportTicketService(SupportTicketMapper mapper, UserMapper userMapper, MessageService messageService) {
         this.mapper = mapper;
         this.userMapper = userMapper;
         this.messageService = messageService;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setSubscriptionService(com.lanlink.shopping.module.membership.service.SubscriptionService subscriptionService) {
+        this.subscriptionService = subscriptionService;
     }
 
     @Transactional
@@ -61,6 +72,9 @@ public class SupportTicketService {
         ticket.setContent(c);
         ticket.setContact(ct);
         ticket.setStatus("OPEN");
+        // D7 订阅专属客服通道 gating：有效订阅用户工单打 VIP 优先标记（运营工作台按优先级+时间排序处理）
+        ticket.setPriority(subscriptionService != null && subscriptionService.hasActiveSubscription(userId)
+                ? PRIORITY_VIP : PRIORITY_NORMAL);
         ticket.setCreateTime(LocalDateTime.now());
         ticket.setUpdateTime(LocalDateTime.now());
         mapper.insert(ticket);
@@ -83,7 +97,9 @@ public class SupportTicketService {
 
     public Map<String, Object> adminList(String status, long page, long size) {
         LambdaQueryWrapper<SupportTicket> qw = new LambdaQueryWrapper<SupportTicket>()
-                .orderByDesc(SupportTicket::getId);
+                // D7：订阅专属通道 VIP 优先处理（NORMAL < VIP 字典序），同级按最早创建先出队
+                .orderByAsc(SupportTicket::getPriority)
+                .orderByAsc(SupportTicket::getId);
         if (StringUtils.hasText(status) && STATUSES.contains(status.trim().toUpperCase())) {
             qw.eq(SupportTicket::getStatus, status.trim().toUpperCase());
         }

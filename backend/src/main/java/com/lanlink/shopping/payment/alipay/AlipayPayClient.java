@@ -105,6 +105,28 @@ public class AlipayPayClient {
         }
     }
 
+    /**
+     * 查询退款状态：统一收单交易退款查询 (alipay.trade.fastpay.refund.query)
+     * 返回退款状态：REFUND_SUCCESS (退款成功) / null (未查到或失败)
+     */
+    public String queryRefundStatus(String orderNo, String outRequestNo) {
+        try {
+            com.alipay.api.request.AlipayTradeFastpayRefundQueryRequest req =
+                    new com.alipay.api.request.AlipayTradeFastpayRefundQueryRequest();
+            req.setBizContent("{" +
+                    "\"out_trade_no\":\"" + orderNo + "\"," +
+                    "\"out_request_no\":\"" + (outRequestNo == null ? orderNo : outRequestNo) + "\"" +
+                    "}");
+            com.alipay.api.response.AlipayTradeFastpayRefundQueryResponse resp = client().execute(req);
+            if (resp != null && resp.isSuccess() && resp.getRefundAmount() != null) {
+                return "REFUND_SUCCESS";
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 异步通知验签（form 参数） */
     public boolean verifyNotify(Map<String, String> params) {
         try {

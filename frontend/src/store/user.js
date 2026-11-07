@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
-import { authApi, userApi } from '../api'
+import { authApi, userApi, chatApi } from '../api'
 
 export const useUserStore = defineStore('user', {
-  state: () => ({ user: null }),
+  state: () => ({ user: null, chatUnread: 0 }),
   getters: {
     logged: (s) => !!s.user,
     // ===== 身份类型（服务端 /auth/me 实时识别返回） =====
@@ -14,7 +14,8 @@ export const useUserStore = defineStore('user', {
     isVip: (s) => s.identity === 'vip',
     isMerchant: (s) => s.identity === 'merchant' || (s.user && s.user.roleCode === 'merchant'),
     isAdmin: (s) => s.identity === 'admin' || (s.user && s.user.roleCode === 'admin'),
-    unread: (s) => (s.user && s.user.unreadCount) || 0
+    // 导航徽标 = 站内信未读 + 商家咨询 IM 未读（IM 数单独存，读站内信不会清掉它）
+    unread: (s) => ((s.user && s.user.unreadCount) || 0) + (s.chatUnread || 0),
   },
   actions: {
     /**
@@ -49,16 +50,22 @@ export const useUserStore = defineStore('user', {
         localStorage.setItem('ll_user', JSON.stringify(this.user))
       }
     },
-    /** 从服务端拉取最新未读数并刷新角标 */
+    /** 并发拉取站内信未读与商家咨询 IM 未读，任一失败不影响另一个。
+     *  IM 端点按角色分流：买家 /chat/unread，商户 /merchant/center/chat/unread（管理员无 IM 渠道，403 静默） */
     async refreshUnread() {
-      try {
-        const data = await userApi.messageUnread()
-        this.setUnread(data.count || 0)
-      } catch (e) { /* 静默：未读数拉取失败不影响浏览 */ }
+      if (!this.user) return
+      const merchantIm = this.user.roleCode === 'merchant'
+      const [msg, chat] = await Promise.allSettled([
+        userApi.messageUnread(),
+        merchantIm ? chatApi.merchant.unread() : chatApi.unread()
+      ])
+      if (msg.status === 'fulfilled') this.setUnread(msg.value.count || 0)
+      if (chat.status === 'fulfilled') this.chatUnread = chat.value.count || 0
     },
     async logout() {
       try { await authApi.logout() } catch (e) {}
       this.user = null
+      this.chatUnread = 0
       localStorage.removeItem('ll_user')
     }
   }

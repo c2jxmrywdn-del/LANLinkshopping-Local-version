@@ -85,6 +85,12 @@
               <Send :size="16" :stroke-width="2.2" />
             </button>
           </template>
+          <!-- 申请中：权限气泡未应答时给出明确反馈（同 Chat.vue 的申请形态） -->
+          <template v-else-if="requesting">
+            <span class="req-dot" aria-hidden="true"></span>
+            <span class="req-text">正在申请麦克风权限…</span>
+            <span class="rec-fill" aria-hidden="true"></span>
+          </template>
           <template v-else>
             <button type="button" class="emoji-btn" :class="{ on: showEmoji }" aria-label="插入表情"
                     @click="showEmoji = !showEmoji">
@@ -93,7 +99,7 @@
             <button type="button" class="attach-btn" :disabled="busy" aria-label="发送图片或文件" @click="pickFile">
               <Paperclip :size="18" :stroke-width="2" />
             </button>
-            <button type="button" class="mic-btn" :disabled="busy" aria-label="录制语音" @click="startRecord">
+            <button type="button" class="mic-btn" :disabled="busy || requesting" aria-label="录制语音" @click="startRecord">
               <Mic :size="18" :stroke-width="2" />
             </button>
             <input ref="fileInputRef" type="file" hidden :accept="acceptTypes" @change="onPickFile" />
@@ -144,10 +150,11 @@ const acceptTypes = 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.
   + '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip'
 const busy = computed(() => sending.value || !!uploading.value)
 
-// 语音录音（权限/不支持时经 onError 中文提示）
+// 语音录音（权限/不支持时经 onError 中文提示；requesting=权限申请中，UI 显示申请形态）
 const recorder = useVoiceRecorder({ onError: (m) => message.error(m) })
 const recording = recorder.recording
 const recSeconds = recorder.seconds
+const requesting = recorder.requesting
 
 /** 媒体消息（非文本）走 MessageMedia 渲染 */
 function isMedia(m) {
@@ -508,6 +515,13 @@ onBeforeUnmount(() => {
 .cc-compose .rec-cancel:hover { background: rgba(239, 68, 68, .08); }
 .cc-compose .rec-send { border: 0; color: #fff; background: linear-gradient(135deg, #ef4444, #dc2626);
   box-shadow: 0 2px 8px rgba(239, 68, 68, .3); }
+
+/* 申请中形态：spinner 红点 + 文案（同 Chat.vue，样式对齐 .rec-dot 系） */
+.req-dot { width: 12px; height: 12px; border-radius: 50%; background: #ef4444; align-self: center; flex-shrink: 0;
+  animation: reqSpin 1s linear infinite; }
+@keyframes reqSpin { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .45); opacity: 1; }
+  100% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); opacity: .55; } }
+.req-text { align-self: center; font-size: 13px; color: var(--mc-muted, #6e6e73); flex-shrink: 0; }
 
 /* 上传条：临时节点（不进 messages），文件名 + 进度 */
 .upload-card { display: flex; flex-direction: column; gap: 2px; min-width: 220px; padding: 10px 13px;

@@ -2,9 +2,10 @@
   <div class="mc-wrap">
     <!-- ===== 手机端：横向滑动导航（≤991px 时替代侧栏） ===== -->
     <div v-if="approved" class="mc-mobile-nav">
-      <button v-for="item in NAV" :key="item.path" type="button" class="mc-chip"
+      <button v-for="item in navItems" :key="item.path" type="button" class="mc-chip"
               :class="{ on: isActive(item) }" @click="go(item)">
-        {{ item.label }}
+        <span>{{ item.label }}</span>
+        <i v-if="item.badgeKey && dash[item.badgeKey]" class="mc-chip-badge">{{ dash[item.badgeKey] }}</i>
       </button>
     </div>
 
@@ -22,7 +23,7 @@
           </div>
         </div>
         <nav class="mc-nav">
-          <button v-for="item in NAV" :key="item.path" type="button" class="mc-nav-item"
+          <button v-for="item in navItems" :key="item.path" type="button" class="mc-nav-item"
                   :class="{ on: isActive(item) }" @click="go(item)">
             <span>{{ item.label }}</span>
             <i v-if="item.badgeKey && dash[item.badgeKey]"
@@ -118,8 +119,14 @@ const NAV = [
   { path: '/merchant/center/promotion', label: '流量推广' },
   { path: '/merchant/center/traffic', label: '流量分析' },
   { path: '/merchant/center/finance', label: '资金结算' },
-  { path: '/merchant/center/store', label: '店铺设置' }
+  { path: '/merchant/center/store', label: '店铺设置' },
+  // 管理侧入口：异常件看板属平台运营页（/admin/** + admin:all），普通商户不可见，
+  // 门控与路由守卫同口径（roleCode==='admin'），避免商户点进死链
+  { path: '/admin/logistics/tracking-exceptions', label: '异常件看板', adminOnly: true }
 ]
+
+const navItems = computed(() =>
+  (user.user?.roleCode === 'admin') ? NAV : NAV.filter(item => !item.adminOnly))
 
 const loading = ref(true)
 const merchant = ref(null)
@@ -276,6 +283,7 @@ defineExpose({ merchant, reload: loadGate })
   .mc-mobile-nav::-webkit-scrollbar { display: none; }
   .mc-chip { flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--mc-border, #e3e1dc); background: var(--mc-card, #fff); color: var(--mc-text2, #3a3a3c); font: inherit; font-size: 13px; padding: 8px 14px; border-radius: 999px; cursor: pointer; transition: .18s ease; }
   .mc-chip.on { background: var(--mc-card, #fff); border-color: var(--mc-chart-solid, #0ea5e9); color: var(--mc-select-ink, #13233a); font-weight: 600; }
+  .mc-chip-badge { font-style: normal; font-size: 11px; font-weight: 700; background: var(--mc-accent, #9b2d20); color: #fff; border-radius: 999px; padding: 1px 6px; line-height: 1.3; }
   .mc-state { padding: 18px; border-radius: 16px; }
   .gate-card h2 { font-size: 20px; }
   .gate-feats { grid-template-columns: 1fr; }

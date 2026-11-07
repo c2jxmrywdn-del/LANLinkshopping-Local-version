@@ -3,7 +3,6 @@
     <a-layout-header class="header" :class="{ 'is-scrolled': scrolled }">
       <div class="header-inner">
         <div class="logo" @click="$router.push('/')">
-          <img src="/logo.svg" alt="LANLinkshopping" class="logo-img" />
           <span class="logo-text ll-wordmark"><span class="ll-lan">LAN</span><span class="ll-link">Link</span><span class="ll-shopping">shopping</span></span>
         </div>
         <div class="nav-shell" ref="navShell" @mouseleave="scheduleCloseMallMenu">
@@ -18,6 +17,7 @@
             <a-menu-item key="home" class="nav-home" @mouseenter="openHomePanel">首页<i class="mall-caret" :class="{ 'is-open': homePanelOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
             <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
             <a-menu-item key="activity">活动</a-menu-item>
+            <a-menu-item key="tech">技术服务</a-menu-item>
             <a-menu-item key="live">直播</a-menu-item>
             <a-menu-item v-if="user.hasPerm('credit:view')" key="credit-term">账期</a-menu-item>
             <a-menu-item v-if="user.hasPerm('order:view')" key="orders">我的订单</a-menu-item>
@@ -83,6 +83,9 @@
                   <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')">商户中心</a-menu-item>
                   <a-menu-item @click="$router.push('/price-monitor')"><LineChart :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 价格情报台</a-menu-item>
                   <a-menu-item @click="$router.push('/activity')"><Target :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 活动中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/coupons')"><Ticket :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 领券中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/tasks')"><ListChecks :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 任务中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/venue')"><Flame :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 大促会场</a-menu-item>
                   <a-menu-item @click="$router.push('/membership')"><MembershipIcon :size="18" class="membership-menu-icon" /> 会员中心</a-menu-item>
                   <a-menu-item @click="$router.push('/me')">个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')">消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')">收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')">登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')">账户设置</a-menu-item>
                   <a-menu-item @click="doLogout">退出登录</a-menu-item>
@@ -109,6 +112,7 @@
         </div>
         <div class="footer-links">
           <button type="button" @click.stop="$router.push('/mall')">商城</button>
+          <button type="button" @click.stop="$router.push('/tech')">技术服务</button>
           <button type="button" @click.stop="$router.push('/about')">关于我们</button>
           <button type="button" @click.stop="$router.push({ path: '/about', hash: '#contact' })">联系我们</button>
           <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'terms' } })">用户服务协议</button>
@@ -116,6 +120,7 @@
           <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'cookies' } })">Cookie 政策</button>
           <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'platform' } })">平台说明</button>
           <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'disclaimer' } })">免责声明</button>
+          <button type="button" @click.stop="$router.push({ name: 'legal-doc', params: { docKey: 'tech-service' } })">技术服务规则</button>
           <button type="button" @click.stop="$router.push({ name: 'privacy-cookies' })">隐私与 Cookie</button>
         </div>
         <AuthorCard variant="compact" />
@@ -143,7 +148,7 @@ import SupportChat from '../components/SupportChat.vue'
 import BackToTop from '../components/BackToTop.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { recordVisit } from '../utils/habitTracker'
-import { Bell, ShoppingCart, Wallet, Target, LineChart } from 'lucide-vue-next'
+import { Bell, ShoppingCart, Wallet, Target, LineChart, Ticket, ListChecks, Flame } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -159,6 +164,7 @@ const NAV_PATHS = [
   { key: 'mall', match: (p) => p === '/mall' || p.startsWith('/product') },
   { key: 'activity', match: (p) => p.startsWith('/activity') || p.startsWith('/promotions') },
   { key: 'live', match: (p) => p.startsWith('/live') },
+  { key: 'tech', match: (p) => p === '/tech' || p.startsWith('/tech/') },
   { key: 'credit-term', match: (p) => p.startsWith('/credit-term') },
   { key: 'orders', match: (p) => p.startsWith('/orders') },
   { key: 'merchant/center', match: (p) => p.startsWith('/merchant/center') || p.startsWith('/merchant/products') || p.startsWith('/merchant/traffic') },
@@ -279,8 +285,13 @@ function onDocumentKeydown(e) {
 }
 watch(() => route.fullPath, () => closeMallMenu())
 
-onMounted(() => {
-  if (!user.user) user.fetchMe()
+onMounted(async () => {
+  // 顺序很关键：/auth/me 是异步的，先 await 再判断登录态。
+  // 原来写成「if(!user.user) user.fetchMe(); if(user.logged){cart.load()…}」——
+  // 首次加载时 user 还是 null，cart.load() 永远不执行，头部数量角标与购物车页一起空着。
+  if (!user.user) {
+    await user.fetchMe()
+  }
   if (user.logged) {
     cart.load()
     startUnreadPolling()
@@ -373,9 +384,8 @@ function secretTap() {
 <style scoped>
 .header { background: var(--ll-navy); padding: 0; position: sticky; top: 0; z-index: 100; transition: box-shadow 0.25s ease; }
 .header.is-scrolled { box-shadow: 0 6px 24px rgba(8, 15, 30, 0.28); }
-.header-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; height: 64px; }
-.logo { display: flex; align-items: center; gap: 9px; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; margin-right: 32px; white-space: nowrap; }
-.logo-img { width: 36px; height: 36px; border-radius: 8px; display: block; }
+.header-inner { max-width: 1400px; margin: 0 auto; padding: 0 20px; display: flex; align-items: center; height: 64px; }
+.logo { display: flex; align-items: center; color: #fff; font-size: 21px; font-weight: 700; cursor: pointer; margin-right: 24px; white-space: nowrap; }
 .nav-shell { position: relative; flex: 1; min-width: 0; overflow: visible; }
 .nav { background: transparent; border-bottom: none; }
 /* 导航交互态：未选中柔白，选中文字用亮青 --ll-cyan（可读性更佳）+ 指示条 --ll-accent-gradient 天蓝→青，与后台激活色同源 */
@@ -425,7 +435,7 @@ function secretTap() {
 .id-scope { font-size: 12px; color: var(--ll-gray, #4b5563); line-height: 1.6; white-space: normal; }
 .id-scope b { color: var(--ll-ink, #0f172a); }
 .content { max-width: 1200px; margin: 0 auto; width: 100%; padding: 24px 16px; }
-.footer{padding:0 16px!important;color:var(--ll-muted,#4b5563)!important;background:var(--ll-page);border-top:1px solid var(--ll-border,#D9D3C7)}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-ink)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-ink)}.footer-brand p{margin:9px 0 4px;color:var(--ll-ink);font-size:13px;font-weight:700}.footer-brand small{color:var(--ll-muted,#7B8492);font-size:9px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:var(--ll-muted,#667085);cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-ink);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:var(--ll-muted,#667085);font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
+.footer{padding:0 16px!important;color:var(--ll-muted,#4b5563)!important;background:var(--ll-page);border-top:1px solid var(--ll-border,#D9D3C7)}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-ink)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-ink)}.footer-brand p{margin:9px 0 4px;color:var(--ll-ink);font-size:13px;font-weight:700}.footer-brand small{color:var(--ll-muted,#7B8492);font-size:10.5px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:var(--ll-muted,#667085);cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-ink);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:var(--ll-muted,#667085);font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
 
 /* 宽屏：顶栏不再跟随 1200px 内容区居中，改为贴近浏览器左右边缘，让品牌与导航整体左移 */
 @media (min-width: 1400px) {

@@ -17,11 +17,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 广告推广服务（商户购买流量推广的完整闭环）。
@@ -34,16 +36,40 @@ import java.util.Map;
 public class AdCampaignService {
 
     private static final Logger log = LoggerFactory.getLogger("PAYMENT");
-    /** 演示定价：按点击计费 CPM 曝光不计费 */
+    /** 演示定价：按点击计费 CPM 曝光不计费；商户可在创建时自定义出价（差异化出价是 GSP 拍卖的市场前提） */
     public static final BigDecimal DEFAULT_CPC = new BigDecimal("0.50");
+    private static final BigDecimal MIN_CPC = new BigDecimal("0.10");
+    private static final BigDecimal MAX_CPC = new BigDecimal("5.00");
     private static final BigDecimal MIN_BUDGET = new BigDecimal("5");
     private static final BigDecimal MAX_BUDGET = new BigDecimal("50000");
     private static final int MAX_DURATION_DAYS = 90;
+
+    /** 拍卖扣费价记忆 TTL：30 分钟（GSP 价在拍卖时锁定，点击计费时取用；惰性清理） */
+    private static final long AUCTION_PRICE_TTL_MS = 30 * 60 * 1000L;
+    /** 拍卖价记忆容量上限：超过时触发一次过期剔除 */
+    private static final int AUCTION_PRICE_MAX = 256;
 
     private final AdCampaignMapper campaignMapper;
     private final MerchantMapper merchantMapper;
     private final ProductMapper productMapper;
     private final WalletService walletService;
+
+    /** 拍卖扣费价记忆：campaignId → (GSP 扣费价, 存入时间)，点击计费时优先取用 */
+    private record AuctionPrice(BigDecimal price, long at) {
+    }
+
+    private final Map<Long, AuctionPrice> auctionPrices = new ConcurrentHashMap<>();
+
+    /**
+     * 匿名点击去重窗口：同 IP 对同计划在该窗口内只计费一次（重复上报直接丢弃，不计数不扣费）。
+     * 收敛匿名刷点击烧预算的攻击面；正常投放语义不变（窗口外的点击与其它 IP 均正常计费）。
+     */
+    private static final long CLICK_DEDUP_WINDOW_MS = 10 * 60 * 1000L;
+    /** 去重表容量上限：超过时惰性剔除过期项 */
+    private static final int CLICK_DEDUP_MAX = 100_000;
+
+    /** key = clientIp|campaignId → 最近一次点击上报时间戳（惰性清理） */
+    private final Map<String, Long> recentClicks = new ConcurrentHashMap<>();
 
     public AdCampaignService(AdCampaignMapper campaignMapper, MerchantMapper merchantMapper,
                              ProductMapper productMapper, WalletService walletService) {
@@ -55,7 +81,7 @@ public class AdCampaignService {
 
     // ===== 商户端：创建 / 支付 / 暂停 / 恢复 / 终止 =====
 
-    /** 创建推广计划（待支付）：校验商品归属且在售，预算 5 ~ 50000 元 */
+    /** 创建推广计划（待支付）：校验商品归属且在售，预算 5 ~ 50000 元；点击出价可选（0.10 ~ 5.00 元，缺省 0.50） */
     public AdCampaign create(Long userId, Map<String, Object> body) {
         Merchant m = mustMerchant(userId);
         Long prodId = toLong(body.get("prodId"));
@@ -73,6 +99,12 @@ public class AdCampaignService {
         }
         if (days == null || days < 1 || days > MAX_DURATION_DAYS) throw new BusinessException("投放天数需在 1 ~ " + MAX_DURATION_DAYS + " 天");
         if (name != null && name.length() > 64) throw new BusinessException("计划名称不能超过 64 个字符");
+        BigDecimal cpc = toDecimal(body.get("cpcPrice"));
+        if (cpc == null) cpc = DEFAULT_CPC;
+        cpc = cpc.setScale(2, RoundingMode.HALF_UP);
+        if (cpc.compareTo(MIN_CPC) < 0 || cpc.compareTo(MAX_CPC) > 0) {
+            throw new BusinessException("点击出价需在 " + MIN_CPC + " ~ " + MAX_CPC + " 元之间");
+        }
 
         AdCampaign c = new AdCampaign();
         c.setMerId(m.getMerId());
@@ -83,7 +115,7 @@ public class AdCampaignService {
         c.setSpent(BigDecimal.ZERO);
         c.setClicks(0L);
         c.setImpressions(0L);
-        c.setCpcPrice(DEFAULT_CPC);
+        c.setCpcPrice(cpc);
         c.setDurationDays(days);
         c.setStatus("pending_payment");
         campaignMapper.insert(c);
@@ -138,16 +170,30 @@ public class AdCampaignService {
 
     // ===== 计费与广告位（商城侧，公开） =====
 
-    /** 点击计费：原子扣减，预算扣满自动置 ended；返回是否计费成功（非投放中返回 false） */
-    public boolean trackClick(Long campaignId) {
+    /** 点击计费：原子扣减（GSP 拍卖价优先，无新鲜拍卖记录回退计划自身 cpc_price），预算扣满自动置 ended */
+    public boolean trackClick(Long campaignId, String clientIp) {
+        if (!acquireClickSlot(campaignId, clientIp)) return false;
         AdCampaign c = campaignMapper.selectById(campaignId);
         if (c == null || !"active".equals(c.getStatus())) return false;
-        int hit = campaignMapper.chargeClick(campaignId, c.getCpcPrice());
+        int hit = campaignMapper.chargeClick(campaignId, effectiveClickPrice(c));
         if (hit == 0) return false;
         // 预算耗尽（SQL 已置 ended）→ 结算退回（spent 已截断到预算，剩余为 0，仅落结算字段）
         AdCampaign after = campaignMapper.selectById(campaignId);
         if ("ended".equals(after.getStatus()) && after.getSettled() == null) {
             settle(after, "budget_exhausted");
+        }
+        return true;
+    }
+
+    /** 去重窗口抢占：同 IP 同计划窗口内重复点击返回 false；来源 IP 缺失的匿名点击一律不计费（fail-closed） */
+    private boolean acquireClickSlot(Long campaignId, String clientIp) {
+        if (clientIp == null || clientIp.isBlank()) return false;
+        String key = clientIp + "|" + campaignId;
+        long now = System.currentTimeMillis();
+        Long prev = recentClicks.put(key, now);
+        if (prev != null && now - prev < CLICK_DEDUP_WINDOW_MS) return false;
+        if (recentClicks.size() > CLICK_DEDUP_MAX) {
+            recentClicks.entrySet().removeIf(e -> now - e.getValue() > CLICK_DEDUP_WINDOW_MS);
         }
         return true;
     }
@@ -158,47 +204,61 @@ public class AdCampaignService {
     }
 
     /**
-     * 商城广告位：eCPM 排序 + 预算 pacing 准入（计费原子链路不变）。
+     * 商城广告位：完整 GSP 拍卖链路（预估 → 排序 → 竞价 → 计费）+ 预算 pacing 前置准入。
      *
-     * <p>eCPM = CPC × pCTR × 1000，pCTR 用 Beta 平滑 (clicks+α)/(impressions+α+β)
-     * （α=0.1/β=10：低曝光计划向 1% 先验收缩，抑制小样本噪声）；pacing 按计划
-     * 时长进度与花费进度之比节流——预算消耗快于时间进度时概率性让位，避免前快后慢。
+     * <p>质量分 q = Beta 平滑 pCTR × 类目相关性（catId 命中 1.0 / 未命中 0.5，无上下文 1.0，
+     * 详见 {@link AdAuction}）；pacing 准入仍按 eCPM 预排序（CPC × pCTR × 1000）节流——
+     * 预算消耗快于时间进度时概率性让位。准入候选进入 GSP 拍卖定序与定价，
+     * 扣费价 p_k = bid_{k+1} × q_{k+1} / q_k（末位按自身 bid），2 位小数 HALF_UP、
+     * 下限 0.01、上限自身出价。拍卖价记录在内存（30 分钟 TTL 惰性清理），
+     * 点击计费时优先采用（{@link #trackClick}），无记录回退计划自身 cpc_price。
      */
-    public List<Map<String, Object>> slots(int limit) {
+    public List<Map<String, Object>> slots(int limit, Long contextCatId) {
         int n = Math.max(1, Math.min(limit, 6));
         List<AdCampaign> candidates = campaignMapper.activeSlots(50);
 
-        // eCPM 降序
-        record Cand(AdCampaign c, double ecpm, double pacing) {}
+        // eCPM 预排序（pacing 准入用）
+        record Cand(AdCampaign c, double ecpm) {}
         List<Cand> ranked = new ArrayList<>();
         for (AdCampaign c : candidates) {
             double pctr = betaSmoothedCtr(c.getClicks(), c.getImpressions());
             double ecpm = c.getCpcPrice() == null ? 0 : c.getCpcPrice().doubleValue() * pctr * 1000;
-            ranked.add(new Cand(c, ecpm, pacingFactor(c)));
+            ranked.add(new Cand(c, ecpm));
         }
         ranked.sort((a, b) -> Double.compare(b.ecpm, a.ecpm));
 
         // pacing 准入：消耗过快（factor < 0.5）的计划按概率跳过；下限 0.2 保底曝光
-        List<AdCampaign> picked = new ArrayList<>();
+        List<AdCampaign> admitted = new ArrayList<>();
         for (Cand cand : ranked) {
-            if (picked.size() >= n) break;
-            double factor = Math.max(0.2, cand.pacing());
+            if (admitted.size() >= n) break;
+            double factor = Math.max(0.2, pacingFactor(cand.c()));
             if (factor < 1.0 && java.util.concurrent.ThreadLocalRandom.current().nextDouble() > factor) {
                 continue;
             }
-            picked.add(cand.c());
+            admitted.add(cand.c());
         }
         // 全被 pacing 跳过时回退 eCPM TopN（广告位永不空）
-        if (picked.isEmpty()) {
-            ranked.stream().limit(n).forEach(cd -> picked.add(cd.c()));
+        if (admitted.isEmpty()) {
+            ranked.stream().limit(n).forEach(cd -> admitted.add(cd.c()));
         }
 
-        List<Map<String, Object>> out = new ArrayList<>();
-        for (AdCampaign c : picked) {
+        // 取商品（相关性 catId + 展示字段），无效商品剔除后进入 GSP 拍卖
+        List<AdAuction.Candidate> auctionCandidates = new ArrayList<>();
+        Map<Long, Product> prodById = new LinkedHashMap<>();
+        for (AdCampaign c : admitted) {
             Product p = productMapper.selectById(c.getProdId());
             if (p == null) continue;
+            prodById.put(c.getCampaignId(), p);
+            auctionCandidates.add(new AdAuction.Candidate(c, p.getCatId()));
+        }
+        List<AdAuction.Winner> winners = AdAuction.auction(auctionCandidates, contextCatId, n);
+        rememberAuctionPrices(winners);
+
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (AdAuction.Winner w : winners) {
+            Product p = prodById.get(w.campaign().getCampaignId());
             Map<String, Object> slot = new LinkedHashMap<>();
-            slot.put("campaignId", c.getCampaignId());
+            slot.put("campaignId", w.campaign().getCampaignId());
             slot.put("prodId", p.getProdId());
             slot.put("title", p.getTitle());
             slot.put("coverUrl", p.getCoverUrl());
@@ -207,9 +267,31 @@ public class AdCampaignService {
             slot.put("sales", p.getSales());
             slot.put("stock", p.getStock());
             slot.put("ad", true);
+            slot.put("chargePrice", w.chargePrice()); // 本次点击 GSP 扣费价（新增字段，其余不变）
             out.add(slot);
         }
         return out;
+    }
+
+    /** 记录拍卖扣费价（点击计费时优先取用）；超容量时惰性清理过期项 */
+    private void rememberAuctionPrices(List<AdAuction.Winner> winners) {
+        if (winners.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        for (AdAuction.Winner w : winners) {
+            auctionPrices.put(w.campaign().getCampaignId(), new AuctionPrice(w.chargePrice(), now));
+        }
+        if (auctionPrices.size() > AUCTION_PRICE_MAX) {
+            auctionPrices.entrySet().removeIf(e -> now - e.getValue().at() > AUCTION_PRICE_TTL_MS);
+        }
+    }
+
+    /** 点击应扣价：30 分钟内的拍卖价优先；无记录或已过期回退计划自身 cpc_price（过期项顺手剔除） */
+    private BigDecimal effectiveClickPrice(AdCampaign c) {
+        AuctionPrice e = auctionPrices.get(c.getCampaignId());
+        if (e == null) return c.getCpcPrice();
+        if (System.currentTimeMillis() - e.at() <= AUCTION_PRICE_TTL_MS) return e.price();
+        auctionPrices.remove(c.getCampaignId(), e);
+        return c.getCpcPrice();
     }
 
     /** Beta 平滑 CTR：抑制低曝光噪声（α=0.1/β=10 → 先验均值 1%） */
@@ -276,6 +358,16 @@ public class AdCampaignService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         long clicks = all.stream().mapToLong(c -> c.getClicks() == null ? 0 : c.getClicks()).sum();
         long impressions = all.stream().mapToLong(c -> c.getImpressions() == null ? 0 : c.getImpressions()).sum();
+        // 出价口径：cpcPrice = 全部计划出价的算术平均（2 位小数 HALF_UP），无计划回退 DEFAULT_CPC；
+        // avgActualCpc = totalSpent / max(clicks,1) 的实付均价，无点击回退出价均值（前端单价展示优先实付均价）
+        BigDecimal cpcAvg = all.isEmpty() ? DEFAULT_CPC
+                : all.stream()
+                        .map(c -> c.getCpcPrice() == null ? BigDecimal.ZERO : c.getCpcPrice())
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .divide(new BigDecimal(all.size()), 2, RoundingMode.HALF_UP);
+        BigDecimal avgActualCpc = clicks > 0
+                ? spent.divide(new BigDecimal(clicks), 2, RoundingMode.HALF_UP)
+                : cpcAvg;
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("totalPlans", all.size());
         out.put("activePlans", active);
@@ -285,32 +377,37 @@ public class AdCampaignService {
         out.put("totalClicks", clicks);
         out.put("totalImpressions", impressions);
         out.put("ctr", impressions == 0 ? 0 : Math.round(clicks * 10000.0 / impressions) / 100.0);
-        out.put("cpcPrice", DEFAULT_CPC);
+        out.put("cpcPrice", cpcAvg);
+        out.put("avgActualCpc", avgActualCpc);
         out.put("walletBalance", walletService.balanceOf(userId));
         return out;
     }
 
     // ===== 结算与到期 =====
 
-    /** 结算：剩余预算退回钱包并落结算字段（幂等：settled 非空直接返回） */
+    /**
+     * 结算：剩余预算退回钱包并落结算字段。
+     * 并发安全：先以条件 UPDATE 抢占结算权（WHERE settled IS NULL，金额在行锁内按当前行值计算），
+     * 抢占成功（affected=1）的一方才退钱包；失败方读到最新已结算行直接返回，杜绝到期定时任务
+     * 与手动终止并发时的钱包双退。
+     */
     @Transactional
     public AdCampaign settle(AdCampaign c, String reason) {
         if ("ended".equals(c.getStatus()) && c.getSettled() != null) return c;
-        BigDecimal remain = c.getTotalBudget().subtract(c.getSpent() == null ? BigDecimal.ZERO : c.getSpent());
-        if (remain.compareTo(BigDecimal.ZERO) < 0) remain = BigDecimal.ZERO;
+        int claimed = campaignMapper.claimSettle(c.getCampaignId(), reason);
+        if (claimed == 0) {
+            AdCampaign latest = campaignMapper.selectById(c.getCampaignId());
+            return latest != null ? latest : c;
+        }
+        AdCampaign settledRow = campaignMapper.selectById(c.getCampaignId());
+        BigDecimal remain = settledRow.getSettled() == null ? BigDecimal.ZERO : settledRow.getSettled();
         if (remain.compareTo(BigDecimal.ZERO) > 0) {
             walletService.refundToWallet(c.getUserId(), remain, "AD-" + c.getCampaignId(),
                     "推广计划结算退回（" + reasonText(reason) + "）");
         }
-        c.setStatus("ended");
-        c.setEndReason(reason);
-        c.setSettled(remain);
-        c.setSettleTime(LocalDateTime.now());
-        c.setUpdateTime(LocalDateTime.now());
-        campaignMapper.updateById(c);
         log.info("[AD] 推广计划结算 campaignId={} reason={} spent={} refund={}",
-                c.getCampaignId(), reason, c.getSpent(), remain);
-        return c;
+                c.getCampaignId(), reason, settledRow.getSpent(), remain);
+        return settledRow;
     }
 
     /** 定时到期检查（每分钟）：过结束时间的投放中/暂停计划自动结算 */

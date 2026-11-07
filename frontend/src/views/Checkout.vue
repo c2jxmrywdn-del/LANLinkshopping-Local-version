@@ -26,25 +26,52 @@
         <a-form-item label="联系电话" :rules="[{ required: true }]"><a-input v-model:value="form.phone" /></a-form-item>
         <a-form-item label="收货地址" :rules="[{ required: true }]"><a-textarea v-model:value="form.address" :rows="2" /></a-form-item>
         <a-form-item label="支付方式">
-          <a-radio-group v-model:value="form.payType">
-            <a-radio value="corporate">对公转账</a-radio>
-            <a-radio value="balance">企业钱包<span v-if="walletLoaded" class="wallet-tip">（余额 ¥{{ walletBalance.toFixed(2) }}<template v-if="walletInsufficient">，不足</template>）</span></a-radio>
-            <a-radio value="term" :disabled="termUnavailable">账期/尾款
-              <span v-if="creditLoaded" class="wallet-tip">（可用授信 ¥{{ creditAvailable.toFixed(2) }}<template v-if="creditStatus !== 'ACTIVE'">，未开通</template><template v-else-if="termUnavailable">，额度不足</template>）</span>
-            </a-radio>
-          </a-radio-group>
-          <div v-if="form.payType === 'term' && creditStatus !== 'ACTIVE'" class="wallet-warn">
+          <PaymentMethodSelector
+            v-model="form.payType"
+            :wallet-balance="walletBalance"
+            :credit-status="creditStatus"
+            :credit-available="creditAvailable"
+            :payable-total="payableTotal"
+          />
+
+          <!-- 国际信用卡/借记卡 Stripe 联动卡片 -->
+          <div v-if="form.payType === 'stripe'" class="stripe-embed-box mt-3">
+            <StripeCardElement />
+          </div>
+
+          <!-- 对公转账银行电汇提示 -->
+          <div v-else-if="form.payType === 'corporate'" class="corporate-embed-box mt-3">
+            <MerchantCorporateBankCard />
+          </div>
+
+          <!-- 企业账期授信横幅 -->
+          <div v-else-if="form.payType === 'term' && creditStatus !== 'ACTIVE'" class="wallet-warn mt-3">
             当前没有生效的企业账期，可前往 <a @click="$router.push('/credit-term')">账期管理</a> 申请授信。
           </div>
-          <div v-else-if="form.payType === 'term' && termUnavailable" class="wallet-warn">
+          <div v-else-if="form.payType === 'term' && termUnavailable" class="wallet-warn mt-3">
             当前账期可用额度不足，本单需 ¥{{ payableTotal }}，可前往 <a @click="$router.push('/credit-term')">账期管理</a> 查看额度。
           </div>
-          <div v-if="form.payType === 'balance' && walletInsufficient" class="wallet-warn">
+          <div v-else-if="form.payType === 'term'" class="credit-checkout-banner mt-3">
+            <div class="credit-banner-desc">
+              <ShieldCheck :size="14" class="text-emerald-600 mr-1 flex-shrink-0" aria-hidden="true" />
+              <span>7~15 天合规短融 · 享 3 天免息宽限 · 平台零征信留存</span>
+            </div>
+            <button
+              type="button"
+              class="credit-calc-btn"
+              @click="showCalcDrawer = true"
+            >
+              <Calculator :size="14" class="mr-1" aria-hidden="true" />
+              <span>测算利息小票</span>
+              <ArrowRight :size="13" class="ml-1" aria-hidden="true" />
+            </button>
+          </div>
+          <div v-if="form.payType === 'balance' && walletInsufficient" class="wallet-warn mt-3">
             钱包余额不足，可在支付前前往 <a @click="$router.push('/wallet')">我的钱包</a> 充值。
           </div>
         </a-form-item>
         <a-form-item label="备注"><a-input v-model:value="form.remark" /></a-form-item>
-        <a-button type="primary" html-type="submit" size="large" block :loading="loading">提交订单</a-button>
+        <a-button type="primary" html-type="submit" size="large" block :loading="loading" :disabled="quoting">提交订单</a-button>
       </a-form>
     </a-card>
     <a-card title="订单商品" class="right">
@@ -71,7 +98,9 @@
               <template v-else><i>¥</i><b>{{ trimZero(cp.benefitAmount) }}</b></template>
             </span>
             <span class="opt-main">
-              <span class="opt-name">{{ cp.title }}</span>
+              <span class="opt-name">
+                <a-tag v-if="cp.scope === 'prod'" class="opt-stag" color="red">店铺券</a-tag>{{ cp.title }}
+              </span>
               <span class="opt-sub">
                 {{ cp.threshold > 0 ? `满¥${trimZero(cp.threshold)}可用` : '无门槛' }}{{ cp.indName ? ' · ' + cp.indName : '' }}
               </span>
@@ -88,7 +117,7 @@
         </div>
       </div>
       <div class="row coupon-deduct" v-if="couponBenefit > 0">
-        <span>优惠券优惠</span><b class="deduct">-¥{{ couponBenefit }}</b>
+        <span>券抵扣</span><b class="deduct">-￥{{ couponBenefit }}</b>
       </div>
       <!-- 积分抵现（会员系统）：余额实时试算，合计联动 -->
       <div class="points-box" v-if="pointsLoaded">
@@ -114,10 +143,41 @@
         <span>积分抵扣（{{ quotePoints }} 积分）</span><b class="deduct">-¥{{ redeemAmount }}</b>
       </div>
       <div class="row total"><span>实付金额</span><b>¥{{ payableTotal }}</b></div>
-      <div class="row pay-note" v-if="couponBenefit > 0 || promoHint">
-        <span>促销/会员折扣以结算结果为准，优惠券优惠已按试算计入</span>
+      <!-- 优惠明细条（结算可感知闭环）：促销/会员互斥取优结果由服务端只读预览回显（/campaign/pricing/preview），
+           已计入实付合计；券与积分抵扣在其基础上叠加，最终金额以下单结算为准 -->
+      <div class="promo-break" v-if="promoLoaded && (promoDiscount > 0 || memberDiscount > 0)">
+        <div class="promo-line" v-if="promoSource === 'member'">
+          <span>{{ memberPromoText }}</span>
+          <b class="promo-amt">-¥{{ trimZero(memberDiscount) }}</b>
+        </div>
+        <div class="promo-line" v-else-if="promoDiscount > 0">
+          <span>{{ promoAppliedText }}</span>
+          <b class="promo-amt">-¥{{ trimZero(promoDiscount) }}</b>
+        </div>
+        <div class="promo-rule">促销与会员折扣取更优，不叠加；优惠券在此基础上使用。</div>
+      </div>
+      <!-- 入口 3（设计稿 §2）：promo-break 互斥明细区下方的订阅引导行；不拦截支付主流程、不弹窗；
+           已有 member 明细行时（promoSource==='member'）不展示；× 关闭 7 天冷却 + 会话曝光上限。
+           门槛 ¥10,000 为设计稿 D5 暂定值，运营配置位待拍板；P1 接 /membership/price-preview 升级「本单立省 ¥X」 -->
+      <VipPromoEntry v-if="promoLoaded && memberDiscount === 0 && Number(payableTotal) >= 10000" slot-key="checkout" variant="row">
+        <router-link to="/membership">开通会员订阅，解锁等级折扣</router-link>
+      </VipPromoEntry>
+      <div class="row pay-note" v-if="couponBenefit > 0 || redeemAmount > 0">
+        <span>促销/会员折扣以结算结果为准，券抵扣已按试算计入</span>
       </div>
     </a-card>
+
+    <!-- 21st.dev 移动端抽屉：试算账期利息 -->
+    <SmoothMobileDrawer
+      v-model:open="showCalcDrawer"
+      title="企业账期利息试算小票"
+      max-height="90vh"
+    >
+      <CreditInterestCalculator
+        :initial-amount="Number(payableTotal) || 10000"
+        :initial-term="creditAccount?.termDays || 7"
+      />
+    </SmoothMobileDrawer>
   </div>
 </template>
 
@@ -125,11 +185,17 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { Ticket } from 'lucide-vue-next'
+import { ArrowRight, Calculator, ShieldCheck, Ticket } from 'lucide-vue-next'
 import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi, campaignApi } from '../api'
 import { validateCheckoutForm } from '../utils/validationRules'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import SmoothMobileDrawer from '../components/ui/SmoothMobileDrawer.vue'
+import VipPromoEntry from '../components/membership/VipPromoEntry.vue'
+import CreditInterestCalculator from '../components/credit/CreditInterestCalculator.vue'
+import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
+import MerchantCorporateBankCard from '../components/payment/MerchantCorporateBankCard.vue'
+import StripeCardElement from '../components/payment/StripeCardElement.vue'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -154,6 +220,7 @@ const pointsInput = ref(null)
 const quotePoints = ref(0)   // 试算返回的实际抵扣积分（归整到 1000 整数倍）
 const redeemAmount = ref(0)  // 试算返回的抵扣金额（元，整元）
 const maxPoints = ref(0)     // 本单可抵扣的最大积分（上限金额 × 1000）
+const quoting = ref(false)   // 试算进行中：禁用提交按钮，防止试算未完成就按旧口径实扣
 let quoteTimer = null
 
 // ===== 优惠券（活动系统）：服务端按购物车试算可用性/优惠额，选中后随下单核销 =====
@@ -165,18 +232,34 @@ const couponBenefit = computed(() => {
   const cp = selectedCoupon.value
   return cp && cp.applicable ? Number(cp.benefit) || 0 : 0
 })
-const promoHint = ref(false)
+// ===== 优惠预览（可感知闭环）：促销/会员互斥取优只读预览，与下单结算共用 PricingFacade.quote 同一实现 =====
+const promoPreview = ref(null)
+const promoLoaded = ref(false)
+const promoDiscount = computed(() => Number(promoPreview.value?.promoDiscount) || 0)
+const memberDiscount = computed(() => Number(promoPreview.value?.memberDiscount) || 0)
+const promoTitle = computed(() => promoPreview.value?.promoTitle || '')
+const promoSource = computed(() => promoPreview.value?.source || '')
+// 明细文案：promotion → 「已参与「活动名」活动，已减」/无标题兜底「已参与活动，已减」；member → 「会员等级折扣，已减」
+const promoAppliedText = computed(() => promoTitle.value ? `已参与「${promoTitle.value}」活动，已减` : '已参与活动，已减')
+const memberPromoText = computed(() => '会员等级折扣，已减')
+// 结算基准：预览可用时取 estimateFinal（已减促销/会员），否则退回购物车原额（与旧行为一致）
+const settleBase = computed(() => {
+  if (promoPreview.value && Number(promoPreview.value.estimateFinal) >= 0) return Number(promoPreview.value.estimateFinal)
+  return cart.total
+})
 const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
 const rateText = (r) => trimZero(Number(r) * 10)
 const unableReason = (cp) => {
   if (cp.applicable) return ''
   if (cp.threshold > 0 && cart.total < Number(cp.threshold)) return '未满门槛'
+  // 店铺券（scope=prod）：给出可辨识原因；后端 quoteCoupons 若带商户名则精确提示
+  if (cp.scope === 'prod') return cp.merName ? `限 ${cp.merName}` : '仅限指定店铺商品可用'
   return '不适用本单'
 }
 function onPickCoupon() { /* 选中态由 v-model 维护，此处仅做触达反馈占位 */ }
 
-// 应付合计 = 商品金额 - 优惠券优惠 - 积分抵扣（促销/会员折扣以后端结算为准）
-const payableTotal = computed(() => Math.max(0, cart.total - couponBenefit.value - redeemAmount.value).toFixed(2))
+// 应付合计 = 结算基准（促销/会员取优后，预览可用时含优惠） - 券抵扣 - 积分抵扣（最终金额以后端结算为准）
+const payableTotal = computed(() => Math.max(0, settleBase.value - couponBenefit.value - redeemAmount.value).toFixed(2))
 
 // 积分输入步进：按 1 元 = 1000 积分整元调整
 const pointsStep = computed(() => rule.value.redeemPointsPerYuan || 1000)
@@ -199,8 +282,8 @@ function useAllPoints() {
   }
 }
 
-// 输入变化后 400ms 防抖试算，避免频繁请求
-watch([pointsInput, usePoints], () => {
+// 输入/选券变化后 400ms 防抖试算，避免频繁请求（券抵扣计入试算口径，故 couponBenefit 一并监听）
+watch([pointsInput, usePoints, couponBenefit], () => {
   clearTimeout(quoteTimer)
   if (!usePoints.value || !pointsInput.value || pointsInput.value <= 0) {
     quotePoints.value = 0
@@ -210,28 +293,50 @@ watch([pointsInput, usePoints], () => {
   quoteTimer = setTimeout(runQuote, 400)
 })
 
+// 试算超时兜底：请求层虽有 25s 中断，但试算卡死不能阻塞下单入口那么久
+const QUOTE_TIMEOUT = 8000
+function quoteWithTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('积分试算超时')), ms))
+  ])
+}
+
 async function runQuote() {
   if (!cart.total || !pointsInput.value) return
+  quoting.value = true
   try {
-    const q = await membershipApi.redeemQuote(pointsInput.value, cart.total)
+    // 与后端口径对齐：试算基准 = 券后金额（cart.total - 当前选中券面），无券为原额
+    const q = await quoteWithTimeout(
+      membershipApi.redeemQuote(pointsInput.value, Math.max(0, cart.total - couponBenefit.value)),
+      QUOTE_TIMEOUT
+    )
     quotePoints.value = q?.points || 0
     redeemAmount.value = Number(q?.amount) || 0
     maxPoints.value = q?.maxPoints || 0
   } catch (e) {
+    // 试算失败/超时：抵扣归零并关闭积分抵用，用户重新输入才会再次试算——杜绝试算未成功仍按输入实扣
     quotePoints.value = 0
     redeemAmount.value = 0
     maxPoints.value = 0
+    usePoints.value = false
+    pointsInput.value = 0
+  } finally {
+    quoting.value = false
   }
 }
 
 // ===== 企业钱包余额展示（payType=balance 时联动提示） =====
+// 余额校验基准与应付合计同口径：促销/会员取优 + 券抵扣与积分抵扣均计入
 const walletLoaded = ref(false)
 const walletBalance = ref(0)
-const walletInsufficient = computed(() => walletBalance.value < (cart.total - redeemAmount.value))
+const walletInsufficient = computed(() => walletBalance.value < (settleBase.value - couponBenefit.value - redeemAmount.value))
 const creditLoaded = ref(false)
 const creditStatus = ref('NOT_APPLIED')
 const creditAvailable = ref(0)
-const termUnavailable = computed(() => creditStatus.value !== 'ACTIVE' || creditAvailable.value < (cart.total - redeemAmount.value))
+const creditAccount = ref(null)
+const showCalcDrawer = ref(false)
+const termUnavailable = computed(() => creditStatus.value !== 'ACTIVE' || creditAvailable.value < (settleBase.value - couponBenefit.value - redeemAmount.value))
 
 onMounted(async () => {
   // 优惠券试算（活动系统）：按当前勾选商品由服务端重算金额/行业后返回可用券
@@ -242,6 +347,11 @@ onMounted(async () => {
     const best = usableCoupons.value.reduce((a, b) => (Number(b.benefit) > Number(a?.benefit || 0) ? b : a), null)
     if (best && Number(best.benefit) > 0) selectedCouponId.value = best.couponId
   } catch (e) { coupons.value = [] }
+  // 优惠预览（可感知闭环）：促销/会员互斥取优只读预览，失败静默（保持原额兜底，不阻塞结算）
+  try {
+    promoPreview.value = await campaignApi.pricingPreview(cart.checkedItems.map(i => i.cartId)) || null
+  } catch (e) { promoPreview.value = null }
+  finally { promoLoaded.value = true }
   try {
     addrList.value = (await userApi.addressList()) || []
   } catch (e) {
@@ -269,7 +379,8 @@ onMounted(async () => {
     const c = await creditTermApi.overview()
     creditStatus.value = c?.status || 'NOT_APPLIED'
     creditAvailable.value = Number(c?.account?.availableLimit || 0)
-  } catch (e) { creditStatus.value = 'NOT_APPLIED'; creditAvailable.value = 0 }
+    creditAccount.value = c?.account || null
+  } catch (e) { creditStatus.value = 'NOT_APPLIED'; creditAvailable.value = 0; creditAccount.value = null }
   finally { creditLoaded.value = true }
 })
 
@@ -323,7 +434,52 @@ async function submit() {
         title: '下单成功',
         content: `订单号 ${order.orderNo}，应付 ¥${order.totalAmount}。是否立即支付？`,
         okText: '立即支付', cancelText: '稍后支付',
-        onOk: async () => { try { if (form.payType === 'balance') { const vo = await paymentApi.create(order.orderNo, 'wallet'); if (!vo?.payInfo?.paid) throw new Error('钱包支付未确认') } else { const vo = await paymentApi.create(order.orderNo, 'mock'); if (vo?.mock) await paymentApi.mockConfirm(order.orderNo) } message.success('支付成功'); router.push('/orders') } catch (e) {} },
+        onOk: async () => {
+          try {
+            if (form.payType === 'balance') {
+              const vo = await paymentApi.create(order.orderNo, 'wallet')
+              if (!vo?.payInfo?.paid) throw new Error('钱包支付未确认')
+              message.success('钱包支付成功')
+            } else if (['stripe', 'apple_pay', 'google_pay'].includes(form.payType)) {
+              const vo = await paymentApi.create(order.orderNo, 'stripe')
+              if (vo?.mock) {
+                await paymentApi.mockConfirm(order.orderNo)
+                message.success('Stripe 支付成功（模拟环境）')
+              } else {
+                message.success('Stripe 支付预授权已创建')
+              }
+            } else if (form.payType === 'alipay') {
+              const vo = await paymentApi.create(order.orderNo, 'alipay')
+              if (vo?.mock) {
+                await paymentApi.mockConfirm(order.orderNo)
+                message.success('支付宝支付成功（模拟环境）')
+              } else if (vo?.payInfo?.form) {
+                const div = document.createElement('div')
+                div.innerHTML = vo.payInfo.form
+                document.body.appendChild(div)
+                document.forms[0]?.submit()
+                return
+              }
+            } else if (form.payType === 'wechat') {
+              const vo = await paymentApi.create(order.orderNo, 'wechat')
+              if (vo?.mock) {
+                await paymentApi.mockConfirm(order.orderNo)
+                message.success('微信支付成功（模拟环境）')
+              } else {
+                message.success('请使用微信扫码完成支付')
+              }
+            } else if (form.payType === 'corporate') {
+              message.info(`对公订单已创建，请汇款并备注订单号 ${order.orderNo}`)
+            } else {
+              const vo = await paymentApi.create(order.orderNo, 'mock')
+              if (vo?.mock) await paymentApi.mockConfirm(order.orderNo)
+              message.success('支付成功')
+            }
+            router.push('/orders')
+          } catch (e) {
+            message.error(e?.message || '支付处理失败')
+          }
+        },
         onCancel: () => router.push('/orders')
       })
     }
@@ -390,6 +546,7 @@ async function submit() {
 .opt-face i { font-style: normal; font-size: 11px; font-weight: 600; }
 .opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .opt-name { font-size: 13px; font-weight: 500; color: var(--ll-ink, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-stag { margin-right: 6px; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px; }
 .opt-sub { font-size: 11.5px; color: var(--ll-muted, #64748b); }
 .opt-side { flex-shrink: 0; }
 .opt-benefit { font-style: normal; color: #10b981; font-weight: 700; font-size: 14px; }
@@ -398,11 +555,67 @@ async function submit() {
 .coupon-opt.none .opt-name { color: var(--ll-muted, #64748b); }
 .coupon-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
 .coupon-deduct .deduct { color: #10b981; font-size: 15px; }
+/* 优惠明细条（结算可感知闭环）：浅青底 + 细描边，与积分/券区块同语系 */
+.promo-break { border: 1px dashed rgba(16, 185, 129, .35); background: rgba(16, 185, 129, .05);
+               border-radius: 10px; padding: 9px 12px; margin-bottom: 12px; }
+.promo-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.promo-line > span { font-size: 12.5px; color: var(--ll-gray, #4b5563); min-width: 0; }
+.promo-amt { color: #10b981; font-size: 15px; font-weight: 700; white-space: nowrap; }
+.promo-rule { margin-top: 5px; font-size: 11.5px; color: var(--ll-muted, #64748b); line-height: 1.6; }
 .pay-note { font-size: 11.5px; color: var(--ll-muted, #64748b); }
 /* 企业钱包余额提示 */
 .wallet-tip { font-size: 12px; color: var(--ll-muted, #64748b); }
 .wallet-warn { margin-top: 6px; font-size: 12px; color: #b45309; }
 .wallet-warn a { color: var(--ll-primary, #1e6eb8); cursor: pointer; }
+/* 企业账期支付提示横幅与 44px 触控试算按钮 */
+.credit-checkout-banner {
+  margin-top: 8px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.credit-banner-desc {
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: #0369a1;
+  font-weight: 500;
+}
+.credit-calc-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #7dd3fc;
+  border-radius: 6px;
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 160ms ease;
+  touch-action: manipulation;
+}
+.credit-calc-btn:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+@media (max-width: 640px) {
+  .credit-checkout-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .credit-calc-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
 /* 响应式：平板/手机改为单列，订单商品卡自适应宽度 */
 @media (max-width: 900px) {
   .wrap { flex-direction: column; }

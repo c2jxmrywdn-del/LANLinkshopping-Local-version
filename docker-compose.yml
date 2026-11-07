@@ -15,6 +15,9 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-lanlink_shopping}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      # 仅回环：供本地训练脚本（training/dataset_build.py）读取意图日志与语料，不暴露到局域网
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       - ./backend/src/main/resources/sql:/docker-entrypoint-initdb.d:ro
@@ -122,6 +125,199 @@ services:
       start_period: 90s
     logging: *default-logging
 
+  # ============================================================
+  # 对象存储（MinIO，S3 API :9000 / 控制台 :9001）—— out/storage-mq-plan.md 任务 A1
+  #   现实校准（Q4 落地首日验证，2026-11-04）：官方 minio/minio 镜像在 Docker Hub /
+  #   docker.m.daocloud.io / quay.io / 各聚合镜像站均已不可匿名拉取（pull access denied /
+  #   401 / not found，本会话逐一实测），改用 Bitnami 归档镜像 bitnamilegacy/minio——
+  #   同为官方 MinIO 二进制（APP_VERSION=2025.5.24，即 RELEASE.2025-05-24T07-50-32Z；
+  #   社区版控制台自该版本起移除管理 UI，建桶/策略一律走 mc，与规划 A1 要点一致）。
+  #   该镜像内置 mc 并在启动时自动注入 local alias（指向自身 9000 + root 凭据），
+  #   因此规划 healthcheck 的 `mc ready local` 原样可用（已实测）。
+  #   bitnamilegacy 是 2025-08 归档的冻结仓库，latest 内容不再变动，无需 pin digest。
+  # ============================================================
+  minio:
+    image: bitnamilegacy/minio:latest
+    container_name: lanlink-minio
+    logging: *default-logging
+    mem_limit: 512m
+    # bitnami run.sh 默认即 `server --console-address :9001 --address :9000 /data`（已核对镜像内脚本），
+    # 等价于规划的 command: server /data --console-address ":9001"，不重复覆盖 command。
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # 一次性初始化（规划 A1 + security-hardening-plan.md P1-3）：建桶 + 匿名最小化（仅 products/* 的
+  # GetObject，不授 ListBucket）+ 全量镜像存量商品图 + 幂等创建专用最小权限应用账号 lanlink-app。
+  # （frontend/public/products：顶层 379 张 + ind/ 子目录 98 张 webp，CREDITS.json 一并镜像）。
+  # 幂等可重跑：mb --ignore-existing / mirror --overwrite / policy create||true / user add||true；
+  # 键保留相对路径（1.webp / ind/A1.webp），与库内 key 形态及前端回退路径一一对应。
+  minio-init:
+    image: bitnamilegacy/minio-client:latest
+    container_name: lanlink-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./frontend/public/products:/images:ro
+      - ./docker/minio/products-anonymous-policy.json:/policy.json:ro
+      - ./docker/minio/lanlink-app-policy.json:/app-policy.json:ro
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
+      LANLINK_S3_ACCESS_KEY: ${LANLINK_S3_ACCESS_KEY:?Set LANLINK_S3_ACCESS_KEY in .env (must differ from MINIO_ROOT_USER)}
+      LANLINK_S3_SECRET_KEY: ${LANLINK_S3_SECRET_KEY:?Set LANLINK_S3_SECRET_KEY in .env (must differ from MINIO_ROOT_PASSWORD)}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/products
+        # 匿名只读：仅允许 products/* 的 GetObject，不授予 ListBucket，避免桶内对象被枚举
+        mc anonymous set-json /policy.json local/products
+        # 容量硬上限：防止本地磁盘被图片/日志写满；当前演示数据远低于上限
+        mc quota set local/products --size 10Gi || echo "[minio-init] quota not supported by this mc build"
+        mc mirror --overwrite /images local/products/     # 幂等增量同步（含 ind/ 子目录）
+        # 专用最小权限应用账号（P1-3）：root 只留在初始化与运维，后端走 lanlink-app 读写对象。
+        # 不授 ListBucket——exists() 走 HeadObject；列举类运维动作走 root/mc。
+        mc admin policy create local lanlink-app-policy /app-policy.json || echo "[minio-init] policy lanlink-app-policy already exists"
+        mc admin user add local "$$LANLINK_S3_ACCESS_KEY" "$$LANLINK_S3_SECRET_KEY" || echo "[minio-init] user already exists (secret unchanged on rerun; rotate via mc admin user set)"
+        mc admin policy attach local lanlink-app-policy --user "$$LANLINK_S3_ACCESS_KEY" || echo "[minio-init] policy attach skipped"
+        echo "[minio-init] objects:"; mc ls --recursive local/products | wc -l
+    logging: *default-logging
+
+  # ============================================================
+  # 消息队列（RabbitMQ 4.1-management，同宿主 3 容器集群）—— out/storage-mq-plan.md B1
+  #   拓扑（lanlink.order / lanlink.dlx / q.order.paid.*）由后端 RabbitConfig 启动声明。
+  #   三节点共享 Erlang cookie，使用 classic_config 组集群；仅 node1 发布 5672/15672，
+  #   4369/25672 只在 shopping_default 容器网络内互通。每节点独立持久化卷。
+  #   注意：同宿主三容器只能防单容器/进程故障，不能防宿主机或磁盘故障。
+  #   凭据轮换纪律（P1-2.5 成对约束）：节点挂了持久化卷后，RABBITMQ_DEFAULT_USER/PASS
+  #   只在首次初始化生效——改 .env 重启不会更新已存在账号。轮换流程：
+  #   ① rabbitmqctl change_password <user> <newpass>（三个节点任一执行，集群同步）
+  #   ② 同步改 .env 的 RABBITMQ_PASSWORD → ③ docker compose up -d 重建后端。二者缺一即登录失败。
+  # ============================================================
+  rabbitmq:
+    image: docker.m.daocloud.io/library/rabbitmq:4.1-management
+    container_name: lanlink-rabbitmq
+    hostname: rabbitmq
+    logging: *default-logging
+    mem_limit: 512m
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Set RABBITMQ_ERLANG_COOKIE in .env}
+      RABBITMQ_NODENAME: rabbit@rabbitmq
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq-data-1:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  rabbitmq2:
+    image: docker.m.daocloud.io/library/rabbitmq:4.1-management
+    container_name: lanlink-rabbitmq2
+    hostname: rabbitmq2
+    logging: *default-logging
+    mem_limit: 512m
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Set RABBITMQ_ERLANG_COOKIE in .env}
+      RABBITMQ_NODENAME: rabbit@rabbitmq2
+    volumes:
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq-data-2:/var/lib/rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  rabbitmq3:
+    image: docker.m.daocloud.io/library/rabbitmq:4.1-management
+    container_name: lanlink-rabbitmq3
+    hostname: rabbitmq3
+    logging: *default-logging
+    mem_limit: 512m
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Set RABBITMQ_ERLANG_COOKIE in .env}
+      RABBITMQ_NODENAME: rabbit@rabbitmq3
+    volumes:
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - rabbitmq-data-3:/var/lib/rabbitmq
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      rabbitmq2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Prometheus + Alertmanager：仅绑定回环；容器内按服务名抓取后端/网关/RabbitMQ
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: lanlink-prometheus
+    logging: *default-logging
+    mem_limit: 256m
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      # /metrics 抓取鉴权（Bearer）：内容 = 根 .env 的 GATEWAY_METRICS_TOKEN（文件已 gitignore）。
+      # 必须先于 up 创建该文件，否则 Docker 会把缺失的宿主路径挂成空目录，抓取将持续 401。
+      - ./monitoring/prometheus/metrics_token:/etc/prometheus/metrics_token:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: lanlink-alertmanager
+    logging: *default-logging
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -131,7 +327,10 @@ services:
     # 24GB 宿主机：JVM 堆上限固定为 1.2g（MaxRAMPercentage 60% of 2g），避免默认 75% 预留过大
     mem_limit: 2g
     environment:
-      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -Xss512k -Dfile.encoding=UTF-8"
+      # 容器默认 UTC 会使 LocalDate.now() 在北京时间 0-8 点落到前一天，签到/活动时间窗整体偏移；
+      # 显式固化 JVM 时区（启动类 TimeZone.setDefault 为代码侧兜底）
+      TZ: Asia/Shanghai
+      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -Xss512k -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lanlink_shopping}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: root
@@ -160,10 +359,22 @@ services:
       AI_QWEN_BASE_URL: ${AI_QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY:-}
       AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      # 安全待办：本行的仓库内默认值会遮蔽 .env 里的 OUTBOUND_KEY_SECRET（应用按
+      # AI_OUTBOUND_KEY_SECRET > OUTBOUND_KEY_SECRET 取值）。轮换主密钥后旧渠道密文不可解，
+      # 需在管理端重新录入全部渠道 API Key，因此此处不做静默改动。
       AI_OUTBOUND_KEY_SECRET: ${AI_OUTBOUND_KEY_SECRET:-lanlink-outbound-key-dev-secret}
+      AI_OUTBOUND_ALLOWED_HOSTS: ${AI_OUTBOUND_ALLOWED_HOSTS:-api.deepseek.com,dashscope.aliyuncs.com,dashscope-intl.aliyuncs.com,api.xiaomimimo.com,open.bigmodel.cn,api.openai.com,api.moonshot.cn,api.siliconflow.cn,localhost,127.0.0.1,host.docker.internal,lanlink-ai-gateway,ai-gateway,ollama,llama-cpp}
+      # ---- 高德商业图源凭据（仅后端持有，登录后经 /logistics/map-config 下发；留空=前端用内置矢量底图）----
+      AMAP_KEY: ${AMAP_KEY:-}
+      AMAP_SECURITY_JS_CODE: ${AMAP_SECURITY_JS_CODE:-}
       # ---- 本地向量知识库（AI KB）：本地 Ollama 嵌入 + qwen2.5 RAG ----
-      AI_OLLAMA_BASE_URL: ${AI_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-nomic-embed-text}
+      AI_OLLAMA_BASE_URL: ${AI_OLLAMA_BASE_URL:-http://ollama:11434}
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-bge-m3}
+      AI_EMBED_DIM: ${AI_EMBED_DIM:-1024}
+      AI_KB_OUTBOX_ENABLED: ${AI_KB_OUTBOX_ENABLED:-true}
+      AI_KB_OUTBOX_POLL_MS: ${AI_KB_OUTBOX_POLL_MS:-15000}
+      AI_KB_OUTBOX_BATCH_SIZE: ${AI_KB_OUTBOX_BATCH_SIZE:-5}
+      AI_KB_OUTBOX_LEASE_MINUTES: ${AI_KB_OUTBOX_LEASE_MINUTES:-20}
       AI_LOCAL_CHAT_MODEL: ${AI_LOCAL_CHAT_MODEL:-qwen2.5:7b}
       AI_TEXT_MODEL: ${AI_TEXT_MODEL:-qwen2.5:0.5b}
       AI_TEXT_NUM_CTX: ${AI_TEXT_NUM_CTX:-16384}
@@ -175,13 +386,28 @@ services:
       OUTBOUND_KEY_SECRET: ${OUTBOUND_KEY_SECRET:-lanlink-outbound-dev-secret}
       # ---- 本地 AI 网关（OpenAI 兼容 + Ollama qwen2.5）：价格情报台等真实模型调用走这里 ----
       AI_GATEWAY_ENABLED: ${AI_GATEWAY_ENABLED:-true}
-      AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-http://host.docker.internal:8090/v1}
-      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:-lanlink-local-ai-gateway}
+      AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-http://lanlink-ai-gateway:8090/v1}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
+      # 本地演示允许空值回退到现有默认；生产 profile 会 fail-fast。显式设置后可与 AI 网关轮换同值。
+      INTERNAL_GATEWAY_SECRET: ${INTERNAL_GATEWAY_SECRET:-}
       AI_GATEWAY_MODEL: ${AI_GATEWAY_MODEL:-qwen2.5-7b}
       # 本地双模型（llama.cpp router 模式，docker 服务 llama-cpp:8123）：文本 qwen2.5-7b / 视觉 qwen2.5-vl
       AI_GATEWAY_TEXT_MODEL: ${AI_GATEWAY_TEXT_MODEL:-qwen2.5-7b}
       AI_GATEWAY_VL_MODEL: ${AI_GATEWAY_VL_MODEL:-qwen2.5-vl}
       AI_MODEL_ROUTER_URL: ${AI_MODEL_ROUTER_URL:-http://llama-cpp:8123/v1}
+      # ---- 向量知识库 MCP 读取通道（契约 ai-gateway/MCP_KB_SPEC.md）----
+      # 注意 /mcp 挂在网关根路径，不带 /v1，所以不能复用 AI_GATEWAY_BASE_URL。
+      # 关闭或网关不可达时客服自动回退 Java 直连检索，不影响可用性。
+      AI_KB_MCP_ENABLED: ${AI_KB_MCP_ENABLED:-true}
+      AI_GATEWAY_MCP_URL: ${AI_GATEWAY_MCP_URL:-http://lanlink-ai-gateway:8090/mcp}
+      # ---- 外部嵌入/聊天通道（ollama|openai）：留空即沿用本地链路，填了才切换 ----
+      AI_EMBED_PROVIDER: ${AI_EMBED_PROVIDER:-ollama}
+      AI_EMBED_BASE_URL: ${AI_EMBED_BASE_URL:-}
+      AI_EMBED_API_KEY: ${AI_EMBED_API_KEY:-}
+      AI_CHAT_PROVIDER: ${AI_CHAT_PROVIDER:-local}
+      AI_CHAT_BASE_URL: ${AI_CHAT_BASE_URL:-}
+      AI_CHAT_API_KEY: ${AI_CHAT_API_KEY:-}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
       # ---- 外部资讯自动抓取（RSS -> t_market_news -> Redis 向量库）----
       AI_EXTERNAL_ENABLED: ${AI_EXTERNAL_ENABLED:-true}
       AI_EXTERNAL_FEEDS: ${AI_EXTERNAL_FEEDS:-https://www.ithome.com/rss/,https://www.36kr.com/feed,https://rss.huxiu.com/,https://feeds.a.dj.com/rss/RSSMarketsMain.xml}
@@ -194,6 +420,30 @@ services:
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Shanghai}
       AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-20}
+      # ---- 对象存储（MinIO/S3，out/storage-mq-plan.md A2）：库内存 object key，出站拼公开 URL ----
+      # endpoint 固定容器网络服务名（同 MAIL_HOST=mailpit 先例）；public-base-url 是浏览器侧地址，
+      # 保持同源相对 /products（浏览器经 nginx 反代到 MinIO）。
+      # 凭据走专用最小权限应用账号（security-hardening-plan.md P1-2.1/P1-3，账号由 minio-init 幂等创建）：
+      # root 凭据（MINIO_ROOT_*）只留在 minio/minio-init 两个服务，绝不注入后端——
+      # 后端侧泄露（日志/异常/dump）不再放大为整桶 root 读写。凭据为空时后端启动即 fail-fast。
+      LANLINK_STORAGE_ENABLED: ${LANLINK_STORAGE_ENABLED:-true}
+      LANLINK_S3_ENDPOINT: http://minio:9000
+      LANLINK_S3_REGION: ${LANLINK_S3_REGION:-us-east-1}
+      LANLINK_S3_ACCESS_KEY: ${LANLINK_S3_ACCESS_KEY:?Set LANLINK_S3_ACCESS_KEY in .env (dedicated app account, must differ from MINIO_ROOT_USER)}
+      LANLINK_S3_SECRET_KEY: ${LANLINK_S3_SECRET_KEY:?Set LANLINK_S3_SECRET_KEY in .env (must differ from MINIO_ROOT_PASSWORD)}
+      LANLINK_S3_BUCKET: ${LANLINK_S3_BUCKET:-products}
+      LANLINK_S3_PATH_STYLE: ${LANLINK_S3_PATH_STYLE:-true}
+      # 同源相对地址：浏览器经 nginx /products/ 反代到 MinIO，避免 localhost 在局域网访问时指向用户本机
+      LANLINK_S3_PUBLIC_BASE_URL: ${LANLINK_S3_PUBLIC_BASE_URL:-/products}
+      # ---- 消息队列（RabbitMQ，out/storage-mq-plan.md B1/B4）：容器内走服务名；mq/event 互斥开关 ----
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      # 三节点地址：Spring Boot 建连时随机选择并在失败时轮询其余节点
+      RABBITMQ_ADDRESSES: rabbitmq:5672,rabbitmq2:5672,rabbitmq3:5672
+      RABBITMQ_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER in .env}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD in .env}
+      LANLINK_MQ_ORDER_FLOW: ${LANLINK_MQ_ORDER_FLOW:-mq}
+      LANLINK_MQ_NOTIFY_FLOW: ${LANLINK_MQ_NOTIFY_FLOW:-mq}
     # 让容器内 host.docker.internal 稳定解析到宿主机（Docker Desktop 自带，Linux 靠此行生效）
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -210,6 +460,11 @@ services:
       mailpit:
         condition: service_started
       support-learning-sandbox:
+        condition: service_healthy
+      # 对象存储与消息队列就绪后再起后端（out/storage-mq-plan.md B1）
+      minio:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --quiet --tries=1 --output-document=- http://127.0.0.1:8080/api/actuator/health || exit 1"]
@@ -295,6 +550,8 @@ services:
       args:
         # Vite 在构建期把 VITE_* 打进静态产物：批量导入服务地址指向宿主机 3000 端口（见上方 workflow 服务）
         VITE_WORKFLOW_URL: http://127.0.0.1:3000
+        # 生产构建使用同源相对路径 /products，经 nginx 反代 MinIO；本地 dev 仍由 frontend/.env 注入 localhost
+        VITE_STORAGE_PUBLIC_BASE: ""
     image: lanlink-frontend:local
     logging: *default-logging
     mem_limit: 128m
@@ -321,3 +578,12 @@ volumes:
   workflow-data:
   # 本地大模型 GGUF 权重（由 llama-model-init 从宿主机导入，避免 Windows bind mount 冷加载慢）
   llama-models:
+  # 对象存储数据卷（商品图镜像与后续上传，out/storage-mq-plan.md A1）
+  minio-data:
+  # RabbitMQ 三节点各自独立持久化卷（quorum 副本与消息落盘）
+  rabbitmq-data-1:
+  rabbitmq-data-2:
+  rabbitmq-data-3:
+  # Prometheus 时序数据与 Alertmanager 静默/通知状态
+  prometheus-data:
+  alertmanager-data:

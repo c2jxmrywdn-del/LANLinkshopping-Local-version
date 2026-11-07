@@ -11,12 +11,12 @@
                 :key="room.roomId"
                 class="lr-video"
                 :src="room.streamUrl"
-                :poster="room.coverUrl || undefined"
+                :poster="resolveStorageUrl(room.coverUrl) || undefined"
                 autoplay muted loop playsinline
                 @error="onVideoError"
               ></video>
               <div v-else class="lr-cover" :class="{ 'is-breathing': Number(room.status) === 1 }">
-                <img v-if="room.coverUrl" :src="room.coverUrl" :alt="room.title" @error="onCoverError" />
+                <img v-if="room.coverUrl" :src="resolveStorageUrl(room.coverUrl)" :alt="room.title" @error="onCoverError" />
                 <div v-else class="lr-cover-fallback"><Video :size="44" :stroke-width="1.4" /></div>
                 <span v-if="Number(room.status) === 1" class="lr-live-badge">
                   <i class="lr-live-dot" aria-hidden="true"></i>LIVE
@@ -63,7 +63,7 @@
             <!-- 讲解中商品卡：先上报点击再跳商品详情 -->
             <div v-if="pinned" class="lr-pinned" role="button" tabindex="0" @click="buy(pinned)" @keydown.enter.prevent="buy(pinned)">
               <div class="lr-pinned-cover">
-                <img v-if="pinned.product && pinned.product.coverUrl" :src="pinned.product.coverUrl" :alt="pinned.product.title" />
+                <img v-if="pinned.product && pinned.product.coverUrl" :src="resolveStorageUrl(pinned.product.coverUrl)" :alt="pinned.product.title" />
                 <div v-else class="lr-pinned-fallback"><ShoppingBag :size="20" :stroke-width="1.6" /></div>
               </div>
               <div class="lr-pinned-info">
@@ -122,7 +122,7 @@
           <div class="lr-drawer-list">
             <div v-for="lp in products" :key="lp.id" class="lr-drawer-item" @click="buy(lp)">
               <div class="lr-drawer-cover">
-                <img v-if="lp.product && lp.product.coverUrl" :src="lp.product.coverUrl" :alt="lp.product.title" loading="lazy" />
+                <img v-if="lp.product && lp.product.coverUrl" :src="resolveStorageUrl(lp.product.coverUrl)" :alt="lp.product.title" loading="lazy" />
                 <div v-else class="lr-pinned-fallback"><ShoppingBag :size="18" :stroke-width="1.6" /></div>
               </div>
               <div class="lr-drawer-info">
@@ -159,6 +159,7 @@ import {
   ChevronLeft, CircleCheck, Clock, Eye, Heart, MessageCircle, Radio, ShoppingBag, Video, Volume2
 } from 'lucide-vue-next'
 import { liveApi } from '../../api'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import NumberTicker from '../../components/ui/NumberTicker.vue'
 import { useUserStore } from '../../store/user'
 

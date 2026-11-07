@@ -3,11 +3,16 @@
     <div class="ac-head">
       <div>
         <h2>活动管理</h2>
-        <p>上架领券、促销、秒杀与激励活动；配置规则、名额与商户报名。</p>
+        <p>上架领券、促销、秒杀与激励活动；审核商户自建促销。</p>
       </div>
-      <a-button type="primary" size="large" @click="openCreate">＋ 创建活动</a-button>
+      <a-space :size="12">
+        <a-segmented v-model:value="activeTab" :options="tabOptions" size="large" />
+        <a-button v-if="activeTab === 'platform'" type="primary" size="large" @click="openCreate">＋ 创建活动</a-button>
+      </a-space>
     </div>
 
+    <!-- 平台活动 -->
+    <template v-if="activeTab === 'platform'">
     <div class="ac-toolbar">
       <a-select v-model:value="q.type" style="width:150px" allow-clear placeholder="全部类型" @change="reload">
         <a-select-option v-for="(label, key) in TYPE_LABELS" :key="key" :value="key">{{ label }}</a-select-option>
@@ -48,8 +53,8 @@
         <template v-else-if="column.key === 'actions'">
           <a-space :size="4">
             <a-button type="link" size="small" @click="openEdit(record)">编辑</a-button>
-            <a-button v-if="record.status !== 1" type="link" size="small" @click="toggle(record, 1)">上架</a-button>
-            <a-button v-else type="link" size="small" danger @click="toggle(record, 0)">下架</a-button>
+            <a-button v-if="record.status !== 1" type="link" size="small" :loading="toggling[record.campaignId]" :disabled="toggling[record.campaignId]" @click="toggle(record, 1)">上架</a-button>
+            <a-button v-else type="link" size="small" danger :loading="toggling[record.campaignId]" :disabled="toggling[record.campaignId]" @click="toggle(record, 0)">下架</a-button>
             <a-button type="link" size="small" danger @click="remove(record)">删除</a-button>
           </a-space>
         </template>
@@ -64,6 +69,73 @@
         <a-skeleton v-else :paragraph="{ rows: 1 }" active />
       </template>
     </a-table>
+    </template>
+
+    <!-- 商户促销审核 -->
+    <template v-else>
+      <div class="ac-toolbar">
+        <a-select v-model:value="auditQ.reviewStatus" style="width:140px" allow-clear placeholder="全部状态" @change="onAuditFilter">
+          <a-select-option :value="0">待审核</a-select-option>
+          <a-select-option :value="1">已通过</a-select-option>
+          <a-select-option :value="2">已驳回</a-select-option>
+        </a-select>
+        <span class="ac-total" v-if="auditTotal">共 {{ auditTotal }} 条商户促销</span>
+      </div>
+
+      <a-table :data-source="auditRows" :columns="auditColumns" :loading="auditLoading" row-key="campaignId"
+               :pagination="{ current: auditCurrent, pageSize: auditSize, total: auditTotal, showSizeChanger: false }"
+               @change="onAuditPage" :scroll="{ x: 1040 }">
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'campaignId'">
+            <span class="ac-rule">#{{ record.campaignId }}</span>
+          </template>
+          <template v-else-if="column.key === 'title'">
+            <div class="ac-title-main">
+              <b>{{ record.title }}</b>
+              <span class="ac-desc">{{ record.description }}</span>
+            </div>
+          </template>
+          <template v-else-if="column.key === 'merId'">
+            <span class="ac-rule">#{{ record.merId }}</span>
+          </template>
+          <template v-else-if="column.key === 'type'">
+            <a-tag :color="TYPE_COLOR[record.type]">{{ TYPE_LABELS[record.type] || record.type }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'time'">
+            <div class="ac-time">{{ fmt(record.startTime) || '即时' }}<br />至 {{ fmt(record.endTime) || '长期' }}</div>
+          </template>
+          <template v-else-if="column.key === 'rule'">
+            <span class="ac-rule">{{ ruleText(record) }}</span>
+          </template>
+          <template v-else-if="column.key === 'prods'">
+            <span class="ac-rule">{{ String(record.prodIds || '').split(',').filter(Boolean).length }} 件</span>
+          </template>
+          <template v-else-if="column.key === 'review'">
+            <a-tooltip v-if="record.reviewStatus === 2 && record.reviewNote" :title="'驳回原因：' + record.reviewNote">
+              <a-tag color="red" style="cursor: help">已驳回</a-tag>
+            </a-tooltip>
+            <a-tag v-else :color="REVIEW_COLORS[record.reviewStatus]">{{ REVIEW_LABELS[record.reviewStatus] || '待审核' }}</a-tag>
+          </template>
+          <template v-else-if="column.key === 'actions'">
+            <a-space v-if="record.reviewStatus === 0" :size="4">
+              <a-popconfirm title="通过后商户即可上架该促销" ok-text="通过" cancel-text="取消"
+                            @confirm="doReview(record, true)">
+                <template #description>
+                  <a-input v-model:value="approveNote" size="small" placeholder="审核备注（选填）"
+                           style="width: 220px; margin-top: 4px" @click.stop />
+                </template>
+                <a-button type="link" size="small" @click="approveNote = ''">通过</a-button>
+              </a-popconfirm>
+              <a-button type="link" size="small" danger @click="openReject(record)">驳回</a-button>
+            </a-space>
+            <span v-else class="ac-rule">—</span>
+          </template>
+        </template>
+        <template #emptyText>
+          <a-empty description="暂无商户促销审核记录" style="padding: 24px 0" />
+        </template>
+      </a-table>
+    </template>
 
     <!-- 创建 / 编辑弹窗 -->
     <a-modal v-model:open="modalOpen" :title="editing ? '编辑活动' : '创建活动'" :width="720"
@@ -173,11 +245,18 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- 驳回商户促销 -->
+    <a-modal v-model:open="rejectOpen" title="驳回商户促销" :confirm-loading="reviewing"
+             ok-text="确认驳回" ok-type="danger" cancel-text="取消" @ok="confirmReject">
+      <p class="ac-form-tip" style="margin: 0 0 10px">驳回后商户将在「我的促销」中看到驳回原因，且该促销无法上架。</p>
+      <a-textarea v-model:value="rejectNote" :rows="3" :maxlength="200" show-count placeholder="请填写驳回原因（必填）" />
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, watch, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { campaignApi, homeApi } from '../../api'
 
@@ -189,6 +268,81 @@ const TYPE_COLOR = {
   coupon: 'red', full_reduce: 'blue', discount: 'geekblue', flash_sale: 'purple',
   register: 'gold', purchase: 'gold', merchant_incentive: 'green'
 }
+
+// 顶部分段：平台活动（现有管理）/ 商户促销审核（商户自建促销送审队列）
+const activeTab = ref('platform')
+const tabOptions = [
+  { label: '平台活动', value: 'platform' },
+  { label: '商户促销审核', value: 'merchant' }
+]
+
+// ===== 商户促销审核（reviewStatus: 0 待审 / 1 通过 / 2 驳回） =====
+const REVIEW_LABELS = { 0: '待审核', 1: '已通过', 2: '已驳回' }
+const REVIEW_COLORS = { 0: 'orange', 1: 'green', 2: 'red' }
+const auditColumns = [
+  { key: 'campaignId', title: 'ID', width: 70 },
+  { key: 'title', title: '标题', width: 230 },
+  { key: 'merId', title: '商户', width: 80 },
+  { key: 'type', title: '类型', width: 100 },
+  { key: 'time', title: '时间窗', width: 170 },
+  { key: 'rule', title: '门槛与优惠', width: 190 },
+  { key: 'prods', title: '绑定商品', width: 90 },
+  { key: 'review', title: '审核状态', width: 100 },
+  { key: 'actions', title: '操作', width: 140 }
+]
+const auditRows = ref([])
+const auditLoading = ref(false)
+const auditTotal = ref(0)
+const auditCurrent = ref(1)
+const auditSize = 10
+const auditQ = reactive({ reviewStatus: undefined })
+const approveNote = ref('')
+const rejectOpen = ref(false)
+const rejectTarget = ref(null)
+const rejectNote = ref('')
+const reviewing = ref(false)
+
+let auditSeq = 0
+async function reloadAudit() {
+  const seq = ++auditSeq
+  auditLoading.value = true
+  try {
+    const page = await campaignApi.adminAuditPage({
+      reviewStatus: auditQ.reviewStatus ?? undefined,
+      page: auditCurrent.value, size: auditSize
+    })
+    if (seq !== auditSeq) return
+    auditRows.value = page.records || []
+    auditTotal.value = Number(page.total) || 0
+  } catch (e) { /* 拦截器已提示 */ } finally { if (seq === auditSeq) auditLoading.value = false }
+}
+function onAuditPage(p) { auditCurrent.value = p.current; reloadAudit() }
+function onAuditFilter() { auditCurrent.value = 1; reloadAudit() }
+
+async function doReview(record, approved, note = approveNote.value.trim()) {
+  reviewing.value = true
+  try {
+    await campaignApi.adminAuditReview(record.campaignId, approved, note)
+    message.success(approved ? '已通过，商户可上架该促销' : '已驳回')
+    approveNote.value = ''
+    reloadAudit()
+  } catch (e) { /* 拦截器已提示 */ } finally { reviewing.value = false }
+}
+
+function openReject(record) {
+  rejectTarget.value = record
+  rejectNote.value = ''
+  rejectOpen.value = true
+}
+function confirmReject() {
+  if (!rejectNote.value.trim()) return message.warning('请填写驳回原因')
+  const target = rejectTarget.value
+  const note = rejectNote.value.trim()
+  rejectOpen.value = false
+  doReview(target, false, note)
+}
+
+watch(activeTab, (t) => { if (t === 'merchant') { auditCurrent.value = 1; reloadAudit() } })
 
 const columns = [
   { key: 'title', title: '活动', width: 260 },
@@ -223,14 +377,17 @@ function onTypeChange() {
   form.scope = form.type === 'merchant_incentive' || form.type === 'register' || form.type === 'purchase' ? 'all' : form.scope
   if (form.type === 'flash_sale' && !form.range) {
     const now = new Date()
-    const iso = (d) => d.toISOString().slice(0, 19)
+    // 本地时间拼接（toISOString 是 UTC，会产生时区偏移，导致秒杀窗口提前/推迟 8 小时）
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
     const end = new Date(now.getTime() + 6 * 3600 * 1000)
     form.range = [iso(now), iso(end)]
   }
 }
 function onKindChange() { form.benefitAmount = null; form.discountRate = null; form.capAmount = null }
 
+let reloadSeq = 0
 async function reload() {
+  const seq = ++reloadSeq
   loading.value = true
   try {
     const page = await campaignApi.adminPage({
@@ -238,10 +395,11 @@ async function reload() {
       type: q.type || undefined, status: q.status ?? undefined,
       keyword: q.keyword || undefined
     })
+    if (seq !== reloadSeq) return
     rows.value = page.records || []
     total.value = Number(page.total) || 0
     rows.value.forEach(r => loadStats(r.campaignId))
-  } finally { loading.value = false }
+  } finally { if (seq === reloadSeq) loading.value = false }
 }
 async function loadStats(id) {
   try {
@@ -338,12 +496,15 @@ async function save() {
   } catch (e) { /* 拦截器已提示 */ } finally { saving.value = false }
 }
 
+const toggling = reactive({})
 async function toggle(record, status) {
+  if (toggling[record.campaignId]) return
+  toggling[record.campaignId] = true
   try {
     await campaignApi.adminToggle(record.campaignId, status)
     message.success(status === 1 ? '已上架' : '已下架')
     reload()
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) { /* 拦截器已提示 */ } finally { toggling[record.campaignId] = false }
 }
 function remove(record) {
   Modal.confirm({
@@ -361,7 +522,7 @@ function remove(record) {
 }
 
 const fmt = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : ''
-const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const trimZero = (v) => { const n = Math.round(Number(v) * 100) / 100; return String(n) }
 function ruleText(r) {
   switch (r.type) {
     case 'coupon':

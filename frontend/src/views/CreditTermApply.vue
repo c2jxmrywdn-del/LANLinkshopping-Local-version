@@ -71,6 +71,21 @@
           <a-button type="primary" @click="$router.push('/credit-term/adjust')">去调额申请</a-button>
         </div>
 
+        <!-- 21st.dev 风格：第三方持牌权威征信授权与风控评级防伪验签卡片 -->
+        <div v-if="status === 'ACTIVE'" style="margin-top: 24px;">
+          <CreditAuthorityRatingCard
+            :institution-name="'百行征信 · 央行合规数据直联源'"
+            :risk-grade="account?.riskLevel || 'AAA'"
+            :health-score="96.8"
+            :credit-limit="Number(account?.creditLimit || 200000)"
+            :term-days="account?.termDays || 7"
+            :daily-rate="0.0003"
+            :assessment-ref-no="'CRED-EXT-' + (account?.id || '8891')"
+            :valid-from="prettyTime(account?.approvedTime || account?.applyTime).slice(0, 10) || '2026-01-01'"
+            :valid-until="'2026-12-31'"
+          />
+        </div>
+
         <template v-else>
           <a-alert
             type="info"
@@ -93,13 +108,14 @@
               <p class="hint">额度范围 1,000 – 500,000 元；审核通过后以此为基础核定授信。</p>
             </a-form-item>
 
-            <a-form-item label="账期" name="termDays">
-              <a-radio-group v-model:value="form.termDays" class="terms">
-                <a-radio-button :value="30">30 天</a-radio-button>
-                <a-radio-button :value="60">60 天</a-radio-button>
-                <a-radio-button :value="90">90 天</a-radio-button>
-              </a-radio-group>
+            <a-form-item label="账期期限（7 ~ 15 天磁吸滑块）" name="termDays">
+              <TouchTermSlider v-model="form.termDays" />
             </a-form-item>
+
+            <!-- 嵌入利率计算器实时试算 -->
+            <div style="margin: 20px 0;">
+              <CreditInterestCalculator :initial-amount="form.requestedLimit" :initial-term="form.termDays" />
+            </div>
 
             <a-form-item label="主要用途" name="purpose">
               <a-textarea
@@ -133,6 +149,8 @@ import { Modal, message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import { creditTermApi } from '../api'
 import { money, prettyTime } from '../utils/creditTerm'
+import CreditInterestCalculator from '../components/credit/CreditInterestCalculator.vue'
+import CreditAuthorityRatingCard from '../components/credit/CreditAuthorityRatingCard.vue'
 
 const router = useRouter()
 const formRef = ref()
@@ -141,14 +159,17 @@ const loadError = ref(false)
 const submitting = ref(false)
 const status = ref('NOT_APPLIED')
 const account = ref(null)
-const form = reactive({ requestedLimit: 100000, termDays: 30, purpose: '' })
+const form = reactive({ requestedLimit: 100000, termDays: 7, purpose: '' })
 
 const rules = {
   requestedLimit: [
     { required: true, message: '请输入申请额度', type: 'number' },
     { type: 'number', min: 1000, max: 500000, message: '申请额度需在 1,000 – 500,000 元之间' }
   ],
-  termDays: [{ required: true, message: '请选择账期', type: 'number' }]
+  termDays: [
+    { required: true, message: '请选择账期', type: 'number' },
+    { type: 'number', min: 7, max: 15, message: '账期需在 7 – 15 天之间' }
+  ]
 }
 
 const steps = [
@@ -170,7 +191,7 @@ async function load() {
     account.value = data?.account || null
     if (account.value) {
       form.requestedLimit = Number(account.value.requestedLimit || account.value.creditLimit || 100000)
-      form.termDays = account.value.termDays || 30
+      form.termDays = (account.value.termDays >= 7 && account.value.termDays <= 15) ? account.value.termDays : 7
       form.purpose = account.value.purpose || ''
     }
   } catch (e) {

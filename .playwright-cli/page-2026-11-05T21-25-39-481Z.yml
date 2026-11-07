@@ -1,0 +1,620 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e147]:
+    - generic [ref=e149]:
+      - generic [ref=e150] [cursor=pointer]: LANLinkshopping
+      - menu [ref=e153]:
+        - menuitem "首页" [ref=e154] [cursor=pointer]
+        - menuitem "商城" [ref=e159] [cursor=pointer]
+        - menuitem "活动" [ref=e164] [cursor=pointer]
+        - menuitem "技术服务" [ref=e166] [cursor=pointer]
+        - menuitem "直播" [ref=e168] [cursor=pointer]
+        - menuitem "账期" [ref=e170] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=e174] [cursor=pointer]
+      - generic [ref=e177]:
+        - button "Switch to English" [ref=e178] [cursor=pointer]:
+          - generic [ref=e179]:
+            - generic [ref=e181]: 中
+            - generic [ref=e182]: EN
+        - generic [ref=e183]:
+          - button "消息" [ref=e184] [cursor=pointer]
+          - superscript [ref=e189]:
+            - paragraph [ref=e191]: "3"
+            - paragraph [ref=e193]: "3"
+        - button "购物车" [ref=e195] [cursor=pointer]
+        - generic [ref=e201] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=e202]:
+            - generic [aria-hidden] [ref=e203]: 用户
+          - generic "入驻商户" [ref=e204]: 商户
+          - generic [ref=e205]: 入驻测试用户
+    - main [ref=e208]:
+      - main [ref=e209]:
+        - generic [ref=e210]:
+          - generic [ref=e211]:
+            - generic [ref=e213]:
+              - text: LANLINK SHOPPING · CONNECTED COMMERCE
+              - img "LANLinkshopping" [ref=e214]:
+                - generic [ref=e215]: LAN
+                - generic [ref=e216]: Link
+                - generic [ref=e217]: shopping
+              - heading "让每一次连接，都产生价值。" [level=1] [ref=e218]
+              - paragraph [ref=e219]: 连接商品、采购、商户与增长，让交易从发现开始，在同一个网络里持续发生。
+              - generic [ref=e220]:
+                - button "进入商城 →" [ref=e221] [cursor=pointer]:
+                  - generic [ref=e222]: 进入商城
+                  - generic [ref=e223]: →
+                - button "了解平台" [ref=e224] [cursor=pointer]
+            - generic [ref=e229]:
+              - generic [ref=e230]: LAN
+              - generic [ref=e231]: Link
+              - generic [ref=e232]: SHOPPING NETWORK
+          - generic [ref=e236]:
+            - generic [ref=e237]: "01"
+            - generic [ref=e238]: DISCOVER
+            - emphasis [ref=e239]: →
+            - generic [ref=e240]: "02"
+            - generic [ref=e241]: TRANSACT
+            - emphasis [ref=e242]: →
+            - generic [ref=e243]: "03"
+            - generic [ref=e244]: GROW
+          - generic [ref=e245]:
+            - generic [ref=e246]:
+              - generic [ref=e247]: 限时活动
+              - generic [ref=e250]: 平台活动进行中
+            - generic [ref=e251]:
+              - button "折扣 2026-10-30 ~ 2026-11-30 重庆建工：线材专项折扣 9 折" [ref=e252] [cursor=pointer]:
+                - generic [ref=e253]:
+                  - generic [ref=e254]: 折扣
+                  - generic [ref=e255]: 2026-10-30 ~ 2026-11-30
+                - generic "重庆建工：线材专项折扣" [ref=e256]
+                - generic [ref=e257]: 9 折
+              - button "满减 2026-10-29 ~ 2026-11-30 华晨建材 · 钢材水泥专享满 300 减 40 满 ¥300 减 ¥40" [ref=e258] [cursor=pointer]:
+                - generic [ref=e259]:
+                  - generic [ref=e260]: 满减
+                  - generic [ref=e261]: 2026-10-29 ~ 2026-11-30
+                - generic "华晨建材 · 钢材水泥专享满 300 减 40" [ref=e262]
+                - generic [ref=e263]: 满 ¥300 减 ¥40
+              - button "满减 2026-10-24 ~ 2026-11-09 双十一工业品大促 · 商户报名中 满 ¥1000 减 ¥100" [ref=e264] [cursor=pointer]:
+                - generic [ref=e265]:
+                  - generic [ref=e266]: 满减
+                  - generic [ref=e267]: 2026-10-24 ~ 2026-11-09
+                - generic "双十一工业品大促 · 商户报名中" [ref=e268]
+                - generic [ref=e269]: 满 ¥1000 减 ¥100
+              - button "活动中心 领券 · 秒杀 · 积分激励 查看全部活动" [ref=e270] [cursor=pointer]:
+                - generic [ref=e275]: 活动中心
+                - generic [ref=e276]: 领券 · 秒杀 · 积分激励
+                - generic [ref=e277]: 查看全部活动
+            - generic [ref=e280]:
+              - button "领券中心 海量券池一键批量领取 进入领券中心" [ref=e281] [cursor=pointer]:
+                - generic [ref=e285]: 领券中心
+                - generic [ref=e286]: 海量券池一键批量领取
+                - generic [ref=e287]: 进入领券中心
+              - button "任务中心 做任务赢积分与成长值 去做任务" [ref=e290] [cursor=pointer]:
+                - generic [ref=e295]: 任务中心
+                - generic [ref=e296]: 做任务赢积分与成长值
+                - generic [ref=e297]: 去做任务
+              - button "大促会场 行业大促一站逛齐 进入会场" [ref=e300] [cursor=pointer]:
+                - generic [ref=e304]: 大促会场
+                - generic [ref=e305]: 行业大促一站逛齐
+                - generic [ref=e306]: 进入会场
+          - generic [ref=e310]:
+            - generic [ref=e311]:
+              - generic [ref=e313] [cursor=pointer]:
+                - img "建筑材料源头直供" [ref=e314]
+                - generic [ref=e316]:
+                  - heading "建筑材料源头直供" [level=2] [ref=e317]
+                  - paragraph [ref=e318]: 钢材 · 管材 · 工程材料，规格与供应能力一站核验
+                  - generic [ref=e319]: 进入建筑专区 →
+              - generic [ref=e321] [cursor=pointer]:
+                - img "纺织制造与面料采购" [ref=e322]
+                - generic [ref=e324]:
+                  - heading "纺织制造与面料采购" [level=2] [ref=e325]
+                  - paragraph [ref=e326]: 面料 · 纱线 · 辅料，连接制造端与企业采购端
+                  - generic [ref=e327]: 进入纺织专区 →
+              - generic [ref=e329] [cursor=pointer]:
+                - img "化工原料与产业供应" [ref=e330]
+                - generic [ref=e332]:
+                  - heading "化工原料与产业供应" [level=2] [ref=e333]
+                  - paragraph [ref=e334]: 石化装置、工业管线与原料供应场景，突出合规采购
+                  - generic [ref=e335]: 进入石化专区 →
+              - generic [ref=e337] [cursor=pointer]:
+                - img "电子元器件与智能制造" [ref=e338]
+                - generic [ref=e340]:
+                  - heading "电子元器件与智能制造" [level=2] [ref=e341]
+                  - paragraph [ref=e342]: 工业控制 · 电子模块 · 核心器件，面向企业批量采购
+                  - generic [ref=e343]: 进入电子专区 →
+              - generic [ref=e345] [cursor=pointer]:
+                - img "包装定制 · 批量交付" [ref=e346]
+                - generic [ref=e348]:
+                  - heading "包装定制 · 批量交付" [level=2] [ref=e349]
+                  - paragraph [ref=e350]: 从包装物料到批量生产，适合企业礼赠与品牌定制采购
+                  - generic [ref=e351]: 了解企业定制 →
+              - generic [ref=e353] [cursor=pointer]:
+                - img "企业账期管理 · 采购先享后付" [ref=e354]
+                - generic [ref=e356]:
+                  - heading "企业账期管理 · 采购先享后付" [level=2] [ref=e357]
+                  - paragraph [ref=e358]: 授信额度 · 账期申请 · 到期提醒，让采购与回款节奏更清晰
+                  - generic [ref=e359]: 查看账期服务 →
+              - generic [ref=e361] [cursor=pointer]:
+                - img "港口物流 · 采购协同" [ref=e362]
+                - generic [ref=e364]:
+                  - heading "港口物流 · 采购协同" [level=2] [ref=e365]
+                  - paragraph [ref=e366]: 连接工厂、仓储、港口与采购需求，强化跨区域履约能力
+                  - generic [ref=e367]: 了解供应链服务 →
+            - generic [ref=e368]:
+              - generic [ref=e369] [cursor=pointer]
+              - generic [ref=e370] [cursor=pointer]
+              - generic [ref=e371] [cursor=pointer]
+              - generic [ref=e372] [cursor=pointer]
+              - generic [ref=e373] [cursor=pointer]
+              - generic [ref=e374] [cursor=pointer]
+              - generic [ref=e375] [cursor=pointer]
+          - region [ref=e377]:
+            - generic [ref=e378]:
+              - generic [ref=e379]:
+                - generic [ref=e380]: MARKET PULSE · 每日行情
+                - heading [level=2] [ref=e382]:
+                  - text: 看懂今天的价格，
+                  - emphasis [ref=e383]: 再做明天的决定。
+                - paragraph [ref=e384]: 选定商品，用 K 线与成交量还原 30 / 60 / 90 天的价格轨迹；市场情绪、上游供应链、基础原材料、国际化与政策五维因子同步更新，随时可以让 AI 解释涨跌。
+              - generic [ref=e385]:
+                - generic [ref=e386]:
+                  - generic [ref=e387]: 2026.11.05
+                  - generic [ref=e388]: 周四
+                - group "时间范围" [ref=e389]:
+                  - button "30 天" [pressed] [ref=e390] [cursor=pointer]
+                  - button "60 天" [ref=e391] [cursor=pointer]
+                  - button "90 天" [ref=e392] [cursor=pointer]
+                - button "进入价格情报台 →" [ref=e393] [cursor=pointer]
+            - generic [ref=e394]:
+              - generic [ref=e395]:
+                - generic [ref=e396]: 选定商品
+                - generic [ref=e398]:
+                  - combobox [ref=e400]
+                  - generic "硅酸盐水泥 P.O42.5 袋装 · ¥420" [ref=e401]
+              - generic [ref=e402]: 实时
+              - button "刷新数据" [ref=e404] [cursor=pointer]
+            - generic [ref=e405]:
+              - article [ref=e406]:
+                - generic [ref=e407]:
+                  - generic [ref=e408]:
+                    - generic [ref=e409]: PRICE ACTION
+                    - generic [ref=e410]:
+                      - heading "硅酸盐水泥 P.O42.5 袋装" [level=3] [ref=e411]
+                      - generic [ref=e412]: 建筑行业
+                  - generic [ref=e413]:
+                    - generic [ref=e414]: 当前价
+                    - generic [ref=e415]:
+                      - text: ¥
+                      - generic [ref=e416]: "419.49"
+                    - text: 0.00%
+                - generic [ref=e418]:
+                  - generic [ref=e419]:
+                    - term [ref=e420]: 区间最低
+                    - definition [ref=e421]:
+                      - generic [ref=e422]: "399.15"
+                      - generic [ref=e424]: "399.15"
+                    - definition [ref=e426]:
+                      - generic [ref=e427]: "10.10"
+                      - generic [ref=e428]: 较现价 +5.22%
+                    - definition [aria-hidden] [ref=e429]
+                  - generic [ref=e435]:
+                    - term [ref=e436]: 区间最高
+                    - definition [ref=e437]:
+                      - generic [ref=e438]: "441.00"
+                      - generic [ref=e440]: "441.00"
+                    - definition [ref=e442]:
+                      - generic [ref=e443]: "10.08"
+                      - generic [ref=e444]: 较现价 -4.76%
+                    - definition [aria-hidden] [ref=e445]
+                  - generic [ref=e451]:
+                    - term [ref=e452]: 区间振幅
+                    - definition [ref=e453]:
+                      - generic [ref=e454]: 10.48%
+                      - generic [aria-hidden] [ref=e455]:
+                        - generic [ref=e456]: "10.48"
+                        - generic [ref=e458]: "%"
+                    - definition [ref=e459]:
+                      - generic [ref=e460]: 最高 / 最低
+                      - generic [ref=e461]: 日均 2.02%
+                    - definition [aria-hidden] [ref=e462]
+                  - generic [ref=e464]:
+                    - term [ref=e465]: 调价次数
+                    - definition [ref=e466]:
+                      - generic [ref=e467]: "20"
+                      - generic [ref=e469]: "20"
+                    - definition [ref=e471]:
+                      - generic [ref=e472]: 近 30 天
+                      - generic [ref=e473]: 覆盖 30 个交易日
+                    - definition [aria-hidden] [ref=e474]
+                - generic [ref=e477]:
+                  - generic [ref=e478]:
+                    - generic [ref=e479]:
+                      - generic [ref=e480]: 涨
+                      - generic [ref=e482]: 跌
+                      - generic [ref=e484]: MA5
+                      - generic [ref=e486]: MA10
+                      - generic [ref=e488]: 成交量（估算）
+                    - generic [ref=e490]: 30 个交易日
+                  - generic [ref=e491]:
+                    - generic [ref=e492]: 2026-11-06
+                    - generic [ref=e493]:
+                      - emphasis [ref=e494]: 开
+                      - text: "420"
+                    - generic [ref=e495]:
+                      - emphasis [ref=e496]: 高
+                      - text: "420"
+                    - generic [ref=e497]:
+                      - emphasis [ref=e498]: 低
+                      - text: "420"
+                    - generic [ref=e499]:
+                      - emphasis [ref=e500]: 收
+                      - text: "420"
+                    - generic [ref=e501]: 0.00%
+                    - generic [ref=e502]:
+                      - emphasis [ref=e503]: 量
+                      - text: 8估算
+                  - img "商品价格 K 线与成交量" [ref=e505]:
+                    - generic [ref=e506]:
+                      - generic [ref=e507]: "444"
+                      - generic [ref=e508]: "432"
+                      - generic [ref=e509]: "420"
+                      - generic [ref=e510]: "408"
+                      - generic [ref=e511]: "397"
+                    - generic [ref=e512]:
+                      - generic [ref=e513]: 高 ¥441
+                      - generic [ref=e514]: 低 ¥399.15
+                    - generic [ref=e578]: 量
+                    - generic [ref=e610]:
+                      - generic [ref=e611]: 10-08
+                      - generic [ref=e612]: 10-13
+                      - generic [ref=e613]: 10-18
+                      - generic [ref=e614]: 10-23
+                      - generic [ref=e615]: 10-28
+                      - generic [ref=e616]: 11-02
+                      - generic [ref=e617]: 11-06
+                - generic [ref=e618]:
+                  - generic [ref=e619]: 开 / 高 / 低 / 收来自商户真实调价留痕
+                  - generic [ref=e620]: 成交量为销量热度估算，非真实撮合
+                  - button "查看商品 →" [ref=e621] [cursor=pointer]
+              - complementary [ref=e622]:
+                - generic [ref=e623]:
+                  - generic [ref=e624]:
+                    - generic [ref=e625]: FIVE FACTORS
+                    - heading "五维价格因子" [level=3] [ref=e626]
+                    - paragraph [ref=e627]: 因子按当前商品的价格轨迹与相关资讯计算，不同商品因子不同。
+                  - generic [ref=e628]:
+                    - generic "自动分析链的快照覆盖进度，整点 50 分滚动刷新。" [ref=e629]: 已分析 379/379
+                    - generic "按商品 · 建筑行业" [ref=e630]
+                - generic [ref=e631]:
+                  - generic:
+                    - generic:
+                      - text: "46"
+                      - generic: /100
+                    - generic: 综合指数
+                - paragraph [ref=e687]: 商品「硅酸盐水泥 P.O42.5 袋装」五维因子信号中性（综合指数 46/100），主导因子为基础原材料；近30日价格 -2.71%，相对行业 -33.95 个百分点，库存约覆盖 1143 天。
+                - paragraph [ref=e688]: 已分析快照 · 2026-11-04 23:50
+                - list [ref=e690]:
+                  - listitem [ref=e691]:
+                    - generic [ref=e692]:
+                      - generic [ref=e693]: 市场情绪
+                      - generic [ref=e695]: 中性
+                      - generic [ref=e696]: "-9"
+                    - paragraph [ref=e700]: 资讯加权分 -6（17 条，其中 1 条与本商品/本行业相关）× 行业权重 1.0 + 本商品价格行为分 -16 → 综合 -9。
+                    - button "AI数据中心需求蓬勃推动瑞典建筑商订单积压总额达2242亿元36氪" [ref=e701] [cursor=pointer]:
+                      - generic [ref=e702]: AI数据中心需求蓬勃推动瑞典建筑商订单积压总额达2242亿元36氪↗
+                  - listitem [ref=e703]:
+                    - generic [ref=e704]:
+                      - generic [ref=e705]: 上游供应链
+                      - generic [ref=e707]: 偏空
+                      - generic [ref=e708]: "-35"
+                    - paragraph [ref=e712]: 资讯加权分 0（5 条，其中 1 条与本商品/本行业相关）× 行业权重 1.3 + 本商品价格行为分 -100 → 综合 -35。
+                    - button "大疆发布 Matrice 5T 无人机：标配激光雷达、毫米波雷达、全彩全向视觉感知系统，57488 元IT之家" [ref=e713] [cursor=pointer]:
+                      - generic [ref=e714]: 大疆发布 Matrice 5T 无人机：标配激光雷达、毫米波雷达、全彩全向视觉感知系统，57488 元IT之家↗
+                  - listitem [ref=e715]:
+                    - generic [ref=e716]:
+                      - generic [ref=e717]: 基础原材料
+                      - generic [ref=e719]: 偏多
+                      - generic [ref=e720]: "+35"
+                    - paragraph [ref=e724]: 资讯加权分 0（20 条，其中 2 条与本商品/本行业相关）× 行业权重 1.4 + 本商品价格行为分 100 → 综合 35。
+                    - button "AI数据中心需求蓬勃推动瑞典建筑商订单积压总额达2242亿元36氪" [ref=e725] [cursor=pointer]:
+                      - generic [ref=e726]: AI数据中心需求蓬勃推动瑞典建筑商订单积压总额达2242亿元36氪↗
+                  - listitem [ref=e727]:
+                    - generic [ref=e728]:
+                      - generic [ref=e729]: 国际化因素
+                      - generic [ref=e731]: 中性
+                      - generic [ref=e732]: "-4"
+                    - paragraph [ref=e736]: 资讯加权分 0（11 条，其中 0 条与本商品/本行业相关）× 行业权重 1.1 + 本商品价格行为分 -12 → 综合 -4。
+                    - button "半托管之后，海外仓正在变成平台的“计件工”虎嗅" [ref=e737] [cursor=pointer]:
+                      - generic [ref=e738]: 半托管之后，海外仓正在变成平台的“计件工”虎嗅↗
+                  - listitem [ref=e739]:
+                    - generic [ref=e740]:
+                      - generic [ref=e741]: 政治与政策
+                      - generic [ref=e743]: 偏空
+                      - generic [ref=e744]: "-36"
+                    - paragraph [ref=e748]: 资讯加权分 -39（7 条，其中 0 条与本商品/本行业相关）× 行业权重 1.4 + 本商品价格行为分 -31 → 综合 -36。
+                    - button "等径八齿嵌合设计边刷：科沃斯擦窗机器人 W2S PLUS 基站款 1553 元国补新低IT之家" [ref=e749] [cursor=pointer]:
+                      - generic [ref=e750]: 等径八齿嵌合设计边刷：科沃斯擦窗机器人 W2S PLUS 基站款 1553 元国补新低IT之家↗
+                - generic [ref=e751]:
+                  - paragraph [ref=e752]: 综合指数 50 为中性；弧段长度表示各因子按商品权重加权后的强度占比。
+                  - button "查看完整证据 →" [ref=e753] [cursor=pointer]
+            - generic [ref=e754]:
+              - article [ref=e755]:
+                - generic [ref=e756]:
+                  - generic [ref=e757]:
+                    - generic [ref=e758]: DAILY BRIEF
+                    - heading "每日资讯" [level=3] [ref=e759]
+                  - button "全部资讯 →" [ref=e760]
+                - generic [ref=e761]:
+                  - generic [ref=e762]: 快讯
+                  - generic [ref=e764]:
+                    - generic [ref=e765]:
+                      - button "半托管之后，海外仓正在变成平台的“计件工”" [ref=e766] [cursor=pointer]:
+                        - text: 半托管之后，海外仓正在变成平台的“计件工”
+                        - generic [aria-hidden] [ref=e768]: ↗
+                      - button "市场不再相信存储超级周期？" [ref=e769] [cursor=pointer]:
+                        - text: 市场不再相信存储超级周期？
+                        - generic [aria-hidden] [ref=e771]: ↗
+                      - button "5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）" [ref=e772] [cursor=pointer]:
+                        - text: 5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）
+                        - generic [aria-hidden] [ref=e774]: ↗
+                      - button "12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售" [ref=e775] [cursor=pointer]:
+                        - text: 12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售
+                        - generic [aria-hidden] [ref=e777]: ↗
+                      - button "22999 元起：苹果首款触屏 MacBook Pro 正式开售，可选 M5 Pro/M5 Max 芯片" [ref=e778] [cursor=pointer]:
+                        - text: 22999 元起：苹果首款触屏 MacBook Pro 正式开售，可选 M5 Pro/M5 Max 芯片
+                        - generic [aria-hidden] [ref=e780]: ↗
+                      - button "被网站“断粮”，Anthropic 首次掏钱买新闻内容授权" [ref=e781] [cursor=pointer]:
+                        - text: 被网站“断粮”，Anthropic 首次掏钱买新闻内容授权
+                        - generic [aria-hidden] [ref=e783]: ↗
+                    - generic [ref=e784]:
+                      - button "半托管之后，海外仓正在变成平台的“计件工”" [ref=e785] [cursor=pointer]:
+                        - text: 半托管之后，海外仓正在变成平台的“计件工”
+                        - generic [aria-hidden] [ref=e787]: ↗
+                      - button "市场不再相信存储超级周期？" [ref=e788] [cursor=pointer]:
+                        - text: 市场不再相信存储超级周期？
+                        - generic [aria-hidden] [ref=e790]: ↗
+                      - button "5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）" [ref=e791] [cursor=pointer]:
+                        - text: 5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）
+                        - generic [aria-hidden] [ref=e793]: ↗
+                      - button "12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售" [ref=e794] [cursor=pointer]:
+                        - text: 12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售
+                        - generic [aria-hidden] [ref=e796]: ↗
+                      - button "22999 元起：苹果首款触屏 MacBook Pro 正式开售，可选 M5 Pro/M5 Max 芯片" [ref=e797] [cursor=pointer]:
+                        - text: 22999 元起：苹果首款触屏 MacBook Pro 正式开售，可选 M5 Pro/M5 Max 芯片
+                        - generic [aria-hidden] [ref=e799]: ↗
+                      - button "被网站“断粮”，Anthropic 首次掏钱买新闻内容授权" [ref=e800] [cursor=pointer]:
+                        - text: 被网站“断粮”，Anthropic 首次掏钱买新闻内容授权
+                        - generic [aria-hidden] [ref=e802]: ↗
+                - group "资讯分类" [ref=e804]:
+                  - button "全部" [pressed] [ref=e805] [cursor=pointer]
+                  - button "价格" [ref=e806] [cursor=pointer]
+                  - button "供给" [ref=e807] [cursor=pointer]
+                  - button "政策" [ref=e808] [cursor=pointer]
+                  - button "国际" [ref=e809] [cursor=pointer]
+                  - button "市场" [ref=e810] [cursor=pointer]
+                - list [ref=e811]:
+                  - listitem [ref=e812]:
+                    - generic [ref=e813]:
+                      - generic [ref=e814]: 国际
+                      - generic [ref=e815]: 检索原文
+                      - time [ref=e816]: 11-06 00:46
+                    - link "半托管之后，海外仓正在变成平台的“计件工”" [ref=e817] [cursor=pointer]:
+                      - /url: https://www.bing.com/news/search?q=%E5%8D%8A%E6%89%98%E7%AE%A1%E4%B9%8B%E5%90%8E%EF%BC%8C%E6%B5%B7%E5%A4%96%E4%BB%93%E6%AD%A3%E5%9C%A8%E5%8F%98%E6%88%90%E5%B9%B3%E5%8F%B0%E7%9A%84%E2%80%9C%E8%AE%A1%E4%BB%B6%E5%B7%A5%E2%80%9D+%E8%99%8E%E5%97%85
+                      - text: 半托管之后，海外仓正在变成平台的“计件工”↗
+                    - paragraph [ref=e818]: 海外仓的运营模式发生了变化。过去，海外仓主要依靠仓库本身的自有员工进行运营，但随着半托管模式的出现，海外仓开始转向平台的“计件工”。
+                    - generic [ref=e819]: 虎嗅
+                  - listitem [ref=e821]:
+                    - generic [ref=e822]:
+                      - generic [ref=e823]: 市场
+                      - generic [ref=e824]: 检索原文
+                      - time [ref=e825]: 11-06 00:23
+                    - link "市场不再相信存储超级周期？" [ref=e826] [cursor=pointer]:
+                      - /url: https://www.bing.com/news/search?q=%E5%B8%82%E5%9C%BA%E4%B8%8D%E5%86%8D%E7%9B%B8%E4%BF%A1%E5%AD%98%E5%82%A8%E8%B6%85%E7%BA%A7%E5%91%A8%E6%9C%9F%EF%BC%9F+%E8%99%8E%E5%97%85
+                      - text: 市场不再相信存储超级周期？↗
+                    - paragraph [ref=e827]: 市场不再相信存储超级周期？（中国证券报）2018年，存储行业经历了“超级周期”，但市场对此并不买账。存储行业分析师认为，存储超级周期的结束，意味着行业将进入一个相对稳定和成熟的发展阶段。然而，市场对存储行业的看法却与之相反。存储行业分析师认为，存储超级周期的结束，意味着行业将进入一个相对稳定和成熟的发展阶段。然而，市场对存储行业的看法却与之相反。
+                    - generic [ref=e828]: 虎嗅
+                  - listitem [ref=e830]:
+                    - generic [ref=e831]:
+                      - generic [ref=e832]: 技术
+                      - generic [ref=e833]: 原文
+                      - time [ref=e834]: 11-06 00:00
+                    - link "5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）" [ref=e835] [cursor=pointer]:
+                      - /url: https://www.ithome.com/1/023/021.htm
+                      - text: 5499 元起：苹果 iPad mini 8 开售，A20 Pro 芯片（国补后到手价约 4999 元起）↗
+                    - paragraph [ref=e836]: IT之家 11 月 6 日消息，苹果 iPad mini（A20 Pro）今日正式开售，也就是大家俗称的“iPad mini 8”。新品起售价为 5499 元，国补后到手价约 4999 元。如果您可以使用教育优惠，国补后的到手价会进一步下探至 4599 元左右。 京东 Apple iPad mini (A20 Pro) 128GB5499 元直达链接 IT之家了解到，iPad mini（A20 Pro）提供午夜色、星光色两种配色。其机身相比上一代薄了 14%，轻了 13%。该机配备超视网膜 XDR 显示屏，采用 OLED 技术，峰值亮度可达 1,200 nits，支持 P3 广色域，对比度可达 2000000:1，不支持 ProMotion，256GB 和 512GB 机型可选配纳米纹理玻璃。 性能方面，iPad mini（A20 Pro）搭载 A20 Pro 芯片，其封装方式借鉴了 M 系列芯片。每个图形处理器核心均内置全新神经网络加速器，为 Apple 智能和各种 AI 任务加速。该平板 CPU 性能相比 iPad mini 7 提速至 1.6 倍，图形处理器性能提升至 2.7 倍。 需要注意的是，128GB 版和 256GB 版 iPad mini（A20 Pro）采用的 A20 Pro 芯片为 5 核 CPU（2 * 超级核心、3 * 能效核心）、7 核 GPU，以及 16 核 NPU；512GB 机型为 6 核 CPU（2 * 超级核心、4 * 能效核心）、7 核 GPU，以及双 16 核 NPU。 iPad mini（A20 Pro）采用 Apple N1 无线网络芯片，支持高速无线局域网、蓝牙 6 和 Thread 家庭网络技术。蜂窝网络机型采用 Apple C2 基带，支持 eSIM 。兼容 Apple Pencil Pro、Apple Pencil (USB‑C)，支持悬停功能。该平板具备 IP67 级防尘防水，在最深 1 米的水下停留时间最长可达 30 分钟。 IT之家附系列产品各版本定价如下： 128GB：Wi-Fi 版 5,499 元，Wi-Fi+ 蜂窝版 6,799 元 256GB：Wi-Fi 版 6,299 元，Wi-Fi+ 蜂窝版 7,599 元 512GB：Wi-Fi 版本 7,999 元，Wi-Fi+ 蜂窝版 9,299 元 京东
+                    - generic [ref=e837]: IT之家
+                  - listitem [ref=e839]:
+                    - generic [ref=e840]:
+                      - generic [ref=e841]: 技术
+                      - generic [ref=e842]: 原文
+                      - time [ref=e843]: 11-06 00:00
+                    - link "12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售" [ref=e844] [cursor=pointer]:
+                      - /url: https://www.ithome.com/1/023/022.htm
+                      - text: 12499 元 / 15999 元起：苹果 M6 芯片款 iMac、MacBook Pro 开售↗
+                    - paragraph [ref=e845]: IT之家 11 月 6 日消息，苹果 M6 芯片款 iMac、MacBook Pro 今日正式开售，起售价分别为 12499 元 / 15999 元，国补后起售价约 10999 元 / 14499 元。如果您能使用教育优惠，叠加国补后起售价会进一步下探至 10599 元 / 13699 元。 京东 Apple iMac M6 12499 元直达链接京东 Apple MacBook Pro M6 14 英寸 15999 元直达链接 IT之家附两款新品详情如下： iMac 新款 iMac 沿袭上一代外观，提供银色、蓝色、绿色、粉色等配色可选。搭载 24 英寸 4.5K 分辨率屏幕，最高亮度 500nits，支持 P3 广色域和 10bit 色深，提供纳米纹理玻璃选项。 规格方面，新款 iMac 搭载 M6 芯片，双雷雳接口机型为 10 核 CPU、10 核 GPU 及双 16 核 NPU；四雷雳接口型号采用 12 核 CPU、12 核心 GPU 及双 16 核 NPU。标配 16GB 统一内存，可选 24GB 或 32GB。硬盘为 256GB 起步，可选 512GB/1TB/2TB。 此外，新 iMac 搭载 Apple N1 无线网络芯片、支持 Wi-Fi 7 (802.11be) 和蓝牙 6。支持选配 2.5Gb 以太网端口，出厂搭载 macOS 操作系统。 MacBook Pro 新款 M6 芯片的 14 英寸 MacBook Pro 继承了上一代外观，可选深空黑色和银色两种配色，配备 3024 x 1964 分辨率 120Hz 显示屏。 这款电脑搭载 M6 芯片，为 12 核中央处理器、12 核图形处理器、双 16 核神经网络引擎规格，官方称该机设备端 AI 性能相对于 13 英寸 M1 机型最高提速至 13 倍。 同时，新款 M6 芯片的 14 英寸 MacBook Pro 机型内存带宽达 170GB/s，比 M5 机型的 153GB/s 有所提升，但性能提升并未延伸到基础款的 16GB 统一内存配置。 技术规格页面显示，16GB 统一内存的选项仍然限制在 153GB/s。与 M5 机型相同，而只有全新的 24GB 和 32GB 配置才拥有更快的 170GB/s 内存带宽。 作为对比，搭载 M5 Pro 芯片的 MacBook Pro 提供 307GB/s 的
+                    - generic [ref=e846]: IT之家
+              - article [ref=e848]:
+                - generic [ref=e850]:
+                  - generic [ref=e851]: ASK THE ANALYST
+                  - heading "随时问 AI" [level=3] [ref=e852]
+                - generic [ref=e853]:
+                  - paragraph [ref=e854]: 一键读取当前商品的 K 线、五维因子与资讯，生成价格解读。
+                  - button "让 AI 分析" [ref=e855] [cursor=pointer]
+                - generic [ref=e856]:
+                  - textbox "例如：为什么最近价格上涨？" [ref=e858]
+                  - button "提问" [ref=e860] [cursor=pointer]
+                - generic [ref=e861]:
+                  - button "为什么最近价格波动？" [ref=e862] [cursor=pointer]
+                  - button "主要驱动因素是什么？" [ref=e863] [cursor=pointer]
+                  - button "接下来要关注什么？" [ref=e864] [cursor=pointer]
+          - heading "02 行业解决方案" [level=2] [ref=e865]
+          - generic [ref=e866]:
+            - generic [ref=e869] [cursor=pointer]:
+              - generic "建筑行业" [ref=e870]
+              - generic "查看建筑行业专区商品" [ref=e871]: 查看建筑行业专区商品 →
+            - generic [ref=e874] [cursor=pointer]:
+              - generic "纺织行业" [ref=e875]
+              - generic "查看纺织行业专区商品" [ref=e876]: 查看纺织行业专区商品 →
+            - generic [ref=e879] [cursor=pointer]:
+              - generic "石化行业" [ref=e880]
+              - generic "查看石化行业专区商品" [ref=e881]: 查看石化行业专区商品 →
+            - generic [ref=e884] [cursor=pointer]:
+              - generic "电子行业" [ref=e885]
+              - generic "查看电子行业专区商品" [ref=e886]: 查看电子行业专区商品 →
+            - generic [ref=e889] [cursor=pointer]:
+              - generic "钢铁冶金" [ref=e890]
+              - generic "查看钢铁冶金专区商品" [ref=e891]: 查看钢铁冶金专区商品 →
+            - generic [ref=e894] [cursor=pointer]:
+              - generic "机械装备" [ref=e895]
+              - generic "查看机械装备专区商品" [ref=e896]: 查看机械装备专区商品 →
+            - generic [ref=e899] [cursor=pointer]:
+              - generic "汽车及零部件" [ref=e900]
+              - generic "查看汽车及零部件专区商品" [ref=e901]: 查看汽车及零部件专区商品 →
+            - generic [ref=e904] [cursor=pointer]:
+              - generic "电力能源" [ref=e905]
+              - generic "查看电力能源专区商品" [ref=e906]: 查看电力能源专区商品 →
+            - generic [ref=e909] [cursor=pointer]:
+              - generic "食品饮料" [ref=e910]
+              - generic "查看食品饮料专区商品" [ref=e911]: 查看食品饮料专区商品 →
+            - generic [ref=e914] [cursor=pointer]:
+              - generic "医药医疗" [ref=e915]
+              - generic "查看医药医疗专区商品" [ref=e916]: 查看医药医疗专区商品 →
+            - generic [ref=e919] [cursor=pointer]:
+              - generic "包装印刷" [ref=e920]
+              - generic "查看包装印刷专区商品" [ref=e921]: 查看包装印刷专区商品 →
+            - generic [ref=e924] [cursor=pointer]:
+              - generic "物流仓储" [ref=e925]
+              - generic "查看物流仓储专区商品" [ref=e926]: 查看物流仓储专区商品 →
+            - generic [ref=e929] [cursor=pointer]:
+              - generic "新能源" [ref=e930]
+              - generic "查看新能源专区商品" [ref=e931]: 查看新能源专区商品 →
+            - generic [ref=e934] [cursor=pointer]:
+              - generic "环保水务" [ref=e935]
+              - generic "查看环保水务专区商品" [ref=e936]: 查看环保水务专区商品 →
+            - generic [ref=e939] [cursor=pointer]:
+              - generic "农业及农产品" [ref=e940]
+              - generic "查看农业及农产品专区商品" [ref=e941]: 查看农业及农产品专区商品 →
+            - generic [ref=e944] [cursor=pointer]:
+              - generic "家居家装" [ref=e945]
+              - generic "查看家居家装专区商品" [ref=e946]: 查看家居家装专区商品 →
+          - generic [ref=e947]:
+            - heading "03 热销推荐" [level=2] [ref=e948]
+            - button "查看全部商品 →" [ref=e949] [cursor=pointer]
+          - generic [ref=e950]:
+            - link "查看商品：电子水泵 12V 无刷 60W" [ref=e952] [cursor=pointer]:
+              - img "电子水泵 12V 无刷 60W" [ref=e953]
+              - generic [ref=e954]:
+                - generic [ref=e955]:
+                  - generic [ref=e956]:
+                    - heading "电子水泵 12V 无刷 60W" [level=3] [ref=e957]
+                    - paragraph [ref=e958]: 骏驰汽配
+                  - generic "LANLinkshopping" [ref=e959]: LL
+                - generic [ref=e960]: ¥86
+                - generic [ref=e961]: 销量 4771 · 库存 5279
+            - link "查看商品：白卡彩盒 覆哑膜 烫金" [ref=e970] [cursor=pointer]:
+              - img "白卡彩盒 覆哑膜 烫金" [ref=e971]
+              - generic [ref=e972]:
+                - generic [ref=e973]:
+                  - generic [ref=e974]:
+                    - heading "白卡彩盒 覆哑膜 烫金" [level=3] [ref=e975]
+                    - paragraph [ref=e976]: 澜包印务
+                  - generic "LANLinkshopping" [ref=e977]: LL
+                - generic [ref=e978]: ¥2.15
+                - generic [ref=e979]: 销量 4742 · 库存 7558
+            - link "查看商品：折叠滤芯 40 寸 0.22μm PES" [ref=e988] [cursor=pointer]:
+              - img "折叠滤芯 40 寸 0.22μm PES" [ref=e989]
+              - generic [ref=e990]:
+                - generic [ref=e991]:
+                  - generic [ref=e992]:
+                    - heading "折叠滤芯 40 寸 0.22μm PES" [level=3] [ref=e993]
+                    - paragraph [ref=e994]: 绿净环保
+                  - generic "LANLinkshopping" [ref=e995]: LL
+                - generic [ref=e996]: ¥68
+                - generic [ref=e997]: 销量 4713 · 库存 9837
+            - link "查看商品：三层瓦楞纸箱 普通邮包 3 号" [ref=e1006] [cursor=pointer]:
+              - img "三层瓦楞纸箱 普通邮包 3 号" [ref=e1007]
+              - generic [ref=e1008]:
+                - generic [ref=e1009]:
+                  - generic [ref=e1010]:
+                    - heading "三层瓦楞纸箱 普通邮包 3 号" [level=3] [ref=e1011]
+                    - paragraph [ref=e1012]: 华印包装
+                  - generic "LANLinkshopping" [ref=e1013]: LL
+                - generic [ref=e1014]: ¥0.68
+                - generic [ref=e1015]: 销量 4645 · 库存 7505
+            - link "查看商品：PP 滤芯 10 寸 5μm 熔喷" [ref=e1024] [cursor=pointer]:
+              - img "PP 滤芯 10 寸 5μm 熔喷" [ref=e1025]
+              - generic [ref=e1026]:
+                - generic [ref=e1027]:
+                  - generic [ref=e1028]:
+                    - heading "PP 滤芯 10 寸 5μm 熔喷" [level=3] [ref=e1029]
+                    - paragraph [ref=e1030]: 澜清水务
+                  - generic "LANLinkshopping" [ref=e1031]: LL
+                - generic [ref=e1032]: ¥3.6
+                - generic [ref=e1033]: 销量 4616 · 库存 9784
+            - link "查看商品：五层瓦楞纸箱 BC 坑 特硬 40×30×30cm" [ref=e1042] [cursor=pointer]:
+              - img "五层瓦楞纸箱 BC 坑 特硬 40×30×30cm" [ref=e1043]
+              - generic [ref=e1044]:
+                - generic [ref=e1045]:
+                  - generic [ref=e1046]:
+                    - heading "五层瓦楞纸箱 BC 坑 特硬 40×30×30cm" [level=3] [ref=e1047]
+                    - paragraph [ref=e1048]: 澜包印务
+                  - generic "LANLinkshopping" [ref=e1049]: LL
+                - generic [ref=e1050]: ¥2.86
+                - generic [ref=e1051]: 销量 4548 · 库存 7452
+            - link "查看商品：隔声屏障 高速公路用 金属复合" [ref=e1060] [cursor=pointer]:
+              - img "隔声屏障 高速公路用 金属复合" [ref=e1061]
+              - generic [ref=e1062]:
+                - generic [ref=e1063]:
+                  - generic [ref=e1064]:
+                    - heading "隔声屏障 高速公路用 金属复合" [level=3] [ref=e1065]
+                    - paragraph [ref=e1066]: 绿净环保
+                  - generic "LANLinkshopping" [ref=e1067]: LL
+                - generic [ref=e1068]: ¥586
+                - generic [ref=e1069]: 销量 4519 · 库存 9731
+            - link "查看商品：医用纱布绷带 8×600cm 灭菌" [ref=e1078] [cursor=pointer]:
+              - img "医用纱布绷带 8×600cm 灭菌" [ref=e1079]
+              - generic [ref=e1080]:
+                - generic [ref=e1081]:
+                  - generic [ref=e1082]:
+                    - heading "医用纱布绷带 8×600cm 灭菌" [level=3] [ref=e1083]
+                    - paragraph [ref=e1084]: 济安医疗
+                  - generic "LANLinkshopping" [ref=e1085]: LL
+                - generic [ref=e1086]: ¥0.86
+                - generic [ref=e1087]: 销量 4451 · 库存 7399
+    - generic [ref=e1096]:
+      - generic [ref=e1097]:
+        - generic [ref=e1098]: LANLinkshopping
+        - paragraph [ref=e1099]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=e1100]:
+        - button "商城" [ref=e1101] [cursor=pointer]
+        - button "技术服务" [ref=e1102] [cursor=pointer]
+        - button "关于我们" [ref=e1103] [cursor=pointer]
+        - button "联系我们" [ref=e1104] [cursor=pointer]
+        - button "用户服务协议" [ref=e1105] [cursor=pointer]
+        - button "隐私政策" [ref=e1106] [cursor=pointer]
+        - button "Cookie 政策" [ref=e1107] [cursor=pointer]
+        - button "平台说明" [ref=e1108] [cursor=pointer]
+        - button "免责声明" [ref=e1109] [cursor=pointer]
+        - button "技术服务规则" [ref=e1110] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=e1111] [cursor=pointer]
+      - region "项目作者信息" [ref=e1112]:
+        - generic [ref=e1113]:
+          - link "在 X 查看 Jason Ouyang" [ref=e1114] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=e1115]
+          - generic [ref=e1116]:
+            - generic [ref=e1117]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=e1118]: Jason Ouyang
+            - generic [ref=e1119]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=e1120]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=e1123] [cursor=pointer]:
+      - img "智能客服头像" [ref=e1124]
+      - generic [ref=e1134]: 专属客服
+    - button "返回顶部"
+  - generic [ref=e1136]:
+    - img "check-circle" [ref=e1137]
+    - text: 登录成功

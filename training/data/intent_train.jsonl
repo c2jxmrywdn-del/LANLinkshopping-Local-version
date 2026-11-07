@@ -1,0 +1,12 @@
+{"question": "怎么注册采购方账号？", "intent": "account_access", "label_source": "regression"}
+{"question": "供应商注册流程是什么？", "intent": "account_access", "label_source": "regression"}
+{"question": "登录失败怎么办？", "intent": "account_access", "label_source": "regression"}
+{"question": "如何注册账号？", "intent": "account_access", "label_source": "regression"}
+{"question": "如何在商城浏览商品？", "intent": "product_browse", "label_source": "regression"}
+{"question": "我的订单在哪里查看？", "intent": "cart_order", "label_source": "regression"}
+{"question": "购物车怎么结算？", "intent": "cart_order", "label_source": "regression"}
+{"question": "怎么申请商户入驻？", "intent": "merchant_onboarding", "label_source": "regression"}
+{"question": "怎么查看钱包交易记录？", "intent": "wallet_credit", "label_source": "regression"}
+{"question": "活动中心怎么进入？", "intent": "membership_activity", "label_source": "regression"}
+{"question": "收货地址在哪里管理？", "intent": "message_privacy", "label_source": "regression"}
+{"question": "如何查看站内消息？", "intent": "message_privacy", "label_source": "regression"}

@@ -1,0 +1,187 @@
+app:
+  name: "LANLink B2B 多 Agent 智能协同采购工作流"
+  icon: "🤖"
+  icon_background: "#E0F2FE"
+  mode: "workflow"
+  description: "面向 B2B 工业品商城的全链路多 Agent 协同工作流：采购助手 Agent（选型询价与意向单锁定）-> 财务审核 Agent（企业授信额度风控与阶梯单价偏离度核验）-> 履约追踪 Agent（物流轨迹跟踪与时效异常预警）。"
+
+workflow:
+  version: "0.1.3"
+  features:
+    file_upload:
+      allowed_file_types: []
+      allowed_file_extensions: []
+      allowed_file_upload_methods:
+        - remote_url
+        - local_file
+      enabled: false
+  graph:
+    viewport:
+      x: 50
+      y: 100
+      zoom: 1.0
+    nodes:
+      # 1. 用户采购需求输入
+      - id: "start_node"
+        type: "start"
+        title: "开始：采购需求输入"
+        desc: "接收买家采购意向、品类规格、采购数量及企业主体 ID"
+        data:
+          variables:
+            - label: "采购需求"
+              variable: "query"
+              type: "string"
+              required: true
+              default: "需要采购 50 支 304 不锈钢无缝管，规格 Φ25*3，请对比阶梯报价并生成意向草稿单"
+            - label: "经办人用户ID"
+              variable: "user_id"
+              type: "number"
+              required: false
+              default: 888
+            - label: "采购企业ID"
+              variable: "enterprise_id"
+              type: "number"
+              required: false
+              default: 1
+      # 2. 采购助手 Agent（Buyer Agent）
+      - id: "buyer_agent_node"
+        type: "llm"
+        title: "采购助手 Agent (Buyer Agent)"
+        desc: "需求解析、商品检索比价、阶梯询价试算，并生成受保护的意向草稿单（不可直接扣款）"
+        data:
+          model:
+            provider: "openai"
+            name: "qwen2.5-7b"
+            mode: "chat"
+            completion_params:
+              temperature: 0.2
+          prompt_template:
+            - role: "system"
+              text: |
+                你是一名资深的 B2B 工业品采购助手 Agent。
+                你的职责：
+                1. 使用工具 `lanlink_search_products` 检索现货库存与规格；
+                2. 使用工具 `lanlink_calculate_quotation` 测算阶梯批量优惠、增值税专票税额及运费；
+                3. 使用工具 `lanlink_create_cart_draft` 锁定意向草稿单，并获取结算深链；
+                4. 【安全红线】：严禁未经用户在前端页面点击确认前直接提交支付或伪造交易。必须返回生成的草稿单号 draftId 与核对深链。
+            - role: "user"
+              text: "{{#start_node.query#}} (操作用户ID: {{#start_node.user_id#}})"
+          tools:
+            - "lanlink_search_products"
+            - "lanlink_get_product_detail"
+            - "lanlink_calculate_quotation"
+            - "lanlink_create_cart_draft"
+            - "lanlink_query_knowledge"
+      # 3. 结构化草稿单信息提取
+      - id: "code_extract_draft"
+        type: "code"
+        title: "解析草稿单元数据"
+        desc: "从采购助手回复中提取 draftId、prodId 与总金额，供财务审核 Agent 消费"
+        data:
+          code_language: "python3"
+          code: |
+            import re
+            def main(buyer_output: str) -> dict:
+                m = re.search(r'(dft_[a-zA-Z0-9]{16})', buyer_output)
+                draft_id = m.group(1) if m else "dft_mock_default"
+                return {
+                    "draft_id": draft_id,
+                    "extracted": bool(m)
+                }
+          variables:
+            - variable: "buyer_output"
+              value_selector: ["buyer_agent_node", "text"]
+      # 4. 财务审核 Agent（Finance Auditor Agent）
+      - id: "finance_auditor_node"
+        type: "tool"
+        title: "财务审核 Agent (Finance Auditor Agent)"
+        desc: "核验企业可用授信额度（t_credit_account）与阶梯价格偏离度风控"
+        data:
+          provider_type: "api"
+          provider_name: "lanlink_mall_tools"
+          tool_name: "lanlink_audit_procurement_draft"
+          tool_parameters:
+            draftId: "{{#code_extract_draft.draft_id#}}"
+            userId: "{{#start_node.user_id#}}"
+            enterpriseId: "{{#start_node.enterprise_id#}}"
+      # 5. 条件分支：判定是否触发人在回路（HITL）审批
+      - id: "approval_branch"
+        type: "if-else"
+        title: "额度与风控分支判断"
+        desc: "若超过免审限额(¥50,000)或授信不足，触发人工钉钉/邮件审批挂起；否则自动签发放行 Token"
+        data:
+          conditions:
+            - id: "cond_auto_pass"
+              logical_operator: "and"
+              comparison_operator: "equal"
+              variable_selector: ["finance_auditor_node", "auditStatus"]
+              value: "PASSED"
+      # 6. 自动审批签发放行 Token
+      - id: "auto_approve_node"
+        type: "tool"
+        title: "财务放行签发 (Approve Flow)"
+        desc: "签发具有 30 分钟时效的数字放行 Token (approvalToken)"
+        data:
+          provider_type: "api"
+          provider_name: "lanlink_mall_tools"
+          tool_name: "lanlink_approve_procurement_flow"
+          tool_parameters:
+            draftId: "{{#code_extract_draft.draft_id#}}"
+            approved: true
+            comment: "系统自动免审放行：授信额度充足且采购阶梯报价合规"
+      # 7. 人工审批挂起卡片生成
+      - id: "human_review_card"
+        type: "template-transform"
+        title: "人在回路 (HITL) 审批卡片"
+        desc: "向财务总监或专员推送审批工单，等待人工审核放行"
+        data:
+          template: |
+            ### ⚠️ 触发人在回路 (HITL) 财务审批
+            - **采购意向单号**：`{{#code_extract_draft.draft_id#}}`
+            - **审核结论**：{{#finance_auditor_node.auditStatus#}}
+            - **风控说明**：{{#finance_auditor_node.auditRemark#}}
+            - **可用授信**：¥{{#finance_auditor_node.availableCredit#}}
+            - **单笔免审限额**：¥{{#finance_auditor_node.maxAutoApprovalLimit#}}
+            请财务总监或授信专员核准放行后，买家方可在商城前台核对支付。
+      # 8. 履约追踪 Agent（Fulfillment Agent）
+      - id: "fulfillment_agent_node"
+        type: "llm"
+        title: "履约追踪 Agent (Fulfillment Agent)"
+        desc: "监控干线物流节点、防越权脱敏与 SLA 时效预警"
+        data:
+          model:
+            provider: "openai"
+            name: "qwen2.5-7b"
+            mode: "chat"
+            completion_params:
+              temperature: 0.1
+          prompt_template:
+            - role: "system"
+              text: |
+                你是一名专业的订单履约与专线物流监控 Agent。
+                你的职责：
+                1. 识别关联订单与运单履约进展；
+                2. 使用工具 `lanlink_monitor_delivery_sla` 判定是否超时滞留；
+                3. 使用工具 `lanlink_track_logistics` 获取物流轨迹，对客户收货人信息执行 PII 掩码脱敏保护；
+                4. 若发现告警或干线运输停滞，主动输出排查建议与客户安抚方案。
+            - role: "user"
+              text: "请查询意向单 {{#code_extract_draft.draft_id#}} 对应的最新履约交付 SLA 基准与保障政策。"
+          tools:
+            - "lanlink_monitor_delivery_sla"
+            - "lanlink_track_logistics"
+            - "lanlink_query_knowledge"
+      # 9. 终节点：输出多 Agent 协同汇报
+      - id: "end_node"
+        type: "end"
+        title: "协同结束：全景报告"
+        desc: "输出买家采购明细、财务审核决策及履约交付保障报告"
+        data:
+          outputs:
+            - value_selector: ["buyer_agent_node", "text"]
+              variable: "procurement_plan"
+            - value_selector: ["finance_auditor_node", "auditStatus"]
+              variable: "finance_status"
+            - value_selector: ["auto_approve_node", "approvalToken"]
+              variable: "approval_token"
+            - value_selector: ["fulfillment_agent_node", "text"]
+              variable: "fulfillment_report"

@@ -37,6 +37,8 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         // Support requests are authenticated by the server-side proxy before any identity/database lookup.
         if (uri.equals("/support/ask")) return true;
+        // AI 内部工具网关请求：由 AiToolGuard 在控制器前置独立完成服务间凭证/API Key 鉴权与限流
+        if (uri.startsWith("/internal/ai/tools")) return true;
 
         // 健康探针不创建会话，也不查询用户/订单数据；只允许公开的状态端点。
         if (isPublicHealthCheck(uri)) {
@@ -70,7 +72,9 @@ public class AuthInterceptor implements HandlerInterceptor {
     private boolean isPublicHealthCheck(String uri) {
         return uri.equals("/actuator/health")
                 || uri.equals("/actuator/health/liveness")
-                || uri.equals("/actuator/health/readiness");
+                || uri.equals("/actuator/health/readiness")
+                // Prometheus 容器内直连抓取；边缘 nginx 对该路径返回 403，不对外暴露
+                || uri.equals("/actuator/prometheus");
     }
 
     private boolean isWhiteList(String uri) {
@@ -89,15 +93,20 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || uri.startsWith("/i18n/")
                 || uri.startsWith("/home/")
                 || uri.startsWith("/category/")
+                // 技术服务公开浏览（专家/需求/成果/政策/社区）；申请与工作台仍需登录
+                || uri.startsWith("/tech/public/")
                 // 商品仅公开浏览(分页/详情)；发布/图片上传/我的列表/审核均需登录
                 || uri.equals("/product/page")
                 || uri.startsWith("/product/detail/")
                 // 活动中心公开浏览（列表/详情）；领券/参与/券包/商户端均需登录
                 || uri.equals("/campaign/list")
                 || uri.startsWith("/campaign/detail/")
+                // 商品详情页促销（公开浏览）：生效中命中该商品的促销（平台 + 商户）
+                || uri.startsWith("/campaign/for-product/")
                 // 价格监控：商品价格走势、五维因子与市场资讯公开浏览（商品详情页/首页行情）
                 || uri.startsWith("/price-monitor/trend/")
                 || uri.startsWith("/price-monitor/factors/")
+                || uri.startsWith("/price-monitor/auto-profile/")
                 || uri.startsWith("/price-monitor/market/")
                 || uri.equals("/price-monitor/news")
                 // 直播间公开浏览（广场/详情/商品/弹幕/进出场/点击埋点）；点赞评论可匿名（昵称降级），商户端与复盘需权限
@@ -119,10 +128,16 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 商品详情页按商品取直播间（游客可看生产线直播）
                 || uri.startsWith("/live/room-by-product/")
                 // Public one-click marketing unsubscribe uses a signed, account-bound token.
-                || uri.equals("/marketing-email/unsubscribe");
+                || uri.equals("/marketing-email/unsubscribe")
+                // 物流跟踪回调推送（承运商/聚合商服务器间调用）：无登录态，公开放行
+                // （控制器内验签 + WebConfig 限流 + tracking_event 幂等；与 /payment/notify/ 同一模式）
+                || uri.startsWith("/logistics/callback/");
     }
 
     private void write(HttpServletResponse response, R<?> body) throws Exception {
+        // 拒绝语义同步到 HTTP 状态码（401 未登录 / 403 越权），与 AuthRateLimitInterceptor 的
+        // 429 同一口径：状态码语义供网关/探针/渠道侧判断，body 保持 R 结构兼容既有前端逻辑
+        response.setStatus(body.getCode() == null ? 200 : body.getCode());
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(objectMapper.writeValueAsString(body));
     }

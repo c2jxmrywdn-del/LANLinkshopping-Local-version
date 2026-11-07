@@ -17,6 +17,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 意图理解服务：本地规则分类为主 + 本地 7B 文本模型 + 混合向量分类 + 外部模型可选增强。
@@ -28,7 +30,8 @@ import java.util.concurrent.TimeUnit;
  *   <li><b>local</b>：11 类意图关键词规则。关键词按「长度 + 命中位置」加权（越靠前权重越高，
  *       长关键词额外加成），加权分最高且领先次优 ≥1 即视为规则决胜，<b>不再调用模型/向量</b>；</li>
  *   <li><b>llm</b>：规则未命中或真正歧义（打平）时，优先调用本地 qwen2.5-7B 文本模型
- *       （开关 AI_INTENT_LLM_ENABLED，超时 12s，只允许输出 11 个 code 之一，白名单校验）；</li>
+ *       （开关 AI_INTENT_LLM_ENABLED，超时 12s，按训练口径只输出 {@code {"intent": "<code>"}}
+ *       JSON，白名单校验 11 类 + other）；</li>
  *   <li><b>vector</b>：本地模型不可用/输出非法时才用向量 hybrid 兜底
  *       （0.55×嵌入余弦 + 0.45×字符 bigram 词面覆盖度 + 规则命中先验 +0.10，要求
  *       最高分 ≥ AI_INTENT_VECTOR_MIN_SCORE 且分差 ≥0.02）；</li>
@@ -78,10 +81,15 @@ public class IntentUnderstandingService {
             new IntentRule("cart_order", "购物车与订单", List.of(
                     "购物车", "结算", "订单", "下单", "采购", "提交订单", "订单号", "改地址",
                     "催单", "取消订单", "合并付款",
+                    // 发货前的订单沉默（边界口径见下方 logistics 注释：未承运属订单域）
+                    "单子", "没动静", "没反应", "无进展", "催发货", "还没发货", "未发货", "什么时候发货",
+                    "发货了吗", "发货没", "订单进度", "订单状态", "订单到哪了", "单子到哪了",
                     // 英文问法
                     "order", "orders", "cart", "shopping cart", "checkout", "purchase", "purchases",
                     "procurement", "order number", "cancel order", "delivery address",
-                    "shipping address")),
+                    "shipping address", "where is my order", "order status", "status of my order",
+                    "my order", "has my order shipped", "when will my order ship",
+                    "order not moving", "no update on my order")),
             new IntentRule("wallet_credit", "钱包与账期", List.of(
                     "钱包", "充值", "提现", "账期", "授信", "额度", "还款", "账单", "逾期",
                     "账户余额", "转账",
@@ -103,13 +111,16 @@ public class IntentUnderstandingService {
                     "message", "messages", "notification", "notifications", "notice", "privacy",
                     "cookies", "personal information", "opt out", "do not disturb", "permission",
                     "permissions", "unsubscribe")),
+            // 边界口径：物流域只收「已进入承运」的问法（快递/运单/轨迹/包裹/签收/已发货后未收到）。
+            // 「发货」单独出现时是发货前的追问（什么时候发货 / 还没发货），属订单域，故此处只收「已发货」；
+            // 「where is my order」同理归订单域（与 AWS Lex CheckOrderStatus、Rasa ask_order_status 一致）。
             new IntentRule("logistics_tracking", "物流与配送", List.of(
-                    "物流", "快递", "运单", "发货", "签收", "配送", "运费", "揽收", "快递单号",
-                    "到哪了", "运输中", "派件", "查物流", "包裹", "几天到",
+                    "物流", "快递", "运单", "已发货", "签收", "配送", "运费", "揽收", "快递单号",
+                    "到哪了", "运输中", "派件", "查物流", "包裹", "几天到", "轨迹", "没送到",
                     // 英文问法
                     "shipping", "shipment", "shipments", "tracking", "track", "delivery",
                     "logistics", "carrier", "waybill", "parcel", "parcels", "package", "packages",
-                    "freight", "express", "dispatch", "where is my order")),
+                    "freight", "express", "dispatch", "in transit", "delivered")),
             new IntentRule("refund_aftersale", "退款与售后", List.of(
                     "退款", "退货", "售后", "换货", "维修", "赔付", "退运费", "退差价", "损坏",
                     "补发", "质量问题", "7天无理由", "七天无理由", "不想要了",
@@ -136,14 +147,40 @@ public class IntentUnderstandingService {
     /** 本地文本模型可选切换的意图标签全集（11 类，不含 other） */
     private static final List<String> INTENT_CODES = RULES.stream().map(IntentRule::code).toList();
 
-    /** 本地 7B 分类提示词：固定 system，只允许输出 11 个 code 之一（白名单二次校验） */
-    private static final String LLM_INTENT_SYSTEM_PROMPT =
-            "你是意图分类器。只输出一个英文标签，不要输出任何其他文字、解释或标点。"
-                    + "可选标签：account_access（账号注册登录）、merchant_onboarding（商户入驻）、"
-                    + "product_browse（商品浏览）、cart_order（购物车订单）、wallet_credit（钱包账期）、"
-                    + "membership_activity（会员活动）、message_privacy（消息隐私）、"
-                    + "logistics_tracking（物流追踪）、refund_aftersale（退款售后）、"
-                    + "payment_invoice（支付发票）、complaint_human（人工客服与投诉）。";
+    /**
+     * 本地文本模型允许输出的标签（11 类 + other）。
+     *
+     * <p>与 training/config.py INTENTS、training/prompt.py 白名单同构：意图 SFT 的标注就是按
+     * 这套 code 训练的，生产提示词与解析口径必须一致，否则微调模型换上去会出现契约漂移。
+     */
+    private static final List<String> LLM_INTENT_CODES =
+            List.of("account_access", "merchant_onboarding", "product_browse", "cart_order",
+                    "wallet_credit", "membership_activity", "message_privacy", "logistics_tracking",
+                    "refund_aftersale", "payment_invoice", "complaint_human", "other");
+
+    /**
+     * 本地 7B 分类提示词：与 training/prompt.py SYSTEM 逐字同构（严格 JSON 契约）。
+     *
+     * <p>code 清单由 RULES 生成，规则集变动时提示词自动跟随，不会与训练数据口径脱节。
+     */
+    static final String LLM_INTENT_SYSTEM_PROMPT = buildLlmIntentPrompt();
+
+    private static String buildLlmIntentPrompt() {
+        StringBuilder table = new StringBuilder();
+        for (IntentRule rule : RULES) {
+            table.append("- ").append(rule.code()).append(": ").append(rule.label()).append('\n');
+        }
+        return "你是 LANLinkshopping（聚合型 B2B 电商平台）的意图分类器。\n"
+                + "只输出 JSON：{\"intent\": \"<code>\"}，不要解释、不要多余文本。\n"
+                + "intent 必须取自下列 code 之一（不要自造）：\n"
+                + table
+                + "无法归入任何一类时输出 {\"intent\": \"other\"}。";
+    }
+
+    /** 模型输出容错：markdown 围栏、内嵌 JSON、裸标签三级解析 */
+    private static final Pattern FENCE_PATTERN =
+            Pattern.compile("```(?:json)?\\s*([\\s\\S]*?)```", Pattern.CASE_INSENSITIVE);
+    private static final Pattern INTENT_JSON_PATTERN = Pattern.compile("\"intent\"\\s*:\\s*\"([a-z_]+)\"");
 
     private final OutboundModelConfigService configService;
     private final ExternalIntentClient externalIntentClient;
@@ -424,15 +461,16 @@ public class IntentUnderstandingService {
     }
 
     /**
-     * 本地 qwen2.5 文本模型意图判定（兜底）：只接受 11 个预定义 code 之一，
-     * 非白名单输出/调用失败/超时一律返回 null（保持规则结果，不影响主链路）。
+     * 本地 qwen2.5 文本模型意图判定（兜底）：按训练口径接受 {@code {"intent": "<code>"}}，
+     * 调用失败/超时/输出无法判定一律返回 null（保持规则结果，不影响主链路）。
      */
     private String tryLlmClassify(String question) {
         if (!llmEnabled || embeddingService == null) return null;
         if (question == null || question.isBlank()) return null;
         try {
+            // user 消息不带「用户问题：」前缀：训练样本的 user 内容就是问题原文，保持 train/serve 一致
             String raw = CompletableFuture
-                    .supplyAsync(() -> embeddingService.chatText(LLM_INTENT_SYSTEM_PROMPT, "用户问题：" + question))
+                    .supplyAsync(() -> embeddingService.chatText(LLM_INTENT_SYSTEM_PROMPT, question.trim()))
                     .get(LLM_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             String label = parseLlmLabel(raw);
             if (label == null) {
@@ -445,10 +483,27 @@ public class IntentUnderstandingService {
         }
     }
 
-    /** 解析文本模型输出中的第一处白名单 code（大小写/标点容错；非法输出返回 null） */
+    /**
+     * 解析模型输出为意图标签，三级容错（与 training/prompt.py parse_intent 同口径）：
+     * <ol>
+     *   <li>剥掉 markdown 围栏后取 {@code "intent": "<code>"} —— JSON 信封是模型明确的结构化作答，
+     *       code 不在白名单时归为 other（与训练标注一致）；</li>
+     *   <li>无 JSON 时退回裸标签扫描（兼容未微调模型/旧提示词）；</li>
+     *   <li>两者都判不出返回 null，让调用方继续走向量/规则兜底——<b>不把乱码强行判成 other</b>。</li>
+     * </ol>
+     */
     static String parseLlmLabel(String raw) {
         if (raw == null || raw.isBlank()) return null;
         String text = raw.toLowerCase(Locale.ROOT);
+        Matcher fence = FENCE_PATTERN.matcher(text);
+        if (fence.find()) {
+            text = fence.group(1);
+        }
+        Matcher json = INTENT_JSON_PATTERN.matcher(text);
+        if (json.find()) {
+            String code = json.group(1);
+            return LLM_INTENT_CODES.contains(code) ? code : "other";
+        }
         String matched = null;
         int matchedAt = Integer.MAX_VALUE;
         for (String code : INTENT_CODES) {
@@ -481,6 +536,8 @@ public class IntentUnderstandingService {
     }
 
     private static String labelOf(String code, String fallback) {
+        // 模型/外部判定为 other 时不能沿用规则候选的中文类目，否则 intent 与 category 自相矛盾
+        if ("other".equals(code)) return "其他";
         return RULES.stream().filter(r -> r.code().equals(code))
                 .map(IntentRule::label).findFirst().orElse(fallback);
     }
@@ -507,14 +564,15 @@ public class IntentUnderstandingService {
         }
     }
 
-    /** 意图日志（统计用，静默失败不影响主链路） */
+    /** 意图日志（统计 + 训练语料留存；静默失败不影响主链路） */
     private void logIntent(String question, String intent, String source) {
         if (jdbc == null) return;
         try {
-            String hash = CustomerCommunicationService.sha256(
-                    question == null ? "" : question.trim());
-            jdbc.update("INSERT INTO t_support_intent_log (question_hash, intent, source, created_at) VALUES (?, ?, ?, NOW())",
-                    hash, intent, source);
+            String trimmed = question == null ? "" : question.trim();
+            String hash = CustomerCommunicationService.sha256(trimmed);
+            String text = trimmed.length() > 500 ? trimmed.substring(0, 500) : trimmed;
+            jdbc.update("INSERT INTO t_support_intent_log (question_hash, question_text, intent, source, created_at) VALUES (?, ?, ?, ?, NOW())",
+                    hash, text, intent, source);
         } catch (Exception e) {
             log.debug("[intent-log] write failed: {}", e.getMessage());
         }

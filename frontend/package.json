@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.70",
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "@amplitude/unified": "^1",
     "ai": "^7.0.148",
     "ant-design-vue": "^4.2.6",

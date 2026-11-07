@@ -44,6 +44,7 @@
 10. **高可靠事务性中间件架构**：基于 MinIO 搭建 S3 兼容对象存储适配层（后端只读私有桶代理中转）；基于 RabbitMQ 4.0 实现 Transactional Outbox 事务外发模式，支持唯一 MessageID 消费去重与死信队列（`q.notify.dlq`）应急补偿。
 11. **本地大模型微调与后训练工程**（`training/`）：沉淀基于 Unsloth / TRL 的 Qwen2.5-7B LoRA / SFT 意图微调工程、AGL/GRPO 强化学习闭环、冻结集基线评测与 GGUF 模型量化导出。
 12. **全链路可观测性与韧性守护**（`monitoring/` & `scripts/`）：Prometheus 指标采集、Grafana 实时监控看板、混沌故障注入测试、守护进程健康看门狗与高并发压测基准。
+13. **法务条款中枢与双向合规惩戒体系**：落地包含《用户服务协议》《商户入驻及经营合规准则》《买家交易规范与违规处罚规则》等 8 大中英双语法务协议，严格把控商户实缴资本 ≥ 10 万元准入门槛，建立年度 12 分动态扣分惩戒、阶梯处置与诚信买家保护机制。
 
 > [!NOTE]
 > 本项目为**教学 / 毕业设计演示项目**，默认运行在本地开发模式，请勿直接用于真实生产资金流交易或未经安全加固直接对外提供公共服务。
@@ -81,6 +82,7 @@ flowchart TD
         LiveSvc["商品直播带货中枢 (推流大厅 / 边播边买货架 / 实时弹幕热度)"]
         RiskSvc["实时风控与安全审计 (高频刷单拦截 / 异常IP预警)"]
         AbSvc["A/B 测试实验中台 (流量分桶 / 指标埋点)"]
+        LegalComplianceSvc["法务合规与惩戒中枢 (实缴资本强校验 / 12分记分制 / 违规黑名单)"]
     end
 
     subgraph MidLayer["事务性中间件与流处理层 (Middleware & Async Pipeline)"]
@@ -207,7 +209,7 @@ sequenceDiagram
 | 模块 | 代码入口与核心类 | 能力与业务特性 |
 |------|-----------------|----------------|
 | 🔐 **登录鉴权中心** | [`UserController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/UserController.java)<br>[`AuthInterceptor.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/config/AuthInterceptor.java) | 手机号注册/登录、RBAC 五级权限矩阵（`GUEST` / `BUYER` / `VIP` / `MERCHANT` / `ADMIN`）、TOTP 双因素安全验证（2FA）、CSRF 双提交防护、密码连续错误阶梯锁定、社交登录授权预留。 |
-| 🏪 **商户入驻中台** | [`MerchantCenterController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/MerchantCenterController.java)<br>[`MerchantApply.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/MerchantApply.vue) | 企业入驻在线申请（统一社会信用代码合规校验、营业执照 MinIO 存证）、智能合规初筛模型（注册资本与纳税等级自动过审）、商户独立管理后台（店铺配置、商品上架、营销活动申报、直播推流管理）。 |
+| 🏪 **商户入驻中台** | [`MerchantCenterController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/MerchantCenterController.java)<br>[`MerchantApply.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/MerchantApply.vue) | 企业入驻在线申请（统一社会信用代码合规校验、营业执照 MinIO 存证）、硬性实缴资本门槛（≥ 10 万元人民币）、智能合规初筛模型（实缴资本与纳税等级自动过审）、商户独立管理后台（店铺配置、商品上架、营销活动申报、直播推流管理）。 |
 | 🛍️ **多元商品商城** | [`ProductController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/ProductController.java)<br>[`Mall.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Mall.vue) | 24 大实体行业多级分类索引、阶梯批发价（大宗采购起订量与梯度折扣）、多规格 SKU 体系、商品审核流、价格走势日 K 线行情看板。 |
 | 🛒 **智能购物车** | [`Cart.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Cart.vue) | 原子级规格库存校验、大宗批发批量修改数量、一键全选/按店铺勾选结算、企业收货地址中枢联动与运费预估。 |
 | 📦 **下单支付履约** | [`OrderController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/OrderController.java)<br>[`Checkout.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Checkout.vue) | 分布式/事务原子扣减库存、订单全明细快照持久化、支付宝 / 微信 / 余额沙箱 Mock 支付、企业积分抵扣（1000 积分 = 1 元）、企业白条账期授信延期结账。 |
@@ -304,6 +306,26 @@ sequenceDiagram
 >    - **由于受限于笔记本版 RTX 4070 8G 显存的物理硬件条件限制，在兼顾推理吞吐、交互响应延迟与微中台多任务并发的前提下，本地大模型推理与微调工程暂且默认适配并深度支持 Qwen 2.5 7B**（如 `Qwen2.5-7B-Instruct-Q4_K_M` 与 `Qwen2.5-VL` 视觉大模型双模型热切换）。
 > 3. **硬件宽裕开发者自行适配建议**：
 >    - 本系统模型层采用高度解耦的模块化插拔协议。**对于硬件条件相对宽裕的伙伴们（如拥有单卡/多卡 RTX 3090 / 4090 24G 显存，或拥有 A100 / H100 等充足算力集群），大家完全可以根据自身算力条件自行适配并无缝升级至 Qwen 2.5 14B、32B、72B 或全精度 FP16 / BF16 大模型**，仅需在 `.env` 与 `docker-compose.yml` 中调整模型权重挂载与参数，业务中台核心代码零改动。
+
+---
+
+### 11. 双向合规条款体系与违规惩戒治理中枢 (Legal Compliance & Penalty System)
+
+依托平台法务条款中心（[`LegalCenter.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue) 与 [`legalDocs.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/data/legalDocs.js)），全面构建买卖双向准入合规门槛、交易行为规范与违规处罚闭环：
+
+- **商户准入实缴资本硬性门槛**：商户入驻必须具备有限责任公司或合规个体工商户主体资质，且实缴资本必须达到 **10 万元及以上（≥ ¥100,000）**。后端 [`MerchantService.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/service/MerchantService.java)、前端申请表单与管理审核端全链路实施强校验拦截，杜绝空壳皮包企业入驻风险。
+- **《商户入驻及经营合规准则》**（[`merchant-agreement`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
+  - **资质真实与保真承诺**：严格遵守正品保真承诺（假一赔十），严禁出售伪劣三无工业品与侵权仿制品。
+  - **履约交期保障**：现货订单 48 小时发货、定制备件依约定排期履约，超期触发违约预警。
+  - **年度 12 分动态记分制**：实施量化扣分管理（轻微违规扣 1-3 分、中度扣 6 分、严重违规扣 12 分节点处置）。
+  - **阶梯式惩戒与退出**：扣分累计达到节点时触发警告降权、商品强制下架、资金提现限制、清退关店直至没收保证金。
+  - **商户申诉与复核通道**：设立 5 个工作日内正规线上举证申诉流程与法务仲裁通道。
+- **《买家交易规范与违规处罚规则》**（[`buyer-rules`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
+  - **诚信交易与履约义务**：严禁利用平台漏洞恶意刷单、虚假下单、恶意退款以及以差评为要挟实施敲诈勒索。
+  - **真实客观举证存证**：维权纠纷必须提交真实清晰的开箱损毁照片、第三方工业检测报告等合规证据。
+  - **企业白条履约守则**：按期偿还账期欠款；逾期将产生日万分之五罚息、冻结授信额度并列入履约异常监控名单。
+  - **买家分级阶梯处罚**：轻度违规（扣减信誉积分）、中度违规（限制下单与注销权益）、严重违规（永久封禁账号、冻结资产并通报工业供应链失信黑名单）。
+- **中英双语与版本时序留痕**：全条款支持中英文无缝切换，明确最后更新时序，入驻与交易全过程采用主动勾选（Active Opt-in）协议授权。
 
 ---
 

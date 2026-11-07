@@ -30,7 +30,8 @@ import java.util.Optional;
  * <p>数据安全：
  * <ul>
  *   <li>API Key 用 AES-GCM 加密存储（t_outbound_model_config.api_key_cipher），
- *       主密钥取环境变量 OUTBOUND_KEY_SECRET（缺省退化为 support.outbound.key-secret）；</li>
+ *       主密钥只从环境变量读取（AI_OUTBOUND_KEY_SECRET 优先，兼容旧名 OUTBOUND_KEY_SECRET）；
+ *       不提供任何仓库内默认值，缺失即拒绝启动（fail-fast），避免用公开常量加密形同虚设；</li>
  *   <li>回显接口只返回 api_key_prefix（如 sk-abc****），绝不回传明文；</li>
  *   <li>写入时 apiKey 为空 = 保留旧密钥不改；审计日志只记动作不记密钥。</li>
  * </ul>
@@ -64,9 +65,17 @@ public class OutboundModelConfigService {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final SecureRandom random = new SecureRandom();
 
-    /** 密钥加密主密钥：AI 专用环境变量优先（AI_OUTBOUND_KEY_SECRET），兼容旧名，缺省退化配置值（生产必须走环境变量） */
-    @Value("${AI_OUTBOUND_KEY_SECRET:${OUTBOUND_KEY_SECRET:${support.outbound.key-secret:lanlink-outbound-key-dev-secret}}}")
+    /**
+     * 密钥加密主密钥：AI 专用环境变量优先（AI_OUTBOUND_KEY_SECRET），兼容旧名 OUTBOUND_KEY_SECRET。
+     * 安全要求：不提供仓库内/代码内默认值——缺失时 {@link #initEnvChannels()} 启动即失败，
+     * 强制运维显式注入主密钥（.env / compose 均不得回填公开常量，否则泄露的库备份可用仓库常量解密全部渠道 key）。
+     */
+    @Value("${AI_OUTBOUND_KEY_SECRET:${OUTBOUND_KEY_SECRET:}}")
     private String keySecret;
+
+    @Value("${AI_OUTBOUND_ALLOWED_HOSTS:api.deepseek.com,dashscope.aliyuncs.com,api.xiaomimimo.com,open.bigmodel.cn,api.openai.com,api.moonshot.cn,api.siliconflow.cn,localhost,127.0.0.1,host.docker.internal,lanlink-ai-gateway,ai-gateway,ollama,llama-cpp,dashscope-intl.aliyuncs.com}")
+    private String allowedHostsCsv = "api.deepseek.com,dashscope.aliyuncs.com,api.xiaomimimo.com,open.bigmodel.cn,"
+            + "api.openai.com,api.moonshot.cn,api.siliconflow.cn,localhost,127.0.0.1,host.docker.internal,lanlink-ai-gateway,ai-gateway,ollama,llama-cpp,dashscope-intl.aliyuncs.com";
 
     /** AI 专用环境变量组：MIMO 渠道（兼容旧名 MIMO_API_KEY） */
     @Value("${AI_MIMO_API_KEY:${support.fallback.mimo-api-key:${MIMO_API_KEY:}}}")
@@ -121,6 +130,14 @@ public class OutboundModelConfigService {
 
     @jakarta.annotation.PostConstruct
     public void initEnvChannels() {
+        // fail-fast：主密钥缺失绝不静默降级（否则 AES-GCM 等于用公开常量加密，密文列形同明文）。
+        // 必须放在 try 之外——下方 catch 会吞异常，且任何 env 渠道 upsert 都依赖该主密钥加密。
+        if (keySecret == null || keySecret.isBlank()) {
+            throw new IllegalStateException(
+                    "出站模型渠道密钥加密主密钥未配置：请在 .env / 环境变量设置 AI_OUTBOUND_KEY_SECRET"
+                            + "（兼容旧名 OUTBOUND_KEY_SECRET，二者取一即可），"
+                            + "并注意主密钥更换后旧密文不可解，需在管理端重新录入全部渠道 API Key");
+        }
         try {
             if (envMimoApiKey != null && !envMimoApiKey.isBlank()) {
                 if (storedChannel("mimo") == null) {
@@ -179,6 +196,70 @@ public class OutboundModelConfigService {
         if (base.endsWith("/chat/completions")) return base;
         if (base.matches("(?i).*/v\\d+[a-z0-9]*$")) return base + "/chat/completions";
         return base + "/v1/chat/completions";
+    }
+
+    /**
+     * 出站 Base URL 白名单。管理员显式配置 AI_OUTBOUND_ALLOWED_HOSTS 才能新增自定义服务商；
+     * 默认只允许已知公网模型、localhost 和本地 Docker 网关主机，降低内网 SSRF / 凭据外带面。
+     */
+    void validateOutboundBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank() || !baseUrl.trim().toLowerCase().startsWith("http")) {
+            throw new IllegalArgumentException("Base URL 必须是 http(s) 地址");
+        }
+        String host;
+        try {
+            java.net.URI uri = java.net.URI.create(baseUrl.trim());
+            if (!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme())) {
+                throw new IllegalArgumentException("Base URL 只允许 http(s)");
+            }
+            host = uri.getHost();
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Base URL 不是合法地址");
+        }
+        if (host == null || host.isBlank()) throw new IllegalArgumentException("Base URL 缺少主机名");
+        java.util.Set<String> allowed = new java.util.LinkedHashSet<>();
+        for (String item : allowedHostsCsv.split(",")) {
+            String h = item.trim().toLowerCase();
+            if (!h.isEmpty()) allowed.add(h);
+        }
+        if (!allowed.contains(host.toLowerCase())) {
+            throw new IllegalArgumentException("Base URL 不在出站白名单: " + host
+                    + "；自定义服务商需显式配置 AI_OUTBOUND_ALLOWED_HOSTS");
+        }
+    }
+
+    /**
+     * 判断两个 Base URL 是否指向同一渠道地址：协议 + 主机 + 有效端口 + 路径一致。
+     * 主机大小写不敏感、忽略末尾斜杠、省略端口时按协议默认端口（80/443）补齐比较；
+     * 任一地址无法按 URI 解析时退化为整串忽略大小写比较。
+     * 供"已保存密钥只允许发往已保存地址"的防外带约束使用。
+     */
+    static boolean sameBaseUrl(String a, String b) {
+        String nx = a == null ? "" : a.trim().replaceAll("/+$", "");
+        String ny = b == null ? "" : b.trim().replaceAll("/+$", "");
+        if (nx.isEmpty() || ny.isEmpty()) return false;
+        if (nx.equalsIgnoreCase(ny)) return true;
+        try {
+            java.net.URI ua = java.net.URI.create(nx);
+            java.net.URI ub = java.net.URI.create(ny);
+            if (ua.getHost() == null || ub.getHost() == null) return nx.equalsIgnoreCase(ny);
+            boolean schemeSame = String.valueOf(ua.getScheme()).equalsIgnoreCase(String.valueOf(ub.getScheme()));
+            boolean hostSame = ua.getHost().equalsIgnoreCase(ub.getHost());
+            int pa = ua.getPort() == -1 ? defaultPortFor(ua.getScheme()) : ua.getPort();
+            int pb = ub.getPort() == -1 ? defaultPortFor(ub.getScheme()) : ub.getPort();
+            String pathA = ua.getPath() == null ? "" : ua.getPath().replaceAll("/+$", "");
+            String pathB = ub.getPath() == null ? "" : ub.getPath().replaceAll("/+$", "");
+            return schemeSame && hostSame && pa == pb && pathA.equalsIgnoreCase(pathB);
+        } catch (Exception e) {
+            return nx.equalsIgnoreCase(ny);
+        }
+    }
+
+    /** 协议默认端口；未知协议返回 -2（要求端口显式一致才视为同一地址）。 */
+    private static int defaultPortFor(String scheme) {
+        if ("http".equalsIgnoreCase(scheme)) return 80;
+        if ("https".equalsIgnoreCase(scheme)) return 443;
+        return -2;
     }
 
     public static String defaultModelFor(String channel) {
@@ -240,15 +321,15 @@ public class OutboundModelConfigService {
 
     /**
      * 新增/更新渠道配置。apiKey 为空或 null = 保留旧密钥（仅更新地址/模型/启用状态）。
+     *
+     * <p>安全约束（防密钥外带）：保留旧密钥时禁止更换 Base URL——否则可先把已存计费密钥
+     * 指向任意地址，再经 test/invoke 外带；更换地址必须显式重输该渠道 API Key。
      */
     public void upsert(String channel, String baseUrl, String apiKey, String modelName, boolean enabled,
                        Long userId, HttpServletRequest request) {
         String ch = channel == null ? "" : channel.trim().toLowerCase();
         if (!ALLOWED_CHANNELS.contains(ch)) {
             throw new IllegalArgumentException("不支持的渠道：" + channel);
-        }
-        if (baseUrl == null || baseUrl.isBlank() || !baseUrl.startsWith("http")) {
-            throw new IllegalArgumentException("Base URL 必须是 http(s) 地址");
         }
         boolean hasNewKey = apiKey != null && !apiKey.isBlank();
         String cipherText;
@@ -267,11 +348,20 @@ public class OutboundModelConfigService {
             if (oldCipher == null) {
                 throw new IllegalArgumentException("首次配置该渠道必须提供 API Key");
             }
+            // 保留密钥 × 更换地址 → 拒绝（与 test/invoke 的密钥-地址绑定防护保持一致）
+            String oldBaseUrl = jdbc.query(
+                    "SELECT base_url FROM t_outbound_model_config WHERE channel = ?",
+                    rs -> rs.next() ? rs.getString(1) : null, ch);
+            if (oldBaseUrl != null && !oldBaseUrl.isBlank() && !sameBaseUrl(baseUrl.trim(), oldBaseUrl)) {
+                throw new IllegalArgumentException(
+                        "安全限制：更换 Base URL 必须同时提供该渠道的 API Key（防止已保存密钥被指向其他地址）");
+            }
             cipherText = oldCipher;
             prefix = jdbc.query(
                     "SELECT api_key_prefix FROM t_outbound_model_config WHERE channel = ?",
                     rs -> rs.next() ? rs.getString(1) : "***", ch);
         }
+        validateOutboundBaseUrl(baseUrl);
         int updated = jdbc.update(
                 "UPDATE t_outbound_model_config SET base_url = ?, api_key_cipher = ?, api_key_prefix = ?, "
                         + "enabled = ?, updated_by = ? WHERE channel = ?",
@@ -346,6 +436,10 @@ public class OutboundModelConfigService {
 
     /**
      * 连接测试：向指定模型地址发送轻量连通性探测请求。
+     *
+     * <p>安全约束（防密钥外带）：调用方未显式提供 API Key 而回退使用已保存密钥时，
+     * 目标 Base URL 必须与该渠道已保存地址一致；禁止"已存密钥 × 调用方自填地址"组合，
+     * 否则一条请求即可把真实计费密钥以 Bearer 头发往任意 URL。
      */
     public Map<String, Object> testConnection(String channel, String baseUrl, String apiKey, String modelName) {
         String ch = channel == null ? "" : channel.trim().toLowerCase();
@@ -353,11 +447,14 @@ public class OutboundModelConfigService {
         String targetKey = apiKey == null ? "" : apiKey.trim();
         String targetModel = org.springframework.util.StringUtils.hasText(modelName) ? modelName.trim() : defaultModelFor(ch);
 
+        ChannelConfig stored = null;
+        boolean keyFromStored = false;
         if (targetKey.isBlank()) {
             // 优先从已保存配置中读取（不限 enabled 状态，便于停用渠道在测试成功后再行启用）
-            ChannelConfig stored = storedChannel(ch);
+            stored = storedChannel(ch);
             if (stored != null && org.springframework.util.StringUtils.hasText(stored.apiKey())) {
                 targetKey = stored.apiKey();
+                keyFromStored = true;
                 if (targetUrl.isBlank()) targetUrl = stored.baseUrl();
                 // 未显式传模型名时，使用已保存渠道的模型，避免测试与实际调用不一致
                 if (!org.springframework.util.StringUtils.hasText(modelName)) {
@@ -372,12 +469,24 @@ public class OutboundModelConfigService {
                 return fail;
             }
         }
-        if (targetUrl.isBlank() || !targetUrl.startsWith("http")) {
+        // 已存密钥 × 调用方自填地址 → 拒绝外呼（密钥只允许发往渠道已保存地址）
+        if (keyFromStored && stored != null && !sameBaseUrl(targetUrl, stored.baseUrl())) {
             Map<String, Object> fail = new LinkedHashMap<>();
             fail.put("success", false);
             fail.put("reachable", false);
             fail.put("statusCode", 400);
-            fail.put("error", "Base URL 必须是以 http(s) 开头的有效地址");
+            fail.put("error", "安全限制：使用已保存密钥时 Base URL 必须与该渠道已保存地址一致；"
+                    + "如需测试其他地址，请显式重新输入该渠道的 API Key");
+            return fail;
+        }
+        try {
+            validateOutboundBaseUrl(targetUrl);
+        } catch (IllegalArgumentException e) {
+            Map<String, Object> fail = new LinkedHashMap<>();
+            fail.put("success", false);
+            fail.put("reachable", false);
+            fail.put("statusCode", 400);
+            fail.put("error", e.getMessage());
             return fail;
         }
         long start = System.currentTimeMillis();
@@ -512,6 +621,10 @@ public class OutboundModelConfigService {
      *
      * <p>baseUrl / apiKey 未填时回退到已保存的渠道配置（优先指定渠道，其次任一启用渠道）；
      * 响应不包含任何密钥信息，审计只记录渠道与耗时，不记录 prompt 内容。
+     *
+     * <p>安全约束（防密钥外带）：调用方未显式提供 API Key 而回退使用已保存密钥时，
+     * 目标 Base URL 必须与已保存地址一致；禁止"已存密钥 × 调用方自填地址"组合，
+     * 拦截时记录审计（OUTBOUND_MODEL_KEY_GUARD）。
      */
     public Map<String, Object> invoke(String channel, String baseUrl, String apiKey, String modelName,
                                       String prompt, Double temperature, Integer maxTokens,
@@ -531,6 +644,7 @@ public class OutboundModelConfigService {
                 ? modelName.trim() : defaultModelFor(ch);
 
         ChannelConfig saved = null;
+        boolean keyFromSaved = false;
         if (!ch.isEmpty()) {
             saved = activeChannel(ch).orElse(null);
             if (saved == null) saved = storedChannel(ch);
@@ -540,7 +654,10 @@ public class OutboundModelConfigService {
         }
         if (saved != null) {
             if (targetUrl.isBlank()) targetUrl = saved.baseUrl();
-            if (targetKey.isBlank()) targetKey = saved.apiKey();
+            if (targetKey.isBlank()) {
+                targetKey = saved.apiKey();
+                keyFromSaved = true;
+            }
             if (!org.springframework.util.StringUtils.hasText(modelName)) targetModel = saved.modelName();
             if (ch.isEmpty()) ch = saved.channel();
         }
@@ -548,11 +665,23 @@ public class OutboundModelConfigService {
         if (targetUrl.isBlank()) {
             return Map.of("success", false, "error", "未提供 Base URL，且没有可回退的已保存渠道");
         }
-        if (!targetUrl.startsWith("http")) {
-            return Map.of("success", false, "error", "Base URL 必须是以 http(s) 开头的有效地址");
-        }
         if (targetKey.isBlank()) {
             return Map.of("success", false, "error", "未提供 API Key，且该渠道尚未保存密钥");
+        }
+        // 已存密钥 × 调用方自填地址 → 拒绝外呼并审计（密钥只允许发往渠道已保存地址）
+        if (keyFromSaved && saved != null && !sameBaseUrl(targetUrl, saved.baseUrl())) {
+            auditService.record(userId, "OUTBOUND_MODEL_KEY_GUARD",
+                    "渠道 " + ch + " 拦截：已保存密钥与调用方 Base URL 不一致（疑似密钥外带尝试）"
+                            + " baseUrl=" + targetUrl, request);
+            log.warn("[outbound-invoke] channel {} key-guard blocked mismatched baseUrl {}", ch, targetUrl);
+            return Map.of("success", false, "statusCode", 400,
+                    "error", "安全限制：使用已保存密钥时 Base URL 必须与该渠道已保存地址一致；"
+                            + "如需调用其他地址，请显式重新输入该渠道的 API Key");
+        }
+        try {
+            validateOutboundBaseUrl(targetUrl);
+        } catch (IllegalArgumentException e) {
+            return Map.of("success", false, "statusCode", 400, "error", e.getMessage());
         }
 
         long start = System.currentTimeMillis();
@@ -571,11 +700,11 @@ public class OutboundModelConfigService {
                     "max_tokens", max,
                     "temperature", temp
             ));
-            Upstream res = callChat(endpoint, targetKey, fullBody, INVOKE_TIMEOUT_SECONDS);
+            Upstream res = chatCall.send(endpoint, targetKey, fullBody, INVOKE_TIMEOUT_SECONDS);
             boolean retried = false;
             // 部分兼容服务不接受 max_tokens/temperature，HTTP 400 时用最小请求体重试一次
             if (res.status() == 400) {
-                res = callChat(endpoint, targetKey, minimalBody, INVOKE_TIMEOUT_SECONDS);
+                res = chatCall.send(endpoint, targetKey, minimalBody, INVOKE_TIMEOUT_SECONDS);
                 retried = true;
             }
             long latency = System.currentTimeMillis() - start;
@@ -673,6 +802,8 @@ public class OutboundModelConfigService {
         if (!channels.isEmpty()) {
             for (ChannelConfig ch : channels) {
                 try {
+                    // 与其他出站路径一致：发送已保存密钥前先校验目标地址，防止库内地址被改写后外带密钥
+                    validateOutboundBaseUrl(ch.baseUrl());
                     String endpoint = chatCompletionsEndpoint(ch.baseUrl());
                     String sysPrompt = "你是 LANLinkshopping 电商平台的专业客服与知识库专家。请根据用户的电商咨询问题，生成一段规范、亲切、准确的中文客服回答草稿（150字以内），并提取3至5个最核心的搜索匹配关键词（以逗号分隔）。"
                             + "输出格式必须严格为：\n回答：[回答内容]\n关键词：[词1,词2,词3]";
@@ -817,7 +948,7 @@ public class OutboundModelConfigService {
             byte[] pt = cipher.doFinal(all, iv.length, all.length - iv.length);
             return new String(pt, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new IllegalStateException("密钥解密失败（请检查 OUTBOUND_KEY_SECRET 是否一致）", e);
+            throw new IllegalStateException("密钥解密失败（请检查 AI_OUTBOUND_KEY_SECRET/OUTBOUND_KEY_SECRET 是否与加密时一致）", e);
         }
     }
 

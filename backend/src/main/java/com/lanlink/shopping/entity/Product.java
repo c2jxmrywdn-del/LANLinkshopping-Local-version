@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.lanlink.shopping.common.storage.StorageUrlSerializer;
 import lombok.Data;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -25,11 +27,20 @@ public class Product {
     @JsonIgnore
     private String tierPriceJson;
     private Integer stock;
+    /**
+     * 库内存 object key（如 1001.webp / products/prod_ts.webp，out/storage-mq-plan.md A3/A4）；
+     * 出站经 StorageUrlSerializer 拼公开绝对 URL，存量相对路径 /api/uploads/** 与外部 URL 原样兜底，
+     * 存量 DB cover_url 不直改（规划 A4 决策）。
+     */
+    @JsonSerialize(using = StorageUrlSerializer.class)
     private String coverUrl;
     private String detail;
     private Integer status;          // 可售状态 1可售(审核通过) 0不可售
     private Integer reviewStatus;    // 审核状态 0待审核 1通过 2驳回
     private String rejectReason;     // 驳回原因
+    private String reviewSource;     // 审核来源 MANUAL人工 AUTO自动
+    private Integer autoScore;       // 自动审核评分 0-100
+    private LocalDateTime autoReviewedAt; // 最近自动审核时间
     private Integer sales;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

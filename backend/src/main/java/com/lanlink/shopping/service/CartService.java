@@ -2,8 +2,10 @@ package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.common.storage.StorageUrls;
 import com.lanlink.shopping.entity.Cart;
 import com.lanlink.shopping.entity.Product;
+import com.lanlink.shopping.integration.pricing.TierPricing;
 import com.lanlink.shopping.mapper.CartMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.vo.CartItemVO;
@@ -60,12 +62,14 @@ public class CartService {
             vo.setCartId(c.getCartId());
             vo.setProdId(p.getProdId());
             vo.setTitle(p.getTitle());
-            vo.setCoverUrl(p.getCoverUrl());
-            vo.setPrice(p.getPrice());
+            vo.setCoverUrl(StorageUrls.publicUrlOf(p.getCoverUrl()));  // 出站拼公开绝对 URL（key/存量相对路径归一）
+            // 购物车展示与结算同口径：按当前数量命中的阶梯单价展示，避免"车里一个价、下单另一个价"
+            BigDecimal unitPrice = TierPricing.resolve(p.getPrice(), p.getTierPriceJson(), c.getQuantity()).unitPrice();
+            vo.setPrice(unitPrice);
             vo.setQuantity(c.getQuantity());
             vo.setStock(p.getStock());
             vo.setChecked(c.getChecked());
-            vo.setSubtotal(p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity())));
+            vo.setSubtotal(unitPrice.multiply(BigDecimal.valueOf(c.getQuantity())));
             vos.add(vo);
         }
         return vos;

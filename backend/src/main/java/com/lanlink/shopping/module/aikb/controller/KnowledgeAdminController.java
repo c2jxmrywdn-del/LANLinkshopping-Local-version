@@ -34,6 +34,9 @@ public class KnowledgeAdminController {
     private final AiModelRouter router;
     private final ExternalInfoFetchService externalInfoFetchService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.module.aikb.KbOutboxService kbOutboxService;
+
     public KnowledgeAdminController(KnowledgeIngestService ingestService, KnowledgeRagService ragService,
                                     RedisVectorStore store, EmbeddingService embeddingService,
                                     AiModelRouter router, ExternalInfoFetchService externalInfoFetchService) {
@@ -59,6 +62,7 @@ public class KnowledgeAdminController {
         m.put("embedCache", embeddingService.cacheStats());
         m.put("search", store.searchStats());
         m.put("externalFetch", externalInfoFetchService.stats());
+        m.put("kbOutbox", kbOutboxService == null ? Map.of() : kbOutboxService.stats());
         m.put("models", router.modelStatus());
         return R.ok(m);
     }
@@ -70,7 +74,7 @@ public class KnowledgeAdminController {
         return R.ok("外部资讯抓取完成", stats);
     }
 
-    /** source: all / kb / policy / membership / subscription / category / logistics / product / news */
+    /** source: all / kb / policy / membership / subscription / category / logistics / product / news / tech */
     @PostMapping("/ingest")
     public R<Map<String, Integer>> ingest(@RequestParam(defaultValue = "all") String source) {
         Map<String, Integer> result;
@@ -83,6 +87,7 @@ public class KnowledgeAdminController {
             case "logistics" -> result = Map.of("logistics", ingestService.ingestLogistics());
             case "product" -> result = Map.of("product", ingestService.ingestProducts());
             case "news" -> result = Map.of("news", ingestService.ingestNews());
+            case "tech" -> result = Map.of("tech", ingestService.ingestTech());
             default -> result = ingestService.ingestAll();
         }
         return R.ok("灌装完成", result);
@@ -113,7 +118,8 @@ public class KnowledgeAdminController {
         String text = body == null ? null : str(body.get("text"));
         if (text == null || text.isBlank()) return R.fail("知识内容不能为空");
         String id = ingestService.addManual(source, title, text);
-        return R.ok("已录入", Map.of("id", id == null ? "" : id));
+        if (id == null) return R.fail("向量索引写入失败，请检查嵌入模型与 AI_EMBED_DIM 维度配置");
+        return R.ok("已录入", Map.of("id", id));
     }
 
     /** 按文档 id 删除一条知识 */

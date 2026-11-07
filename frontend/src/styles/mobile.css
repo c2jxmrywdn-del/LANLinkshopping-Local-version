@@ -138,6 +138,34 @@ html[data-viewport='mobile'] .ant-alert .ant-alert-action {
 }
 html[data-viewport='mobile'] .ant-alert .ant-alert-action .ant-btn { width: 100%; }
 
+/* AI 标题润色（out/ai-polish-design.md §2.5）：候选卡单列、操作行全宽换行、触达高度 ≥44px。
+   规则集中在本文件（组件 scoped 内不写 data-viewport 规则，项目既有惯例） */
+html[data-viewport='mobile'] .ai-polish-bar { width: 100%; }
+html[data-viewport='mobile'] .ai-polish-bar .ant-btn { min-height: 44px; }
+html[data-viewport='mobile'] .ai-polish-panel { padding: 10px 8px; }
+html[data-viewport='mobile'] .ai-polish-card {
+  flex-wrap: wrap;
+  min-height: 44px;
+  padding: 8px;
+}
+html[data-viewport='mobile'] .ai-polish-card .ai-polish-text {
+  flex-basis: 100%;
+  min-height: 22px;
+}
+html[data-viewport='mobile'] .ai-polish-card .ant-btn {
+  width: 100%;
+  min-height: 44px;
+}
+html[data-viewport='mobile'] .ai-polish-actions {
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 8px;
+}
+html[data-viewport='mobile'] .ai-polish-actions .ant-btn {
+  width: 100%;
+  min-height: 44px;
+}
+
 /* 表格：桌面固定列宽较多，窄屏统一允许横向滑动查看 */
 html[data-viewport='mobile'] .ant-table-wrapper {
   width: 100%;

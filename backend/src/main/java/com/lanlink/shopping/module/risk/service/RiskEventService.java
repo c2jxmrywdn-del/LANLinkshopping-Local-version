@@ -26,23 +26,31 @@ public class RiskEventService {
         this.eventMapper = eventMapper;
     }
 
-    /** 记录一次命中（userId 可为空=未登录匿名，直接忽略） */
+    /** 匿名事件哨兵 user_id（t_user_risk_event.user_id NOT NULL）：0 = 未登录/无凭据主体 */
+    static final long ANONYMOUS_USER_ID = 0L;
+
+    /**
+     * 记录一次命中。userId 为空时以 {@link #ANONYMOUS_USER_ID} 哨兵落库（A12④：匿名滥用——
+     * AI 刷量/匿名爬取/接口滥用等——也要留风控痕），主体身份标识放 refId（visitorToken/sessionId/IP）。
+     * 注意：匿名事件按 (0, ruleCode) 全局去重，24h 内同规则匿名只记一条，避免刷量打分膨胀。
+     */
     public void record(Long userId, String ruleCode, int score, String detail, String refType, String refId) {
-        if (!enabled || userId == null) return;
+        if (!enabled) return;
+        long effectiveUserId = userId == null ? ANONYMOUS_USER_ID : userId;
         try {
             // 同用户同规则 24h 内只保留一条未复核命中（检测器幂等 + 打分不重复膨胀）
-            if (eventMapper.countRecentUnreviewed(userId, ruleCode) > 0) return;
+            if (eventMapper.countRecentUnreviewed(effectiveUserId, ruleCode) > 0) return;
             UserRiskEvent e = new UserRiskEvent();
-            e.setUserId(userId);
+            e.setUserId(effectiveUserId);
             e.setRuleCode(ruleCode);
             e.setScore(score);
             e.setDetail(detail == null ? null : detail.substring(0, Math.min(detail.length(), 500)));
             e.setRefType(refType);
             e.setRefId(refId == null ? null : refId.substring(0, Math.min(refId.length(), 40)));
             eventMapper.insert(e);
-            log.info("[risk] hit: user={} rule={} score={} ref={}/{}", userId, ruleCode, score, refType, refId);
+            log.info("[risk] hit: user={} rule={} score={} ref={}/{}", effectiveUserId, ruleCode, score, refType, refId);
         } catch (Exception ex) {
-            log.warn("[risk] record failed (ignored): user={} rule={} err={}", userId, ruleCode, ex.getMessage());
+            log.warn("[risk] record failed (ignored): user={} rule={} err={}", effectiveUserId, ruleCode, ex.getMessage());
         }
     }
 

@@ -5,6 +5,7 @@ import com.lanlink.shopping.mapper.OrderMapper;
 import com.lanlink.shopping.payment.alipay.AlipayPayClient;
 import com.lanlink.shopping.payment.service.PaymentLogService;
 import com.lanlink.shopping.payment.service.PaymentService;
+import com.lanlink.shopping.payment.stripe.StripePayClient;
 import com.lanlink.shopping.payment.wechat.WechatPayClient;
 import com.lanlink.shopping.payment.wallet.service.WalletService;
 import com.lanlink.shopping.service.OrderService;
@@ -41,7 +42,8 @@ class PaymentAmountMatchTest {
         orderMapper = mock(OrderMapper.class);
         PaymentLogService payLog = mock(PaymentLogService.class);
         WalletService wallet = mock(WalletService.class);
-        svc = new PaymentService(props, wechat, alipay, orderService, orderMapper, payLog, wallet);
+        StripePayClient stripe = mock(StripePayClient.class);
+        svc = new PaymentService(props, wechat, alipay, stripe, orderService, orderMapper, payLog, wallet);
     }
 
     private void stub(String orderYuan, String totalFeeFen) {

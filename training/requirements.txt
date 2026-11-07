@@ -1,0 +1,6 @@
+requests>=2.31
+pymysql>=1.1
+mysql-connector-python>=8.3
+# ---- P2 训练依赖（Linux/WSL2 + CUDA）----
+# 不要 pip install 这些到 Windows：训练只在 WSL2 跑，用 wsl_setup.sh 安装（cu130 优先，回退 cu128）。
+# unsloth / trl>=1.0 / peft / transformers / datasets / accelerate / bitsandbytes

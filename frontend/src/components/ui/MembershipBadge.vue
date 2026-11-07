@@ -49,6 +49,7 @@
           <circle cx="24" cy="24" r="21" :stroke="`url(#${uid}-mark)`" stroke-width="2.2" fill="rgba(255,255,255,.5)" />
           <circle class="mb-mark-line" cx="24" cy="24" r="17" fill="none" stroke-width=".9" />
           <path v-if="tier === 'regular'" :fill="markFill" fill-rule="evenodd" d="M15 30c-3-4-3-10 1-14 1 5 3 8 6 10-4-1-6 1-7 4Zm18 0c3-4 3-10-1-14-1 5-3 8-6 10 4-1 6 1 7 4Zm-9 3c-2 0-3.4-1.4-3.4-3.2 0-2.4 1.6-5.8 3.4-8.8 1.8 3 3.4 6.4 3.4 8.8 0 1.8-1.4 3.2-3.4 3.2Z" />
+          <path v-else-if="tier === 'bronze'" :fill="markFill" fill-rule="evenodd" d="M24 11l10 5.6v9.2L24 31.4l-10-5.6v-9.2L24 11Zm0 3.4l-6.8 3.8v6.4L24 28.4l6.8-3.8v-6.4L24 14.4Zm0 3.1a3.4 3.4 0 1 1 0 6.8 3.4 3.4 0 0 1 0-6.8Z" />
           <path v-else-if="tier === 'silver'" :fill="markFill" fill-rule="evenodd" d="M24 12l9 4v8c0 6-4 10.5-9 12-5-1.5-9-6-9-12v-8l9-4Zm0 6.5l-2.2 4.6-5 .7 3.6 3.5-.9 5 4.5-2.4 4.5 2.4-.9-5 3.6-3.5-5-.7L24 18.5Z" />
           <path v-else-if="tier === 'gold'" :fill="markFill" d="M12 30l2-12 7 6 3-9 3 9 7-6 2 12H12Zm1 3h22v3H13v-3Z" />
           <path v-else-if="tier === 'diamond' || tier === 'black-diamond'" :fill="markFill" fill-rule="evenodd" d="M16 14h16l6 8-14 14L10 22l6-8Zm1.8 3l-3.4 4.6h6l-2.6-4.6Zm5 0l2.6 4.6h-5.2l2.6-4.6Zm7.4 0l3.4 4.6h-6l2.6-4.6Z" />
@@ -327,6 +328,7 @@ function activate() {
   transition: box-shadow .25s ease;
 }
 .mb-badge.mb-regular { --mb-base: #e7ebef; --mb-mark-0: #a8bccd; --mb-mark-1: #6f8ba3; }
+.mb-badge.mb-bronze { --mb-base: #e9cfb6; --mb-mark-0: #dda56e; --mb-mark-1: #8a5a2c; }
 .mb-badge.mb-silver { --mb-base: #dddddd; --mb-mark-0: #c3ccd6; --mb-mark-1: #8c99a8; }
 .mb-badge.mb-gold { --mb-base: #f3e3ac; --mb-mark-0: #f2d489; --mb-mark-1: #b98a3c; }
 .mb-badge.mb-platinum { --mb-base: #e6e8ea; --mb-mark-0: #f7f8f9; --mb-mark-1: #8f9aa4; }
@@ -422,6 +424,7 @@ function activate() {
 [data-theme='dark'] .mb-eyebrow-text { fill: #a7aeb8; }
 [data-theme='dark'] .mb-title-text { fill: #eef1f5; }
 [data-theme='dark'] .mb-badge.mb-regular { --mb-base: #333b45; --mb-mark-0: #b9cada; --mb-mark-1: #7d97ae; }
+[data-theme='dark'] .mb-badge.mb-bronze { --mb-base: #3e3228; --mb-mark-0: #e3b384; --mb-mark-1: #a9713f; }
 [data-theme='dark'] .mb-badge.mb-silver { --mb-base: #3a4048; --mb-mark-0: #d8e0e8; --mb-mark-1: #9daab9; }
 [data-theme='dark'] .mb-badge.mb-gold { --mb-base: #4a4230; --mb-mark-0: #f6d38a; --mb-mark-1: #c8a45c; }
 [data-theme='dark'] .mb-badge.mb-platinum { --mb-base: #3f454c; --mb-mark-0: #eef1f4; --mb-mark-1: #a3adb7; }

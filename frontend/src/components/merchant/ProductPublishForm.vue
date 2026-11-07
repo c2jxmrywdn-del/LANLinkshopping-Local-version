@@ -2,11 +2,16 @@
   <a-modal :open="open" title="发布商品" :footer="null" width="640px"
            @cancel="$emit('update:open', false)" destroy-on-close>
     <a-alert type="info" show-icon class="tip"
-             message="发布后商品将进入平台审核（待审核），审核通过后自动上架并可售。" />
+             message="发布后系统将自动审核商品内容与主图；通过后自动上架，需人工复核时进入平台审核队列。" />
     <a-form ref="formRef" :model="form" :rules="rules" layout="vertical" @finish="submit">
       <!-- ===== 基础信息 ===== -->
       <a-form-item label="商品名称" name="title">
-        <a-input v-model:value="form.title" placeholder="2-100 个字符" maxlength="100" show-count />
+        <div class="title-row">
+          <a-input v-model:value="form.title" placeholder="2-100 个字符" maxlength="100" show-count class="title-input" />
+          <AiTitlePolish ref="aiPolishRef" :title="form.title" :ind-id="form.indId" :cat-id="form.catId"
+                         :brand="form.brand" :submitting="submitting"
+                         @apply="onApplyTitle" @pending="polishPending = $event" />
+        </div>
       </a-form-item>
       <a-row :gutter="12">
         <a-col :span="12">
@@ -74,7 +79,7 @@
       <div class="actions">
         <a-button @click="saveDraft" :disabled="submitting">存草稿</a-button>
         <a-button v-if="hasDraft && !draftLoaded" type="link" @click="restoreDraft">恢复上次草稿</a-button>
-        <a-button type="primary" html-type="submit" :loading="submitting">提交审核</a-button>
+        <a-button type="primary" html-type="submit" :loading="submitting" :disabled="polishPending">提交审核</a-button>
       </div>
     </a-form>
   </a-modal>
@@ -85,11 +90,14 @@ import { reactive, ref, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { productApi, homeApi } from '../../api'
+import AiTitlePolish from './AiTitlePolish.vue'
 
 /**
  * 商户商品发布组件（Modal 形态，父组件 v-model:open 控制）。
  * 发布 → 待审核（后端自动置 status=0/review_status=0）。
  * 草稿：localStorage 暂存，支持保存/恢复/继续编辑。
+ * AI 润色（out/ai-polish-design.md §2.4）：候选「应用」只回填 form.title，
+ * 走既有 @finish → rules → 后端复检链路，无校验绕过；润色 pending 期间临时禁用提交。
  * 可扩展性：新增商品属性只需在 form + rules + 模板对应区块各加一项。
  */
 const props = defineProps({ open: Boolean })
@@ -100,6 +108,13 @@ const DRAFT_KEY = 'll_product_draft'
 const formRef = ref(null)
 const submitting = ref(false)
 const imgFiles = ref([])
+const aiPolishRef = ref(null)
+const polishPending = ref(false)
+
+/** AI 候选应用：仅回填标题（候选本身已过服务端 2-100 与硬 token 校验） */
+function onApplyTitle(text) {
+  form.title = text
+}
 
 const form = reactive({
   title: '', indId: null, catId: null, price: null, stock: null,
@@ -178,7 +193,7 @@ function restoreDraft() {
 }
 function clearDraft() { localStorage.removeItem(DRAFT_KEY); hasDraft.value = false; draftLoaded.value = false }
 
-// 打开时：加载行业 + 检测草稿
+// 打开时：加载行业 + 检测草稿 + 重置 AI 润色面板
 watch(() => props.open, (v) => {
   if (v) {
     loadIndustries()
@@ -188,6 +203,7 @@ watch(() => props.open, (v) => {
       message.info('检测到未完成的草稿，可点击「恢复上次草稿」继续编辑', 4)
     }
     if (form.indId && !categories.value.length) onIndustryChange(form.indId)
+    aiPolishRef.value?.reset?.()
   }
 })
 
@@ -228,12 +244,15 @@ function resetForm() {
   imgFiles.value = []
   categories.value = []
   draftLoaded.value = false
+  aiPolishRef.value?.reset?.()
   formRef.value?.clearValidate?.()
 }
 </script>
 
 <style scoped>
 .tip { margin-bottom: 16px; }
+.title-row { display: flex; align-items: flex-start; gap: 8px; }
+.title-row .title-input { flex: 1; min-width: 0; }
 .hint { font-size: 12px; color: var(--ll-gray2, #4b5563); margin-top: 4px; }
 .up-hint { font-size: 12px; margin-top: 4px; }
 .spec-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }

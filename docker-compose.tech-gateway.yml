@@ -1,0 +1,52 @@
+# 技术服务知识网关（独立服务，不改动 lanlink-ai-gateway 的镜像与构建门禁）
+#
+# 背景：ai-gateway 的镜像构建期会跑 `python -m unittest discover -s tests`，而工作区里
+# 新增的两个测试文件 import pytest（镜像内未装），导致 `docker compose build ai-gateway`
+# 在本次改动之前就已失败。为不改动他人尚未提交的测试与 Dockerfile，这里以**同一镜像 +
+# 只读挂载工作区 app 目录**的方式起一个独立实例：
+#   - 复用镜像内已装好的依赖，不重新构建；
+#   - 通过只读挂载让工作区里 app/ 的最新代码（含 tech-* 标签与权重）真正生效；
+#   - 独立容器名与端口，不影响 lanlink-ai-gateway（127.0.0.1:8090）。
+#
+# 启动（仓库根目录）：
+#   docker compose -f docker-compose.tech-gateway.yml up -d
+# 验证：
+#   curl -s http://127.0.0.1:8091/health
+#   curl -s "http://127.0.0.1:8091/kb/search?q=技术经纪人怎么引入&top_k=5" -H "X-API-Key: $AI_GATEWAY_API_KEY"
+# 停止：
+#   docker compose -f docker-compose.tech-gateway.yml down
+# 独立 compose 项目名：与根项目（shopping）隔离，避免本文件被当成同一编排的一部分——
+# 否则根项目服务会被识别为 orphan，一旦有人带 --remove-orphans 执行就会误删正在跑的服务。
+name: shopping-techgw
+
+services:
+  ai-gateway-tech:
+    image: lanlink-ai-gateway:latest
+    container_name: lanlink-ai-gateway-tech
+    # 根 .env 提供 REDIS_PASSWORD / REDIS_HOST / REDIS_PORT / AI_EMBED_MODEL 等
+    env_file:
+      - ./.env
+    environment:
+      PORT: "8090"
+      GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env before starting}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env before starting}
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
+      # 与主网关保持一致：同一 Redis 索引、同一嵌入模型，避免维度不一致退化成本地 TF-IDF
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-bge-m3}
+      OLLAMA_BASE_URL: http://ollama:11434
+      LLM_BACKEND: ${LLM_BACKEND:-ollama}
+      LLAMA_CPP_URL: http://llama-cpp:8123
+    volumes:
+      # 只读挂载：让工作区代码生效，同时保证容器绝不会回写改坏工作区
+      - ./ai-gateway/app:/app/app:ro
+    ports:
+      - "127.0.0.1:8091:8090"
+    networks:
+      - shopping_default
+    restart: unless-stopped
+
+networks:
+  shopping_default:
+    external: true

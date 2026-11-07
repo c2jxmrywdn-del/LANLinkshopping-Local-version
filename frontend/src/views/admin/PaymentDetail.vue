@@ -38,6 +38,8 @@
               <a-descriptions-item v-if="order.refundStatus === 'rejected'" label="驳回原因">{{order.refundRejectReason || '不符合退款条件'}}</a-descriptions-item>
               <a-descriptions-item label="已退款金额">¥{{money(order.refundAmount)}}</a-descriptions-item>
             </a-descriptions>
+            <!-- 退款凭证证据区：链A t_order.refund_evidences；链B（RMA）proofImages 经 rmaApi 按单取 -->
+            <RefundEvidenceGallery v-if="hasRefundFlow" :evidences="evidenceJson" class="evidence-block" />
             <a-button v-if="order.payStatus === 1 && order.refundStatus !== 'success'" danger @click="$router.push('/admin/payments')">返回交易管理处理退款</a-button>
           </a-card>
         </div>
@@ -51,7 +53,8 @@
 <script setup>
 import {ref,computed,onMounted} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
-import {orderApi,paymentApi} from '../../api'
+import {orderApi,paymentApi,rmaApi} from '../../api'
+import RefundEvidenceGallery from '../../components/refund/RefundEvidenceGallery.vue'
 const route=useRoute(),router=useRouter(),loading=ref(false),order=ref(null),payment=ref(null)
 const items=computed(()=>order.value?.items||[])
 const payText={0:'未支付',1:'已支付',2:'已退款'},payColor={0:'orange',1:'green',2:'purple'}
@@ -69,10 +72,23 @@ async function load(){
       order.value=res;
     }
     try{payment.value=await paymentApi.query(route.params.orderNo)}catch(e){payment.value=null}
+    // 链B（RMA）证据权威在 t_order_rma.proof_images：按单取最新 RMA，链A列无值时兜底
+    try{
+      if(order.value?.currentRmaNo){
+        rmaInfo.value = await rmaApi.getDetail(order.value.currentRmaNo);
+      }
+    }catch(e){rmaInfo.value=null}
   }catch(e){order.value=null}finally{loading.value=false}
 }
+
+const rmaInfo = ref(null);
+const hasRefundFlow = computed(()=>{
+  const s = order.value?.refundStatus;
+  return !!s && !['none','rejected'].includes(s);
+});
+const evidenceJson = computed(()=> rmaInfo.value?.proofImages || order.value?.refundEvidences || '');
 onMounted(load)
 </script>
 <style scoped>
-.page{max-width:1120px;margin:0 auto}.hero{border-radius:22px;background:var(--ll-brand-hero-gradient);color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start}.hero h1{color:#fff;font-size:34px;margin:7px 0}.hero p{color:rgba(255,255,255,.7);margin:0}.eyebrow{font-size:11px;letter-spacing:.16em;opacity:.7}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{border-radius:18px}.item,.total{display:flex;justify-content:space-between;padding:8px 0}.total strong{font-size:21px;color:#9b2d20}@media(max-width:700px){.grid{grid-template-columns:1fr}}
+.page{max-width:1120px;margin:0 auto}.hero{border-radius:22px;background:var(--ll-brand-hero-gradient);color:#fff;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-start}.hero h1{color:#fff;font-size:34px;margin:7px 0}.hero p{color:rgba(255,255,255,.7);margin:0}.eyebrow{font-size:11px;letter-spacing:.16em;opacity:.7}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{border-radius:18px}.item,.total{display:flex;justify-content:space-between;padding:8px 0}.total strong{font-size:21px;color:#9b2d20}.evidence-block{margin-top:12px;padding:12px;border:1px solid var(--ll-border,#e5e7eb);border-radius:var(--ll-radius-lg,14px);background:var(--ll-card-soft,#fbfcfe)}@media(max-width:700px){.grid{grid-template-columns:1fr}}
 </style>

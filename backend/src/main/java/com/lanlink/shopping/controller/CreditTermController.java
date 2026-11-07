@@ -12,6 +12,8 @@ import com.lanlink.shopping.service.CreditTermService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import org.springframework.web.bind.annotation.*;
@@ -76,6 +78,24 @@ public class CreditTermController {
         return R.ok("调额申请已撤回", service.withdrawAdjustment(UserContext.currentUserId(request), id));
     }
 
+    // ==================== 商业化利率计算器 ====================
+
+    @PostMapping("/calculator/trial")
+    public R<Map<String, Object>> calculatorTrial(@RequestBody CalculatorTrialDTO dto) {
+        return R.ok(service.calculateInterestTrial(
+                dto.getAmount(), dto.getTermDays(), dto.getDailyRate(), dto.getGraceDays(), dto.getOverdueDays(),
+                dto.getRiskTier(), dto.getWithLogisticsDiscount()));
+    }
+
+    // ==================== 物流运费月结账期担保支付 ====================
+
+    @PostMapping("/settlement/{settlementId}/pay")
+    @RequirePerm("credit:repay")
+    public R<CreditBill> paySettlementWithCredit(@PathVariable Long settlementId, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok("物流结算单账期支付成功", service.paySettlementWithCredit(settlementId, userId, request));
+    }
+
     // ==================== 管理端 ====================
 
     @GetMapping("/admin/accounts")
@@ -115,7 +135,7 @@ public class CreditTermController {
 
     @Data public static class ApplyDTO {
         @NotNull @DecimalMin("1000") @Digits(integer=10,fraction=2) private BigDecimal requestedLimit;
-        @NotNull private Integer termDays;
+        @NotNull @Min(7) @Max(15) private Integer termDays;
         private String purpose;
     }
     @Data public static class RepayDTO {
@@ -126,22 +146,31 @@ public class CreditTermController {
     @Data public static class ReviewDTO {
         private String status;
         private BigDecimal approvedLimit;
-        private Integer termDays;
+        @Min(7) @Max(15) private Integer termDays;
         private String remark;
     }
     @Data public static class AdjustApplyDTO {
         @NotNull @DecimalMin("1000") @Digits(integer=10,fraction=2) private BigDecimal requestedLimit;
-        @NotNull private Integer termDays;
+        @NotNull @Min(7) @Max(15) private Integer termDays;
         private String purpose;
     }
     @Data public static class AdjustReviewDTO {
         private String status;
         private BigDecimal approvedLimit;
-        private Integer termDays;
+        @Min(7) @Max(15) private Integer termDays;
         private String remark;
     }
     @Data public static class TransferConfirmDTO {
         private boolean approved;
         private String remark;
+    }
+    @Data public static class CalculatorTrialDTO {
+        @NotNull @DecimalMin("0.01") private BigDecimal amount;
+        @Min(7) @Max(15) private Integer termDays;
+        private BigDecimal dailyRate;
+        private Integer graceDays;
+        private Integer overdueDays;
+        private String riskTier;
+        private Boolean withLogisticsDiscount;
     }
 }

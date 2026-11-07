@@ -123,6 +123,6 @@ class IntentEnhancementTest {
         when(config.toggle("intent_external_enabled")).thenReturn(false);
         IntentUnderstandingService service = new IntentUnderstandingService(config, mock(ExternalIntentClient.class), jdbc);
         service.analyze("订单怎么查询", List.of());
-        verify(jdbc).update(contains("t_support_intent_log"), any(), any(), any());
+        verify(jdbc).update(contains("t_support_intent_log"), any(), any(), any(), any());
     }
 }

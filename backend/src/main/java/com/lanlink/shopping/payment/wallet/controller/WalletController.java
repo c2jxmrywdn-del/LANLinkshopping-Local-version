@@ -31,6 +31,15 @@ public class WalletController {
 
     private final WalletService walletService;
 
+    /**
+     * 钱包充值当前是「模拟网关即时到账」，等于给登录用户直接铸币。
+     *
+     * <p>生产环境必须由真实支付渠道回调入账（支付单 → 渠道 → notify → 加余额），
+     * 所以在 lanlink.payment.mock=false 时直接拒绝，避免免付款下单。
+     */
+    @org.springframework.beans.factory.annotation.Value("${lanlink.payment.mock:false}")
+    private boolean mockPayment;
+
     public WalletController(WalletService walletService) {
         this.walletService = walletService;
     }
@@ -48,6 +57,10 @@ public class WalletController {
 
     @PostMapping("/recharge")
     public R<Map<String, Object>> recharge(@RequestBody RechargeDTO dto, HttpServletRequest request) {
+        if (!mockPayment) {
+            throw new com.lanlink.shopping.common.BusinessException(403,
+                    "钱包充值需经支付渠道入账；当前环境未开启模拟支付，请通过 /payment/create 下单支付");
+        }
         walletService.recharge(UserContext.currentUserId(request), dto.getAmount(), dto.getRemark());
         return R.ok("充值成功", walletService.myView(UserContext.currentUserId(request)));
     }

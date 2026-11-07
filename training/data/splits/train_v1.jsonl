@@ -1,0 +1,693 @@
+{"question": "想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "请问想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "想问一下想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "麻烦问下想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "想开个账号怎么弄呢？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "咨询一下：想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "想开个账号怎么弄，谢谢？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "你好，想开个账号怎么弄？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "想开个账号怎么弄可以怎么处理？", "intent": "account_access", "seed_id": "conv-1", "label_source": "regression", "lang": "zh"}
+{"question": "注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "请问注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "注册时提示手机号已被占用怎么办呢？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "注册时提示手机号已被占用怎么办，谢谢？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，注册时提示手机号已被占用怎么办？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "注册时提示手机号已被占用怎么办可以怎么处理？", "intent": "account_access", "seed_id": "core-account_access-1", "label_source": "core", "lang": "zh"}
+{"question": "登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "请问登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "登录后如何开启两步验证呢？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "登录后如何开启两步验证，谢谢？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，登录后如何开启两步验证？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "登录后如何开启两步验证可以怎么处理？", "intent": "account_access", "seed_id": "core-account_access-2", "label_source": "core", "lang": "zh"}
+{"question": "我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "请问我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "我注册账号收不到短信验证码呢？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "我注册账号收不到短信验证码，谢谢？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，我注册账号收不到短信验证码？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "我注册账号收不到短信验证码可以怎么处理？", "intent": "account_access", "seed_id": "corpus-account_access-1", "label_source": "corpus", "lang": "zh"}
+{"question": "忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "请问忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "忘记登录密码了怎么找回呢？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "忘记登录密码了怎么找回，谢谢？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，忘记登录密码了怎么找回？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "忘记登录密码了怎么找回可以怎么处理？", "intent": "account_access", "seed_id": "corpus-account_access-2", "label_source": "corpus", "lang": "zh"}
+{"question": "2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "2FA 验证码收不到怎么办呢？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "2FA 验证码收不到怎么办，谢谢？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，2FA 验证码收不到怎么办？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "2FA 验证码收不到怎么办可以怎么处理？", "intent": "account_access", "seed_id": "bi-account_access-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "忘记 password 怎么 reset呢？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "忘记 password 怎么 reset，谢谢？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，忘记 password 怎么 reset？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "忘记 password 怎么 reset可以怎么处理？", "intent": "account_access", "seed_id": "bi-account_access-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "请问入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "入驻商户需要准备哪些资料呢？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "入驻商户需要准备哪些资料，谢谢？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，入驻商户需要准备哪些资料？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "入驻商户需要准备哪些资料可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-1", "label_source": "core", "lang": "zh"}
+{"question": "店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "请问店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "店铺审核被驳回怎么重新提交呢？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "店铺审核被驳回怎么重新提交，谢谢？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，店铺审核被驳回怎么重新提交？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "店铺审核被驳回怎么重新提交可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "core-merchant_onboarding-2", "label_source": "core", "lang": "zh"}
+{"question": "企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "请问企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "企业入驻审核一般多久通过呢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "企业入驻审核一般多久通过，谢谢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，企业入驻审核一般多久通过？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "企业入驻审核一般多久通过可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-10", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "请问怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么把商品上架到我的店铺呢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么把商品上架到我的店铺，谢谢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，怎么把商品上架到我的店铺？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么把商品上架到我的店铺可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-11", "label_source": "corpus", "lang": "zh"}
+{"question": "入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "请问入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "入驻平台的资质审核没通过怎么办呢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "入驻平台的资质审核没通过怎么办，谢谢？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，入驻平台的资质审核没通过怎么办？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "入驻平台的资质审核没通过怎么办可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "corpus-merchant_onboarding-12", "label_source": "corpus", "lang": "zh"}
+{"question": "入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "入驻 merchant 的保证金是多少呢？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "入驻 merchant 的保证金是多少，谢谢？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，入驻 merchant 的保证金是多少？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "入驻 merchant 的保证金是多少可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "KYC 审核需要多久呢？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "KYC 审核需要多久，谢谢？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，KYC 审核需要多久？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "KYC 审核需要多久可以怎么处理？", "intent": "merchant_onboarding", "seed_id": "bi-merchant_onboarding-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "请问怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "怎么按行业筛选商品目录呢？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "怎么按行业筛选商品目录，谢谢？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，怎么按行业筛选商品目录？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "怎么按行业筛选商品目录可以怎么处理？", "intent": "product_browse", "seed_id": "core-product_browse-1", "label_source": "core", "lang": "zh"}
+{"question": "商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "请问商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "商品详情页在哪里看规格呢？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "商品详情页在哪里看规格，谢谢？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，商品详情页在哪里看规格？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "商品详情页在哪里看规格可以怎么处理？", "intent": "product_browse", "seed_id": "core-product_browse-2", "label_source": "core", "lang": "zh"}
+{"question": "这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "请问这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "这个商品的规格参数怎么看呢？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "这个商品的规格参数怎么看，谢谢？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，这个商品的规格参数怎么看？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "这个商品的规格参数怎么看可以怎么处理？", "intent": "product_browse", "seed_id": "corpus-product_browse-13", "label_source": "corpus", "lang": "zh"}
+{"question": "你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "请问你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "你们商城有哪些行业分类呢？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "你们商城有哪些行业分类，谢谢？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，你们商城有哪些行业分类？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "你们商城有哪些行业分类可以怎么处理？", "intent": "product_browse", "seed_id": "corpus-product_browse-14", "label_source": "corpus", "lang": "zh"}
+{"question": "想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "请问想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "想找一款耐高温的工业材料呢？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "想找一款耐高温的工业材料，谢谢？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，想找一款耐高温的工业材料？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "想找一款耐高温的工业材料可以怎么处理？", "intent": "product_browse", "seed_id": "corpus-product_browse-15", "label_source": "corpus", "lang": "zh"}
+{"question": "SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "SKU 规格在哪里查看呢？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "SKU 规格在哪里查看，谢谢？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，SKU 规格在哪里查看？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "SKU 规格在哪里查看可以怎么处理？", "intent": "product_browse", "seed_id": "bi-product_browse-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "产品 catalog 怎么浏览呢？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "产品 catalog 怎么浏览，谢谢？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，产品 catalog 怎么浏览？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "产品 catalog 怎么浏览可以怎么处理？", "intent": "product_browse", "seed_id": "bi-product_browse-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "请问购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "购物车商品如何合并结算呢？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "购物车商品如何合并结算，谢谢？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，购物车商品如何合并结算？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "购物车商品如何合并结算可以怎么处理？", "intent": "cart_order", "seed_id": "core-cart_order-1", "label_source": "core", "lang": "zh"}
+{"question": "下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "请问下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "下单后在哪里查订单进度呢？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "下单后在哪里查订单进度，谢谢？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，下单后在哪里查订单进度？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "下单后在哪里查订单进度可以怎么处理？", "intent": "cart_order", "seed_id": "core-cart_order-2", "label_source": "core", "lang": "zh"}
+{"question": "购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "请问购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "购物车里的商品怎么一起结算呢？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "购物车里的商品怎么一起结算，谢谢？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，购物车里的商品怎么一起结算？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "购物车里的商品怎么一起结算可以怎么处理？", "intent": "cart_order", "seed_id": "corpus-cart_order-19", "label_source": "corpus", "lang": "zh"}
+{"question": "我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "请问我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "我刚下的订单什么时候发货呢？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "我刚下的订单什么时候发货，谢谢？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，我刚下的订单什么时候发货？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "我刚下的订单什么时候发货可以怎么处理？", "intent": "cart_order", "seed_id": "corpus-cart_order-20", "label_source": "corpus", "lang": "zh"}
+{"question": "订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "请问订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "订单号在哪里可以查询呢？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "订单号在哪里可以查询，谢谢？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，订单号在哪里可以查询？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "订单号在哪里可以查询可以怎么处理？", "intent": "cart_order", "seed_id": "corpus-cart_order-21", "label_source": "corpus", "lang": "zh"}
+{"question": "购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "购物车 checkout 怎么操作呢？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "购物车 checkout 怎么操作，谢谢？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，购物车 checkout 怎么操作？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "购物车 checkout 怎么操作可以怎么处理？", "intent": "cart_order", "seed_id": "bi-cart_order-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "订单号在哪里看呢？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "订单号在哪里看，谢谢？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，订单号在哪里看？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "订单号在哪里看可以怎么处理？", "intent": "cart_order", "seed_id": "bi-cart_order-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "请问钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "钱包余额如何充值呢？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "钱包余额如何充值，谢谢？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，钱包余额如何充值？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "钱包余额如何充值可以怎么处理？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-1", "label_source": "core", "lang": "zh"}
+{"question": "企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "请问企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "企业账期还款怎么操作呢？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "企业账期还款怎么操作，谢谢？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，企业账期还款怎么操作？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "企业账期还款怎么操作可以怎么处理？", "intent": "wallet_credit", "seed_id": "core-wallet_credit-2", "label_source": "core", "lang": "zh"}
+{"question": "钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "请问钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "钱包余额怎么提现呢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "钱包余额怎么提现，谢谢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，钱包余额怎么提现？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "钱包余额怎么提现可以怎么处理？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-25", "label_source": "corpus", "lang": "zh"}
+{"question": "企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "请问企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "企业账期授信额度怎么申请呢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "企业账期授信额度怎么申请，谢谢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，企业账期授信额度怎么申请？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "企业账期授信额度怎么申请可以怎么处理？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-26", "label_source": "corpus", "lang": "zh"}
+{"question": "账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "请问账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "账单逾期了会有什么影响呢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "账单逾期了会有什么影响，谢谢？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，账单逾期了会有什么影响？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "账单逾期了会有什么影响可以怎么处理？", "intent": "wallet_credit", "seed_id": "corpus-wallet_credit-27", "label_source": "corpus", "lang": "zh"}
+{"question": "credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "credit line 额度怎么申请呢？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "credit line 额度怎么申请，谢谢？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，credit line 额度怎么申请？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "credit line 额度怎么申请可以怎么处理？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "账单 repayment 截止日期呢？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "账单 repayment 截止日期，谢谢？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，账单 repayment 截止日期？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "账单 repayment 截止日期可以怎么处理？", "intent": "wallet_credit", "seed_id": "bi-wallet_credit-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "请问会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "会员等级怎么升级呢？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "会员等级怎么升级，谢谢？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，会员等级怎么升级？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "会员等级怎么升级可以怎么处理？", "intent": "membership_activity", "seed_id": "core-membership_activity-1", "label_source": "core", "lang": "zh"}
+{"question": "积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "请问积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "积分怎么兑换优惠券呢？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "积分怎么兑换优惠券，谢谢？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，积分怎么兑换优惠券？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "积分怎么兑换优惠券可以怎么处理？", "intent": "membership_activity", "seed_id": "core-membership_activity-2", "label_source": "core", "lang": "zh"}
+{"question": "会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "请问会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "会员等级怎么提升呢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "会员等级怎么提升，谢谢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，会员等级怎么提升？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "会员等级怎么提升可以怎么处理？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-31", "label_source": "corpus", "lang": "zh"}
+{"question": "积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "请问积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "积分可以抵扣现金吗呢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "积分可以抵扣现金吗，谢谢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，积分可以抵扣现金吗？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "积分可以抵扣现金吗可以怎么处理？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-32", "label_source": "corpus", "lang": "zh"}
+{"question": "最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "请问最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "最近有什么促销优惠券可以领呢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "最近有什么促销优惠券可以领，谢谢？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，最近有什么促销优惠券可以领？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "最近有什么促销优惠券可以领可以怎么处理？", "intent": "membership_activity", "seed_id": "corpus-membership_activity-33", "label_source": "corpus", "lang": "zh"}
+{"question": "积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "积分 points 怎么用呢？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "积分 points 怎么用，谢谢？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，积分 points 怎么用？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "积分 points 怎么用可以怎么处理？", "intent": "membership_activity", "seed_id": "bi-membership_activity-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "会员 discount 是多少呢？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "会员 discount 是多少，谢谢？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，会员 discount 是多少？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "会员 discount 是多少可以怎么处理？", "intent": "membership_activity", "seed_id": "bi-membership_activity-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "请问Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "想问一下Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "麻烦问下Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "Cookie 设置在哪里呢？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "咨询一下：Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "Cookie 设置在哪里，谢谢？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "你好，Cookie 设置在哪里？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "Cookie 设置在哪里可以怎么处理？", "intent": "message_privacy", "seed_id": "conv-7", "label_source": "regression", "lang": "zh"}
+{"question": "站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "请问站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "站内消息怎么全部标为已读呢？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "站内消息怎么全部标为已读，谢谢？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，站内消息怎么全部标为已读？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "站内消息怎么全部标为已读可以怎么处理？", "intent": "message_privacy", "seed_id": "core-message_privacy-1", "label_source": "core", "lang": "zh"}
+{"question": "Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "请问Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "Cookie 设置在哪里修改呢？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "Cookie 设置在哪里修改，谢谢？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，Cookie 设置在哪里修改？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "Cookie 设置在哪里修改可以怎么处理？", "intent": "message_privacy", "seed_id": "core-message_privacy-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "请问怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么关闭站内信通知呢？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么关闭站内信通知，谢谢？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，怎么关闭站内信通知？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么关闭站内信通知可以怎么处理？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-37", "label_source": "corpus", "lang": "zh"}
+{"question": "系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "请问系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "系统消息太多想设置免打扰呢？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "系统消息太多想设置免打扰，谢谢？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，系统消息太多想设置免打扰？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "系统消息太多想设置免打扰可以怎么处理？", "intent": "message_privacy", "seed_id": "corpus-message_privacy-38", "label_source": "corpus", "lang": "zh"}
+{"question": "How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "请问How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "想问一下How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "麻烦问下How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "How to turn off notification messages呢？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "咨询一下：How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "How to turn off notification messages，谢谢？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "你好，How to turn off notification messages？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "How to turn off notification messages可以怎么处理？", "intent": "message_privacy", "seed_id": "bi-message_privacy-2", "label_source": "bilingual", "lang": "en"}
+{"question": "隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "隐私 privacy 设置在哪里呢？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "隐私 privacy 设置在哪里，谢谢？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，隐私 privacy 设置在哪里？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "隐私 privacy 设置在哪里可以怎么处理？", "intent": "message_privacy", "seed_id": "bi-message_privacy-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "请问物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "物流信息一直不更新怎么办呢？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "物流信息一直不更新怎么办，谢谢？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，物流信息一直不更新怎么办？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "物流信息一直不更新怎么办可以怎么处理？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-1", "label_source": "core", "lang": "zh"}
+{"question": "怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "请问怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么查快递单号和轨迹呢？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么查快递单号和轨迹，谢谢？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，怎么查快递单号和轨迹？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么查快递单号和轨迹可以怎么处理？", "intent": "logistics_tracking", "seed_id": "core-logistics_tracking-2", "label_source": "core", "lang": "zh"}
+{"question": "我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "请问我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "我的快递到哪里了呢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "我的快递到哪里了，谢谢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，我的快递到哪里了？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "我的快递到哪里了可以怎么处理？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-43", "label_source": "corpus", "lang": "zh"}
+{"question": "物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "请问物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "物流信息一直不更新呢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "物流信息一直不更新，谢谢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，物流信息一直不更新？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "物流信息一直不更新可以怎么处理？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-44", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "请问怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么查询运单号和配送进度呢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么查询运单号和配送进度，谢谢？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，怎么查询运单号和配送进度？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "怎么查询运单号和配送进度可以怎么处理？", "intent": "logistics_tracking", "seed_id": "corpus-logistics_tracking-45", "label_source": "corpus", "lang": "zh"}
+{"question": "快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "快递 courier 联系方式呢？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "快递 courier 联系方式，谢谢？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，快递 courier 联系方式？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "快递 courier 联系方式可以怎么处理？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "发货 delivery 要多久呢？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "发货 delivery 要多久，谢谢？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，发货 delivery 要多久？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "发货 delivery 要多久可以怎么处理？", "intent": "logistics_tracking", "seed_id": "bi-logistics_tracking-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "请问申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "申请退款后多久能到账呢？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "申请退款后多久能到账，谢谢？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，申请退款后多久能到账？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "申请退款后多久能到账可以怎么处理？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-1", "label_source": "core", "lang": "zh"}
+{"question": "售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "请问售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "售后换货流程怎么走呢？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "售后换货流程怎么走，谢谢？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，售后换货流程怎么走？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "售后换货流程怎么走可以怎么处理？", "intent": "refund_aftersale", "seed_id": "core-refund_aftersale-2", "label_source": "core", "lang": "zh"}
+{"question": "商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "请问商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "商品有质量问题想申请退款呢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "商品有质量问题想申请退款，谢谢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，商品有质量问题想申请退款？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "商品有质量问题想申请退款可以怎么处理？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-49", "label_source": "corpus", "lang": "zh"}
+{"question": "收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "请问收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "收到的东西损坏了怎么换货呢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "收到的东西损坏了怎么换货，谢谢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，收到的东西损坏了怎么换货？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "收到的东西损坏了怎么换货可以怎么处理？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-50", "label_source": "corpus", "lang": "zh"}
+{"question": "七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "请问七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "七天无理由退货怎么操作呢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "七天无理由退货怎么操作，谢谢？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，七天无理由退货怎么操作？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "七天无理由退货怎么操作可以怎么处理？", "intent": "refund_aftersale", "seed_id": "corpus-refund_aftersale-51", "label_source": "corpus", "lang": "zh"}
+{"question": "退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "退货 return 运费谁承担呢？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "退货 return 运费谁承担，谢谢？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，退货 return 运费谁承担？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "退货 return 运费谁承担可以怎么处理？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "after-sales 售后电话呢？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "after-sales 售后电话，谢谢？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，after-sales 售后电话？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "after-sales 售后电话可以怎么处理？", "intent": "refund_aftersale", "seed_id": "bi-refund_aftersale-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "请问支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "支持哪些支付方式付款呢？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "支持哪些支付方式付款，谢谢？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，支持哪些支付方式付款？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "支持哪些支付方式付款可以怎么处理？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-1", "label_source": "core", "lang": "zh"}
+{"question": "发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "请问发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "发票怎么申请开具呢？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "发票怎么申请开具，谢谢？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，发票怎么申请开具？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "发票怎么申请开具可以怎么处理？", "intent": "payment_invoice", "seed_id": "core-payment_invoice-2", "label_source": "core", "lang": "zh"}
+{"question": "订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "请问订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "订单怎么开发票呢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "订单怎么开发票，谢谢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，订单怎么开发票？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "订单怎么开发票可以怎么处理？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-55", "label_source": "corpus", "lang": "zh"}
+{"question": "开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "请问开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "开增值税专用发票需要提供什么呢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "开增值税专用发票需要提供什么，谢谢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，开增值税专用发票需要提供什么？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "开增值税专用发票需要提供什么可以怎么处理？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-56", "label_source": "corpus", "lang": "zh"}
+{"question": "付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "请问付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "付款失败了怎么重新支付呢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "付款失败了怎么重新支付，谢谢？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，付款失败了怎么重新支付？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "付款失败了怎么重新支付可以怎么处理？", "intent": "payment_invoice", "seed_id": "corpus-payment_invoice-57", "label_source": "corpus", "lang": "zh"}
+{"question": "payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "payment 支付失败怎么办呢？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "payment 支付失败怎么办，谢谢？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，payment 支付失败怎么办？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "payment 支付失败怎么办可以怎么处理？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "增值税 VAT 发票怎么开呢？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "增值税 VAT 发票怎么开，谢谢？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，增值税 VAT 发票怎么开？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "增值税 VAT 发票怎么开可以怎么处理？", "intent": "payment_invoice", "seed_id": "bi-payment_invoice-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "请问我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "想问一下我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "我要投诉客服服务态度呢？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "我要投诉客服服务态度，谢谢？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "你好，我要投诉客服服务态度？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "我要投诉客服服务态度可以怎么处理？", "intent": "complaint_human", "seed_id": "core-complaint_human-1", "label_source": "core", "lang": "zh"}
+{"question": "怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "请问怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "想问一下怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "麻烦问下怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么转接人工客服呢？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "咨询一下：怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么转接人工客服，谢谢？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "你好，怎么转接人工客服？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "怎么转接人工客服可以怎么处理？", "intent": "complaint_human", "seed_id": "core-complaint_human-2", "label_source": "core", "lang": "zh"}
+{"question": "我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "请问我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "我要找人工客服处理呢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "我要找人工客服处理，谢谢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，我要找人工客服处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "我要找人工客服处理可以怎么处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-61", "label_source": "corpus", "lang": "zh"}
+{"question": "帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "请问帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "帮我转人工客服呢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "帮我转人工客服，谢谢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，帮我转人工客服？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "帮我转人工客服可以怎么处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-62", "label_source": "corpus", "lang": "zh"}
+{"question": "我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "请问我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "想问一下我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "麻烦问下我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "我要投诉商家的服务态度呢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "咨询一下：我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "我要投诉商家的服务态度，谢谢？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "你好，我要投诉商家的服务态度？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "我要投诉商家的服务态度可以怎么处理？", "intent": "complaint_human", "seed_id": "corpus-complaint_human-63", "label_source": "corpus", "lang": "zh"}
+{"question": "我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "我想 complaint 投诉呢？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "我想 complaint 投诉，谢谢？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，我想 complaint 投诉？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "我想 complaint 投诉可以怎么处理？", "intent": "complaint_human", "seed_id": "bi-complaint_human-2", "label_source": "bilingual", "lang": "mixed"}
+{"question": "人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "请问人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "想问一下人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "麻烦问下人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "人工客服 service hours 是几点呢？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "咨询一下：人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "人工客服 service hours 是几点，谢谢？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "你好，人工客服 service hours 是几点？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}
+{"question": "人工客服 service hours 是几点可以怎么处理？", "intent": "complaint_human", "seed_id": "bi-complaint_human-3", "label_source": "bilingual", "lang": "mixed"}

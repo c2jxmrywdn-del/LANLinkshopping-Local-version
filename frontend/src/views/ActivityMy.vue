@@ -3,7 +3,7 @@
     <header class="my-hero">
       <div>
         <h1>我的券包<span class="my-dot">。</span></h1>
-        <p>优惠券与激励记录，像卡包一样一目了然。</p>
+        <p>我的券包与活动激励，像卡包一样一目了然。</p>
       </div>
       <button type="button" class="my-pill" @click="$router.push('/activity')">去领券</button>
     </header>
@@ -32,7 +32,7 @@
           <!-- 色带头 -->
           <div class="pass-band">
             <div class="pass-band-main">
-              <span class="pass-org">{{ cp.indName ? cp.indName + '行业' : 'LANLinkshopping' }}</span>
+              <span class="pass-org">{{ cp.scope === 'prod' && cp.merName ? '店铺 · ' + cp.merName : (cp.indName ? cp.indName + '行业' : 'LANLinkshopping') }}</span>
               <span class="pass-state">{{ stateText(cp.state) }}</span>
             </div>
             <h4 class="pass-title">{{ cp.title }}</h4>
@@ -116,7 +116,7 @@ const usableCount = computed(() => counts.value.usable)
 const filteredCoupons = computed(() => coupons.value.filter(c => c.state === couponFilter.value))
 
 const stateText = (s) => ({ usable: '可使用', used: '已使用', expired: '已过期' }[s] || s)
-const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const trimZero = (v) => { const n = Math.round(Number(v) * 100) / 100; return String(n) }
 const rateText = (r) => trimZero(Number(r) * 10)
 const fmt = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : ''
 const fmtDate = (v) => v ? String(v).slice(0, 10) : ''

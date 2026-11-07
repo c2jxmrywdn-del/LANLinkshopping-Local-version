@@ -1,0 +1,19 @@
+# Alertmanager 本地告警投递：邮件发往 Mailpit（无认证 SMTP），UI 127.0.0.1:8081 可验证。
+# 生产替换为真实 SMTP 或 webhook（企业微信/钉钉/自建），不要把真实凭据写入仓库。
+global:
+  smtp_smarthost: 'mailpit:1025'
+  smtp_from: 'alertmanager@lanlink.local'
+  smtp_require_tls: false
+
+route:
+  receiver: 'ops-email'
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: 'ops-email'
+    email_configs:
+      - to: 'ops@lanlink.local'
+        send_resolved: true

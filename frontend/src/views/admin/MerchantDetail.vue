@@ -33,7 +33,7 @@
             <div class="hero-meta">
               <span class="meta-tag">统一社会信用代码: <code class="font-mono">{{ detail.enterprise?.creditCode || '—' }}</code></span>
               <span class="meta-tag">主体类型: {{ detail.merchant.regType || '企业' }}</span>
-              <span class="meta-tag">注册资本: ¥{{ Number(detail.merchant.regCapital || 0).toLocaleString() }}</span>
+              <span class="meta-tag">实缴资本: ¥{{ Number(detail.merchant.regCapital || 0).toLocaleString() }}</span>
               <span class="meta-tag">入驻方式: {{ detail.merchant.joinType || '直连申请' }}</span>
             </div>
           </div>
@@ -73,7 +73,7 @@
                 <code class="font-mono">{{ detail.enterprise?.creditCode || '—' }}</code>
               </a-descriptions-item>
               <a-descriptions-item label="主体类型">{{ detail.merchant.regType || '有限责任公司' }}</a-descriptions-item>
-              <a-descriptions-item label="注册资本">¥{{ Number(detail.merchant.regCapital || 0).toLocaleString() }} 元</a-descriptions-item>
+              <a-descriptions-item label="实缴资本">¥{{ Number(detail.merchant.regCapital || 0).toLocaleString() }} 元</a-descriptions-item>
               <a-descriptions-item label="入驻申报方式">
                 {{ detail.merchant.joinType || '直连申请' }}
                 <a-tag v-if="detail.merchant.joinCode" color="blue" style="margin-left: 6px;">
@@ -393,7 +393,7 @@
             <div class="dl-val">{{ detail.merchant?.legalPerson || '—' }}</div>
           </div>
           <div class="dl-check-item">
-            <span class="dl-label">注册资本</span>
+            <span class="dl-label">实缴资本</span>
             <div class="dl-val">¥{{ Number(detail.merchant?.regCapital || 0).toLocaleString() }}</div>
           </div>
           <div class="dl-check-item">

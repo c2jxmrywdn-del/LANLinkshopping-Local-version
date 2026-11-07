@@ -1,0 +1,61 @@
+# LANLink Prometheus 采集与告警配置
+# 容器内通过 Docker Compose 服务名解析 target；9090/9093 仅绑定 127.0.0.1。
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  - job_name: "lanlink-ai-gateway"
+    metrics_path: "/metrics"
+    # 网关已启用 GATEWAY_METRICS_TOKEN（真实值只存根 .env，不进仓库）。Prometheus 自身
+    # 不支持配置内 ${VAR} env 插值，内联 credentials 又会把 token 写进本仓库文件，
+    # 故采用 credentials_file 挂载方案：文件由根 docker-compose.yml 以只读方式挂到
+    # /etc/prometheus/metrics_token（已 gitignore），内容与 .env 的 GATEWAY_METRICS_TOKEN
+    # 同值；轮换时两处同步更新并重建 ai-gateway 与 prometheus 容器。
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
+    static_configs:
+      - targets: ["lanlink-ai-gateway:8090"]
+        labels:
+          env: "production"
+          service: "ai-gateway"
+
+  - job_name: "shopping-backend"
+    # Spring Boot context-path=/api，actuator 路径随 context-path 前缀
+    metrics_path: "/api/actuator/prometheus"
+    static_configs:
+      - targets: ["shopping-backend-1:8080"]
+        labels:
+          env: "production"
+          service: "mall-backend"
+
+  # RabbitMQ 聚合指标：节点存活、资源、告警、集群不可达 peer
+  - job_name: "rabbitmq-node"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["rabbitmq:15692", "rabbitmq2:15692", "rabbitmq3:15692"]
+        labels:
+          env: "production"
+          service: "rabbitmq"
+
+  # RabbitMQ 按队列指标：队列积压、消费者数量、DLQ 深度
+  - job_name: "rabbitmq-queues"
+    metrics_path: "/metrics/detailed"
+    params:
+      family:
+        - queue_coarse_metrics
+        - queue_consumer_count
+    static_configs:
+      - targets: ["rabbitmq:15692", "rabbitmq2:15692", "rabbitmq3:15692"]
+        labels:
+          env: "production"
+          service: "rabbitmq"

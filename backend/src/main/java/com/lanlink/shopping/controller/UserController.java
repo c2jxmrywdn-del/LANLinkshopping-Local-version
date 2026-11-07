@@ -255,7 +255,8 @@ public class UserController {
         return R.ok(java.util.List.of(
                 "全场商品 VIP 专属价（95 折）",
                 "每月 2 张满减券",
-                "专属客服通道",
+                // D7 已落地：有效订阅用户工单打 VIP 优先标记（SupportTicketService.submit gating），承诺与实现对齐
+                "订阅专属客服通道（工单优先处理）",
                 "积分双倍累计"));
     }
 

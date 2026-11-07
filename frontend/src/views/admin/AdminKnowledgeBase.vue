@@ -153,17 +153,25 @@ import { message } from 'ant-design-vue'
 import { kbApi } from '../../api'
 import { t } from '../../i18n'
 
-const INGEST_SOURCES = ['kb', 'policy', 'membership', 'subscription', 'category', 'logistics', 'product', 'news']
-const ALL_SOURCES = ['kb', 'policy', 'membership', 'subscription', 'category', 'logistics', 'product', 'news', 'learned', 'manual', 'intent']
+// tech：一次触发后端 8 个 tech-* 源的指纹化重灌（后端 ingest?source=tech）
+const INGEST_SOURCES = ['kb', 'policy', 'membership', 'subscription', 'category', 'logistics', 'product', 'news', 'tech']
+const TECH_SOURCES = ['tech-expert', 'tech-org', 'tech-service', 'tech-demand', 'tech-achievement', 'tech-policy', 'tech-post', 'tech-manual']
+const ALL_SOURCES = ['kb', 'policy', 'membership', 'subscription', 'category', 'logistics', 'product', 'news', 'learned', 'manual', 'intent', ...TECH_SOURCES]
 const SRC_LABEL_KEY = {
   kb: 'srcKb', policy: 'srcPolicy', membership: 'srcMembership', subscription: 'srcSubscription',
   category: 'srcCategory', logistics: 'srcLogistics', product: 'srcProduct', news: 'srcNews',
-  learned: 'srcLearned', manual: 'srcManual', intent: 'srcIntent'
+  learned: 'srcLearned', manual: 'srcManual', intent: 'srcIntent',
+  'tech-expert': 'srcTechExpert', 'tech-org': 'srcTechOrg', 'tech-service': 'srcTechService',
+  'tech-demand': 'srcTechDemand', 'tech-achievement': 'srcTechAchievement', 'tech-policy': 'srcTechPolicy',
+  'tech-post': 'srcTechPost', 'tech-manual': 'srcTechManual', tech: 'srcTechManual'
 }
 const SRC_TAG = {
   kb: 'blue', policy: 'gold', membership: 'purple', subscription: 'magenta', category: 'cyan',
   logistics: 'geekblue', product: 'green', news: 'orange', learned: 'volcano', manual: 'default',
-  intent: 'red'
+  intent: 'red',
+  'tech-expert': 'cyan', 'tech-org': 'blue', 'tech-service': 'geekblue', 'tech-demand': 'purple',
+  'tech-achievement': 'gold', 'tech-policy': 'magenta', 'tech-post': 'volcano', 'tech-manual': 'green',
+  tech: 'green'
 }
 
 const loadingStats = ref(false)

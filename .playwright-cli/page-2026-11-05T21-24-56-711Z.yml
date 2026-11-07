@@ -1,0 +1,79 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - main [ref=e3]:
+      - generic [ref=e8]:
+        - generic [ref=e9]:
+          - generic [ref=e10]: LAN
+          - text: Link
+          - generic [ref=e11]: shopping
+        - heading "聚合 · 连接 · 一体多元解决方案" [level=1] [ref=e12]
+        - paragraph [ref=e13]: 面向 B2B 采购与供给的一体化平台，覆盖商品、订单、钱包、账期、会员与物流全链路。
+        - list [ref=e14]:
+          - listitem [ref=e15]:
+            - generic [ref=e16]: "01"
+            - text: 全行业采购供给
+          - listitem [ref=e17]:
+            - generic [ref=e18]: "02"
+            - text: 企业钱包与账期
+          - listitem [ref=e19]:
+            - generic [ref=e20]: "03"
+            - text: 会员权益与活动
+        - paragraph [ref=e21]: 演示平台 · 数据仅用于功能验证
+      - generic [ref=e23]:
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - button "微信" [ref=e26] [cursor=pointer]:
+              - generic [ref=e31]: 沙箱体验
+            - button "支付宝" [ref=e32] [cursor=pointer]:
+              - generic [ref=e37]: 沙箱体验
+            - button "Apple" [ref=e38] [cursor=pointer]:
+              - generic [ref=e44]: 沙箱体验
+            - button "Google" [ref=e45] [cursor=pointer]:
+              - generic [ref=e53]: 沙箱体验
+          - paragraph [ref=e54]: 支持 Google、Apple、微信与支付宝快捷登录；已开启沙箱一键测试模式。
+        - generic [ref=e55]: 或使用账号登录
+        - generic [ref=e59]:
+          - tablist [ref=e60]:
+            - generic [ref=e62]:
+              - tab "登录" [selected] [ref=e64] [cursor=pointer]
+              - tab "扫码登录" [ref=e66] [cursor=pointer]
+              - tab "注册" [ref=e68] [cursor=pointer]
+          - tabpanel "登录" [ref=e71]:
+            - generic [ref=e72]:
+              - generic [ref=e74]:
+                - generic "手机号" [ref=e76]: "* 手机号"
+                - textbox "请输入已注册的手机号" [ref=e80]
+              - generic [ref=e82]:
+                - generic "密码" [ref=e84]: "* 密码"
+                - generic [ref=e88]:
+                  - textbox "请输入注册时设置的密码" [ref=e89]
+                  - img "eye-invisible" [ref=e91] [cursor=pointer]
+              - button "忘记密码？" [ref=e96] [cursor=pointer]
+              - button "登 录" [ref=e97] [cursor=pointer]
+              - generic [ref=e99]: 首次使用？请 注册 创建账号。
+              - generic [ref=e100]:
+                - generic [ref=e101]: 演示账号（密码均为 123456）：
+                - generic [ref=e102]:
+                  - button "采购方 (13900000001)" [ref=e103] [cursor=pointer]
+                  - button "商户 (13700000002)" [ref=e105] [cursor=pointer]
+                  - button "平台运营 (13800000000)" [ref=e107] [cursor=pointer]
+    - generic [ref=e109]:
+      - generic [ref=e115]:
+        - img "LANLinkshopping" [ref=e116]:
+          - generic [aria-hidden] [ref=e117]: ITTHYSXW[8YJ0IFE992FZ9XXL
+          - img "LANLinkshopping" [ref=e118]:
+            - generic [ref=e119]: LAN
+            - generic [ref=e120]: Link
+            - generic [ref=e121]: shopping
+          - generic [aria-hidden] [ref=e123]: DECODING BRAND MARK
+        - generic [ref=e124]: 聚合 · 连接 · 一体多元解决方案
+      - button "跳过 ›" [ref=e128] [cursor=pointer]
+  - dialog "Cookie 使用提示" [ref=e131]:
+    - generic [ref=e132]:
+      - generic [ref=e133]: PRIVACY · COOKIES
+      - heading "我们使用 Cookie 优化 LANLinkshopping" [level=3] [ref=e134]
+      - paragraph [ref=e135]: 必要 Cookie 用于登录、会话和安全功能；可选 Cookie 用于记住偏好、分析平台使用情况及改善营销体验。 你可以接受全部，也可以仅启用必要 Cookie。
+      - button "查看 Cookie 详情与偏好" [ref=e136] [cursor=pointer]
+    - generic [ref=e137]:
+      - button "仅必要 Cookie" [ref=e138] [cursor=pointer]
+      - button "接受全部" [ref=e140] [cursor=pointer]

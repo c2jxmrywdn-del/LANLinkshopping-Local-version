@@ -111,7 +111,7 @@ function go(s) {
 </script>
 
 <style scoped>
-.banner-wrap { margin-bottom: 24px; border-radius: 14px; overflow: hidden; box-shadow: 0 6px 24px rgba(15,23,42,.12); }
+.banner-wrap { margin-bottom: 24px; border-radius: 18px; overflow: hidden; border: 1px solid rgba(19,35,58,.05); box-shadow: 0 12px 34px rgba(15,23,42,.14); }
 .banner-swiper { width: 100%; }
 .slide { position: relative; height: 320px; cursor: pointer; }
 .slide img { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
@@ -119,14 +119,16 @@ function go(s) {
 .mask { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(15,23,42,.86) 0%, rgba(15,23,42,.80) 50%, rgba(15,23,42,.72) 62%, rgba(15,23,42,.28) 82%, rgba(15,23,42,0) 100%); }
 .content { position: absolute; left: 0; bottom: 0; top: 0; display: flex; flex-direction: column; justify-content: center; padding: 0 48px; color: #fff; max-width: 62%; }
 .content h2 { font-size: 30px; margin: 0 0 8px; font-weight: 800; text-shadow: 0 2px 10px rgba(0,0,0,.35); }
-.content p { font-size: 15px; margin: 0 0 14px; opacity: .92; }
-.cta { font-size: 14px; font-weight: 600; color: var(--ll-brand-gold-soft, #F6D38A); }
+.content p { font-size: 15px; margin: 0 0 14px; opacity: .92; text-shadow: 0 1px 10px rgba(0,0,0,.35); }
+.cta { font-size: 14px; font-weight: 600; color: var(--ll-brand-gold-soft, #F6D38A); text-shadow: 0 1px 10px rgba(0,0,0,.35); }
 
 /* 手机竖屏：轮播整体按比例缩小，图片高度、标题与内边距同步收紧 */
 @media (max-width: 767px) {
-  .banner-wrap { margin-bottom: 18px; border-radius: 12px; }
+  .banner-wrap { margin-bottom: 18px; border-radius: 14px; }
   .slide { height: 190px; }
   .content { max-width: 90%; padding: 0 18px; }
+  /* 移动端文案占宽变大（90%），遮罩随之加强收窄过渡，保住白字可读性 */
+  .mask { background: linear-gradient(90deg, rgba(15,23,42,.86) 0%, rgba(15,23,42,.78) 55%, rgba(15,23,42,.5) 80%, rgba(15,23,42,.2) 100%); }
   .content h2 {
     font-size: 18px;
     line-height: 1.3;

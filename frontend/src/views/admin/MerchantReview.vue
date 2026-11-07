@@ -304,7 +304,7 @@
               <code class="font-mono">{{ detail.enterprise?.creditCode || '—' }}</code>
             </a-descriptions-item>
             <a-descriptions-item label="主体类型">{{ detail.merchant?.regType }}</a-descriptions-item>
-            <a-descriptions-item label="注册资本">¥{{ detail.merchant?.regCapital }}</a-descriptions-item>
+            <a-descriptions-item label="实缴资本">¥{{ detail.merchant?.regCapital }}</a-descriptions-item>
             <a-descriptions-item label="入驻方式">
               {{ detail.merchant?.joinType || '直连入驻' }}
               <a-tag v-if="detail.merchant?.joinCode" color="blue" style="margin-left: 6px;">
@@ -379,6 +379,16 @@
               <a v-if="detail.merchant?.specialPermitUrl" :href="detail.merchant.specialPermitUrl" target="_blank" style="margin-left: auto">查看证件 ↗</a>
             </div>
           </div>
+        </div>
+
+        <!-- 商户资质材料（对象存储 + 后端中转，与旧证照端点并存） -->
+        <div class="section-card">
+          <AttachmentPanel
+            biz-type="merchant-license"
+            :biz-id="detail.merchant?.merId"
+            title="商户资质材料"
+            :bind-on-upload="true"
+          />
         </div>
 
         <!-- 审核操作卡片与驳回模板 -->
@@ -533,7 +543,7 @@
             <div class="dl-val">{{ dualCertTarget.legalPerson || '—' }}</div>
           </div>
           <div class="dl-check-item">
-            <span class="dl-label">注册资本</span>
+            <span class="dl-label">实缴资本</span>
             <div class="dl-val">¥{{ dualCertTarget.regCapital }}</div>
           </div>
           <div class="dl-check-item">
@@ -777,6 +787,7 @@ import {
   SyncOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
+import AttachmentPanel from '../../components/AttachmentPanel.vue'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
@@ -801,7 +812,7 @@ const selectedRowKeys = ref([])
 const cols = [
   { title: '商户企业主体', key: 'enterprise', width: 260 },
   { title: '法人与财务结算账户 (AES-256保护)', key: 'legalAndBank', width: 260 },
-  { title: '注册资本 / 纳税状态', key: 'capitalAndTax', width: 170 },
+  { title: '实缴资本 / 纳税状态', key: 'capitalAndTax', width: 170 },
   { title: '资质核验完整度', key: 'cert', width: 160 },
   { title: '审核状态', key: 'st', width: 110 },
   { title: '审核操作', key: 'op', width: 190, fixed: 'right' }

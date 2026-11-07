@@ -1,0 +1,190 @@
+- generic [ref=f1e304]:
+  - generic [ref=f1e306]:
+    - generic [ref=f1e307] [cursor=pointer]: LANLinkshopping
+    - menu [ref=f1e310]:
+      - menuitem "首页" [ref=f1e311] [cursor=pointer]
+      - menuitem "商城" [ref=f1e316] [cursor=pointer]
+      - menuitem "活动" [ref=f1e321] [cursor=pointer]
+      - menuitem "技术服务" [ref=f1e323] [cursor=pointer]
+      - menuitem "直播" [ref=f1e325] [cursor=pointer]
+      - menuitem "账期" [ref=f1e327] [cursor=pointer]
+      - generic: 我的订单
+      - generic: 商户中心
+      - generic: 关于我们
+      - img "ellipsis" [ref=f1e331] [cursor=pointer]
+    - generic [ref=f1e334]:
+      - button "Switch to English" [ref=f1e335] [cursor=pointer]:
+        - generic [ref=f1e336]:
+          - generic [ref=f1e338]: 中
+          - generic [ref=f1e339]: EN
+      - generic [ref=f1e340]:
+        - button "消息" [ref=f1e341] [cursor=pointer]
+        - superscript [ref=f1e346]:
+          - paragraph [ref=f1e348]: "3"
+          - paragraph [ref=f1e350]: "3"
+      - button "购物车" [ref=f1e352] [cursor=pointer]
+      - generic [ref=f1e358] [cursor=pointer]:
+        - img "入驻测试用户 的头像" [ref=f1e359]:
+          - generic [aria-hidden] [ref=f1e360]: 用户
+        - generic "入驻商户" [ref=f1e361]: 商户
+        - generic [ref=f1e362]: 入驻测试用户
+  - main [ref=f1e365]:
+    - main [ref=f1e366]:
+      - generic [ref=f1e368]:
+        - complementary [ref=f1e369]:
+          - generic [ref=f1e370]:
+            - img "重庆建工实业集团 的头像" [ref=f1e371]:
+              - generic [aria-hidden] [ref=f1e372]: 重庆
+            - generic [ref=f1e373]:
+              - generic "重庆建工实业集团" [ref=f1e374]
+              - generic [ref=f1e375]: 已通过
+          - navigation [ref=f1e376]:
+            - button "工作台" [ref=f1e377] [cursor=pointer]
+            - button "商品管理" [ref=f1e379] [cursor=pointer]
+            - button "营销活动" [ref=f1e381] [cursor=pointer]
+            - button "直播带货" [ref=f1e383] [cursor=pointer]
+            - button "价格监控" [ref=f1e385] [cursor=pointer]
+            - button "订单管理 2" [ref=f1e387] [cursor=pointer]:
+              - generic [ref=f1e388]: 订单管理
+              - generic [ref=f1e389]: "2"
+            - button "客户消息" [ref=f1e390] [cursor=pointer]
+            - button "物流发货" [ref=f1e392] [cursor=pointer]
+            - button "流量推广" [ref=f1e394] [cursor=pointer]
+            - button "流量分析" [ref=f1e396] [cursor=pointer]
+            - button "资金结算" [ref=f1e398] [cursor=pointer]
+            - button "店铺设置" [ref=f1e400] [cursor=pointer]
+          - generic [ref=f1e402]:
+            - paragraph [ref=f1e403]: 商户服务专线
+            - generic [ref=f1e404]: 400-888-0 LAN
+            - text: 工作日 9:00 - 18:00
+        - generic [ref=f1e406]:
+          - generic [ref=f1e407]:
+            - generic [ref=f1e408]:
+              - generic [ref=f1e409]: 商户中心
+              - heading "订单管理" [level=1] [ref=f1e411]
+              - paragraph [ref=f1e412]: 买家向您店铺下单的订单在此处理：待发货一键发货，退款申请随时跟踪。 您自己作为买家采购的订单，请前往 我的订单 查看。
+            - generic [ref=f1e413]:
+              - generic [ref=f1e415]:
+                - textbox "搜索订单号 / 商品名" [ref=f1e417]
+                - button [ref=f1e420] [cursor=pointer]:
+                  - img "search" [ref=f1e421]
+              - button "物流发货" [ref=f1e424] [cursor=pointer]
+          - generic [ref=f1e426]:
+            - tablist [ref=f1e427]:
+              - tab "全部" [selected] [ref=f1e428] [cursor=pointer]
+              - tab "待付款" [ref=f1e430] [cursor=pointer]
+              - tab "待发货" [ref=f1e432] [cursor=pointer]
+              - tab "已发货" [ref=f1e434] [cursor=pointer]
+              - tab "已完成" [ref=f1e436] [cursor=pointer]
+              - tab "退款相关" [ref=f1e438] [cursor=pointer]
+            - button "刷新" [ref=f1e440] [cursor=pointer]
+          - generic [ref=f1e451]:
+            - table [ref=f1e455]:
+              - rowgroup [ref=f1e464]:
+                - row [ref=f1e465]:
+                  - columnheader "订单号" [ref=f1e466]
+                  - columnheader "商品" [ref=f1e467]
+                  - columnheader "我的金额" [ref=f1e468]
+                  - columnheader "买家" [ref=f1e469]
+                  - columnheader "支付" [ref=f1e470]
+                  - columnheader "状态" [ref=f1e471]
+                  - columnheader "操作" [ref=f1e472]
+              - rowgroup [ref=f1e473]:
+                - row [ref=f1e474]:
+                  - cell "20261104043346255328 2026-11-04 04:33" [ref=f1e475]:
+                    - generic [ref=f1e476]:
+                      - generic [ref=f1e477] [cursor=pointer]: "20261104043346255328"
+                      - text: 2026-11-04 04:33
+                  - cell "重钢 Q235B 热轧钢板 δ6 ×2" [ref=f1e478]:
+                    - generic [ref=f1e480]:
+                      - generic [ref=f1e481]: 重钢 Q235B 热轧钢板 δ6
+                      - generic [ref=f1e482]: ×2
+                  - cell "¥7,780.00" [ref=f1e483]
+                  - cell "E2E Regression 139****0001" [ref=f1e484]:
+                    - generic [ref=f1e485]:
+                      - generic [ref=f1e486]: E2E Regression
+                      - text: 139****0001
+                  - cell "待付款" [ref=f1e487]
+                  - cell "已取消" [ref=f1e489]
+                  - cell [ref=f1e492]:
+                    - button "详情" [ref=f1e495] [cursor=pointer]
+                - row [ref=f1e497]:
+                  - cell "20261030215808885820 2026-10-30 21:58" [ref=f1e498]:
+                    - generic [ref=f1e499]:
+                      - generic [ref=f1e500] [cursor=pointer]: "20261030215808885820"
+                      - text: 2026-10-30 21:58
+                  - cell "重钢 Q235B 热轧钢板 δ6 ×1" [ref=f1e501]:
+                    - generic [ref=f1e503]:
+                      - generic [ref=f1e504]: 重钢 Q235B 热轧钢板 δ6
+                      - generic [ref=f1e505]: ×1
+                  - cell "¥3,890.00" [ref=f1e506]
+                  - cell "张三 139****0001" [ref=f1e507]:
+                    - generic [ref=f1e508]:
+                      - generic [ref=f1e509]: 张三
+                      - text: 139****0001
+                  - cell "已付款" [ref=f1e510]
+                  - cell "待发货" [ref=f1e512]
+                  - cell [ref=f1e515]:
+                    - generic [ref=f1e516]:
+                      - button "去发货" [ref=f1e518] [cursor=pointer]
+                      - button "详情" [ref=f1e521] [cursor=pointer]
+                - row [ref=f1e523]:
+                  - cell "20261023195824219802 2026-10-23 19:58" [ref=f1e524]:
+                    - generic [ref=f1e525]:
+                      - generic [ref=f1e526] [cursor=pointer]: "20261023195824219802"
+                      - text: 2026-10-23 19:58
+                  - cell "重铇 Q235B 热轧钢板 δ6 ×2 等 2 种" [ref=f1e527]:
+                    - generic [ref=f1e529]:
+                      - generic [ref=f1e530]: 重铇 Q235B 热轧钢板 δ6
+                      - generic [ref=f1e531]: ×2 等 2 种
+                  - cell "¥16,180.00" [ref=f1e532]
+                  - cell "重庆采购部 139****0001" [ref=f1e533]:
+                    - generic [ref=f1e534]:
+                      - generic [ref=f1e535]: 重庆采购部
+                      - text: 139****0001
+                  - cell "已付款" [ref=f1e536]
+                  - cell "待发货" [ref=f1e538]
+                  - cell [ref=f1e541]:
+                    - generic [ref=f1e542]:
+                      - button "去发货" [ref=f1e544] [cursor=pointer]
+                      - button "详情" [ref=f1e547] [cursor=pointer]
+            - list [ref=f1e549]:
+              - listitem [ref=f1e550]: 共 3 笔订单
+              - listitem "Previous Page" [ref=f1e551]:
+                - button [disabled] [ref=f1e552]:
+                  - img "left" [ref=f1e553]
+              - listitem "1" [ref=f1e556] [cursor=pointer]
+              - listitem "Next Page" [ref=f1e558]:
+                - button [disabled] [ref=f1e559]:
+                  - img "right" [ref=f1e560]
+  - generic [ref=f1e564]:
+    - generic [ref=f1e565]:
+      - generic [ref=f1e566]: LANLinkshopping
+      - paragraph [ref=f1e567]: 让每一次连接，都产生价值。
+      - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+    - generic [ref=f1e568]:
+      - button "商城" [ref=f1e569] [cursor=pointer]
+      - button "技术服务" [ref=f1e570] [cursor=pointer]
+      - button "关于我们" [ref=f1e571] [cursor=pointer]
+      - button "联系我们" [ref=f1e572] [cursor=pointer]
+      - button "用户服务协议" [ref=f1e573] [cursor=pointer]
+      - button "隐私政策" [ref=f1e574] [cursor=pointer]
+      - button "Cookie 政策" [ref=f1e575] [cursor=pointer]
+      - button "平台说明" [ref=f1e576] [cursor=pointer]
+      - button "免责声明" [ref=f1e577] [cursor=pointer]
+      - button "技术服务规则" [ref=f1e578] [cursor=pointer]
+      - button "隐私与 Cookie" [ref=f1e579] [cursor=pointer]
+    - region "项目作者信息" [ref=f1e580]:
+      - generic [ref=f1e581]:
+        - link "在 X 查看 Jason Ouyang" [ref=f1e582] [cursor=pointer]:
+          - /url: https://x.com/Orion_Yves_Jude
+          - img "Jason Ouyang X 头像" [ref=f1e583]
+        - generic [ref=f1e584]:
+          - generic [ref=f1e585]: PROJECT AUTHOR · LANLINKSHOPPING
+          - strong [ref=f1e586]: Jason Ouyang
+          - generic [ref=f1e587]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+      - generic [ref=f1e588]: © 2026 Jason Ouyang
+  - button "智能客服头像 专属客服" [ref=f1e591] [cursor=pointer]:
+    - img "智能客服头像" [ref=f1e592]
+    - generic [ref=f1e602]: 专属客服
+  - button "返回顶部"

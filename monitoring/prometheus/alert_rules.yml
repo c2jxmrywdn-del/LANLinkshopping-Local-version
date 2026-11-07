@@ -1,0 +1,174 @@
+groups:
+  - name: lanlink-ai-gateway-alerts
+    rules:
+      - alert: GatewayDown
+        expr: up{job="lanlink-ai-gateway"} == 0
+        for: 15s
+        labels:
+          severity: critical
+        annotations:
+          summary: "LANLink AI Gateway 服务宕机"
+          description: "AI 网关无法访问，当前容器或进程已停止响应。"
+
+      - alert: LLMCircuitBreakerOpen
+        expr: ai_gateway_circuit_breaker_state{state="open"} == 1
+        for: 10s
+        labels:
+          severity: warning
+        annotations:
+          summary: "大模型推理引擎已熔断"
+          description: "连续请求超时或失败，网关已切断大模型流量并触发启发式规则兜底。"
+
+      - alert: FallbackRateHigh
+        expr: rate(ai_gateway_fallback_total[1m]) > 0.5
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "启发式降级接管率异常升高"
+          description: "过去 1 分钟内降级接管速率超过每秒 0.5 次，请检查大模型或上游依赖。"
+
+      - alert: RateLimitSpike
+        expr: rate(ai_gateway_rate_limit_hits_total[1m]) > 2.0
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "遭遇突发流量限流 (HTTP 429)"
+          description: "令牌桶限流拦截突发超频请求，防止 GPU 与网关雪崩。"
+
+      - alert: GPUMemoryHigh
+        expr: (ai_gateway_gpu_memory_used_megabytes / ai_gateway_gpu_memory_total_megabytes) * 100 > 92
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "宿主机 GPU 显存占用过高 (>92%)"
+          description: "GPU 显存水位逼近物理上限，存在 OOM 风险，建议释放缓存或调减并发。"
+
+  - name: lanlink-backend-alerts
+    rules:
+      - alert: BackendDown
+        expr: up{job="shopping-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Spring Boot 后端不可达"
+          description: "Prometheus 连续 1 分钟抓取后端失败，检查容器/进程与健康检查。"
+
+      - alert: Backend5xxRateHigh
+        expr: sum(rate(http_server_requests_seconds_count{job="shopping-backend",status=~"5.."}[5m]))
+              / sum(rate(http_server_requests_seconds_count{job="shopping-backend"}[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "后端 5xx 比例超过 5%"
+          description: "过去 5 分钟服务端错误比例持续偏高，检查异常日志与依赖状态。"
+
+      - alert: BackendP95Slow
+        expr: histogram_quantile(0.95,
+              sum by (le) (rate(http_server_requests_seconds_bucket{job="shopping-backend"}[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "后端 P95 延迟超过 1 秒"
+          description: "接口延迟持续偏高，检查数据库、外部依赖或慢查询。"
+
+      - alert: JvmHeapHigh
+        expr: sum(jvm_memory_used_bytes{job="shopping-backend",area="heap"})
+              / sum(jvm_memory_max_bytes{job="shopping-backend",area="heap"}) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM 堆内存占用超过 85%"
+          description: "堆水位持续偏高，存在 Full GC/OOM 风险，检查对象分配与缓存。"
+
+      - alert: HikariConnectionsPending
+        expr: hikaricp_connections_pending{job="shopping-backend"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "数据库连接池出现等待"
+          description: "HikariCP 有线程等待连接，检查连接池上限、慢查询或连接泄漏。"
+
+  - name: lanlink-rabbitmq-alerts
+    rules:
+      - alert: RabbitMQNodeDown
+        expr: up{job="rabbitmq-node"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ 节点不可达（{{ $labels.instance }}）"
+          description: "三节点集群中有节点连续 1 分钟抓取失败，检查容器/网络。"
+
+      - alert: RabbitMQQueueBacklog
+        expr: sum by (queue) (rabbitmq_detailed_queue_messages{queue=~"q\\..*"}) > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ 队列积压（{{ $labels.queue }}）"
+          description: "队列消息数超过 1000 且持续 10 分钟，检查消费者与下游处理能力。"
+
+      - alert: RabbitMQNoConsumers
+        expr: sum by (queue) (rabbitmq_detailed_queue_consumers{
+              queue=~"q\\.order\\.paid\\.(membership|campaign)|q\\.notify\\.message|q\\.attachment\\.process"}) == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "关键队列无消费者（{{ $labels.queue }}）"
+          # 枚举是必须的：DLQ 天生没有消费者，写成 q\..* 会天天误报
+          description: "订单/通知/缩略图队列连续 5 分钟无消费者，消息将无法被处理。"
+
+      - alert: RabbitMQDlqNotEmpty
+        expr: sum by (queue) (rabbitmq_detailed_queue_messages{queue=~".*dlq"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ 死信队列非空（{{ $labels.queue }}）"
+          description: "死信队列出现消息，按运维手册排查并重放/清理。"
+
+      - alert: RabbitMQMemoryAlarm
+        expr: rabbitmq_alarms_memory_used_watermark > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ 触发内存水位告警"
+          description: "节点进入内存告警，发布会被阻塞，检查内存占用与消息堆积。"
+
+      - alert: RabbitMQDiskAlarm
+        expr: rabbitmq_alarms_free_disk_space_watermark > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ 触发磁盘水位告警"
+          description: "节点可用磁盘低于 watermark，发布会被阻塞，立即清理或扩容。"
+
+      - alert: RabbitMQDiskLow
+        expr: rabbitmq_disk_space_available_bytes < 5e9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ 可用磁盘低于 5GB"
+          description: "磁盘余量持续偏低，检查消息/日志占用并规划扩容。"
+
+      - alert: RabbitMQUnreachablePeers
+        expr: rabbitmq_unreachable_cluster_peers_count > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ 集群存在不可达节点"
+          description: "集群 peer 不可达，检查网络分区、节点状态与 Erlang cookie。"
+

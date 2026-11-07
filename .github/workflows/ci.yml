@@ -71,3 +71,64 @@ jobs:
         run: |
           python -m py_compile conversation_quality.py test_conversation_quality.py
           python -m json.tool conversation_regression_cases.json > /dev/null
+
+  ai-gateway:
+    name: AI Gateway tests, watchdog self-check & stress benchmark
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis/redis-stack-server:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-gateway/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi uvicorn pydantic jieba pymysql httpx "redis>=5.0" trafilatura pytest pytest-asyncio
+
+      - name: "Run Pytest test suite (153 tests: Hybrid RAG, Semantic Cache, Chaos & Hardening)"
+        env:
+          LLM_BACKEND: mock
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          GATEWAY_API_KEY: lanlink-local-ai-gateway
+          GATEWAY_RATE_LIMIT_PER_MIN: "100000"
+          GATEWAY_RATE_LIMIT_BURST: "100000"
+          GATEWAY_DISABLE_RATE_LIMIT: "1"
+        run: |
+          python -m pytest ai-gateway/tests -v
+
+      - name: Run SRE Watchdog CI probe & state-machine self-test
+        run: |
+          python scripts/daemon_health_watchdog.py --mock-ci-test
+
+      - name: Run High-concurrency Stress Benchmark (In-Process ASGI)
+        env:
+          LLM_BACKEND: mock
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: 6379
+          GATEWAY_DISABLE_RATE_LIMIT: "1"
+        run: |
+          python scripts/stress_benchmark.py --mode in-process --scale quick --report reports/stress_benchmark_report.md
+
+      - name: Upload Stress Benchmark Report Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stress-benchmark-report
+          path: reports/stress_benchmark_report.md

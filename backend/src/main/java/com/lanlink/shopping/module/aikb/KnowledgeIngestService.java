@@ -4,21 +4,27 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.entity.Category;
+import com.lanlink.shopping.entity.Enterprise;
 import com.lanlink.shopping.entity.Industry;
 import com.lanlink.shopping.entity.LogisticsProvider;
+import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.entity.Product;
 import com.lanlink.shopping.mapper.CategoryMapper;
+import com.lanlink.shopping.mapper.EnterpriseMapper;
 import com.lanlink.shopping.mapper.IndustryMapper;
 import com.lanlink.shopping.mapper.LogisticsProviderMapper;
+import com.lanlink.shopping.mapper.MerchantMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.module.membership.entity.MemberLevel;
 import com.lanlink.shopping.module.membership.entity.SubscriptionPlan;
 import com.lanlink.shopping.module.membership.mapper.MemberLevelMapper;
 import com.lanlink.shopping.module.membership.mapper.SubscriptionPlanMapper;
 import com.lanlink.shopping.module.pricemonitor.entity.MarketNews;
+import com.lanlink.shopping.module.pricemonitor.service.AnalysisSafetyFilter;
 import com.lanlink.shopping.module.pricemonitor.service.MarketNewsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -51,10 +57,18 @@ import java.util.Map;
 public class KnowledgeIngestService {
 
     private static final Logger log = LoggerFactory.getLogger(KnowledgeIngestService.class);
-    /** 灌库互斥标志（bootstrap 与调度线程并发防护） */
+    /** 灌库互斥标志（bootstrap、夜间全量与管理端重灌；单商品同步使用独立商品锁） */
     private final java.util.concurrent.atomic.AtomicBoolean ingestRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** 同商品事件通道与 outbox 共用锁，避免 upsert/delete 交叉导致旧知识复活或新知识被误删。 */
+    private final java.util.concurrent.ConcurrentHashMap<Long, java.util.concurrent.locks.ReentrantLock> productLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
     /** 单块文本上限（超出切段，避免嵌入截断失真） */
     private static final int CHUNK_MAX = 1200;
+    /** 商品详情参与语义检索的净文本上限，防止长尾详情挤占索引/上下文 */
+    private static final int DETAIL_MAX = 2000;
+    /** 配置层嵌入维度；索引尚未建立时用它拒绝哈希降级向量误创建错误维度索引 */
+    @Value("${AI_EMBED_DIM:1024}")
+    private int expectedEmbedDim;
 
     private final EmbeddingService embeddingService;
     private final RedisVectorStore store;
@@ -66,6 +80,19 @@ public class KnowledgeIngestService {
     private final IndustryMapper industryMapper;
     private final LogisticsProviderMapper logisticsProviderMapper;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Autowired(required = false)
+    private MerchantMapper merchantMapper;
+
+    @Autowired(required = false)
+    private EnterpriseMapper enterpriseMapper;
+
+    @Autowired(required = false)
+    private com.lanlink.shopping.module.search.ProductVectorStore productVectorStore;
+
+    /** 技术服务知识灌入（可选依赖：单测与裁剪部署可不装配） */
+    @Autowired(required = false)
+    private TechKnowledgeIngestor techKnowledgeIngestor;
 
     @Value("classpath:knowledge-base/customer-service-zh-CN.json")
     private Resource knowledgeBaseResource;
@@ -117,20 +144,14 @@ public class KnowledgeIngestService {
         }
     }
 
-    /** 在售商品快照：每日刷新（灌库互斥） */
+    /** 在售商品快照：每日刷新；全局灌库互斥在 ingestProducts 内统一处理 */
     @Scheduled(fixedDelay = 24 * 3600_000L, initialDelay = 240_000L)
     public void scheduledProductIngest() {
-        if (!ingestRunning.compareAndSet(false, true)) {
-            log.info("[aikb] product ingest skipped: another ingest is running");
-            return;
-        }
         try {
             int n = ingestProducts();
             log.info("[aikb] product ingest done: {} chunks", n);
         } catch (Exception e) {
             log.warn("[aikb] product ingest failed: {}", e.getMessage());
-        } finally {
-            ingestRunning.set(false);
         }
     }
 
@@ -160,7 +181,8 @@ public class KnowledgeIngestService {
                 float[] v = i < vectors.size() ? vectors.get(i) : null;
                 if (v == null || v.length == 0) continue;
                 PendingChunk c = chunks.get(i);
-                ids.add(store.upsert(c.source(), c.refId(), c.title(), c.text(), v));
+                String id = store.upsert(c.source(), c.refId(), c.title(), c.text(), v);
+                if (id != null) ids.add(id);
             }
         }
         long totalMs = System.currentTimeMillis() - t0;
@@ -171,6 +193,27 @@ public class KnowledgeIngestService {
 
     private int ingestBatch(String sourceLabel, List<PendingChunk> chunks) {
         return ingestBatchIds(sourceLabel, chunks).size();
+    }
+
+    /**
+     * 快照源安全灌库：先写新块，只有预期分块全部成功写入时才清理该来源的旧块。
+     * 若嵌入临时失败，保留旧快照并返回已成功数，避免 deleteSource 造成整源知识真空。
+     */
+    private int ingestSourceSnapshot(String source, String label, List<PendingChunk> chunks) {
+        java.util.Set<String> oldIds = new java.util.LinkedHashSet<>();
+        for (RedisVectorStore.DocInfo d : store.list(source, Integer.MAX_VALUE)) {
+            if (d != null && d.id() != null) oldIds.add(d.id());
+        }
+        List<String> newIds = ingestBatchIds(label, chunks);
+        if (newIds.size() == chunks.size()) {
+            java.util.Set<String> stale = new java.util.LinkedHashSet<>(oldIds);
+            stale.removeAll(newIds);
+            if (!stale.isEmpty()) store.deleteDocs(stale);
+        } else {
+            log.warn("[aikb] snapshot source {} ingest incomplete (stored={}, expected={}); old chunks preserved",
+                    source, newIds.size(), chunks.size());
+        }
+        return newIds.size();
     }
 
     /** 本批嵌入的缓存命中率（由 cacheStats 前后差值估算，不含历史累计） */
@@ -229,62 +272,374 @@ public class KnowledgeIngestService {
         return count;
     }
 
-    /** 在售商品快照：先清后灌（快照式，价格/上下架变化自动同步） */
+    /**
+     * 构建高置信、抗投毒注入的 B2B 商品富文本知识卡片（中文）。
+     * 构建 B2B 商品知识卡片（中文）。卡片只承载稳定语义（品名、品牌、供应企业、行业、类目、
+     * 规格、详情）；价格/库存/阶梯价命中后回源 MySQL，避免高频字段制造向量抖动和陈旧答案。
+     */
+    public String formatProductKnowledgeCard(Product p) {
+        if (p == null) return "";
+        String title = AnalysisSafetyFilter.sanitize(p.getTitle() == null ? "" : p.getTitle().trim());
+        String brand = p.getBrand() == null ? null : AnalysisSafetyFilter.sanitize(p.getBrand().trim());
+        String spec = p.getSpec() == null ? null : AnalysisSafetyFilter.sanitize(p.getSpec().trim());
+
+        String catName = null;
+        if (p.getCatId() != null && categoryMapper != null) {
+            try {
+                Category c = categoryMapper.selectById(p.getCatId());
+                if (c != null && c.getName() != null) catName = c.getName();
+            } catch (Exception ignored) {}
+        }
+        String indName = null;
+        if (p.getIndId() != null && industryMapper != null) {
+            try {
+                Industry ind = industryMapper.selectById(p.getIndId());
+                if (ind != null && ind.getName() != null) indName = ind.getName();
+            } catch (Exception ignored) {}
+        }
+
+        String merchantOrEnt = null;
+        if (p.getMerId() != null && merchantMapper != null) {
+            try {
+                Merchant m = merchantMapper.selectById(p.getMerId());
+                if (m != null && m.getEntId() != null && enterpriseMapper != null) {
+                    Enterprise ent = enterpriseMapper.selectById(m.getEntId());
+                    if (ent != null && ent.getName() != null) merchantOrEnt = ent.getName();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("【商品编号 #").append(p.getProdId()).append("】").append(title);
+        if (brand != null && !brand.isBlank()) sb.append(" · 品牌: ").append(brand);
+        if (merchantOrEnt != null && !merchantOrEnt.isBlank()) sb.append(" · 供应企业: ").append(merchantOrEnt);
+        if (indName != null && !indName.isBlank()) sb.append(" · 行业: ").append(indName);
+        if (catName != null && !catName.isBlank()) sb.append(" · 类目: ").append(catName);
+        if (spec != null && !spec.isBlank()) sb.append(" · 规格型号: ").append(spec);
+        sb.append(" · 价格/库存: 实时数据，命中后请回源商品详情查询");
+        sb.append(" · 阶梯批发: 支持大宗采购阶梯价，具体以实时报价为准");
+        sb.append(" · 履约/票据: 以商品详情和平台采购政策为准");
+        String detail = normalizeDetail(p.getDetail());
+        if (!detail.isBlank()) sb.append("\n商品详情: ").append(detail);
+        return sb.toString();
+    }
+
+    /**
+     * 构建 B2B 商品知识卡片（英文）。与中文卡片保持相同的稳定语义边界。
+     */
+    public String formatProductKnowledgeCardEn(Product p) {
+        if (p == null) return "";
+        String title = AnalysisSafetyFilter.sanitize(p.getTitle() == null ? "" : p.getTitle().trim());
+        String brand = p.getBrand() == null ? null : AnalysisSafetyFilter.sanitize(p.getBrand().trim());
+        String spec = p.getSpec() == null ? null : AnalysisSafetyFilter.sanitize(p.getSpec().trim());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("[Product #").append(p.getProdId()).append("] ").append(title);
+        if (brand != null && !brand.isBlank()) sb.append(" | Brand: ").append(brand);
+        if (spec != null && !spec.isBlank()) sb.append(" | Spec: ").append(spec);
+        sb.append(" | Price & stock: live data; query the product detail after retrieval");
+        sb.append(" | Tier pricing: available for bulk procurement; subject to live quotation");
+        sb.append(" | Fulfilment and invoicing: follow the product detail and platform procurement policy");
+        String detail = normalizeDetail(p.getDetail());
+        if (!detail.isBlank()) sb.append("\nProduct detail: ").append(detail);
+        return sb.toString();
+    }
+
+    /**
+     * 在售商品全量快照：先写新块、再按内容哈希清理 stale 块，避免旧实现“先清后灌”的知识真空。
+     * 任一商品嵌入失败则整轮失败，outbox/管理端可重试，不会误删旧知识。
+     */
     public int ingestProducts() {
-        store.deleteSource("product");
-        List<PendingChunk> chunks = new ArrayList<>();
+        if (!ingestRunning.compareAndSet(false, true)) {
+            throw new com.lanlink.shopping.common.BusinessException("已有灌装任务在进行中，请稍后再试");
+        }
+        try {
+            return ingestProductsInternal();
+        } finally {
+            ingestRunning.set(false);
+        }
+    }
+
+    private int ingestProductsInternal() {
         List<Product> products = productMapper.selectList(Wrappers.<Product>lambdaQuery()
                 .eq(Product::getStatus, 1)
                 .eq(Product::getReviewStatus, 1));
-        for (Product p : products) {
-            String text = "【商品】" + p.getTitle()
-                    + (p.getBrand() != null ? " · 品牌 " + p.getBrand() : "")
-                    + (p.getSpec() != null ? " · 规格 " + p.getSpec() : "")
-                    + " · 现价 ¥" + p.getPrice()
-                    + (p.getStock() != null ? " · 库存 " + p.getStock() : "");
-            for (String c : chunk(text)) {
-                chunks.add(new PendingChunk("product", String.valueOf(p.getProdId()), p.getTitle(), c));
-            }
-            String textEn = "[Product] " + p.getTitle()
-                    + (p.getBrand() != null ? " | brand " + p.getBrand() : "")
-                    + (p.getSpec() != null ? " | spec " + p.getSpec() : "")
-                    + " | price ¥" + p.getPrice()
-                    + (p.getStock() != null ? " | stock " + p.getStock() : "")
-                    + " | status: on sale (bilingual corpus; English price/stock answer supported)";
-            for (String c : chunk(textEn)) {
-                chunks.add(new PendingChunk("product", p.getProdId() + "-en", p.getTitle(), c));
-            }
+        java.util.Set<String> oldIds = new java.util.LinkedHashSet<>();
+        for (RedisVectorStore.DocInfo d : store.list("product", Integer.MAX_VALUE)) {
+            if (d != null && d.id() != null) oldIds.add(d.id());
         }
-        int count = ingestBatch("product", chunks);
+
+        List<PendingChunk> chunks = new ArrayList<>();
+        for (Product p : products) chunks.addAll(buildProductChunks(p));
+
+        List<String> newIds = ingestProductChunks("product", chunks);
+        if (newIds.size() == chunks.size()) {
+            java.util.Set<String> stale = new java.util.LinkedHashSet<>(oldIds);
+            stale.removeAll(newIds);
+            if (!stale.isEmpty()) store.deleteDocs(stale);
+        } else {
+            log.warn("[aikb] product full ingest incomplete (stored={}, expected={}); stale cleanup deferred",
+                    newIds.size(), chunks.size());
+        }
         store.invalidateCache();
-        return count;
+        log.info("[aikb] product snapshot ingest finished: {} stored chunks, {} old docs tracked",
+                newIds.size(), oldIds.size());
+        return newIds.size();
     }
 
-    /** 外部市场资讯：先清后灌最新 50 条 */
+    /**
+     * 单商品兼容入口。内部统一委托 {@link #syncProductKnowledge(Long)}，保证事件通道与 outbox
+     * 使用同一幂等语义、维度校验和 stale 清理策略。
+     */
+    public int ingestSingleProduct(Long prodId) {
+        return syncProductKnowledge(prodId);
+    }
+
+    /**
+     * 商品知识可靠同步入口：
+     * 1. 先读商品当前状态，不可售即删除；
+     * 2. 语义哈希未变化则跳过重嵌入（价格/库存变化不触发向量抖动）；
+     * 3. 先嵌入并写入新块，再只删除旧块中未被新块覆盖的文档；
+     * 4. 嵌入失败或维度不匹配抛异常，由 outbox 重试/死信，绝不误删旧知识。
+     */
+    public int syncProductKnowledge(Long prodId) {
+        if (prodId == null) return 0;
+        if (ingestRunning.get()) throw new KbIngestBusyException("full knowledge ingest is running");
+
+        java.util.concurrent.locks.ReentrantLock lock = productLock(prodId);
+        lock.lock();
+        try {
+            if (ingestRunning.get()) throw new KbIngestBusyException("full knowledge ingest is running");
+
+            Product p = productMapper.selectById(prodId);
+            if (p == null || (p.getDeleted() != null && p.getDeleted() != 0)
+                    || p.getStatus() == null || p.getStatus() != 1
+                    || p.getReviewStatus() == null || p.getReviewStatus() != 1) {
+                deleteProductKnowledgeInternal(prodId);
+                return 0;
+            }
+
+            String zhCard = formatProductKnowledgeCard(p);
+            String enCard = formatProductKnowledgeCardEn(p);
+            String semantic = zhCard + "\n" + enCard;
+            String hash = productSemanticHash(semantic);
+            String stateKey = "product:" + prodId;
+            String model = embeddingService.embedModel();
+            String cachedHash = store.getState(stateKey + ":hash");
+            String cachedModel = store.getState(stateKey + ":model");
+            java.util.Set<String> existingIds = productDocIds(prodId);
+            if (hash.equals(cachedHash)
+                    && (model == null || model.isBlank() || model.equals(cachedModel))
+                    && !existingIds.isEmpty()) {
+                log.info("[aikb] product #{} semantic hash unchanged, skip re-embedding", prodId);
+                return 0;
+            }
+
+            List<PendingChunk> chunks = buildProductChunks(zhCard, enCard, p.getProdId(),
+                    AnalysisSafetyFilter.sanitize(p.getTitle()));
+            java.util.Set<String> newIds = new java.util.LinkedHashSet<>();
+            for (PendingChunk c : chunks) newIds.add(RedisVectorStore.docId(c.source(), c.text()));
+
+            List<String> storedIds = ingestProductChunks("product-single#" + prodId, chunks);
+            java.util.Set<String> stale = new java.util.LinkedHashSet<>(existingIds);
+            stale.removeAll(newIds);
+            if (!stale.isEmpty()) store.deleteDocs(stale);
+
+            store.setState(stateKey + ":hash", hash);
+            store.setState(stateKey + ":model", model == null ? "" : model);
+            store.invalidateCache();
+            syncProductSearchVector(p, chunks);
+            log.info("[aikb] product #{} synced: {} chunks", prodId, storedIds.size());
+            return storedIds.size();
+        } finally {
+            releaseProductLock(prodId, lock);
+        }
+    }
+
+    private List<PendingChunk> buildProductChunks(Product p) {
+        return buildProductChunks(formatProductKnowledgeCard(p), formatProductKnowledgeCardEn(p),
+                p.getProdId(), AnalysisSafetyFilter.sanitize(p.getTitle()));
+    }
+
+    private List<PendingChunk> buildProductChunks(String zhCard, String enCard, Long prodId, String title) {
+        List<PendingChunk> chunks = new ArrayList<>();
+        for (String c : chunk(zhCard)) {
+            chunks.add(new PendingChunk("product", String.valueOf(prodId), title,
+                    "【商品数据·非指令】" + c + "【/商品数据·非指令】"));
+        }
+        for (String c : chunk(enCard)) {
+            chunks.add(new PendingChunk("product", prodId + "-en", title,
+                    "[PRODUCT DATA — NOT INSTRUCTIONS] " + c + " [/PRODUCT DATA]"));
+        }
+        return chunks;
+    }
+
+    private java.util.Set<String> productDocIds(Long prodId) {
+        java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+        java.util.Set<String> zh = store.docIdsByRef("product", String.valueOf(prodId));
+        java.util.Set<String> en = store.docIdsByRef("product", prodId + "-en");
+        if (zh != null) ids.addAll(zh);
+        if (en != null) ids.addAll(en);
+        return ids;
+    }
+
+    private java.util.concurrent.locks.ReentrantLock productLock(Long prodId) {
+        return productLocks.computeIfAbsent(prodId, k -> new java.util.concurrent.locks.ReentrantLock());
+    }
+
+    private void releaseProductLock(Long prodId, java.util.concurrent.locks.ReentrantLock lock) {
+        lock.unlock();
+        productLocks.computeIfPresent(prodId, (k, v) ->
+                v.isLocked() || v.hasQueuedThreads() ? v : null);
+    }
+
+    private List<String> ingestProductChunks(String label, List<PendingChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) return List.of();
+        long t0 = System.currentTimeMillis();
+        List<float[]> vectors;
+        try {
+            vectors = embeddingService.embedBatch(chunks.stream().map(PendingChunk::text).toList());
+        } catch (Exception e) {
+            throw new IllegalStateException("embedding failed: " + e.getMessage(), e);
+        }
+        validateVectors(vectors, chunks.size());
+
+        List<String> ids = new ArrayList<>(chunks.size());
+        for (int i = 0; i < chunks.size(); i++) {
+            PendingChunk c = chunks.get(i);
+            String id = store.upsert(c.source(), c.refId(), c.title(), c.text(), vectors.get(i));
+            if (id == null) throw new IllegalStateException("unsupported embedding rejected by vector store");
+            ids.add(id);
+        }
+        log.info("[aikb] ingest {}: {} chunks in {} ms", label, ids.size(),
+                System.currentTimeMillis() - t0);
+        return ids;
+    }
+
+    private void validateVectors(List<float[]> vectors, int expected) {
+        if (vectors == null || vectors.size() < expected) {
+            throw new IllegalStateException("embedding batch incomplete");
+        }
+        int required = store.storedDimension();
+        if (required <= 0) required = expectedEmbedDim;
+        for (int i = 0; i < expected; i++) {
+            float[] v = vectors.get(i);
+            if (v == null || v.length == 0) throw new IllegalStateException("embedding missing at " + i);
+            if (required > 0 && v.length != required) {
+                throw new IllegalStateException("unsupported embedding dim " + v.length + ", expected " + required);
+            }
+        }
+    }
+
+    private void syncProductSearchVector(Product p, List<PendingChunk> chunks) {
+        if (productVectorStore == null) return;
+        try {
+            String searchSummary = (chunks.isEmpty() ? "" : chunks.get(0).title())
+                    + " " + (p.getBrand() == null ? "" : p.getBrand())
+                    + " " + (p.getSpec() == null ? "" : p.getSpec());
+            float[] vec = embeddingService.embed(searchSummary.trim());
+            boolean ok = vec != null && vec.length > 0 && productVectorStore.upsert(p.getProdId(), p.getTitle(), vec);
+            if (!ok) log.warn("[aikb] product search vector skipped for #{} (dimension/store unavailable)",
+                    p.getProdId());
+        } catch (Exception e) {
+            log.warn("[aikb] sync product search vector for #{} failed: {}", p.getProdId(), e.getMessage());
+        }
+    }
+
+    static String productSemanticHash(String semantic) {
+        String raw = semantic == null ? "" : semantic;
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return Integer.toHexString(raw.hashCode());
+        }
+    }
+
+    static String normalizeDetail(String detail) {
+        if (detail == null || detail.isBlank()) return "";
+        String text = detail
+                .replaceAll("(?is)<script.*?</script>", " ")
+                .replaceAll("(?is)<style.*?</style>", " ")
+                .replaceAll("<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replaceAll("\\s+", " ")
+                .trim();
+        text = AnalysisSafetyFilter.sanitize(text);
+        return text.length() > DETAIL_MAX ? text.substring(0, DETAIL_MAX) : text;
+    }
+
+    private static String nvl(Object v) {
+        return v == null ? "" : String.valueOf(v);
+    }
+
+    /**
+     * 公开删除入口：与 sync 共用同商品锁，并在夜间/管理端全量灌库期间返回忙信号，
+     * 防止 outbox 与事件通道一边写、一边删。
+     */
+    public boolean deleteProductKnowledge(Long prodId) {
+        if (prodId == null) return false;
+        if (ingestRunning.get()) throw new KbIngestBusyException("full knowledge ingest is running");
+        java.util.concurrent.locks.ReentrantLock lock = productLock(prodId);
+        lock.lock();
+        try {
+            return deleteProductKnowledgeInternal(prodId);
+        } finally {
+            releaseProductLock(prodId, lock);
+        }
+    }
+
+    private boolean deleteProductKnowledgeInternal(Long prodId) {
+        if (prodId == null) return false;
+        int c1 = store.deleteByRefId("product", String.valueOf(prodId));
+        int c2 = store.deleteByRefId("product", prodId + "-en");
+        store.clearState("product:" + prodId + ":hash");
+        store.clearState("product:" + prodId + ":model");
+        if (productVectorStore != null) {
+            try {
+                productVectorStore.delete(prodId);
+            } catch (Exception e) {
+                log.warn("[aikb] remove product search vector for #{} failed: {}", prodId, e.getMessage());
+            }
+        }
+        store.invalidateCache();
+        log.info("[aikb] product #{} removed from vector KB (removed {} chunks)", prodId, (c1 + c2));
+        return true;
+    }
+
+    /** 外部市场资讯：安全快照更新最新 50 条 */
     public int ingestNews() {
-        store.deleteSource("news");
         List<PendingChunk> chunks = new ArrayList<>();
         List<MarketNews> news = newsService.latest(50);
         for (MarketNews n : news) {
+            // 外部 RSS 抓取内容不可信：标题/摘要入库前清洗指令式标记（LLM01）
+            String title = AnalysisSafetyFilter.sanitize(n.getTitle());
+            String summary = n.getSummary() == null ? "" : AnalysisSafetyFilter.sanitize(n.getSummary());
             String text = "【市场资讯 · " + (n.getCategory() == null ? "综合" : n.getCategory()) + "】"
-                    + n.getTitle() + (n.getSummary() == null ? "" : "\n" + n.getSummary());
+                    + title + (summary.isBlank() ? "" : "\n" + summary);
             for (String c : chunk(text)) {
                 chunks.add(new PendingChunk("news", String.valueOf(n.getId()),
-                        n.getTitle() == null ? "市场资讯" : n.getTitle(), c));
+                        title.isBlank() ? "市场资讯" : title, c));
             }
         }
-        int count = ingestBatch("news", chunks);
+        int count = ingestSourceSnapshot("news", "news", chunks);
         store.invalidateCache();
         return count;
     }
 
-    /** 平台业务政策：中文 + 英文两套语料，快照式先删后灌 */
+    /** 平台业务政策：中文 + 英文两套语料，快照式安全灌库 */
     public int ingestPolicy() {
-        store.deleteSource("policy");
         List<PendingChunk> chunks = new ArrayList<>();
         readPolicyInto(policyResource, "平台政策", chunks);
         readPolicyInto(policyEnResource, "Platform Policy", chunks);
-        int count = ingestBatch("policy", chunks);
+        int count = ingestSourceSnapshot("policy", "policy", chunks);
         store.invalidateCache();
         log.info("[aikb] policy ingested (zh+en): {} chunks", count);
         return count;
@@ -310,9 +665,8 @@ public class KnowledgeIngestService {
         }
     }
 
-    /** 会员等级门槛与折扣 + 积分规则：快照式先删后灌（中英双语块） */
+    /** 会员等级门槛与折扣 + 积分规则：安全快照式灌库（中英双语块） */
     public int ingestMembership() {
-        store.deleteSource("membership");
         List<PendingChunk> chunks = new ArrayList<>();
         try {
             List<MemberLevel> levels = memberLevelMapper.selectList(
@@ -360,15 +714,14 @@ public class KnowledgeIngestService {
         } catch (Exception e) {
             log.warn("[aikb] membership ingest failed: {}", e.getMessage());
         }
-        int count = ingestBatch("membership", chunks);
+        int count = ingestSourceSnapshot("membership", "membership", chunks);
         store.invalidateCache();
         log.info("[aikb] membership ingested: {} chunks", count);
         return count;
     }
 
-    /** 启用的订阅方案与价格：快照式先删后灌（中英双语块） */
+    /** 启用的订阅方案与价格：安全快照式灌库（中英双语块） */
     public int ingestSubscription() {
-        store.deleteSource("subscription");
         List<PendingChunk> chunks = new ArrayList<>();
         try {
             List<SubscriptionPlan> plans = subscriptionPlanMapper.selectList(
@@ -407,15 +760,14 @@ public class KnowledgeIngestService {
         } catch (Exception e) {
             log.warn("[aikb] subscription ingest failed: {}", e.getMessage());
         }
-        int count = ingestBatch("subscription", chunks);
+        int count = ingestSourceSnapshot("subscription", "subscription", chunks);
         store.invalidateCache();
         log.info("[aikb] subscription ingested: {} chunks", count);
         return count;
     }
 
-    /** 行业与商品分类体系：快照式先删后灌 */
+    /** 行业与商品分类体系：安全快照式灌库 */
     public int ingestCategory() {
-        store.deleteSource("category");
         List<PendingChunk> chunks = new ArrayList<>();
         try {
             List<Industry> industries = industryMapper.selectList(
@@ -448,15 +800,14 @@ public class KnowledgeIngestService {
         } catch (Exception e) {
             log.warn("[aikb] category ingest failed: {}", e.getMessage());
         }
-        int count = ingestBatch("category", chunks);
+        int count = ingestSourceSnapshot("category", "category", chunks);
         store.invalidateCache();
         log.info("[aikb] category ingested: {} chunks", count);
         return count;
     }
 
-    /** 物流合作方：启用服务商名称快照式先删后灌（中英双语块，不含密钥/端点等敏感字段） */
+    /** 物流合作方：启用服务商名称安全快照式灌库（中英双语块，不含密钥/端点等敏感字段） */
     public int ingestLogistics() {
-        store.deleteSource("logistics");
         List<PendingChunk> chunks = new ArrayList<>();
         try {
             List<LogisticsProvider> providers = logisticsProviderMapper.selectList(
@@ -495,7 +846,7 @@ public class KnowledgeIngestService {
         } catch (Exception e) {
             log.warn("[aikb] logistics ingest failed: {}", e.getMessage());
         }
-        int count = ingestBatch("logistics", chunks);
+        int count = ingestSourceSnapshot("logistics", "logistics", chunks);
         store.invalidateCache();
         log.info("[aikb] logistics ingested: {} chunks", count);
         return count;
@@ -504,8 +855,9 @@ public class KnowledgeIngestService {
     /** 学习闭环回填：运营审核通过的候选问答，嵌入并 upsert 进向量库（source=learned，幂等） */
     public int ingestLearned(String entryId, String question, String answer) {
         if (entryId == null || entryId.isBlank() || answer == null || answer.isBlank()) return 0;
-        String q = question == null || question.isBlank() ? entryId : question.trim();
-        String text = "【客服知识 · " + q + "】\n" + answer.trim();
+        // 候选问题源自公开访客提问（二次注入面）：即使运营误审通过，灌库前仍清洗指令式标记（LLM01）
+        String q = question == null || question.isBlank() ? entryId : AnalysisSafetyFilter.sanitize(question.trim());
+        String text = "【客服知识 · " + q + "】\n" + AnalysisSafetyFilter.sanitize(answer.trim());
         List<PendingChunk> chunks = new ArrayList<>();
         for (String c : chunk(text)) chunks.add(new PendingChunk("learned", entryId, q, c));
         int count = ingestBatch("learned", chunks);
@@ -514,13 +866,10 @@ public class KnowledgeIngestService {
         return count;
     }
 
-    /** 移除某条已学习/已录入知识（按 entryId） */
+    /** 移除某条已学习/已录入知识（按 entryId，使用反向索引 O(1) 清理） */
     public void removeLearned(String entryId) {
         if (entryId == null || entryId.isBlank()) return;
-        // learned 文档 id 由内容哈希，无法反推；按 refId 扫描删除
-        for (RedisVectorStore.DocInfo d : store.listByRef("learned", entryId)) {
-            store.deleteDoc(d.id());
-        }
+        store.deleteByRefId("learned", entryId);
         store.invalidateCache();
     }
 
@@ -642,9 +991,32 @@ public class KnowledgeIngestService {
             out.put("subscription", ingestSubscription());
             out.put("category", ingestCategory());
             out.put("logistics", ingestLogistics());
-            out.put("product", ingestProducts());
+            out.put("product", ingestProductsInternal());
             out.put("news", ingestNews());
+            // 本方法已持锁，直接调用，不能再走 ingestTech()（那会抢同一把锁并让整轮全量失败）
+            out.put("tech", ingestTechUnlocked());
             return out;
+        } finally {
+            ingestRunning.set(false);
+        }
+    }
+
+    /** 不加锁的技术服务灌入，仅供已持锁的 ingestAll 内部使用 */
+    private int ingestTechUnlocked() {
+        return techKnowledgeIngestor == null ? 0 : techKnowledgeIngestor.ingestAllTechSources();
+    }
+
+    /**
+     * 管理端单独重灌技术服务知识。与全量灌库互斥；嵌入不可用时抛错而不是返回 0，
+     * 避免运营台把「一个块都没写进去」显示成灌库成功。
+     */
+    public int ingestTech() {
+        if (techKnowledgeIngestor == null) return 0;
+        if (!ingestRunning.compareAndSet(false, true)) {
+            throw new com.lanlink.shopping.common.BusinessException("已有灌装任务在进行中，请稍后再试");
+        }
+        try {
+            return ingestTechUnlocked();
         } finally {
             ingestRunning.set(false);
         }

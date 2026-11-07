@@ -30,6 +30,13 @@ public class PaymentLogService {
         save(orderNo, channel, action, direction, success, safe);
     }
 
+    /** 与 info 同形态的告警档（退款失败回退等非致命异常路径） */
+    public void warn(String orderNo, String channel, String action, String direction, boolean success, String detail) {
+        String safe = truncate(mask(detail));
+        log.warn("[PAYMENT] order={} channel={} action={} dir={} success={} detail={}", orderNo, channel, action, direction, success, safe);
+        save(orderNo, channel, action, direction, success, safe);
+    }
+
     public void error(String orderNo, String channel, String action, String detail, Throwable e) {
         String safe = truncate(mask(detail) + (e != null ? " | ex=" + e.getClass().getSimpleName() + ":" + e.getMessage() : ""));
         log.error("[PAYMENT] order={} channel={} action={} FAILED detail={}", orderNo, channel, action, safe);

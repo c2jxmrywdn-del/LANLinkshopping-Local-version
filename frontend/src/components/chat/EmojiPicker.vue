@@ -19,19 +19,28 @@ const groups = EMOJI_GROUPS
 const rootRef = ref(null)
 
 /** 点面板外/Esc 关闭（由父级 v-if 控制挂载，卸载即随监听一并移除） */
-function onDocClick(e) {
+function onDocPointerDown(e) {
   if (rootRef.value && !rootRef.value.contains(e.target)) emit('close')
 }
 function onKey(e) {
   if (e.key === 'Escape') emit('close')
 }
 
+let frameId = null
+
 onMounted(() => {
-  document.addEventListener('click', onDocClick)
+  // 外部关闭用 pointerdown 且延迟到下一帧注册：打开面板的那次 click 冒泡到 document 时
+  // 监听尚未挂上，避免"点开即自关"（Vue 重渲染先于同一 click 冒泡完成，target 落在面板外）
+  frameId = requestAnimationFrame(() => {
+    frameId = null
+    document.addEventListener('pointerdown', onDocPointerDown)
+  })
   document.addEventListener('keydown', onKey)
 })
 onBeforeUnmount(() => {
-  document.removeEventListener('click', onDocClick)
+  // 若在下一帧前卸载，取消注册防止监听挂上后无人移除（泄漏）
+  if (frameId != null) cancelAnimationFrame(frameId)
+  document.removeEventListener('pointerdown', onDocPointerDown)
   document.removeEventListener('keydown', onKey)
 })
 </script>

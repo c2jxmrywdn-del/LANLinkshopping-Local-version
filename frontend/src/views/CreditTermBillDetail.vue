@@ -47,15 +47,34 @@
 
       <div class="cols">
         <a-card title="账单信息" :bordered="false" class="info-card">
-          <a-descriptions bordered :column="{ xs: 1, sm: 1, md: 2 }" :label-style="{ width: '100px', whiteSpace: 'nowrap' }">
+          <a-descriptions bordered :column="{ xs: 1, sm: 1, md: 2 }" :label-style="{ width: '110px', whiteSpace: 'nowrap' }">
             <a-descriptions-item label="账单号">{{ bill.id }}</a-descriptions-item>
-            <a-descriptions-item label="关联订单">
-              <a class="order-link" @click="goOrder">{{ bill.orderNo }}</a>
+            <a-descriptions-item label="业务类型">
+              <a-tag v-if="bill.billType === 'LOGISTICS_FREIGHT'" color="purple">
+                <Truck :size="12" class="inline mr-1 align-middle text-purple-600" />物流运费月结担保
+              </a-tag>
+              <a-tag v-else color="blue">
+                <Package :size="12" class="inline mr-1 align-middle text-blue-600" />大额商品集采挂账
+              </a-tag>
             </a-descriptions-item>
-            <a-descriptions-item label="账单金额">¥{{ money(bill.amount) }}</a-descriptions-item>
+            <a-descriptions-item :label="bill.billType === 'LOGISTICS_FREIGHT' ? '物流结算单' : '关联订单'">
+              <span v-if="bill.billType === 'LOGISTICS_FREIGHT'" class="font-mono text-purple-700 font-semibold">
+                {{ bill.settlementNo || bill.orderNo }}
+              </span>
+              <a v-else class="order-link font-mono" @click="goOrder">{{ bill.orderNo }}</a>
+            </a-descriptions-item>
+            <a-descriptions-item label="账单总额">¥{{ money(bill.amount) }}</a-descriptions-item>
+            <a-descriptions-item label="本金金额">¥{{ money(bill.principalAmount || bill.amount) }}</a-descriptions-item>
+            <a-descriptions-item label="利息与罚息">
+              ¥{{ money(Number(bill.interestAmount || 0) + Number(bill.penaltyAmount || 0)) }}
+              <span class="text-xs text-slate-400 ml-1">(利息: ¥{{ money(bill.interestAmount) }} / 罚息: ¥{{ money(bill.penaltyAmount) }})</span>
+            </a-descriptions-item>
             <a-descriptions-item label="已还金额">¥{{ money(bill.paidAmount) }}</a-descriptions-item>
             <a-descriptions-item label="待还金额">¥{{ money(bill.outstandingAmount) }}</a-descriptions-item>
-            <a-descriptions-item label="账期">{{ account?.termDays || '—' }} 天</a-descriptions-item>
+            <a-descriptions-item label="准入账期">{{ account?.termDays || 7 }} 天 (7~15天标准短融)</a-descriptions-item>
+            <a-descriptions-item label="执行利率">
+              {{ ((bill.dailyRate || account?.dailyRate || 0.00025) * 100).toFixed(4) }}%/天 (单利年化 {{ ((bill.apr || account?.apr || 0.09) * 100).toFixed(2) }}% APR)
+            </a-descriptions-item>
             <a-descriptions-item label="出账时间">{{ prettyTime(bill.createTime) }}</a-descriptions-item>
             <a-descriptions-item label="结清时间">{{ prettyTime(bill.settledTime) }}</a-descriptions-item>
             <a-descriptions-item label="授信状态">{{ accountStatusLabel }}</a-descriptions-item>
@@ -174,6 +193,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Truck, Package } from 'lucide-vue-next'
 import { creditTermApi, walletApi } from '../api'
 import {
   billCategory,

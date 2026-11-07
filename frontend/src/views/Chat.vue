@@ -66,6 +66,12 @@
             <Send :size="16" :stroke-width="2.2" />
           </button>
         </template>
+        <!-- 申请中：权限气泡未应答时给出明确反馈（spinner 红点 + 文案），麦克风钮禁用防重复申请 -->
+        <template v-else-if="requesting">
+          <span class="req-dot" aria-hidden="true"></span>
+          <span class="req-text">正在申请麦克风权限…</span>
+          <span class="rec-fill" aria-hidden="true"></span>
+        </template>
         <template v-else>
           <button type="button" class="emoji-btn" :class="{ on: showEmoji }" aria-label="插入表情"
                   @click="showEmoji = !showEmoji">
@@ -74,7 +80,7 @@
           <button type="button" class="attach-btn" :disabled="busy" aria-label="发送图片或文件" @click="pickFile">
             <Paperclip :size="18" :stroke-width="2" />
           </button>
-          <button type="button" class="mic-btn" :disabled="busy" aria-label="录制语音" @click="startRecord">
+          <button type="button" class="mic-btn" :disabled="busy || requesting" aria-label="录制语音" @click="startRecord">
             <Mic :size="18" :stroke-width="2" />
           </button>
           <input ref="fileInputRef" type="file" hidden :accept="acceptTypes" @change="onPickFile" />
@@ -123,10 +129,11 @@ const acceptTypes = 'image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.
   + '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip'
 const busy = computed(() => sending.value || !!uploading.value)
 
-// 语音录音（权限/不支持时经 onError 中文提示）
+// 语音录音（权限/不支持时经 onError 中文提示；requesting=权限申请中，UI 显示申请形态）
 const recorder = useVoiceRecorder({ onError: (m) => message.error(m) })
 const recording = recorder.recording
 const recSeconds = recorder.seconds
+const requesting = recorder.requesting
 
 /** 媒体消息（非文本）走 MessageMedia 渲染 */
 function isMedia(m) {
@@ -332,7 +339,7 @@ onBeforeUnmount(() => {
   border-radius: 18px; overflow: hidden; box-shadow: 0 10px 34px rgba(19, 35, 58, .07); }
 
 .chat-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px;
-  background: var(--ll-navy, #13233a); color: #fff; }
+  background: linear-gradient(135deg, #EAF5FE, #D6ECFA); color: #13233A; }
 .chat-back { border: 0; background: rgba(255,255,255,.1); color: #fff; width: 30px; height: 30px;
   border-radius: 9px; display: grid; place-items: center; cursor: pointer; flex-shrink: 0; }
 .chat-peer { flex: 1; min-width: 0; }
@@ -355,7 +362,7 @@ onBeforeUnmount(() => {
 .msg + .msg.mine { margin-top: -4px; }
 .msg + .msg.theirs { margin-top: -4px; }
 .msg-avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
-  color: #fff; background: linear-gradient(135deg, #13233a, #34577a); }
+  color: #13233A; background: linear-gradient(135deg, #EAF5FE, #D6ECFA); }
 .msg-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .msg.mine .msg-main { align-items: flex-end; }
 .msg-bubble { margin: 0; padding: 9px 13px; border-radius: 14px; font-size: 13.5px; line-height: 1.65;
@@ -387,11 +394,11 @@ onBeforeUnmount(() => {
 
 .chat-compose { position: relative; display: flex; align-items: flex-end; gap: 9px; padding: 11px 13px;
   border-top: 1px solid var(--ll-border, #e5e2da); background: var(--ll-card, #fff); }
-.emoji-btn { border: 1px solid var(--ll-border, #e5e2da); background: var(--ll-page, #f5f6f8);
+.chat-compose .emoji-btn { border: 1px solid var(--ll-border, #e5e2da); background: var(--ll-page, #f5f6f8);
   color: var(--ll-muted, #64748b); width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0;
-  display: grid; place-items: center; cursor: pointer;
+  padding: 0; display: grid; place-items: center; cursor: pointer;
   transition: color .15s ease, border-color .15s ease, background .15s ease; }
-.emoji-btn:hover, .emoji-btn.on { color: #0284c7; border-color: #38bdf8; background: rgba(56, 189, 248, .08); }
+.chat-compose .emoji-btn:hover, .chat-compose .emoji-btn.on { color: #0284c7; border-color: #38bdf8; background: rgba(56, 189, 248, .08); }
 .chat-compose textarea { flex: 1; min-width: 0; resize: none; border: 1px solid var(--ll-border, #e5e2da);
   border-radius: 12px; padding: 10px 13px; font: inherit; font-size: 13px; line-height: 1.5;
   font-family: 'LL Emoji', -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
@@ -422,6 +429,13 @@ onBeforeUnmount(() => {
 .chat-compose .rec-cancel:hover { background: rgba(239, 68, 68, .08); }
 .chat-compose .rec-send { border: 0; color: #fff; background: linear-gradient(135deg, #ef4444, #dc2626);
   box-shadow: 0 2px 8px rgba(239, 68, 68, .3); }
+
+/* 申请中形态：spinner 红点 + 文案（样式对齐 .rec-dot 系），权限气泡应答/超时后自动退出 */
+.req-dot { width: 12px; height: 12px; border-radius: 50%; background: #ef4444; align-self: center; flex-shrink: 0;
+  animation: reqSpin 1s linear infinite; }
+@keyframes reqSpin { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, .45); opacity: 1; }
+  100% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); opacity: .55; } }
+.req-text { align-self: center; font-size: 13px; color: var(--ll-muted, #64748b); flex-shrink: 0; }
 
 /* 上传条：临时节点（不进 messages），文件名 + 进度 */
 .upload-card { display: flex; flex-direction: column; gap: 2px; min-width: 220px; padding: 10px 13px;

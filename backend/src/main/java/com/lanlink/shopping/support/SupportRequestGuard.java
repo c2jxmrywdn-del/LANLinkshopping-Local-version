@@ -52,7 +52,24 @@ public class SupportRequestGuard {
         }
     }
 
+    /** 可信代理授权通道。NONE=未授权；PROXY_SECRET=经可信反代（nginx/Vite 注入密钥）；PLATFORM_API_KEY=平台 API key 直连调用。 */
+    public enum ProxyChannel { NONE, PROXY_SECRET, PLATFORM_API_KEY }
+
     public boolean isAuthorizedProxy(HttpServletRequest request) {
+        return authorizedChannel(request) != ProxyChannel.NONE;
+    }
+
+    /**
+     * 是否采信请求头 X-Support-Client-IP 作为限流键。
+     * 仅代理密钥通道（请求确实经过可信反代，nginx 以 $remote_addr / Vite 以 socket remoteAddress
+     * 覆写注入该头）可信；平台 API key 为直连调用，调用方可任意轮换伪造该头获得多份 120/min 配额，
+     * 故一律不采信，由调用方回退 socket 远端地址。
+     */
+    public boolean trustsClientIpHeader(HttpServletRequest request) {
+        return authorizedChannel(request) == ProxyChannel.PROXY_SECRET;
+    }
+
+    public ProxyChannel authorizedChannel(HttpServletRequest request) {
         // 1. 优先检查平台 API 密钥（外部系统、移动端或第三方调用）
         String apiKey = request.getHeader("X-API-Key");
         if (!StringUtils.hasText(apiKey)) {
@@ -63,7 +80,7 @@ public class SupportRequestGuard {
         }
         if (StringUtils.hasText(apiKey) && apiKeyService != null) {
             if (apiKeyService.authorize(apiKey, "support:ask") || apiKeyService.authorize(apiKey, "intent:analyze")) {
-                return true;
+                return ProxyChannel.PLATFORM_API_KEY;
             }
         }
 
@@ -73,13 +90,13 @@ public class SupportRequestGuard {
             rejectedAuth.incrementAndGet();
             log.warn("[support-monitor] reject #{}: server proxy-secret not configured (from {})",
                     rejectedAuth.get(), request.getRemoteAddr());
-            return false;
+            return ProxyChannel.NONE;
         }
         if (!StringUtils.hasText(supplied)) {
             rejectedAuth.incrementAndGet();
             log.warn("[support-monitor] reject #{}: missing X-Support-Proxy-Secret header (from {}) - "
                     + "request did not pass through the trusted proxy layer", rejectedAuth.get(), request.getRemoteAddr());
-            return false;
+            return ProxyChannel.NONE;
         }
         boolean matched = MessageDigest.isEqual(expectedProxySecret.getBytes(StandardCharsets.UTF_8),
                 supplied.getBytes(StandardCharsets.UTF_8));
@@ -89,7 +106,7 @@ public class SupportRequestGuard {
                     + "check Vite proxy / Vercel proxy secret consistency with support.proxy-secret",
                     rejectedAuth.get(), request.getRemoteAddr(), supplied.length());
         }
-        return matched;
+        return matched ? ProxyChannel.PROXY_SECRET : ProxyChannel.NONE;
     }
 
     public boolean allowRequest(String clientAddress) {

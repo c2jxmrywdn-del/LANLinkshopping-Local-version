@@ -149,4 +149,138 @@
   .ll-glass--interactive:hover,
   .ll-glass--interactive:active { transition: none; transform: none; --ll-glass-a1: -75deg; }
   .ll-glass__sheen { display: none; }
+  /* 组 A 原语：光斑漂移与 day glass 扫光整体关闭 */
+  .ll-blob,
+  .ll-glass--day::before { animation: none; }
+  .ll-glass--day::before { content: none; }
+  .ll-liquid-radius { animation: none; }
+}
+
+/* =====================================================
+   组 A · 浅底液态玻璃（day glass）+ 光斑原语
+   浅天蓝表面（小清新天空蓝）专用材质包，供 Hero / 统计卡等
+   浅底深字场景组合使用；组 C techservice.css 消费本节
+   keyframes（llBlobV / llBlobC / llDaySheen）。
+   ===================================================== */
+
+/* 光斑原语：尺寸走 --blob-s、颜色走 --blob-c（回落 --ll-sky-blob-2）。
+   定位原语不自带动画，由使用方以 llBlobV / llBlobC 等帧驱动漂移。 */
+.ll-blob {
+  position: absolute;
+  z-index: 0;
+  width: var(--blob-s, 320px);
+  height: var(--blob-s, 320px);
+  border-radius: 999px;
+  pointer-events: none;
+  background: radial-gradient(circle, var(--blob-c, var(--ll-sky-blob-2)) 0%, transparent 70%);
+  filter: blur(40px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+/* soft-light 变体：品牌红/金斑用（浅底上不提亮底色，柔混合） */
+.ll-blob--soft { mix-blend-mode: soft-light; }
+
+/* --- 共享 keyframes：光斑竖漂 / 圆轨道 / 光环旋转 / 液态圆角变形 / 扫光 --- */
+@keyframes llBlobV {
+  0%, 100% { transform: translate3d(0, -6%, 0) scale(1); }
+  50%      { transform: translate3d(0, 7%, 0) scale(1.12); }
+}
+/* 圆轨道：rotate/translateX/rotate 反抵，中心距不变沿圆周漂移 */
+@keyframes llBlobC {
+  0%   { transform: rotate(0deg) translateX(7%) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(7%) rotate(-360deg); }
+}
+@keyframes llHaloRotate {
+  to { transform: rotate(360deg); }
+}
+/* 液态圆角三帧变形（配 .ll-liquid-radius 类由使用方声明动画时长） */
+@keyframes llLiquidRadius {
+  0%   { border-radius: 18px 46px 20px 44px; }
+  50%  { border-radius: 44px 18px 46px 20px; }
+  100% { border-radius: 24px 30px 18px 42px; }
+}
+/* 非交互面扫光循环：左驻 → 右扫 → 回归起点，无缝循环 */
+@keyframes llDaySheen {
+  0%, 6%   { transform: translateX(-120%) skewX(-20deg); }
+  35%, 82% { transform: translateX(120%) skewX(-20deg); }
+  100%     { transform: translateX(-120%) skewX(-20deg); }
+}
+/* 交互一次性扫光：悬停触发，扫离右缘即停在画外 */
+@keyframes llDaySheenHover {
+  to { transform: translateX(120%) skewX(-20deg); }
+}
+
+/* --- 浅底液态玻璃参数包：padding-box 白浊填充 + border-box 140deg 渐变描边 --- */
+.ll-glass--day {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--ll-glass-day-radius, 16px);
+  background:
+    linear-gradient(rgba(255, 255, 255, .5), rgba(255, 255, 255, .4)) padding-box,
+    linear-gradient(140deg,
+      rgba(255, 255, 255, .95),
+      rgba(255, 255, 255, .15) 35%,
+      rgba(255, 255, 255, .05) 60%,
+      rgba(255, 255, 255, .55)) border-box;
+  backdrop-filter: blur(var(--ll-glass-day-blur, 16px)) saturate(var(--ll-glass-day-saturate, 150%));
+  -webkit-backdrop-filter: blur(var(--ll-glass-day-blur, 16px)) saturate(var(--ll-glass-day-saturate, 150%));
+  box-shadow:
+    0 8px 32px rgba(30, 110, 184, .16),
+    inset 0 4px 20px rgba(255, 255, 255, .3),
+    inset 0 1px 0 rgba(255, 255, 255, .8);
+}
+/* 深 tint 变体：padding-box 填充升到 .62/.52（--ll-glass-day-bg-deep 基准），深字余量更大 */
+.ll-glass--day--deep {
+  background:
+    linear-gradient(rgba(255, 255, 255, .62), rgba(255, 255, 255, .52)) padding-box,
+    linear-gradient(140deg,
+      rgba(255, 255, 255, .95),
+      rgba(255, 255, 255, .15) 35%,
+      rgba(255, 255, 255, .05) 60%,
+      rgba(255, 255, 255, .55)) border-box;
+}
+
+/* 底部反光沿：略越界伪元素承载三条白色 inset 阴影，贴卡片底边
+   （与 techservice 同技法；overflow:hidden 会裁掉越界部分，使用方注意） */
+.ll-glass--day::after {
+  content: '';
+  position: absolute;
+  inset: -10px -8px 0 -11px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: .6;
+  filter: blur(1px) brightness(115%);
+  box-shadow:
+    inset -0.3px -1px 0 -0.35px rgba(255, 255, 255, 1),
+    inset -1px -5.8px 0 -0.35px rgba(255, 255, 255, 1),
+    inset 0 -9px 0 -8px rgba(255, 255, 255, 1);
+}
+
+/* 非交互面扫光：6s 循环；clip-path 收边（不加 overflow:hidden，
+   以免裁掉 ::after 的底部反光沿）。z-index:-1 依托 backdrop-filter
+   建立的层叠上下文：扫光夹在玻璃面与文字之间。 */
+.ll-glass--day::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .4) 50%, transparent);
+  transform: translateX(-120%) skewX(-20deg);
+  clip-path: inset(0 round var(--ll-glass-day-radius, 16px));
+  animation: llDaySheen 6s ease-in-out infinite;
+  pointer-events: none;
+}
+/* 交互变体：.75s ease-out 一次性扫光接管循环 */
+.ll-glass--day--hover::before {
+  animation: llDaySheenHover .75s ease-out;
+}
+
+/* reduced-motion 收口（二次包裹）：上方 :147 既有块的源顺序先于本节基定义，
+   同名同特异性选择器会被基规则后到覆盖；此处置于基定义之后确保生效，
+   属级联顺序要求，非重复定义。 */
+@media (prefers-reduced-motion: reduce) {
+  .ll-blob,
+  .ll-liquid-radius { animation: none; }
+  .ll-glass--day::before { content: none; animation: none; }
 }

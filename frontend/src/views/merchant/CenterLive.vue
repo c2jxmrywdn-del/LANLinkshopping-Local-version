@@ -50,7 +50,7 @@
             <div v-if="selectedRows.length" class="cl-prod-editor">
               <div v-for="p in selectedRows" :key="p.prodId" class="cl-prod-row">
                 <div class="cl-prod-cover">
-                  <img v-if="p.coverUrl" :src="p.coverUrl" :alt="p.title" />
+                  <img v-if="p.coverUrl" :src="resolveStorageUrl(p.coverUrl)" :alt="p.title" />
                   <div v-else class="cl-prod-fallback"><ShoppingBag :size="16" :stroke-width="1.7" /></div>
                 </div>
                 <span class="cl-prod-title">{{ p.title }}</span>
@@ -206,6 +206,7 @@ import { useRouter } from 'vue-router'
 import { Modal, message } from 'ant-design-vue'
 import { ShoppingBag, Video } from 'lucide-vue-next'
 import { liveApi, productApi } from '../../api'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import NumberTicker from '../../components/ui/NumberTicker.vue'
 
 const router = useRouter()

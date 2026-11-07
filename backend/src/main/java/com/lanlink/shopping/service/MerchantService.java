@@ -37,7 +37,7 @@ import java.util.Map;
 @Service
 public class MerchantService {
 
-    private static final BigDecimal MIN_CAPITAL = new BigDecimal("100000"); // 10万元
+    private static final BigDecimal MIN_CAPITAL = new BigDecimal("100000"); // 实缴资本门槛: 10万元及以上
 
     private final MerchantMapper merchantMapper;
     private final EnterpriseMapper enterpriseMapper;
@@ -209,9 +209,9 @@ public class MerchantService {
 
     /** 筛选规则引擎 */
     private void applyScreening(Merchant m) {
-        boolean regOk = "公司".equals(m.getRegType())
-                || ("个体工商户".equals(m.getRegType())
-                    && m.getRegCapital() != null && m.getRegCapital().compareTo(MIN_CAPITAL) > 0);
+        boolean entityOk = "公司".equals(m.getRegType()) || "个体工商户".equals(m.getRegType());
+        boolean capitalOk = m.getRegCapital() != null && m.getRegCapital().compareTo(MIN_CAPITAL) >= 0;
+        boolean regOk = entityOk && capitalOk;
         boolean taxOk = m.getTaxStatus() != null && m.getTaxStatus() == 1;
         if (regOk && taxOk) {
             m.setReviewStatus(1);
@@ -220,7 +220,7 @@ public class MerchantService {
             m.setReviewStatus(2);
             StringBuilder reason = new StringBuilder();
             if (!regOk) {
-                reason.append("注册资本或主体类型不符(需公司,或个体工商户注册资本>10万元); ");
+                reason.append("实缴资本或主体类型不符(商户实缴资本需达到十万元及以上); ");
             }
             if (!taxOk) {
                 reason.append("缺少稳定纳税记录; ");
@@ -294,6 +294,31 @@ public class MerchantService {
         if (phone != null) m.setContactPhone(phone);
         if (email != null) m.setContactEmail(email);
         if (addr != null) m.setBusinessAddress(addr);
+        m.setUpdateTime(java.time.LocalDateTime.now());
+        merchantMapper.updateById(m);
+        return m;
+    }
+
+    /** 商户端：更新企业对公银行收款账户（AES-256-GCM 加密存储） */
+    public Merchant updateBankAccount(Long userId, Map<String, String> body) {
+        Merchant m = mustMerchant(userId);
+        String bankName = trimOrNull(body.get("bankName"));
+        String bankAccount = trimOrNull(body.get("bankAccount"));
+        if (bankName == null && bankAccount == null) {
+            throw new BusinessException("请至少填写一项要修改的对公账户信息");
+        }
+        if (bankName != null) {
+            if (bankName.length() < 4 || bankName.length() > 100) {
+                throw new BusinessException("开户银行全称需在 4~100 个字符之间");
+            }
+            m.setBankName(bankName);
+        }
+        if (bankAccount != null) {
+            if (!bankAccount.matches("^[0-9A-Za-z\\-\\s]{8,35}$")) {
+                throw new BusinessException("对公银行账号格式不正确（8~35 位字符）");
+            }
+            m.setBankAccount(bankAccount.replaceAll("\\s+", ""));
+        }
         m.setUpdateTime(java.time.LocalDateTime.now());
         merchantMapper.updateById(m);
         return m;
@@ -431,23 +456,30 @@ public class MerchantService {
     }
 
     /**
-     * 运营端: 批量审核商户
+     * 运营端: 批量审核商户（逐单收集失败原因，不再静默吞单条失败）
      */
     @Transactional
     public Map<String, Object> batchReview(List<Long> merIds, Integer reviewStatus, String reason, Long adminUserId, HttpServletRequest request) {
         if (merIds == null || merIds.isEmpty()) throw new BusinessException("请选择要批量审核的商户");
         int success = 0;
+        List<Map<String, Object>> failed = new java.util.ArrayList<>();
         for (Long id : merIds) {
             try {
                 review(id, reviewStatus, reason);
                 success++;
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                failed.add(Map.of("merId", id, "reason", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
         }
         if (auditService != null) {
             auditService.record(adminUserId, "MERCHANT_BATCH_REVIEW",
                     "批量审核商户共 " + success + "/" + merIds.size() + " 条，状态=" + reviewStatus + "，原因=" + (reason != null ? reason : "无"), request);
         }
-        return Map.of("total", merIds.size(), "success", success);
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("total", merIds.size());
+        out.put("success", success);
+        out.put("failed", failed);
+        return out;
     }
 
     /**

@@ -1,0 +1,70 @@
+{
+  "version": "v1",
+  "eval_sha256": "18c34d9e92d3d29c3af11ba1b3c0f410a57c7d93109a8d2117df4f9743618e04",
+  "total": {
+    "train": 693,
+    "dev": 121,
+    "eval": 264
+  },
+  "per_class": {
+    "account_access": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "merchant_onboarding": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "product_browse": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "cart_order": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "wallet_credit": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "membership_activity": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "message_privacy": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "logistics_tracking": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "refund_aftersale": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "payment_invoice": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    },
+    "complaint_human": {
+      "train": 63,
+      "dev": 11,
+      "eval": 24
+    }
+  },
+  "bilingual": {
+    "train": 198,
+    "eval": 88
+  }
+}

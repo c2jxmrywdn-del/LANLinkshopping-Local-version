@@ -29,6 +29,16 @@ public class LogisticsSettlement {
     private Long reviewerId;
     private String reviewNote;
     private LocalDateTime paidTime;
+    private Long reconId;
+    private Long invoiceId;
+    /** unbilled/billed/verified */
+    private String invoiceStatus;
+    private BigDecimal amountWithoutTax;
+    private BigDecimal taxAmount;
+    /** 支付方式：direct 直付 / credit_guarantee 账期担保 */
+    private String payMethod;
+    /** 关联企业账期账单ID */
+    private Long creditBillId;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     /** 逻辑删除标记（存储层内部字段，不外发） */

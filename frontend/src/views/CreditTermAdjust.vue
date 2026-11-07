@@ -71,12 +71,16 @@
               />
               <p class="hint">不得低于已用额度 ¥{{ money(account?.usedLimit) }}，最高 500,000 元。</p>
             </a-form-item>
-            <a-form-item label="新账期" name="termDays">
+            <a-form-item label="新账期（7 ~ 15 天）" name="termDays">
               <a-radio-group v-model:value="form.termDays" class="terms">
-                <a-radio-button :value="30">30 天</a-radio-button>
-                <a-radio-button :value="60">60 天</a-radio-button>
-                <a-radio-button :value="90">90 天</a-radio-button>
+                <a-radio-button :value="7">7 天 (敏捷短融)</a-radio-button>
+                <a-radio-button :value="10">10 天 (周转备货)</a-radio-button>
+                <a-radio-button :value="15">15 天 (赊销上限)</a-radio-button>
               </a-radio-group>
+              <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 12px; color: #64748b;">自定义天数：</span>
+                <a-input-number v-model:value="form.termDays" :min="7" :max="15" :precision="0" style="width: 100px;" addon-after="天" />
+              </div>
             </a-form-item>
           </div>
           <a-form-item label="调整原因" name="purpose">
@@ -161,7 +165,7 @@ const account = ref(null)
 const adjustments = ref([])
 const pending = ref(null)
 
-const form = reactive({ requestedLimit: 0, termDays: 30, purpose: '' })
+const form = reactive({ requestedLimit: 0, termDays: 7, purpose: '' })
 
 const minLimit = computed(() => Math.max(1000, Number(account.value?.usedLimit || 0)))
 
@@ -188,7 +192,7 @@ const statusColor = (value) =>
 
 function resetForm() {
   form.requestedLimit = Number(account.value?.creditLimit || 0)
-  form.termDays = account.value?.termDays || 30
+  form.termDays = account.value?.termDays || 7
   form.purpose = ''
   formRef.value?.clearValidate?.()
 }
@@ -263,7 +267,7 @@ async function load() {
     pending.value = adjustments.value.find((item) => item.status === 'PENDING') || overview?.pendingAdjustment || null
     if (account.value) {
       form.requestedLimit = Number(account.value.creditLimit || 0)
-      form.termDays = account.value.termDays || 30
+      form.termDays = (account.value.termDays >= 7 && account.value.termDays <= 15) ? account.value.termDays : 7
       form.purpose = ''
     }
   } catch (e) {

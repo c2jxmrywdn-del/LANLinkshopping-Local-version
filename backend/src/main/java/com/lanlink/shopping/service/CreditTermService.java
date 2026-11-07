@@ -35,7 +35,11 @@ public class CreditTermService {
     private static final Logger log = LoggerFactory.getLogger(CreditTermService.class);
     private static final BigDecimal MAX_REQUEST = new BigDecimal("500000");
     private static final BigDecimal ZERO = new BigDecimal("0.00");
-    private static final Set<Integer> TERM_DAYS = Set.of(30, 60, 90);
+    public static final int MIN_TERM_DAYS = 7;
+    public static final int MAX_TERM_DAYS = 15;
+    public static final BigDecimal DEFAULT_DAILY_RATE = new BigDecimal("0.000300");
+    public static final BigDecimal DEFAULT_APR = new BigDecimal("0.1080");
+    public static final int DEFAULT_GRACE_DAYS = 3;
     private static final Set<String> REPAY_METHODS = Set.of("wallet", "transfer");
 
     private final CreditAccountMapper accountMapper;
@@ -50,6 +54,17 @@ public class CreditTermService {
     /** 审计服务（可选注入，保持既有构造器签名不变，缺省时跳过审计） */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AuditService auditService;
+
+    /** 物流结算单 Mapper（可选注入，支持物流运费账期支付担保） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.mapper.LogisticsSettlementMapper settlementMapper;
+
+    /** 结算明细 / 运单 Mapper（可选注入：账期支付的结算单属主校验依赖；缺失时 fail-closed） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.mapper.LogisticsSettlementItemMapper settlementItemMapper;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.mapper.LogisticsWaybillMapper waybillMapper;
 
     public CreditTermService(CreditAccountMapper accountMapper, CreditBillMapper billMapper,
                              CreditRepaymentMapper repaymentMapper, CreditAdjustRequestMapper adjustMapper,
@@ -153,7 +168,11 @@ public class CreditTermService {
         a.setUsedLimit(ZERO);
         a.setTermDays(termDays);
         a.setPurpose(text(purpose, 255));
-        a.setRiskLevel("待评估");
+        a.setRiskLevel("第三方机构待核验");
+        if (a.getRiskTier() == null) a.setRiskTier("A");
+        if (a.getDailyRate() == null) a.setDailyRate(DEFAULT_DAILY_RATE);
+        if (a.getApr() == null) a.setApr(DEFAULT_APR);
+        if (a.getGraceDays() == null) a.setGraceDays(DEFAULT_GRACE_DAYS);
         a.setReviewRemark(null);
         a.setApplyTime(LocalDateTime.now());
         a.setApprovedTime(null);
@@ -174,9 +193,20 @@ public class CreditTermService {
         b.setAccountId(a.getId());
         b.setUserId(userId);
         b.setOrderNo(orderNo);
+        b.setBillType("ORDER_PROCUREMENT");
+        b.setFreezeStatus("ACTIVE");
         b.setAmount(amount);
         b.setPaidAmount(ZERO);
         b.setOutstandingAmount(amount);
+        b.setPrincipalAmount(amount);
+        b.setInterestAmount(ZERO);
+        b.setPaidInterest(ZERO);
+        b.setPenaltyAmount(ZERO);
+        b.setPaidPenalty(ZERO);
+        b.setDailyRate(a.getDailyRate() != null ? a.getDailyRate() : DEFAULT_DAILY_RATE);
+        b.setApr(a.getApr() != null ? a.getApr() : DEFAULT_APR);
+        b.setInterestStartDate(LocalDate.now());
+        b.setLastAccrualDate(LocalDate.now());
         b.setDueDate(LocalDate.now().plusDays(a.getTermDays()));
         b.setStatus("UNPAID");
         b.setCreateTime(LocalDateTime.now());
@@ -185,6 +215,97 @@ public class CreditTermService {
         messageService.send(userId, "credit", "账期已生效",
                 "订单 " + orderNo + " 已占用授信 ¥" + amount + "，到期日 " + b.getDueDate() + "。", orderNo);
         return b;
+    }
+
+    @Transactional
+    public CreditBill createBillForSettlement(Long userId, String settlementNo, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) throw new BusinessException("账期金额必须大于 0");
+        CreditAccount a = accountMapper.selectByUserForUpdate(userId);
+        if (a == null || !"ACTIVE".equals(a.getStatus())) throw new BusinessException("当前没有可用的账期额度，请先申请并通过审核");
+        if (accountMapper.reserve(a.getId(), amount) == 0) throw new BusinessException("账期可用额度不足以担保本次物流运费结算 ¥" + amount);
+        CreditBill b = new CreditBill();
+        b.setAccountId(a.getId());
+        b.setUserId(userId);
+        b.setOrderNo(settlementNo);
+        b.setBillType("LOGISTICS_FREIGHT");
+        b.setSettlementNo(settlementNo);
+        b.setFreezeStatus("ACTIVE");
+        b.setAmount(amount);
+        b.setPaidAmount(ZERO);
+        b.setOutstandingAmount(amount);
+        b.setPrincipalAmount(amount);
+        b.setInterestAmount(ZERO);
+        b.setPaidInterest(ZERO);
+        b.setPenaltyAmount(ZERO);
+        b.setPaidPenalty(ZERO);
+        b.setDailyRate(a.getDailyRate() != null ? a.getDailyRate() : DEFAULT_DAILY_RATE);
+        b.setApr(a.getApr() != null ? a.getApr() : DEFAULT_APR);
+        b.setInterestStartDate(LocalDate.now());
+        b.setLastAccrualDate(LocalDate.now());
+        b.setDueDate(LocalDate.now().plusDays(a.getTermDays()));
+        b.setStatus("UNPAID");
+        b.setCreateTime(LocalDateTime.now());
+        b.setUpdateTime(LocalDateTime.now());
+        billMapper.insert(b);
+        messageService.send(userId, "credit", "物流运费账期已生效",
+                "物流结算单 " + settlementNo + " 已占用授信 ¥" + amount + "，到期日 " + b.getDueDate() + "。", settlementNo);
+        return b;
+    }
+
+    @Transactional
+    public CreditBill paySettlementWithCredit(Long settlementId, Long userId, jakarta.servlet.http.HttpServletRequest httpReq) {
+        if (settlementMapper == null) throw new BusinessException("物流结算服务暂不可用");
+        com.lanlink.shopping.entity.LogisticsSettlement s = settlementMapper.selectById(settlementId);
+        if (s == null) throw new BusinessException("物流结算单不存在");
+        if (!"approved".equals(s.getStatus())) throw new BusinessException("仅审核通过的物流结算单支持使用账期支付");
+        assertSettlementOwnership(s, userId, httpReq);
+        // 先原子抢占（WHERE status='approved'）再建账单：并发下后到者 affected=0 即拒绝，
+        // 且其已产生的账单插入随本事务回滚，杜绝同一结算单双重建账单。
+        if (settlementMapper.markPaidWithCredit(settlementId) == 0) {
+            throw new BusinessException("结算单状态已变化或已被支付，请刷新后重试");
+        }
+        s.setStatus("paid");
+        s.setPayMethod("credit_guarantee");
+        s.setPaidTime(LocalDateTime.now());
+        CreditBill bill = createBillForSettlement(userId, s.getSettlementNo(), s.getPayableAmount());
+        if (settlementMapper.markPaidCreditBill(settlementId, bill.getId()) == 0) {
+            throw new BusinessException("结算单状态已变化，请刷新后重试");
+        }
+        s.setCreditBillId(bill.getId());
+        s.setUpdateTime(LocalDateTime.now());
+        if (auditService != null) {
+            auditService.record(userId, "LOGISTICS_SETTLE_CREDIT", "结算单 " + s.getSettlementNo() + " 通过企业账期担保完成支付", httpReq);
+        }
+        return bill;
+    }
+
+    /**
+     * 结算单属主校验（fail-closed）：非管理员的付款人必须与结算单明细运单的发货方一致，
+     * 防止任意商户把他人的 approved 结算单置为 paid。运单归属以 created_by（发货操作人）为准。
+     */
+    private void assertSettlementOwnership(com.lanlink.shopping.entity.LogisticsSettlement s, Long userId,
+                                           jakarta.servlet.http.HttpServletRequest httpReq) {
+        // 平台运营台代为结算走管理端身份（LogisticsCenter 既有流程），不受商户归属约束
+        if (com.lanlink.shopping.config.UserContext.identity(httpReq) == com.lanlink.shopping.common.UserIdentity.ADMIN) {
+            return;
+        }
+        if (settlementItemMapper == null || waybillMapper == null) {
+            throw new BusinessException("物流结算服务暂不可用");
+        }
+        List<com.lanlink.shopping.entity.LogisticsSettlementItem> items = settlementItemMapper.selectList(
+                Wrappers.<com.lanlink.shopping.entity.LogisticsSettlementItem>lambdaQuery()
+                        .eq(com.lanlink.shopping.entity.LogisticsSettlementItem::getSettlementId, s.getSettlementId()));
+        List<Long> waybillIds = items == null ? List.of() : items.stream()
+                .map(com.lanlink.shopping.entity.LogisticsSettlementItem::getWaybillId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (waybillIds.isEmpty()) throw new BusinessException("结算单无结算明细，暂不支持账期支付");
+        List<com.lanlink.shopping.entity.LogisticsWaybill> waybills = waybillMapper.selectBatchIds(waybillIds);
+        if (waybills == null || waybills.size() < waybillIds.size()) {
+            throw new BusinessException("结算单运单数据缺失，暂不支持账期支付");
+        }
+        boolean allMine = waybills.stream().allMatch(w -> userId.equals(w.getCreatedBy()));
+        if (!allMine) throw new BusinessException("仅结算单归属商户可使用账期支付该结算单");
     }
 
     public List<CreditBill> bills(Long userId) {
@@ -357,6 +478,90 @@ public class CreditTermService {
             log.info("取消账期订单 {} 时自动驳回 {} 条待确认转账登记", orderNo, rejected);
     }
 
+    /**
+     * 账期订单退款资产守恒结算（冲减账单未还额度并释放授信，已还现金原路退回企业钱包）。
+     * 退款金额 = 冲减未还额度 (释放可用授信) + 退还已还现金 (退回企业钱包)
+     * 绝不可对已还现金二次释放授信，维护资产绝对守恒。
+     */
+    @Transactional
+    public BigDecimal refundOrderBill(Long userId, String orderNo, BigDecimal refundAmount) {
+        if (refundAmount == null || refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        CreditBill found = billMapper.selectOne(Wrappers.<CreditBill>lambdaQuery()
+                .eq(CreditBill::getOrderNo, orderNo));
+        if (found == null) {
+            log.warn("[CREDIT-REFUND] 未找到订单 {} 对应的账期账单，跳过账期核减", orderNo);
+            return BigDecimal.ZERO;
+        }
+        CreditBill b = billMapper.selectByIdForUpdate(found.getId());
+        if (b == null || "CANCELLED".equals(b.getStatus())) {
+            log.warn("[CREDIT-REFUND] 账单 {} 不存在或已取消", found.getId());
+            return BigDecimal.ZERO;
+        }
+        CreditAccount a = accountMapper.selectByIdForUpdate(b.getAccountId());
+        if (a == null) {
+            throw new BusinessException("授信账户不存在");
+        }
+
+        BigDecimal outstanding = nvl(b.getOutstandingAmount());
+        BigDecimal paid = nvl(b.getPaidAmount());
+        BigDecimal totalRefund = refundAmount;
+
+        // 1. 先冲减未结清金额 (释放对应授信额度)
+        BigDecimal creditRelease = BigDecimal.ZERO;
+        if (outstanding.compareTo(BigDecimal.ZERO) > 0) {
+            creditRelease = totalRefund.min(outstanding);
+            outstanding = outstanding.subtract(creditRelease);
+            b.setOutstandingAmount(outstanding);
+            if (accountMapper.release(a.getId(), creditRelease) != 1) {
+                throw new BusinessException("授信额度释放失败");
+            }
+        }
+
+        // 2. 剩余退款金额属于已还现金部分，原路退回企业钱包 (绝不可二次释放授信)
+        BigDecimal cashToWallet = totalRefund.subtract(creditRelease);
+        if (cashToWallet.compareTo(BigDecimal.ZERO) > 0) {
+            if (cashToWallet.compareTo(paid) > 0) {
+                log.warn("[CREDIT-REFUND] 退还现金超出账单已还金额: cashToWallet={}, paid={}", cashToWallet, paid);
+                cashToWallet = paid;
+            }
+            if (cashToWallet.compareTo(BigDecimal.ZERO) > 0) {
+                paid = paid.subtract(cashToWallet);
+                b.setPaidAmount(paid);
+                walletService.refundToWallet(b.getUserId(), cashToWallet, orderNo, "账期已还现金退款入账");
+            }
+        }
+
+        // 3. 更新账单总额与状态
+        BigDecimal newAmount = b.getAmount().subtract(creditRelease).subtract(cashToWallet);
+        if (newAmount.compareTo(BigDecimal.ZERO) < 0) newAmount = BigDecimal.ZERO;
+        b.setAmount(newAmount);
+        b.setPrincipalAmount(newAmount);
+
+        if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+            if (paid.compareTo(BigDecimal.ZERO) <= 0) {
+                b.setStatus("CANCELLED");
+            } else {
+                b.setStatus("PAID");
+                b.setSettledTime(LocalDateTime.now());
+            }
+        }
+        b.setUpdateTime(LocalDateTime.now());
+        if (billMapper.updateById(b) != 1) {
+            throw new BusinessException("账单更新失败");
+        }
+
+        String notice = "订单 " + orderNo + " 退款结算成功：释放授信 " + creditRelease + " 元";
+        if (cashToWallet.compareTo(BigDecimal.ZERO) > 0) {
+            notice += "，退回企业钱包 " + cashToWallet + " 元";
+        }
+        messageService.send(b.getUserId(), "credit", "账期退款到账", notice + "。", orderNo);
+        log.info("[CREDIT-REFUND] 账期退款成功 orderNo={} refundAmount={} creditRelease={} cashToWallet={}",
+                orderNo, refundAmount, creditRelease, cashToWallet);
+        return totalRefund;
+    }
+
     // ==================== 逾期定时任务 ====================
 
     /**
@@ -413,7 +618,22 @@ public class CreditTermService {
             a.setAvailableLimit(limit.subtract(used));
             a.setUsedLimit(used);
             a.setTermDays(days);
-            a.setRiskLevel("标准");
+            a.setRiskLevel("第三方机构核准");
+            if (a.getRiskTier() == null) {
+                a.setRiskTier("A");
+            }
+            if (a.getCreditGrantToken() == null) {
+                a.setCreditGrantToken("AUTH_TOKEN_" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase());
+            }
+            if (a.getAssessmentRefNo() == null) {
+                a.setAssessmentRefNo("CRA_EXT_" + System.currentTimeMillis());
+            }
+            if (a.getValidUntil() == null) {
+                a.setValidUntil(LocalDateTime.now().plusMonths(6));
+            }
+            if (a.getDailyRate() == null) a.setDailyRate(DEFAULT_DAILY_RATE);
+            if (a.getApr() == null) a.setApr(DEFAULT_APR);
+            if (a.getGraceDays() == null) a.setGraceDays(DEFAULT_GRACE_DAYS);
             if (a.getApprovedTime() == null) a.setApprovedTime(LocalDateTime.now());
             int withdrawn = adjustMapper.withdrawPendingByAccount(id, "平台直接调整授信，待审调额申请已自动撤回");
             if (withdrawn > 0) log.info("授信账户 {} 直接审核通过，自动撤回 {} 条待审调额申请", id, withdrawn);
@@ -613,9 +833,117 @@ public class CreditTermService {
             throw new BusinessException("授信额度不能低于已占用额度 ¥" + used.toPlainString());
     }
 
+    public Map<String, Object> calculateInterestTrial(BigDecimal amount, Integer termDays, BigDecimal dailyRateInput, Integer graceDaysInput, Integer overdueDaysInput) {
+        return calculateInterestTrial(amount, termDays, dailyRateInput, graceDaysInput, overdueDaysInput, null, false);
+    }
+
+    public Map<String, Object> calculateInterestTrial(BigDecimal amount, Integer termDays, BigDecimal dailyRateInput, Integer graceDaysInput, Integer overdueDaysInput, String riskTier, Boolean withLogisticsDiscount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("试算本金必须大于 0");
+        }
+        int days = termDays == null ? MIN_TERM_DAYS : termDays;
+        validateTerm(days);
+
+        String tier = (riskTier == null || riskTier.isBlank()) ? "A" : riskTier.trim().toUpperCase();
+        BigDecimal resolvedDailyRate;
+        int grace;
+        if (dailyRateInput != null) {
+            resolvedDailyRate = dailyRateInput;
+            grace = graceDaysInput == null ? DEFAULT_GRACE_DAYS : Math.max(0, graceDaysInput);
+        } else if (riskTier != null && !riskTier.isBlank()) {
+            switch (tier) {
+                case "AAA" -> {
+                    resolvedDailyRate = new BigDecimal("0.000150"); // 0.015%/天, APR 5.40%
+                    grace = graceDaysInput == null ? 3 : Math.max(0, graceDaysInput);
+                }
+                case "AA" -> {
+                    resolvedDailyRate = new BigDecimal("0.000200"); // 0.020%/天, APR 7.20%
+                    grace = graceDaysInput == null ? 3 : Math.max(0, graceDaysInput);
+                }
+                case "B" -> {
+                    resolvedDailyRate = new BigDecimal("0.000300"); // 0.030%/天, APR 10.80%
+                    grace = graceDaysInput == null ? 2 : Math.max(0, graceDaysInput);
+                }
+                default -> { // A
+                    resolvedDailyRate = new BigDecimal("0.000250"); // 0.025%/天, APR 9.00%
+                    grace = graceDaysInput == null ? 3 : Math.max(0, graceDaysInput);
+                }
+            }
+        } else {
+            resolvedDailyRate = DEFAULT_DAILY_RATE;
+            grace = graceDaysInput == null ? DEFAULT_GRACE_DAYS : Math.max(0, graceDaysInput);
+        }
+
+        BigDecimal discountRate = BigDecimal.ZERO;
+        if (Boolean.TRUE.equals(withLogisticsDiscount)) {
+            discountRate = "AAA".equals(tier) ? new BigDecimal("0.1500") : new BigDecimal("0.1000");
+            resolvedDailyRate = resolvedDailyRate.multiply(BigDecimal.ONE.subtract(discountRate)).setScale(6, java.math.RoundingMode.HALF_UP);
+        }
+
+        if (resolvedDailyRate.compareTo(BigDecimal.ZERO) < 0 || resolvedDailyRate.compareTo(new BigDecimal("0.001")) > 0) {
+            throw new BusinessException("日利率不合法（允许范围：0 ~ 0.1%/天）");
+        }
+        int overdue = overdueDaysInput == null ? 0 : Math.max(0, overdueDaysInput);
+
+        int interestBearingDays = Math.max(0, days - grace);
+        BigDecimal normalInterest = amount.multiply(resolvedDailyRate)
+                .multiply(BigDecimal.valueOf(interestBearingDays))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        BigDecimal overdueRate = resolvedDailyRate.multiply(new BigDecimal("1.5"));
+        BigDecimal penaltyInterest = amount.multiply(overdueRate)
+                .multiply(BigDecimal.valueOf(overdue))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        BigDecimal totalInterest = normalInterest.add(penaltyInterest);
+        BigDecimal totalRepayment = amount.add(totalInterest);
+        BigDecimal dailyCost = amount.multiply(resolvedDailyRate).setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal apr = resolvedDailyRate.multiply(new BigDecimal("360")).setScale(4, java.math.RoundingMode.HALF_UP);
+
+        // 标准档位对比 (7天/10天/15天)
+        List<Map<String, Object>> tierComparisons = new ArrayList<>();
+        for (int tierDays : List.of(7, 10, 15)) {
+            int tierInterestDays = Math.max(0, tierDays - grace);
+            BigDecimal tierInterest = amount.multiply(resolvedDailyRate)
+                    .multiply(BigDecimal.valueOf(tierInterestDays))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            Map<String, Object> t = new LinkedHashMap<>();
+            t.put("termDays", tierDays);
+            t.put("graceDays", grace);
+            t.put("interestBearingDays", tierInterestDays);
+            t.put("normalInterest", tierInterest);
+            t.put("totalRepayment", amount.add(tierInterest));
+            t.put("isCurrent", tierDays == days);
+            tierComparisons.add(t);
+        }
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("principal", amount);
+        res.put("termDays", days);
+        res.put("riskTier", tier);
+        res.put("dailyRate", resolvedDailyRate);
+        res.put("dailyRatePercent", resolvedDailyRate.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%");
+        res.put("apr", apr);
+        res.put("aprPercent", apr.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%");
+        res.put("graceDays", grace);
+        res.put("interestBearingDays", interestBearingDays);
+        res.put("normalInterest", normalInterest);
+        res.put("overdueDays", overdue);
+        res.put("overdueRate", overdueRate);
+        res.put("overdueRatePercent", overdueRate.multiply(new BigDecimal("100")).stripTrailingZeros().toPlainString() + "%");
+        res.put("penaltyInterest", penaltyInterest);
+        res.put("totalInterest", totalInterest);
+        res.put("totalRepayment", totalRepayment);
+        res.put("dailyCost", dailyCost);
+        res.put("tierComparisons", tierComparisons);
+        res.put("discountRate", discountRate);
+        res.put("complianceNote", "按单利年化 APR 真实披露，遵守合规利率红线；平台不留存原始征信报告。");
+        return res;
+    }
+
     private void validateTerm(Integer termDays) {
-        if (termDays == null || !TERM_DAYS.contains(termDays))
-            throw new BusinessException("账期仅支持 30 / 60 / 90 天");
+        if (termDays == null || termDays < MIN_TERM_DAYS || termDays > MAX_TERM_DAYS)
+            throw new BusinessException("账期仅支持 7 ~ 15 天（标准档位：7天/10天/15天）");
     }
 
     private BigDecimal nvl(BigDecimal value) {

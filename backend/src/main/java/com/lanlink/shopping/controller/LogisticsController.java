@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -24,9 +25,22 @@ import java.util.Map;
 public class LogisticsController {
 
     private final LogisticsWaybillService waybillService;
+    private final com.lanlink.shopping.service.LogisticsCarrierRecommenderService carrierRecommenderService;
+    private final com.lanlink.shopping.service.LogisticsSlaWatchdogService slaWatchdogService;
+    /** 高德商业图源凭据：仅由后端持有（application.yml ← AMAP_KEY/AMAP_SECURITY_JS_CODE），登录后经 /map-config 下发 */
+    private final String amapKey;
+    private final String amapSecurityJsCode;
 
-    public LogisticsController(LogisticsWaybillService waybillService) {
+    public LogisticsController(LogisticsWaybillService waybillService,
+                               com.lanlink.shopping.service.LogisticsCarrierRecommenderService carrierRecommenderService,
+                               com.lanlink.shopping.service.LogisticsSlaWatchdogService slaWatchdogService,
+                               @org.springframework.beans.factory.annotation.Value("${app.map.amap.key:}") String amapKey,
+                               @org.springframework.beans.factory.annotation.Value("${app.map.amap.security-js-code:}") String amapSecurityJsCode) {
         this.waybillService = waybillService;
+        this.carrierRecommenderService = carrierRecommenderService;
+        this.slaWatchdogService = slaWatchdogService;
+        this.amapKey = amapKey;
+        this.amapSecurityJsCode = amapSecurityJsCode;
     }
 
     /** 商家发货（创建运单） */
@@ -43,6 +57,70 @@ public class LogisticsController {
                 body.weight(), body.volume(), body.remote(), body.quantity(),
                 body.senderName(), body.senderPhone(), body.senderAddress());
         return R.ok("发货成功", waybillService.ship(req, userId, request));
+    }
+
+    /** 多包裹拆单发货请求体 */
+    public record SplitShipBody(
+            String orderNo,
+            Long providerId,
+            Long templateId,
+            String logisticsNo,
+            BigDecimal weight,
+            BigDecimal volume,
+            Boolean remote,
+            String senderName,
+            String senderPhone,
+            String senderAddress,
+            String transportMode,
+            String packageNo,
+            Integer packageIndex,
+            Integer packageTotal,
+            List<LogisticsWaybillService.SplitItem> items,
+            List<LogisticsWaybillService.CoaDocItem> coaDocs,
+            com.lanlink.shopping.service.LogisticsFreightCalculator.VasRequest vas
+    ) {}
+
+    /** 工业品多包裹拆单发货（按 SKU / 分批件数拆分出库，支持绑定 CoA 质检单与 VAS 增值服务） */
+    @PostMapping("/ship/split")
+    @RequirePerm("merchant:manage")
+    public R<LogisticsWaybill> shipSplit(@Valid @RequestBody SplitShipBody body, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        LogisticsWaybillService.SplitShipRequest req = new LogisticsWaybillService.SplitShipRequest(
+                body.orderNo(), body.providerId(), body.templateId(), body.logisticsNo(),
+                body.weight(), body.volume(), body.remote(),
+                body.senderName(), body.senderPhone(), body.senderAddress(),
+                body.transportMode(), body.packageNo(), body.packageIndex(), body.packageTotal(),
+                body.items(), body.coaDocs(), body.vas());
+        return R.ok("拆单发货成功", waybillService.shipSplit(req, userId, request));
+    }
+
+    /** 现场 e-POD 签收回单提交（买家/现场人员上传公章照片与实物照片） */
+    @PostMapping("/pod/upload")
+    public R<com.lanlink.shopping.entity.LogisticsPodRecord> uploadPod(
+            @Valid @RequestBody LogisticsWaybillService.PodUploadRequest body,
+            HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok("现场 e-POD 回执提交成功，等待验签", waybillService.uploadPod(body, userId, request));
+    }
+
+    /** 商户 / 平台运营在线验签 e-POD（审核通过流转终态，驳回要求重新拍照） */
+    @PostMapping("/pod/audit/{waybillId}")
+    @RequirePerm("merchant:manage")
+    public R<LogisticsWaybill> auditPod(
+            @PathVariable Long waybillId,
+            @Valid @RequestBody LogisticsWaybillService.PodAuditRequest body,
+            HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok("e-POD 验签审核完成", waybillService.auditPod(waybillId, body, userId, request));
+    }
+
+    /** 订单全景多包裹与动态 GIS 路线聚合查询（买家本人/归属商户/平台运营均可访问） */
+    @GetMapping("/order-waybills/{orderNo}")
+    public R<LogisticsWaybillService.OrderWaybillAggregation> orderWaybills(@PathVariable String orderNo,
+                                                                          HttpServletRequest request) {
+        boolean isAdmin = UserContext.identity(request) == UserIdentity.ADMIN;
+        Long userId = UserContext.currentUserId(request);
+        return R.ok(waybillService.orderWaybills(orderNo, userId, isAdmin));
     }
 
     /** 状态流转（商家/运营手工操作，如确认签收） */
@@ -70,10 +148,20 @@ public class LogisticsController {
                 UserContext.currentUserId(request), isAdmin));
     }
 
-    /** 运单轨迹（买家/商家/运营均可查看） */
-    @GetMapping("/trace/{waybillId}")
-    public R<List<LogisticsTrace>> traces(@PathVariable Long waybillId) {
-        return R.ok(waybillService.traces(waybillId));
+    /** 运单轨迹（买家本人/订单归属商户/平台运营；按运单→订单归属校验，非属主拒绝）。路径段支持运单号或运单 ID */
+    @GetMapping("/trace/{waybillIdOrNo}")
+    public R<List<LogisticsTrace>> traces(@PathVariable String waybillIdOrNo, HttpServletRequest request) {
+        boolean isAdmin = UserContext.identity(request) == UserIdentity.ADMIN;
+        return R.ok(waybillService.traces(waybillIdOrNo, UserContext.currentUserId(request), isAdmin));
+    }
+
+    /** 高德商业图源配置（登录用户可拉取）：凭据仅存后端，未配置时返回空值，前端回退内置矢量底图 */
+    @GetMapping("/map-config")
+    public R<Map<String, String>> mapConfig() {
+        Map<String, String> out = new HashMap<>();
+        out.put("key", amapKey == null ? "" : amapKey.trim());
+        out.put("securityJsCode", amapSecurityJsCode == null ? "" : amapSecurityJsCode.trim());
+        return R.ok(out);
     }
 
     /** 轨迹同步（模拟服务商接口推送节点，运营/联调用） */
@@ -109,5 +197,38 @@ public class LogisticsController {
         return R.ok(waybillService.enabledTemplates(providerId).stream()
                 .map(t -> new TemplateOption(t.getTemplateId(), t.getTemplateName(), t.getProviderId()))
                 .toList());
+    }
+
+    // ===== Phase 3A: AI 运力智能推荐与在途 SLA 控制塔大屏 =====
+
+    /** AI 最优运力多目标智能比价推荐 */
+    @PostMapping("/recommend-carriers")
+    @RequirePerm("merchant:manage")
+    public R<com.lanlink.shopping.service.LogisticsCarrierRecommenderService.RecommendResult> recommendCarriers(
+            @RequestBody com.lanlink.shopping.service.LogisticsCarrierRecommenderService.RecommendRequest req) {
+        return R.ok(carrierRecommenderService.recommend(req));
+    }
+
+    /** 平台/商户端物流全景 SLA 运营控制塔大屏数据聚合（商户与管理员可见，游客拒绝） */
+    @GetMapping("/dashboard/sla-overview")
+    @RequirePerm("merchant:manage")
+    public R<com.lanlink.shopping.service.LogisticsSlaWatchdogService.SlaDashboardOverview> slaOverview() {
+        return R.ok(slaWatchdogService.getSlaDashboardOverview());
+    }
+
+    /** 手动触发在途停滞 SLA 智能看门狗巡检（运营/调度用） */
+    @PostMapping("/watchdog/run-inspection")
+    @RequirePerm("admin:all")
+    public R<com.lanlink.shopping.service.LogisticsSlaWatchdogService.InspectionReport> runInspection() {
+        return R.ok("巡检完成", slaWatchdogService.runInspection());
+    }
+
+    /** 一键官方加急催办 */
+    @PostMapping("/watchdog/expedite/{waybillId}")
+    @RequirePerm("merchant:manage")
+    public R<String> expediteWaybill(@PathVariable Long waybillId,
+                                    @RequestParam(required = false, defaultValue = "商户一键催派") String note) {
+        slaWatchdogService.expediteWaybill(waybillId, note);
+        return R.ok("加急催单已通知承运专席");
     }
 }

@@ -18,6 +18,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["LLM_BACKEND"] = "mock"
 os.environ["LLAMA_CPP_URL"] = ""
 os.environ["MODEL_MANAGER_URL"] = ""
+# 网关鉴权：测试中固定 Key，避免继承宿主 shell 的 AI_GATEWAY_API_KEY 轮换值导致 401
+os.environ["GATEWAY_API_KEY"] = "lanlink-local-ai-gateway"
+os.environ["GATEWAY_RATE_LIMIT_PER_MIN"] = "100000"
+os.environ["GATEWAY_RATE_LIMIT_BURST"] = "100000"
 for _name in ("REDIS_URL", "REDIS_URLS", "REDIS_PASSWORD"):
     os.environ.pop(_name, None)
 
@@ -27,6 +31,11 @@ from app.redis_kb import (HybridKB, RedisVectorKB, SOURCE_AUTHORITY_WEIGHTS,
                           SOURCE_CATEGORY_LABELS, category_label, hybrid_score,
                           lexical_score, source_authority)
 from app.retriever import KnowledgeBase, default_kb_path, tokenize
+
+# 网关鉴权（main.require_gateway_key）：测试客户端统一携带与 main.GATEWAY_API_KEY 一致的 Bearer Key
+from app.main import GATEWAY_API_KEY
+GW_KEY = GATEWAY_API_KEY
+AUTH = {"Authorization": f"Bearer {GW_KEY}", "Cache-Control": "no-cache"}
 
 
 class TestRetriever(unittest.TestCase):
@@ -252,7 +261,16 @@ class TestRedisVectorKB(unittest.TestCase):
         for source in ("kb", "policy", "product", "membership", "subscription",
                        "category", "logistics", "learned", "unknown", None, ""):
             self.assertAlmostEqual(source_authority(source), 1.0)
-        self.assertEqual(set(SOURCE_AUTHORITY_WEIGHTS), {"news", "manual"})
+        # 技术服务来源显式降权，与后端 KnowledgeRagService.SOURCE_WEIGHTS 对齐
+        tech_weights = {
+            "tech-expert": 0.70, "tech-org": 0.70, "tech-service": 0.70,
+            "tech-demand": 0.70, "tech-achievement": 0.70,
+            "tech-policy": 0.85, "tech-post": 0.60, "tech-manual": 0.90,
+        }
+        for source, weight in tech_weights.items():
+            self.assertAlmostEqual(source_authority(source), weight)
+        self.assertEqual(set(SOURCE_AUTHORITY_WEIGHTS),
+                         {"news", "manual", *tech_weights})
 
     def test_rerank_applies_source_authority(self):
         """同分候选：kb 权威度 1.0 应排在 news 0.75 之前，news 最终分按 0.75 折算。"""
@@ -424,7 +442,7 @@ class TestOpenAICompat(unittest.TestCase):
     def setUpClass(cls):
         from fastapi.testclient import TestClient
         from app.main import app
-        cls.client = TestClient(app)
+        cls.client = TestClient(app, headers=AUTH)
 
     def test_list_models(self):
         r = self.client.get("/v1/models")
@@ -508,7 +526,7 @@ class TestOpenAICompat(unittest.TestCase):
         body = r.json()
         self.assertEqual(len(body["data"]), 2)
         self.assertTrue(body["data"][0]["embedding"])
-        self.assertIn(body["lanlink"]["dim"], (256, 768))
+        self.assertIn(body["lanlink"]["dim"], (256, 768, 1024))
         self.assertIn("embed_fallback", body["lanlink"])
 
     def test_kb_search(self):
@@ -546,7 +564,7 @@ class TestEmbeddingsFallback(unittest.TestCase):
         from fastapi.testclient import TestClient
         from app import main as gateway
         cls.gateway = gateway
-        cls.client = TestClient(gateway.app)
+        cls.client = TestClient(gateway.app, headers=AUTH)
 
     def test_fallback_when_ollama_unavailable(self):
         from unittest.mock import patch
@@ -597,7 +615,7 @@ class TestSessionMemory(unittest.TestCase):
     def test_session_endpoint(self):
         from fastapi.testclient import TestClient
         from app.main import app
-        c = TestClient(app)
+        c = TestClient(app, headers=AUTH)
         r = c.post("/v1/chat/session", json={"session_id": "s1", "message": "你好"})
         self.assertEqual(r.status_code, 200)
         body = r.json()
@@ -639,7 +657,7 @@ class TestChatDefaults(unittest.TestCase):
         from fastapi.testclient import TestClient
         from app import main as gateway
         cls.gateway = gateway
-        cls.client = TestClient(gateway.app)
+        cls.client = TestClient(gateway.app, headers=AUTH)
 
     def _capture_chat(self):
         from unittest.mock import patch
@@ -863,7 +881,7 @@ class TestConcurrentModelGate(unittest.TestCase):
             text, backend, _ = client.chat([{"role": "user", "content": "你好"}])
         finally:
             client.gate.release()
-        self.assertEqual(backend, "mock")
+        self.assertTrue(backend.startswith("mock"))
         self.assertTrue(text)
         self.assertTrue(client.last_route.get("lock_timeout"))
         self.assertTrue(client.last_route.get("queued"))
@@ -884,6 +902,41 @@ class TestConcurrentModelGate(unittest.TestCase):
         self.assertEqual(backend, "none")
         self.assertIn("排队超时", text)
         self.assertTrue(client.last_route.get("lock_timeout"))
+
+
+class TestGatewayAuth(unittest.TestCase):
+    """网关鉴权（A1/B1）：除 /health 外全部要求 API Key；Bearer 与 X-API-Key 等效。"""
+
+    @classmethod
+    def setUpClass(cls):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        cls.client = TestClient(app)
+
+    def test_health_is_public(self):
+        r = self.client.get("/health")
+        self.assertEqual(r.status_code, 200)
+
+    def test_protected_endpoint_rejects_anonymous(self):
+        r = self.client.get("/v1/models")
+        self.assertEqual(r.status_code, 401)
+        self.assertEqual(r.json()["error"]["type"], "authentication_error")
+        r2 = self.client.post("/kb/reload")
+        self.assertEqual(r2.status_code, 401)
+        r3 = self.client.get("/v1/chat/session/s1/history")
+        self.assertEqual(r3.status_code, 401)
+
+    def test_wrong_key_rejected(self):
+        r = self.client.get("/v1/models", headers={"Authorization": "Bearer wrong-key"})
+        self.assertEqual(r.status_code, 401)
+
+    def test_bearer_key_accepted(self):
+        r = self.client.get("/v1/models", headers=AUTH)
+        self.assertEqual(r.status_code, 200)
+
+    def test_x_api_key_accepted(self):
+        r = self.client.get("/v1/models", headers={"X-API-Key": GW_KEY})
+        self.assertEqual(r.status_code, 200)
 
 
 if __name__ == "__main__":

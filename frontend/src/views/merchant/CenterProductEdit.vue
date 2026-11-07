@@ -26,7 +26,12 @@
             <div><b>基础信息</b><span>修改价格、标题等内容后需重新提交平台审核</span></div>
           </div>
           <a-form-item label="商品名称" name="title">
-            <a-input v-model:value="form.title" placeholder="2-100 个字符" maxlength="100" show-count />
+            <div class="title-row">
+              <a-input v-model:value="form.title" placeholder="2-100 个字符" maxlength="100" show-count class="title-input" />
+              <AiTitlePolish :title="form.title" :ind-id="form.indId" :cat-id="form.catId"
+                             :brand="form.brand" :submitting="submitting" resubmit-hint
+                             @apply="onApplyTitle" @pending="polishPending = $event" />
+            </div>
           </a-form-item>
           <a-row :gutter="12">
             <a-col :xs="24" :sm="12">
@@ -92,7 +97,7 @@
 
         <div class="actions">
           <a-button size="large" @click="$router.push('/merchant/center/products')">取消</a-button>
-          <a-button size="large" type="primary" :loading="submitting" @click="submit">保存修改</a-button>
+          <a-button size="large" type="primary" :loading="submitting" :disabled="polishPending" @click="submit">保存修改</a-button>
         </div>
       </a-form>
     </a-spin>
@@ -105,6 +110,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { homeApi, productApi } from '../../api'
+import AiTitlePolish from '../../components/merchant/AiTitlePolish.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -117,6 +123,12 @@ const imgFiles = ref([])
 const industries = ref([])
 const categories = ref([])
 const original = ref({})
+const polishPending = ref(false)
+
+/** AI 候选应用：仅回填标题；保存后内容变更走既有重新送审链路（无校验绕过） */
+function onApplyTitle(text) {
+  form.title = text
+}
 
 const form = reactive({
   title: '', indId: null, catId: null, price: null, stock: null,
@@ -260,6 +272,8 @@ onMounted(load)
 .crumb-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 4px; }
 .crumb { font-size: 12.5px; }
 .state-banner { border-radius: 14px; }
+.title-row { display: flex; align-items: flex-start; gap: 8px; }
+.title-row .title-input { flex: 1; min-width: 0; }
 .edit-form { background: var(--mc-card, #fff); border: 1px solid var(--mc-border, #e8e6e1); border-radius: 16px; padding: 22px 24px 18px; box-shadow: 0 2px 14px rgba(20, 24, 34, .04); }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--mc-border-soft, #f0eee9); }
 .section-head b { font-size: 15px; color: var(--mc-ink, #1d1d1f); letter-spacing: -.01em; }

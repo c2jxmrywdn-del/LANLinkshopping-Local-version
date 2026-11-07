@@ -3,6 +3,7 @@ package com.lanlink.shopping.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.R;
+import com.lanlink.shopping.common.storage.StorageService;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.entity.Product;
 import com.lanlink.shopping.service.ProductService;
@@ -13,7 +14,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Map;
@@ -29,19 +29,32 @@ public class ProductController {
     private final com.lanlink.shopping.service.MerchantService merchantService;
     private final com.lanlink.shopping.module.recommend.service.PersonalizeService personalizeService;
     private final com.lanlink.shopping.module.search.ProductIndexJob productIndexJob;
+    private final com.lanlink.shopping.module.productreview.service.ProductAutoReviewService productAutoReviewService;
+    private final com.lanlink.shopping.module.productreview.service.ProductReviewConfigService productReviewConfigService;
+    private final StorageService storageService;
+    private final com.lanlink.shopping.service.AuditService auditService;
+    private final com.lanlink.shopping.service.ProductTitleAiService productTitleAiService;
 
     public ProductController(ProductService productService,
                              com.lanlink.shopping.service.MerchantService merchantService,
                              com.lanlink.shopping.module.recommend.service.PersonalizeService personalizeService,
-                             com.lanlink.shopping.module.search.ProductIndexJob productIndexJob) {
+                             com.lanlink.shopping.module.search.ProductIndexJob productIndexJob,
+                             com.lanlink.shopping.module.productreview.service.ProductAutoReviewService productAutoReviewService,
+                             com.lanlink.shopping.module.productreview.service.ProductReviewConfigService productReviewConfigService,
+                             StorageService storageService,
+                             com.lanlink.shopping.service.AuditService auditService,
+                             com.lanlink.shopping.service.ProductTitleAiService productTitleAiService) {
         this.productService = productService;
         this.merchantService = merchantService;
         this.personalizeService = personalizeService;
         this.productIndexJob = productIndexJob;
+        this.productAutoReviewService = productAutoReviewService;
+        this.productReviewConfigService = productReviewConfigService;
+        this.storageService = storageService;
+        this.auditService = auditService;
+        this.productTitleAiService = productTitleAiService;
     }
 
-    /** 商品图上传目录：{user.dir}/uploads/products（WebConfig 已映射 /uploads/**） */
-    private static final String PRODUCT_IMG_DIR = System.getProperty("user.dir") + File.separator + "uploads" + File.separator + "products";
     private static final long MAX_IMG_SIZE = 5 * 1024 * 1024;
 
     /**
@@ -58,9 +71,11 @@ public class ProductController {
                           @RequestParam(defaultValue = "false") boolean personalization,
                           @RequestHeader(value = "Cookie", required = false) String cookie,
                           HttpServletRequest request) {
-        // 语义搜索：有关键词且无结构化筛选时走 jieba+向量双路 RRF（内部含开关与降级链）
+        // 语义搜索：有关键词且无结构化筛选时走 jieba+向量双路 RRF + 多目标融合重排
+        //（userId/ll_analytics Cookie 透传作 Per 分量双信号，SearchService 内部门控降级）
         IPage<Product> page = hasText(keyword)
-                ? productService.searchPage(current, size, keyword, catId, indId, sort)
+                ? productService.searchPage(current, size, keyword, catId, indId, sort,
+                        UserContext.currentUserId(request), analyticsCookie(cookie))
                 : productService.page(current, size, keyword, catId, indId, sort);
         // 仅综合态（无搜索/筛选/显式排序）走个性化推流
         boolean eligible = personalization
@@ -116,7 +131,7 @@ public class ProductController {
         if (merchant.getReviewStatus() == null || merchant.getReviewStatus() != 1) {
             return R.fail("商户审核未通过，暂不能上架商品");
         }
-        return R.ok("已提交，等待平台审核", productService.publish(merchant.getMerId(), product));
+        return R.ok("已提交，系统正在自动审核", productService.publish(merchant.getMerId(), product));
     }
 
     /** 商户自己的商品列表（含审核状态，实时同步；可按关键词/审核状态/可售状态过滤） */
@@ -174,11 +189,25 @@ public class ProductController {
         return merchant;
     }
 
-    /** 商品主图上传：JPG/PNG/WebP，魔数校验防伪造，返回 URL 供 publish 引用 */
+    /**
+     * 商品主图上传：JPG/PNG/WebP，魔数校验防伪造，返回 URL 供 publish 引用（key 供前端入库用）。
+     * 落对象存储（out/storage-mq-plan.md 任务 A3）：库内只存 key（如 products/prod_1730....webp），
+     * 出站由 StorageUrlSerializer 拼公开绝对 URL；enabled=false 时 StorageService 自动回退本地盘，
+     * URL 形态与历史 /api/uploads/products/** 完全一致。
+     *
+     * <p>三重收口（security-hardening-plan.md P1-5）：① @RequirePerm 与 /my/* 兄弟端点对齐
+     * （BUYER/VIP 403、匿名 401，由 PermInterceptor 既有链路执行）+ 方法内 mustApprovedMerchant
+     * 前置——上传从此是「已过审商户的商品管理动作」，任意登录用户不可写公读桶；
+     * ② IP/入口限流（AuthRateLimitInterceptor POLICIES /product/image + WebConfig 注册）；
+     * ③ CSRF（WebConfig + frontend/src/api/csrfPolicy.js 双端登记）；成功写审计 PRODUCT_IMAGE_UPLOAD，
+     * 批量换图/占桶事后可查。
+     */
     @PostMapping("/image")
+    @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
     public R<Map<String, String>> uploadImage(@RequestParam("file") MultipartFile file,
                                               HttpServletRequest request) throws IOException {
-        UserContext.currentUserId(request); // 需登录
+        Long userId = UserContext.currentUserId(request); // 需登录（PermInterceptor 另行校验权限）
+        mustApprovedMerchant(userId); // 未入驻/未过审商户直接拒绝（与 /my/* 兄弟端点同前置）
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择图片文件");
         if (file.getSize() > MAX_IMG_SIZE) throw new IllegalArgumentException("图片大小不能超过 5MB");
         String kind;
@@ -202,11 +231,46 @@ public class ProductController {
         } else if (!"webp".equals(kind)) {
             throw new IllegalArgumentException("图片解析失败，请重新上传");
         }
-        File dir = new File(PRODUCT_IMG_DIR);
-        if (!dir.exists() && !dir.mkdirs()) throw new RuntimeException("上传目录创建失败");
-        String name = "prod_" + System.currentTimeMillis() + "." + kind;
-        file.transferTo(new File(dir, name).getAbsoluteFile());
-        return R.ok(Map.of("url", "/api/uploads/products/" + name));
+        String key = "products/prod_" + System.currentTimeMillis() + "." + kind;
+        String url = storageService.put(key, file.getBytes(), contentTypeOf(kind));
+        // 旁路审计（AuditService 写失败不反噬主流程）：key/类型/大小留痕
+        auditService.record(userId,
+                "PRODUCT_IMAGE_UPLOAD", key + "/" + contentTypeOf(kind) + "/" + file.getSize(), request);
+        return R.ok(Map.of("url", url, "key", storageService.s3Enabled() ? key : ""));
+    }
+
+    private static String contentTypeOf(String kind) {
+        return switch (kind) {
+            case "png" -> "image/png";
+            case "webp" -> "image/webp";
+            default -> "image/jpeg";
+        };
+    }
+
+    /**
+     * AI 标题润色（out/ai-polish-design.md）：商户标题草稿 → 2-3 条 B2B 风格候选，点选后回填表单
+     * 走既有发布/编辑流程。纯文本进出（无 productId，无跨商户数据面）；indId/catId 仅进 prompt 用词。
+     *
+     * <p>三重收口对齐 /product/image 先例：① @RequirePerm("product:publish") + 方法内
+     * mustApprovedMerchant（BUYER/VIP 403、匿名 401、未过审商户拒）；② IP/入口限流
+     * （AuthRateLimitInterceptor POLICIES /product/ai/* 前缀匹配 + WebConfig 注册 /product/ai/**）；
+     * ③ CSRF 双端登记（WebConfig + frontend/src/api/csrfPolicy.js）。双层配额（商户级+全局 backstop）、
+     * 注入净化拒绝、候选硬 token 校验与全失败熔断在 ProductTitleAiService 内闭环；
+     * 全渠道失败只返回失败提示，绝不虚构候选。
+     */
+    @PostMapping("/ai/polish-title")
+    @com.lanlink.shopping.integration.security.RequirePerm("product:publish")
+    public R<Map<String, Object>> polishTitle(@RequestBody com.lanlink.shopping.service.ProductTitleAiService.PolishRequest body,
+                                              HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        mustApprovedMerchant(userId);
+        String title = body == null || body.title() == null ? "" : body.title().trim();
+        if (title.length() < 2 || title.length() > 100) {
+            throw new BusinessException("商品名称需 2-100 个字符");
+        }
+        var result = productTitleAiService.polish(userId, body, request);
+        if (result.failed()) return R.fail(result.failureMessage());
+        return R.ok(Map.of("candidates", result.candidates()));
     }
 
     /** 管理后台: 全量商品列表(含已下架), 支持多维筛选 */
@@ -264,5 +328,35 @@ public class ProductController {
                                   @RequestParam Integer reviewStatus,
                                   @RequestParam(required = false) String reason) {
         return R.ok(productService.review(prodId, reviewStatus, reason));
+    }
+
+    // ==================== 商品自动审核（规则 + 文本AI + 主图视觉AI） ====================
+
+    /** 管理端：自动审核开关/阈值配置 */
+    @GetMapping("/admin/review/config")
+    public R<Map<String, Object>> autoReviewConfig() {
+        return R.ok(productReviewConfigService.view());
+    }
+
+    /** 管理端：更新自动审核配置（白名单键，边界收敛） */
+    @PutMapping("/admin/review/config")
+    public R<Map<String, Object>> updateAutoReviewConfig(@RequestBody Map<String, Object> body,
+                                                         HttpServletRequest request) {
+        Map<String, Object> out = productReviewConfigService.update(body);
+        com.lanlink.shopping.config.UserContext.currentUserId(request); // 需登录且 /admin/** 已做运营身份校验
+        return R.ok(out);
+    }
+
+    /** 管理端：手动重跑一轮自动审核（不受每日预算限制，结果留痕） */
+    @PostMapping("/admin/review/{prodId}/auto")
+    public R<com.lanlink.shopping.module.productreview.entity.ProductReviewRecord> rerunAutoReview(
+            @PathVariable Long prodId) {
+        return R.ok(productAutoReviewService.reviewNow(prodId, true));
+    }
+
+    /** 管理端：查看商品最近一轮自动审核结论 */
+    @GetMapping("/admin/review/{prodId}/auto")
+    public R<Map<String, Object>> latestAutoReview(@PathVariable Long prodId) {
+        return R.ok(productAutoReviewService.latest(prodId));
     }
 }

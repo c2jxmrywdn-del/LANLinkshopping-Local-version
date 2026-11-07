@@ -44,7 +44,14 @@ def snap(total=8188, used=0, util=0):
 class HardwareSchedulerTest(unittest.TestCase):
     def make(self, used=0, loaded=None, **env):
         old = {}
-        for k, v in env.items():
+        defaults = {
+            "HARDWARE_GPU_MARGIN_MB": "250",
+            "HARDWARE_VRAM_TEXT_MB": "6650",
+            "HARDWARE_VRAM_CPU_ASSIST_MB": "5550",
+            "HARDWARE_VRAM_VL_MB": "7300",
+        }
+        merged = dict(defaults, **env)
+        for k, v in merged.items():
             old[k] = os.environ.get(k)
             os.environ[k] = str(v)
         try:
@@ -90,9 +97,13 @@ class HardwareSchedulerTest(unittest.TestCase):
     def test_cooldown_keeps_cpu_assist_until_recovered(self):
         # 进入 cpu-assist 后冷却期内，即使显存恢复也不立即回 GPU（防换模抖动）
         state = {"used": 2388}
-        old = {k: os.environ.get(k) for k in ("HARDWARE_SWITCH_COOLDOWN_SEC", "HARDWARE_CACHE_SEC")}
+        keys = ("HARDWARE_SWITCH_COOLDOWN_SEC", "HARDWARE_CACHE_SEC", "HARDWARE_GPU_MARGIN_MB", "HARDWARE_VRAM_TEXT_MB", "HARDWARE_VRAM_CPU_ASSIST_MB")
+        old = {k: os.environ.get(k) for k in keys}
         os.environ["HARDWARE_SWITCH_COOLDOWN_SEC"] = "600"
         os.environ["HARDWARE_CACHE_SEC"] = "0"
+        os.environ["HARDWARE_GPU_MARGIN_MB"] = "250"
+        os.environ["HARDWARE_VRAM_TEXT_MB"] = "6650"
+        os.environ["HARDWARE_VRAM_CPU_ASSIST_MB"] = "5550"
         try:
             s = HardwareScheduler(FakeManager(None), snapshot_fn=lambda: snap(used=state["used"]))
             self.assertEqual(s.decide_text(100)["mode"], "cpu_assist")

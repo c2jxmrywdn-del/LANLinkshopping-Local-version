@@ -6,6 +6,7 @@ import com.lanlink.shopping.payment.alipay.AlipayPayClient;
 import com.lanlink.shopping.payment.dto.RefundRequest;
 import com.lanlink.shopping.payment.service.PaymentLogService;
 import com.lanlink.shopping.payment.service.PaymentService;
+import com.lanlink.shopping.payment.stripe.StripePayClient;
 import com.lanlink.shopping.payment.vo.PayCreateVO;
 import com.lanlink.shopping.payment.wallet.service.WalletService;
 import com.lanlink.shopping.payment.wechat.WechatPayClient;
@@ -43,7 +44,8 @@ class PaymentServiceTest {
         orderMapper = mock(OrderMapper.class);
         payLog = mock(PaymentLogService.class);
         walletService = mock(WalletService.class);
-        svc = new PaymentService(props, wechat, alipay, orderService, orderMapper, payLog, walletService);
+        StripePayClient stripe = mock(StripePayClient.class);
+        svc = new PaymentService(props, wechat, alipay, stripe, orderService, orderMapper, payLog, walletService);
     }
 
     private Order unpaidOrder() {
@@ -65,6 +67,24 @@ class PaymentServiceTest {
         assertEquals("mock", vo.getChannel());
         assertNotNull(vo.getPayInfo().get("token"));
         verify(orderService).setPrepay("20261004123456", "mock", null);
+    }
+
+    @Test
+    void createStripeReturnsMockWhenMockOn() {
+        when(orderMapper.selectById("20261004123456")).thenReturn(unpaidOrder());
+        PayCreateVO vo = svc.create("20261004123456", 1L, "stripe");
+        assertTrue(vo.isMock());
+        assertEquals("mock", vo.getChannel());
+    }
+
+    @Test
+    void createApplePayAndGooglePayRoutesGracefully() {
+        when(orderMapper.selectById("20261004123456")).thenReturn(unpaidOrder());
+        PayCreateVO voApple = svc.create("20261004123456", 1L, "apple_pay");
+        assertTrue(voApple.isMock());
+
+        PayCreateVO voGoogle = svc.create("20261004123456", 1L, "google_pay");
+        assertTrue(voGoogle.isMock());
     }
 
     @Test

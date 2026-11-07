@@ -48,7 +48,8 @@
   --ll-brand-surface: #1F3864;
   --ll-brand-red: #9B2D20;
   --ll-brand-gold: #C8A45C;
-  /* 品牌金·加深：浅色底上的小字号标签（金原本 #C8A45C 仅 ~2.2:1，加深后 ≥4.5:1） */
+  /* 品牌金·加深：浅色底上的小字号标签（金原本 #C8A45C 仅 ~2.2:1，加深后 ≥4.5:1）。
+     Home.vue .kt-gold、AboutUs .eyebrow 应引用本 token。 */
   --ll-brand-gold-strong: #80601F;
   --ll-brand-blue: #1E6EB8;
   --ll-brand-gold-soft: #F6D38A;
@@ -57,6 +58,18 @@
   --ll-brand-glow-red: rgba(155,45,32,.24);
   --ll-brand-glow-gold: rgba(200,164,92,.18);
   --ll-brand-glow-blue: rgba(30,110,184,.18);
+
+  /* =====================================================
+     小清新天空蓝 · 浅底表面专用 token（v1 新增，不动既有值）
+     供技术服务等浅底深字页面引用；与后台 AdminLayout 共用，
+     深浅主题均不翻转（浅底表面在深色模式下维持浅底深字）。
+     ===================================================== */
+  /* 浅蓝底标准辅助文字色（slate-600，浅色表面上对比度 ≥4.5:1） */
+  --ll-slate-muted: #475569;
+  /* Hero 浅天蓝底渐变（浅底 Hero 区块通用底色） */
+  --ll-sky-hero-gradient: linear-gradient(135deg, #F2F9FF 0%, #E3F1FD 55%, #D6ECFA 100%);
+  /* 天蓝墨水字渐变（浅底大标题 / 数字点缀，两端均为深蓝可读色） */
+  --ll-sky-ink-gradient: linear-gradient(110deg, #0C4A6E, #0369A1 55%, #0284C7);
 
   /* Liquid-glass material */
   --ll-glass-bg: rgba(255,255,255,.055);
@@ -67,6 +80,26 @@
   --ll-glass-blur: 18px;
   --ll-glass-blur-soft: 10px;
   --ll-glass-saturate: 135%;
+
+  /* =====================================================
+     组 A · 浅底液态玻璃（day glass）参数 + 光斑配色
+     由 liquidGlass.css（.ll-glass--day / .ll-blob）与组 C techservice.css
+     （--ll-sky-blob-1/2/4、--ll-glass-day-radius）消费。
+     上方既有 --ll-glass-* 深底玻璃令牌保持原值不动。
+     ===================================================== */
+  /* 浅玻璃：白 tint .40-.62 时深字余量充足 */
+  --ll-glass-day-bg: rgba(255,255,255,.5);
+  --ll-glass-day-bg-deep: rgba(255,255,255,.62);
+  --ll-glass-day-blur: 16px;
+  --ll-glass-day-saturate: 150%;
+  --ll-glass-day-radius: 16px;
+  /* 玻璃表面统一深墨字色 */
+  --ll-ink-on-glass: #13233A;
+  /* 光斑配色（radial 光斑 / Hero 漂移体系，mix-blend-mode: screen 叠加） */
+  --ll-sky-blob-1: rgba(64,156,255,.55);
+  --ll-sky-blob-2: rgba(143,209,255,.6);
+  --ll-sky-blob-3: rgba(255,255,255,.7);
+  --ll-sky-blob-4: rgba(200,232,255,.65);
 
   /* Logo motion */
   --ll-logo-reveal-duration: .7s;
@@ -233,6 +266,39 @@
   --ll-icon-md: 20px;
   --ll-icon-lg: 24px;
   --ll-icon-stroke: 1.75;
+
+  /* =====================================================
+     VIP 订阅区块局部 token（P0-1）：值全部引用既有 token，不引入新色值
+     ===================================================== */
+  --ll-vip-card-ring: 0 0 0 2px var(--ll-primary);    /* 档卡选中/推荐档描边光晕 */
+  --ll-vip-badge-ink: var(--ll-navy);                 /* 渐变徽标上的深字（口径同 .ll-add-cart） */
+  --ll-vip-highlight-bar: var(--ll-brand-gradient);   /* 对比表高亮列顶部渐变条 */
+
+  /* =====================================================
+     物流地图语义令牌（out/refund-map-design.md §2.2 横切）
+     canvas/AMap 选项不认 CSS 变量：JS 绘制链经 readLlToken() 运行时读取；
+     SVG/样式端直接 var() 引用。成功绿点（上传完成态）同批补齐。
+     值为既有视觉的忠实镜像（batch-1 token 化不改变观感）。
+     ===================================================== */
+  --ll-success: #059669;
+  --ll-map-track-todo: #0ea5e9;          /* 走廊轨迹主线（正向） */
+  --ll-map-track-passed: #0369a1;        /* 已走过轨迹高亮（正向） */
+  --ll-map-track-rma: #f59e0b;           /* RMA 逆向轨迹主线 */
+  --ll-map-track-rma-passed: #b45309;    /* RMA 已走过轨迹高亮 */
+  --ll-map-truck-body-f: #0284c7;        /* 车标车身（正向） */
+  --ll-map-truck-cab-f: #38bdf8;         /* 车标车头（正向） */
+  --ll-map-truck-body-r: #d97706;        /* 车标车身（RMA） */
+  --ll-map-truck-cab-r: #fbbf24;         /* 车标车头（RMA） */
+  --ll-map-truck-glow: rgba(56, 189, 248, 0.22);  /* 车标底环（正向） */
+  --ll-map-truck-glow-r: rgba(245, 158, 11, 0.25);/* 车标底环（RMA） */
+  --ll-map-truck-edge-f: #e0f2fe;        /* 车标描边高光（正向） */
+  --ll-map-truck-edge-r: #fde68a;        /* 车标描边高光（RMA） */
+  --ll-map-start-dot: #34d399;           /* 起点点位 */
+  --ll-map-end-dot: #f43f5e;             /* 终点点位 */
+  --ll-map-hud-bg: rgba(15, 23, 42, 0.92);       /* HUD 条/端点牌背景 */
+  --ll-map-canvas-bg: #070c14;           /* 地图画布底色（夜航科技底图） */
+  --ll-map-mask-bg: rgba(7, 12, 20, 0.92);       /* 降级/加载蒙层背景 */
+  --ll-map-grid-line: rgba(255, 255, 255, 0.035);/* SVG 网格底纹 */
 }
 
 /* =====================================================
@@ -274,9 +340,16 @@
   --ll-text-tertiary: #7d8ea6;
   --ll-separator: rgba(255, 255, 255, 0.10);
   --ll-separator-strong: rgba(255, 255, 255, 0.20);
+
+  /* 物流地图深色覆盖（深色主题下地图本为夜航基调，仅微调画布） */
+  --ll-success: #10b981;
+  --ll-map-canvas-bg: #050a12;
 }
 
-/* 品牌字标统一规范：首页、登录、后台、启动过渡共用同一字标效果。 */
+/* 品牌字标统一规范：首页、登录、后台、启动过渡共用同一字标效果。
+   用色规范：浅底表面必须套 .ll-wordmark-on-light（下方 on-light 覆盖规则）
+   或 BrandWordmark 组件的 light prop；默认白字（.ll-lan / .ll-shopping）
+   只允许落在 --ll-navy 等深色底上，不得直接压浅色表面。 */
 .ll-wordmark {
   font-family: inherit;
   font-weight: 700;

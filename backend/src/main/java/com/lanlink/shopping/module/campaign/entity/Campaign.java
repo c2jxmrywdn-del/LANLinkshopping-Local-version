@@ -7,6 +7,8 @@ import lombok.Data;
 import lombok.experimental.Accessors;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * 活动（营销中台·统一活动系统）
@@ -59,6 +61,16 @@ public class Campaign {
     /** 商户可报名（1开放报名） */
     private Integer joinable;
 
+    // ===== 商户自建促销（mer_id 非空 = 商户活动）=====
+    /** 创建商户（NULL=平台活动） */
+    private Long merId;
+    /** 指定商品ID逗号分隔（scope=prod 时） */
+    private String prodIds;
+    /** 审核状态 0待审 1通过 2驳回（平台活动恒 1） */
+    private Integer reviewStatus;
+    /** 审核意见（驳回时填写） */
+    private String reviewNote;
+
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 
@@ -70,6 +82,33 @@ public class Campaign {
     /** 是否对指定行业订单适用 */
     public boolean applicable(Long orderIndId) {
         return !"ind".equals(scope) || (indId != null && indId.equals(orderIndId));
+    }
+
+    /** 是否对指定商品适用：all→true；ind→行业相等；prod→商品ID在 prod_ids 内 */
+    public boolean applicableForProduct(Long prodId, Long indId) {
+        if ("prod".equals(scope)) {
+            return prodId != null && prodIdSet().contains(prodId);
+        }
+        return applicable(indId);
+    }
+
+    /** 解析 prod_ids 逗号分隔商品ID集合（空/非法段忽略） */
+    public Set<Long> prodIdSet() {
+        if (prodIds == null || prodIds.isBlank()) return Set.of();
+        Set<Long> out = new HashSet<>();
+        for (String s : prodIds.split(",")) {
+            try {
+                out.add(Long.parseLong(s.trim()));
+            } catch (NumberFormatException ignore) {
+                // 容忍脏数据段，不影响其他商品匹配
+            }
+        }
+        return out;
+    }
+
+    /** 商户促销是否审核通过（平台活动 mer_id 为空视为恒通过，兼容存量行） */
+    public boolean reviewApproved() {
+        return merId == null || (reviewStatus != null && reviewStatus == 1);
     }
 
     /** 上架且在时间窗内 */

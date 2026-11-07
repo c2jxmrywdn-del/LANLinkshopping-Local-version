@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 
 /**
  * 用户券包（领券活动的持券记录）
- * status: 0 未使用 / 1 已使用 / 2 已过期
+ * status: 0 未使用 / 1 已使用（无 status=2 写入方，过期不落库，由活动时间窗 effectiveNow 实时判定）
  */
 @Data
 @TableName("t_user_coupon")

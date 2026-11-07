@@ -7,35 +7,38 @@
         <p>本店商品的成交收入、退款与结算明细，全部透明可查。</p>
       </div>
       <div class="hero-actions">
-        <a-button size="large" class="pill" @click="load"><AppleIcon name="refresh" :size="15" /> 刷新数据</a-button>
+        <a-button size="large" class="pill" @click="load"><RefreshCw :size="14" class="inline mr-1" /> 刷新数据</a-button>
+        <a-button size="large" type="primary" class="pill" @click="showWithdrawNotice">
+          <ArrowDownRight :size="15" class="inline mr-1" /> 申请提现
+        </a-button>
       </div>
     </section>
 
-    <!-- 资金总览 -->
+    <!-- 资金总览 (21st.dev NumberTicker 弹簧数字动效) -->
     <section class="kpi-grid">
       <div class="kpi-card main">
-        <div class="kpi-top"><span>累计收入</span><span class="kpi-ico"><AppleIcon name="wallet" :size="15" /></span></div>
-        <div class="kpi-value">{{ money(f.totalIncome) }}</div>
+        <div class="kpi-top"><span>累计收入</span><span class="kpi-ico"><Wallet :size="15" class="text-amber-500" /></span></div>
+        <div class="kpi-value">¥<NumberTicker :value="Number(f.totalIncome) || 0" :decimal-places="2" /></div>
         <div class="kpi-foot">历史已支付订单的本店金额</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>本月收入</span><span class="kpi-ico"><AppleIcon name="arrowupright" :size="15" /></span></div>
-        <div class="kpi-value">{{ money(f.monthIncome) }}</div>
+        <div class="kpi-top"><span>本月收入</span><span class="kpi-ico"><TrendingUp :size="15" class="text-emerald-500" /></span></div>
+        <div class="kpi-value">¥<NumberTicker :value="Number(f.monthIncome) || 0" :decimal-places="2" /></div>
         <div class="kpi-foot">近 30 天 · {{ f.monthOrders || 0 }} 笔订单</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>累计退款</span><span class="kpi-ico"><AppleIcon name="refund" :size="15" /></span></div>
-        <div class="kpi-value refund">{{ money(f.totalRefund) }}</div>
+        <div class="kpi-top"><span>累计退款</span><span class="kpi-ico"><RotateCcw :size="15" class="text-rose-500" /></span></div>
+        <div class="kpi-value refund">¥<NumberTicker :value="Number(f.totalRefund) || 0" :decimal-places="2" /></div>
         <div class="kpi-foot">已全额退款订单的本店金额</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>净收入</span><span class="kpi-ico"><AppleIcon name="gem" :size="15" /></span></div>
-        <div class="kpi-value">{{ money(f.netIncome) }}</div>
+        <div class="kpi-top"><span>净收入</span><span class="kpi-ico"><Coins :size="15" class="text-indigo-500" /></span></div>
+        <div class="kpi-value">¥<NumberTicker :value="Number(f.netIncome) || 0" :decimal-places="2" /></div>
         <div class="kpi-foot">累计收入 − 累计退款</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-top"><span>待结算</span><span class="kpi-ico"><AppleIcon name="clock" :size="15" /></span></div>
-        <div class="kpi-value">{{ money(f.pendingSettle) }}</div>
+        <div class="kpi-top"><span>待结算</span><span class="kpi-ico"><Clock :size="15" class="text-sky-500" /></span></div>
+        <div class="kpi-value">¥<NumberTicker :value="Number(f.pendingSettle) || 0" :decimal-places="2" /></div>
         <div class="kpi-foot">已支付、履约中的订单金额</div>
       </div>
     </section>
@@ -71,16 +74,63 @@
           <div class="rule-row"><span class="rule-ico">1</span><div><b>结算口径</b><p>按订单明细中本店商品的小计金额结算，不含平台运费与优惠分摊。</p></div></div>
           <div class="rule-row"><span class="rule-ico">2</span><div><b>结算时点</b><p>订单完成（买家签收）后计入可结算余额；退款订单自动扣减。</p></div></div>
           <div class="rule-row"><span class="rule-ico">3</span><div><b>对账凭证</b><p>每笔支付均有支付渠道流水号，可在订单详情中核对。</p></div></div>
-          <div class="rule-row"><span class="rule-ico">4</span><div><b>税务上报</b><p>月度完税证明请在「店铺设置 → 资质证照」中上传。</p></div></div>
+          <div class="rule-row"><span class="rule-ico">4</span><div><b>税务上报</b><p>月度完税证明请在 <a class="bridge-link" @click="$router.push('/merchant/center/store')">店铺设置 → 资质证照</a> 中上传。</p></div></div>
         </div>
       </a-card>
     </section>
+
+    <!-- 企业对公收款账户看板 -->
+    <a-card :bordered="false" class="panel bank-account-panel">
+      <template #title>
+        <div class="panel-title">
+          <div>
+            <strong>企业对公收款账户</strong>
+            <small>用于接收买家对公转账电汇款项及平台资金周期结算</small>
+          </div>
+          <a-button type="default" size="small" class="edit-bank-btn" @click="openEditBank">
+            <Edit3 :size="13" class="mr-1" /> 更新对公账户
+          </a-button>
+        </div>
+      </template>
+      <MerchantCorporateBankCard :bank-info="f.receivingAccount || {}" />
+    </a-card>
+
+    <!-- 对公账户编辑模态框 -->
+    <a-modal
+      v-model:open="editModalVisible"
+      title="更新企业对公收款账户"
+      :confirm-loading="submittingBank"
+      ok-text="确认更新"
+      cancel-text="取消"
+      @ok="handleUpdateBank"
+    >
+      <div class="bank-edit-form">
+        <p class="edit-tip">对公账户信息经 AES-256-GCM 工业级加密存储，更新后将作为买家对公电汇及平台结算汇款凭据。</p>
+        <a-form layout="vertical">
+          <a-form-item label="开户银行全称（含支行）" required>
+            <a-input
+              v-model:value="bankForm.bankName"
+              placeholder="如：中国工商银行股份有限公司深圳科技园支行"
+            />
+          </a-form-item>
+          <a-form-item label="对公银行账号" required>
+            <a-input
+              v-model:value="bankForm.bankAccount"
+              placeholder="请输入 8~35 位数字或字母银行账号"
+            />
+          </a-form-item>
+        </a-form>
+      </div>
+    </a-modal>
 
     <!-- 结算明细 -->
     <a-card :bordered="false" class="panel">
       <template #title>
         <div class="panel-title">
           <div><strong>结算明细</strong><small>最近已支付 / 已退款订单</small></div>
+          <a-button size="small" class="pill export-btn" @click="exportSettlementsCsv" :disabled="!f.settlements || f.settlements.length === 0">
+            <Download :size="13" class="mr-1 inline" /> 导出对账单 (CSV)
+          </a-button>
         </div>
       </template>
       <a-table :data-source="f.settlements || []" :columns="cols" row-key="orderNo" :loading="loading"
@@ -94,7 +144,8 @@
           <template v-else-if="column.key === 'channel'">{{ PAY_CHANNEL[record.payChannel] || record.payChannel || '—' }}</template>
           <template v-else-if="column.key === 'status'">
             <a-tag v-if="Number(record.orderStatus) === 2" color="green">已完成</a-tag>
-            <a-tag v-else-if="Number(record.orderStatus) === 4 || record.refundStatus === 'success'" color="purple">已退款</a-tag>
+            <a-tag v-else-if="Number(record.orderStatus) === 4" color="cyan">部分发货</a-tag>
+            <a-tag v-else-if="Number(record.orderStatus) === 5 || record.refundStatus === 'success' || Number(record.payStatus) === 2" color="purple">已退款</a-tag>
             <a-tag v-else color="blue">履约中</a-tag>
           </template>
           <template v-else-if="column.key === 'payTime'">{{ shortTime(record.payTime) }}</template>
@@ -106,14 +157,104 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { Empty } from 'ant-design-vue'
+import { Empty, message } from 'ant-design-vue'
+import {
+  Edit3,
+  Wallet,
+  TrendingUp,
+  RotateCcw,
+  Coins,
+  Clock,
+  RefreshCw,
+  ArrowDownRight,
+  Download
+} from 'lucide-vue-next'
 import { merchantCenterApi } from '../../api'
-import AppleIcon from '../../components/ui/AppleIcon.vue'
+import NumberTicker from '../../components/ui/NumberTicker.vue'
+import MerchantCorporateBankCard from '../../components/payment/MerchantCorporateBankCard.vue'
 import { PAY_CHANNEL, fmtMoney } from '../../utils/merchantStatus'
 
 const aEmpty = Empty
 const loading = ref(true)
 const f = ref({})
+
+const editModalVisible = ref(false)
+const bankForm = ref({ bankName: '', bankAccount: '' })
+const submittingBank = ref(false)
+
+// 提现功能未上线：真实提现端点待定前，入口只做诚实告知，不做任何资金操作
+function showWithdrawNotice() {
+  message.info('提现功能即将开放，请联系您的客户经理协助处理资金结算')
+}
+
+function exportSettlementsCsv() {
+  const list = f.value.settlements || []
+  if (!list.length) {
+    message.warning('暂无结算明细可导出')
+    return
+  }
+  const headers = ['订单号', '本店金额(元)', '商品种数', '支付渠道', '结算状态', '支付时间']
+  const statusMap = { '0': '待发货', '1': '已发货', '2': '已完成', '3': '已取消', '4': '部分发货', '5': '已退款' }
+  const rows = list.map(r => {
+    const statusText = (r.refundStatus === 'success' || Number(r.payStatus) === 2 || Number(r.orderStatus) === 5)
+      ? '已退款'
+      : (statusMap[String(r.orderStatus)] || '履约中')
+    const channelText = PAY_CHANNEL[r.payChannel] || r.payChannel || '—'
+    return [
+      `\t${r.orderNo}`,
+      fmtMoney(r.myAmount),
+      r.myKinds ?? 1,
+      channelText,
+      statusText,
+      r.payTime ? r.payTime.replace('T', ' ').slice(0, 19) : ''
+    ]
+  })
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\r\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.setAttribute('href', url)
+  link.setAttribute('download', `商户资金结算对账单_${new Date().toISOString().slice(0, 10)}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+  message.success('对账单 CSV 文件已成功导出')
+}
+
+function openEditBank() {
+  bankForm.value = {
+    bankName: f.value.receivingAccount?.bankName || '',
+    bankAccount: ''
+  }
+  editModalVisible.value = true
+}
+
+async function handleUpdateBank() {
+  if (!bankForm.value.bankName || bankForm.value.bankName.trim().length < 4) {
+    message.warning('开户银行全称需至少 4 个字符')
+    return
+  }
+  if (!bankForm.value.bankAccount || bankForm.value.bankAccount.trim().length < 8) {
+    message.warning('对公银行账号需至少 8 位数字或字符')
+    return
+  }
+  submittingBank.value = true
+  try {
+    await merchantCenterApi.updateBankAccount({
+      bankName: bankForm.value.bankName.trim(),
+      bankAccount: bankForm.value.bankAccount.trim()
+    })
+    message.success('企业对公收款账户已更新')
+    editModalVisible.value = false
+    await load()
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    submittingBank.value = false
+  }
+}
 
 const money = fmtMoney
 function shortTime(t) { return (t || '').replace('T', ' ').slice(0, 16) }
@@ -190,6 +331,119 @@ onMounted(load)
 .rule-row b { font-size: 12.5px; color: var(--mc-ink, #1d1d1f); }
 .rule-row p { margin: 3px 0 0; font-size: 11.5px; color: var(--mc-muted2, #86868b); line-height: 1.6; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+
+.bank-account-panel {
+  margin-top: 4px;
+}
+.edit-bank-btn {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.bank-edit-form {
+  padding-top: 8px;
+}
+.edit-tip {
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.export-btn {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+}
+.withdraw-modal-body {
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.withdraw-balance-card {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 1px solid #bbf7d0;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.wb-label {
+  font-size: 12px;
+  color: #166534;
+  font-weight: 600;
+}
+.wb-amount {
+  font-size: 26px;
+  font-weight: 800;
+  color: #15803d;
+  letter-spacing: -0.02em;
+  margin: 4px 0 2px;
+}
+.wb-sub {
+  font-size: 11px;
+  color: #166534;
+  opacity: 0.85;
+}
+.withdraw-warning {
+  display: flex;
+  align-items: center;
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  color: #b45309;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.withdraw-dest-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.dest-title {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.dest-bank {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.dest-acc {
+  font-size: 13px;
+  color: #0284c7;
+  font-weight: 600;
+  margin: 3px 0;
+}
+.dest-meta {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.withdraw-form {
+  margin-top: 4px;
+}
+.withdraw-tip {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.bridge-link {
+  color: #1e6eb8;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color .15s;
+}
+.bridge-link:hover {
+  color: #104d80;
+}
 
 @media (max-width: 1050px) {
   .kpi-grid { grid-template-columns: repeat(3, 1fr); }

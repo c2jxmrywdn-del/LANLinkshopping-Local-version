@@ -16,8 +16,21 @@ export const ADDRESS_MAX = 255
 export const REMARK_MAX = 255
 export const REFUND_REASON_MAX = 255
 
+// ===== 退款凭证证据（与后端 ValidationRules / RefundEvidenceValidator 同口径） =====
+export const REFUND_EVIDENCE_MAX_COUNT = 9
+export const REFUND_EVIDENCE_NAME_MAX = 200
+export const REFUND_EVIDENCE_URL_MAX = 300
+// 后端字面量唯一持有方是 common/storage（UploadPathGuardrailTest 门禁），此处为契约镜像值
+export const REFUND_EVIDENCE_URL_PREFIX = '/api/uploads/'
+export const ALLOWED_REFUND_EVIDENCE_TYPES = ['image', 'video', 'file']
+export const ALLOWED_REFUND_EVIDENCE_EXT = {
+  image: ['jpg', 'png', 'webp', 'gif'],
+  video: ['mp4', 'mov'],
+  file: ['pdf', 'txt', 'csv', 'bin'],
+}
+
 // ===== 支付方式白名单（与后端 ALLOWED_PAY_TYPES 一致） =====
-export const ALLOWED_PAY_TYPES = ['balance', 'corporate', 'term']
+export const ALLOWED_PAY_TYPES = ['balance', 'corporate', 'term', 'alipay', 'wechat', 'stripe', 'apple_pay', 'google_pay']
 
 // ===== 数值边界 =====
 export const MAX_CART_ITEMS = 200

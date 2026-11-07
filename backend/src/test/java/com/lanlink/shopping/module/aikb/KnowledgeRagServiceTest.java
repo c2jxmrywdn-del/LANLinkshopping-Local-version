@@ -233,13 +233,14 @@ class KnowledgeRagServiceTest {
         assertTrue(ctx.text().contains("企业账期申请流程"));
     }
 
-    // ===== 来源权威度权重（news 降权，避免 WPS/京东PLUS 之类资讯混入事实问答） =====
+    // ===== 来源权威度权重（news 降权避免资讯混入事实问答；product 降权防商户投毒污染 RAG） =====
 
     @Test
     void sourceWeightsMatchPolicy() {
         assertEquals(1.0, KnowledgeRagService.sourceWeight("kb"), 1e-9);
         assertEquals(1.0, KnowledgeRagService.sourceWeight("policy"), 1e-9);
-        assertEquals(1.0, KnowledgeRagService.sourceWeight("product"), 1e-9);
+        // A8：product 来源为商户可编辑文本（标题/品牌/规格/价格），降权至 0.8 防投毒
+        assertEquals(KnowledgeRagService.PRODUCT_SOURCE_WEIGHT, KnowledgeRagService.sourceWeight("product"), 1e-9);
         assertEquals(1.0, KnowledgeRagService.sourceWeight("membership"), 1e-9);
         assertEquals(1.0, KnowledgeRagService.sourceWeight("subscription"), 1e-9);
         assertEquals(1.0, KnowledgeRagService.sourceWeight("category"), 1e-9);

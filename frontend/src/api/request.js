@@ -79,7 +79,10 @@ request.interceptors.response.use(
       if (!isMe && !res.config.silent) {
         message.error(body.message || '请求失败')
         if (body.code === 401) {
-          router.push('/login')
+          // 带上当前路径：登录成功后回到触发 401 的页面，而不是一律回首页
+          const current = router.currentRoute.value
+          const redirect = current && current.fullPath && current.path !== '/login' ? current.fullPath : undefined
+          router.push({ path: '/login', query: redirect ? { redirect } : {} })
         }
       }
       return Promise.reject(new Error(body.message))
@@ -103,8 +106,26 @@ request.interceptors.response.use(
     if (resp && err.config && isCsrfFailure(resp.status, resp.data) && !err.config._retried && isCsrfProtectedMutation(err.config)) {
       return retryWithCsrf(err.config)
     }
+    // 会话过期（后端拦截器现返回真实 HTTP 401，与业务体 code=401 同语义）：
+    // 与上方 2xx 分支的 401 处理保持一致——静默探测/显式 silent 不打扰，其余带路径跳登录
+    const http401 = resp && Number(resp.status) === 401
+    if (http401 && !err.config?.silent && !(err.config?.url || '').includes('/auth/me')) {
+      const current = router.currentRoute.value
+      const redirect = current && current.fullPath && current.path !== '/login' ? current.fullPath : undefined
+      router.push({ path: '/login', query: redirect ? { redirect } : {} })
+    }
     if (!err.config?.silent) {
-      message.warning('网络异常，请稍后重试')
+      // 统一按状态码给出可行动的信息：原来所有 4xx/5xx 一律"网络异常"，
+      // 413（文件过大）、403（无权限）这类本来能自助处理的错误被掩盖。
+      const status = resp ? Number(resp.status) : 0
+      const serverMsg = resp && resp.data && typeof resp.data === 'object' && typeof resp.data.message === 'string'
+        ? resp.data.message : ''
+      const byStatus = status === 413 ? '文件过大，请压缩后重试'
+        : status === 403 ? '没有权限执行该操作'
+          : status === 404 ? '请求的资源不存在'
+            : status >= 500 ? '服务异常，请稍后重试'
+              : '网络异常，请稍后重试'
+      message.warning(serverMsg || byStatus)
     }
     return Promise.reject(err)
   }

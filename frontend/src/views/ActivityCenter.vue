@@ -28,6 +28,9 @@
         <div class="cp-hero-links">
           <ShimmerButton class="cp-cta" background="var(--ll-primary, #1E6EB8)"
                          shimmer-color="rgba(255,255,255,.9)" @click="$router.push('/activity/my')">我的券包</ShimmerButton>
+          <button type="button" class="cp-pill plain" @click="$router.push('/coupons')">领券中心</button>
+          <button type="button" class="cp-pill plain" @click="$router.push('/tasks')">任务中心</button>
+          <button type="button" class="cp-pill plain" @click="$router.push('/venue')">大促会场</button>
           <button type="button" class="cp-pill plain" @click="$router.push('/activity/rules')">活动规则</button>
         </div>
       </div>
@@ -87,7 +90,7 @@
             </div>
             <h3 class="glass-deal-title">{{ activeFlashSale ? activeFlashSale.title : '行业大促特惠专场' }}</h3>
             <p class="glass-deal-desc">
-              {{ activeFlashSale ? `距离秒杀结束剩余 ${remainText(activeFlashSale.endTime)}，全场现货火热抢购中。` : '精选工业备件、办公耗材与智能硬件阶梯满减，下单自动抵扣优惠。' }}
+              {{ activeFlashSale ? `距离秒杀结束剩余 ${remainText(activeFlashSale.endTime)}，全场现货火热抢购中。` : '精选工业备件、办公耗材与智能硬件阶梯满减，下单自动享受活动让利。' }}
             </p>
             <div class="glass-deal-footer">
               <div class="glass-deal-price">
@@ -126,6 +129,52 @@
             </div>
           </div>
         </AppleGlassCard>
+
+        <!-- 业务卡片 4: 每日签到（会员激励：连续天数徽标 + 本月签到日历 + 幂等签到） -->
+        <AppleGlassCard :max-tilt="8" :spotlight-size="320" class="glass-deal-item ck-card">
+          <div class="glass-deal-inner ck-inner">
+            <div class="ck-info">
+              <div class="glass-deal-top">
+                <span class="glass-deal-tag">DAILY CHECK-IN</span>
+                <span class="glass-deal-badge" :class="{ hot: !checkinState.signedToday }">{{ checkinBadgeText }}</span>
+              </div>
+              <h3 class="glass-deal-title">每日签到</h3>
+              <p class="glass-deal-desc ck-note">{{ checkinNote }}</p>
+              <!-- 7 天签到积分阶梯（可视化）：后端 checkinPointsFor 档位为 10 分起步、连签每日 +5、第 7 天起封顶 40，
+                   此处仅做前端展示，档位与断签/幂等口径全部沿用后端 -->
+              <div v-if="logged()" class="ck-ladder" role="img" aria-label="连续签到 7 天积分阶梯">
+                <span v-for="(pts, idx) in CK_LADDER" :key="idx" class="ck-lstep"
+                      :class="{ done: ladderDone(idx), next: ladderNext(idx) }">
+                  <b>{{ idx + 1 }}</b>
+                  <small>+{{ pts }}</small>
+                  <i v-if="ladderTag(idx)">{{ ladderTag(idx) }}</i>
+                </span>
+              </div>
+              <p class="ck-ladder-note" v-if="ladderNote">{{ ladderNote }}</p>
+              <div class="glass-deal-footer">
+                <div class="glass-deal-price">
+                  <Gift :size="20" class="ck-gift" />
+                  <span class="amount">{{ signedThisMonth }}</span>
+                  <span class="credit-sub">本月已签</span>
+                </div>
+                <button type="button" class="glass-deal-btn" :disabled="checkinState.signedToday || checkinLoading" @click="doCheckin">
+                  {{ checkinState.signedToday ? '已签到' : '立即签到' }}
+                </button>
+              </div>
+            </div>
+            <div class="ck-cal" role="img" aria-label="本月签到日历">
+              <div class="ck-week"><span v-for="w in CK_WEEK" :key="w">{{ w }}</span></div>
+              <div class="ck-grid">
+                <i v-for="n in checkinLead" :key="'lead' + n" class="ck-blank" aria-hidden="true"></i>
+                <span v-for="d in checkinDays" :key="d" class="ck-cell"
+                      :class="{ signed: signedPointsOf(d) !== undefined, today: d === todayNum }">
+                  <b>{{ d }}</b>
+                  <small v-if="signedPointsOf(d) !== undefined">+{{ signedPointsOf(d) }}</small>
+                </span>
+              </div>
+            </div>
+          </div>
+        </AppleGlassCard>
       </div>
     </section>
 
@@ -134,6 +183,13 @@
       <button v-for="t in TABS" :key="t.key" type="button" role="tab"
               class="cp-seg-item" :class="{ on: tab === t.key }" @click="switchTab(t.key)">
         {{ t.label }}
+      </button>
+    </div>
+
+    <!-- 领券 tab 引流入口：独立券池页（一键批量领取，逐券原子） -->
+    <div v-if="tab === 'coupon'" class="cp-tab-entry">
+      <button type="button" class="cp-tab-entry-btn" @click="$router.push('/coupons')">
+        进入领券中心，一键批量领取 <ArrowRight :size="12" :stroke-width="2.4" />
       </button>
     </div>
 
@@ -152,14 +208,14 @@
             </div>
             <div class="tk-body">
               <div class="tk-row1">
-                <span class="tk-scope">{{ c.indName ? c.indName + '专享' : '全场通用' }}</span>
+                <span class="tk-scope">{{ c.scope === 'prod' && c.merName ? '店铺 · ' + c.merName : (c.indName ? c.indName + '专享' : '全场通用') }}</span>
                 <span class="tk-remain" v-if="c.remainQuota >= 0">余 {{ c.remainQuota }}</span>
               </div>
               <h3>{{ c.title }}</h3>
               <div class="tk-valid">{{ validText(c) }}</div>
               <div class="tk-actions">
-                <button type="button" class="tk-btn" :disabled="!c.canClaim" @click.stop="claim(c)">
-                  {{ c.limitReached ? '已领取' : (c.remainQuota === 0 ? '已抢完' : '立即领取') }}
+                <button type="button" class="tk-btn" :disabled="!c.canClaim || !!actingId" @click.stop="claim(c)">
+                  {{ actingId === c.campaignId ? '领取中…' : (c.limitReached ? '已领取' : (c.remainQuota === 0 ? '已抢完' : '立即领取')) }}
                 </button>
                 <span class="tk-stamp" v-if="c.limitReached">已领取</span>
               </div>
@@ -217,7 +273,7 @@
               <div class="gc-foot">
                 <span class="gc-valid">{{ validText(c) }}</span>
                 <button v-if="c.type === 'register'" type="button" class="gc-btn"
-                        :disabled="c.joined" @click.stop="join(c)">{{ c.joined ? '已参与' : '立即参与' }}</button>
+                        :disabled="c.joined || !!actingId" @click.stop="join(c)">{{ actingId === c.campaignId ? '提交中…' : (c.joined ? '已参与' : '立即参与') }}</button>
                 <span v-else class="gc-auto">支付后自动参与</span>
               </div>
             </div>
@@ -260,9 +316,12 @@ import {
   Gift,
   Ticket
 } from 'lucide-vue-next'
-import { campaignApi, homeApi, orderApi, creditTermApi } from '../api'
+import { campaignApi, homeApi, orderApi, creditTermApi, membershipApi } from '../api'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import { useMembershipStore } from '../store/membership'
+import { tryExposePrompt } from '../utils/vipPrompt'
+import { resolveStorageUrl } from '../utils/storageUrl'
 
 import BeamPanel from '../components/ui/BeamPanel.vue'
 import Meteors from '../components/ui/Meteors.vue'
@@ -282,6 +341,7 @@ import AppleDock from '../components/ui/AppleDock.vue'
 const router = useRouter()
 const cart = useCartStore()
 const user = useUserStore()
+const membership = useMembershipStore()
 
 const TABS = [
   { key: 'all', label: '全部' },
@@ -303,6 +363,82 @@ const activeFlashSale = computed(() => acts.value.find(c => c.type === 'flash_sa
 const userHasCredit = computed(() => creditOverview.value && creditOverview.value.creditStatus === 'APPROVED')
 const creditLimit = computed(() => (creditOverview.value && creditOverview.value.availableLimit) || '500,000')
 
+// ========== 每日签到（会员激励）：checkinStatus 拉取本月记录，checkin 幂等签到 ==========
+const CK_WEEK = ['日', '一', '二', '三', '四', '五', '六']
+const checkinState = ref({ signedToday: false, streak: 0, month: [] })
+const checkinLoading = ref(false)
+const todayNum = new Date().getDate()
+const _pad2 = (n) => String(n).padStart(2, '0')
+const _ym = `${new Date().getFullYear()}-${_pad2(new Date().getMonth() + 1)}-`
+// 已签日期 → 当日获得积分（date 形如 yyyy-MM-dd）
+const checkinSignedMap = computed(() => {
+  const m = new Map()
+  for (const d of checkinState.value.month || []) m.set(String(d.date).slice(0, 10), Number(d.points) || 0)
+  return m
+})
+const signedThisMonth = computed(() => (checkinState.value.month || []).length)
+// 明日可得积分 = 10 + min(连续天数-1, 6) × 5（连签奖励每日 +5，封顶 6 天）
+const nextCheckinPoints = computed(() => 10 + Math.max(0, Math.min((Number(checkinState.value.streak) || 0) - 1, 6)) * 5)
+const checkinBadgeText = computed(() => checkinState.value.signedToday ? `连续 ${checkinState.value.streak} 天` : '今日未签')
+const checkinNote = computed(() => `连续签到 ${checkinState.value.streak} 天 · 明日可得 ${nextCheckinPoints.value} 积分`)
+
+// ===== 7 天积分阶梯可视化：档位与 MembershipService.checkinPointsFor 完全同口径（10 起步、每日 +5、第 7 天封顶 40） =====
+const CK_LADDER = [10, 15, 20, 25, 30, 35, 40]
+// 阶梯基准 = 当前连签天数（已签含今日；未签延续昨日口径，与后端 checkinStatus 一致），下一签落在第 streak+1 档
+const ladderBase = computed(() => Number(checkinState.value.streak) || 0)
+const ladderDone = (idx) => idx + 1 <= ladderBase.value
+const ladderNext = (idx) => idx + 1 === Math.min(ladderBase.value + 1, CK_LADDER.length)
+function ladderTag(idx) {
+  const day = idx + 1
+  if (ladderDone(idx)) return '已达成'
+  if (ladderNext(idx)) return checkinState.value.signedToday ? '明日预告' : '今日可得'
+  if (!checkinState.value.signedToday && day === ladderBase.value + 2 && day <= CK_LADDER.length) return '明日预告'
+  return ''
+}
+const ladderNote = computed(() => {
+  if (ladderBase.value >= CK_LADDER.length) return '连签 7 天及以上，每日固定 40 分'
+  if (!checkinState.value.signedToday && ladderBase.value > 0) return '今日未签，断签将重新计天数'
+  return ''
+})
+const checkinLead = computed(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).getDay())
+const checkinDays = computed(() => new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate())
+const signedPointsOf = (d) => checkinSignedMap.value.get(_ym + _pad2(d))
+
+async function loadCheckin() {
+  if (!logged()) return
+  try {
+    checkinState.value = (await membershipApi.checkinStatus()) || { signedToday: false, streak: 0, month: [] }
+  } catch (e) { /* 签到区静默降级，不阻塞活动主流程 */ }
+}
+
+async function doCheckin() {
+  if (!logged()) return requireLogin()
+  if (checkinState.value.signedToday || checkinLoading.value) return
+  checkinLoading.value = true
+  try {
+    const r = await membershipApi.checkin()
+    message.success(`签到成功，+${Number(r?.points) || 0} 积分，已连续签到 ${Number(r?.streak) || 1} 天`)
+    maybeVipNudge()
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    checkinLoading.value = false
+    loadCheckin()
+  }
+}
+
+// 入口 5（设计稿 §2，v2 收敛为单一引导面）：签到成功 toast 追加订阅引导；每日至多 1 次（按日标记）+ 会话曝光上限；
+// 已订阅不推送；文案避开本页账期卡占用的「专属价 / 95 折」词面
+function maybeVipNudge() {
+  if (membership.hasActiveSub) return
+  const KEY = 'll_vip_prompt_checkin'
+  const today = new Date().toISOString().slice(0, 10)
+  try { if (localStorage.getItem(KEY) === today) return } catch (e) { /* 忽略 */ }
+  if (!tryExposePrompt('checkin')) return
+  try { localStorage.setItem(KEY, today) } catch (e) { /* 忽略 */ }
+  message.info('开通订阅解锁等级权益')
+}
+
 // ========== 1. 真实 B2B 商品画廊映射 (结合后端真实 hot 商品) ==========
 const carouselProducts = computed(() => {
   if (hotProducts.value && hotProducts.value.length > 0) {
@@ -313,7 +449,7 @@ const carouselProducts = computed(() => {
       title: p.title,
       tagline: `现货库存 ${p.stock} 件 · 累计批发采购 ${p.sales} 单`,
       badge: p.sales > 30 ? '爆款推荐' : '现货速发',
-      src: p.coverUrl,
+      src: resolveStorageUrl(p.coverUrl),
       price: p.price,
       originalPrice: (Number(p.price) * 1.15).toFixed(2),
       sales: p.sales,
@@ -501,21 +637,27 @@ function switchTab(t) {
 
 const logged = () => !!localStorage.getItem('ll_user')
 
+// 竞态守卫：tab 快速切换时仅允许最新一次请求写入列表，过期响应直接丢弃
+let loadSeq = 0
+
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   try {
     const [actList, hotList] = await Promise.all([
       campaignApi.list(tab.value).catch(() => []),
       homeApi.hot(8).catch(() => [])
     ])
+    if (seq !== loadSeq) return // 已有更新的 tab 请求，本次结果作废
     acts.value = actList || []
     if (hotList && hotList.length) {
       hotProducts.value = hotList
     }
   } catch (e) {
+    if (seq !== loadSeq) return
     acts.value = []
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 
   // 若已登录，拉取用户真实进行中订单与账期状态
@@ -541,33 +683,40 @@ function requireLogin() {
   router.push({ path: '/login', query: { redirect: '/activity' } })
 }
 
+// 领取/参与请求中的活动 ID：防抖守卫，请求期间按钮禁用、重复点击直接忽略
+const actingId = ref(null)
+
 async function claim(c) {
   if (!logged()) return requireLogin()
+  if (actingId.value) return
+  actingId.value = c.campaignId
   try {
     await campaignApi.claim(c.campaignId)
     message.success('领取成功，结算时可用')
     load()
   } catch (e) {
     /* 拦截器已提示 */
-  }
+  } finally { actingId.value = null }
 }
 
 async function join(c) {
   if (!logged()) return requireLogin()
+  if (actingId.value) return
+  actingId.value = c.campaignId
   try {
     await campaignApi.join(c.campaignId)
     message.success(`参与成功，+${c.rewardPoints} 积分已到账`)
     router.push(`/activity/${c.campaignId}/participation`)
   } catch (e) {
     /* 拦截器已提示 */
-  }
+  } finally { actingId.value = null }
 }
 
 // ===== 展示口径 =====
 const ACCENTS = ['blue', 'red', 'gold', 'green', 'purple']
 const accent = (a) => 'ac-' + (ACCENTS.includes(a) ? a : 'blue')
 const typeLabel = (t) => ({ full_reduce: '满减', discount: '折扣' }[t] || '促销')
-const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const trimZero = (v) => { const n = Math.round(Number(v) * 100) / 100; return String(n) }
 const rateText = (r) => trimZero(Number(r) * 10)
 const validText = (c) => c.endTime ? `有效期至 ${fmtDate(c.endTime)}` : '长期有效'
 const fmtDate = (v) => v ? String(v).slice(0, 10) : ''
@@ -587,6 +736,8 @@ function remainText(end) {
 
 onMounted(() => {
   load()
+  loadCheckin()
+  membership.ensure()
   timer = setInterval(() => { now.value = Date.now() }, 1000)
 })
 
@@ -791,6 +942,104 @@ onUnmounted(() => clearInterval(timer))
   transform: scale(1.04);
 }
 
+/* ===== 每日签到卡：横跨整行，左信息 + 右本月日历 ===== */
+.ck-card { grid-column: 1 / -1; min-height: 0; }
+.ck-inner { flex-direction: row; align-items: center; gap: 34px; }
+.ck-info { flex: 1; min-width: 0; }
+.ck-note { margin-bottom: 14px; }
+.ck-gift { color: #f59e0b; align-self: center; margin-right: 2px; }
+.ck-cal { flex: 0 0 322px; }
+
+/* ===== 7 天签到积分阶梯（纯前端可视化，档位同 checkinPointsFor） ===== */
+.ck-ladder {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-bottom: 12px;
+  max-width: 460px;
+}
+.ck-lstep {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 7px 0 8px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, .04);
+  border: 1px solid transparent;
+  transition: background-color .25s ease, border-color .25s ease;
+}
+.ck-lstep b { font-size: 11px; font-weight: 700; line-height: 1.2; color: #64748b; font-variant-numeric: tabular-nums; }
+.ck-lstep small { font-size: 12.5px; font-weight: 700; line-height: 1.2; color: #334155; font-variant-numeric: tabular-nums; }
+.ck-lstep i {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.ck-lstep.done { background: rgba(245, 158, 11, .14); }
+.ck-lstep.done small { color: #b45309; }
+.ck-lstep.next {
+  background: rgba(30, 110, 184, .1);
+  border-color: var(--ll-primary, #1E6EB8);
+  box-shadow: 0 2px 8px rgba(30, 110, 184, .16);
+}
+.ck-lstep.next small { color: var(--ll-primary, #1E6EB8); }
+.ck-lstep.next i { color: var(--ll-primary, #1E6EB8); }
+.ck-ladder-note { margin: -6px 0 12px; font-size: 11.5px; color: #b45309; }
+
+/* ===== 领券 tab 引流入口 ===== */
+.cp-tab-entry { margin: -10px 0 20px; }
+.cp-tab-entry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ll-primary, #1E6EB8);
+  background: rgba(30, 110, 184, .08);
+  padding: 7px 14px;
+  border-radius: 999px;
+  transition: background-color .2s ease, transform .2s ease;
+}
+.cp-tab-entry-btn:hover { background: rgba(30, 110, 184, .14); transform: translateY(-1px); }
+.ck-week, .ck-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.ck-week { margin-bottom: 5px; }
+.ck-week span { text-align: center; font-size: 10.5px; color: #94a3b8; }
+.ck-cell { position: relative; text-align: center; padding: 5px 0 6px; border-radius: 9px; }
+.ck-cell b { display: block; font-size: 11.5px; font-weight: 600; line-height: 1.25; font-variant-numeric: tabular-nums; color: #334155; }
+.ck-cell small { display: block; font-size: 8.5px; line-height: 1.3; font-weight: 700; color: #b45309; }
+.ck-cell.signed { background: rgba(245, 158, 11, .14); }
+.ck-cell.signed::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+.ck-cell.today { box-shadow: inset 0 0 0 1.5px var(--ll-primary, #1E6EB8); }
+.ck-cell.today b { color: var(--ll-primary, #1E6EB8); }
+:global(.dark) .ck-week span { color: #64748b; }
+:global(.dark) .ck-cell b { color: #cbd5e1; }
+:global(.dark) .ck-cell.signed { background: rgba(245, 158, 11, .22); }
+:global(.dark) .ck-cell small { color: #fbbf24; }
+
+@media (max-width: 900px) {
+  .ck-inner { flex-direction: column; align-items: stretch; gap: 18px; }
+  .ck-cal { flex: none; width: 100%; }
+  .ck-ladder { max-width: none; }
+}
+
 /* ===== Hero：Apple 营销页排版 ===== */
 .cp-hero {
   position: relative;
@@ -826,7 +1075,7 @@ onUnmounted(() => clearInterval(timer))
   color: var(--ll-ink, #1d1d1f);
 }
 .cp-stat span { font-size: 12px; color: var(--ll-muted, #6e6e73); }
-.cp-hero-links { display: flex; gap: 10px; }
+.cp-hero-links { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* 胶囊按钮：iOS 圆钮 */
 .cp-pill {
@@ -1198,6 +1447,13 @@ onUnmounted(() => clearInterval(timer))
   .tk-body { padding: 15px 14px 13px 16px; }
   .tk-btn { padding: 7px 14px; }
   .tk-stamp { right: 70px; }
+  .ck-ladder { gap: 4px; margin-bottom: 10px; }
+  .ck-lstep { padding: 5px 0 6px; border-radius: 8px; }
+  .ck-lstep b { font-size: 9.5px; }
+  .ck-lstep small { font-size: 11px; }
+  .ck-lstep i { font-size: 8px; }
+  .ck-lstep.done i { display: none; } /* 窄屏仅保留当前档标签，避免 7 列挤压溢出 */
+  .ck-ladder-note { margin: 2px 0 10px; }
   .pc-head, .pc-benefit, .pc-foot,
   .gc-head, .gc-foot,
   .fk-benefit, .fk-foot,

@@ -87,6 +87,7 @@
           <template #icon><ReloadOutlined /></template>
           刷新
         </a-button>
+        <a-button type="default" @click="openAutoConfig">自动审核设置</a-button>
       </div>
     </div>
 
@@ -455,6 +456,43 @@
           </div>
         </div>
 
+        <!-- 模块 4.5：自动审核结论（规则 + 文本 AI + 主图视觉） -->
+        <div class="section-card">
+          <div class="section-title">
+            <span class="section-title-text"><SafetyCertificateOutlined style="color: #38bdf8; margin-right: 8px" /> 自动审核结论</span>
+            <a-space>
+              <a-tag v-if="autoReview && autoReview.decision" :color="autoDecisionColor(autoReview.decision)">
+                {{ autoDecisionText(autoReview.decision) }}
+              </a-tag>
+              <a-button size="small" :loading="autoRunning" @click="rerunAutoReview">重跑自动审核</a-button>
+            </a-space>
+          </div>
+          <div v-if="autoReview && autoReview.decision" class="auto-review-box">
+            <div class="auto-review-meta">
+              <span>评分 <b>{{ autoReview.score ?? 0 }}</b></span>
+              <span>来源 {{ autoReview.source === 'MANUAL' ? '人工触发' : '自动' }}</span>
+              <span>模型 {{ autoReview.model || '规则' }}</span>
+              <span>耗时 {{ autoReview.elapsedMs || 0 }} ms</span>
+              <span>{{ autoReview.createTime || '' }}</span>
+            </div>
+            <div v-if="autoRule && autoRule.issues && autoRule.issues.length" class="auto-review-list">
+              <div v-for="(it, idx) in autoRule.issues" :key="'r' + idx" class="auto-review-item">
+                <a-tag :color="it.severity === 'HARD' ? 'red' : 'orange'">{{ it.severity === 'HARD' ? '红线' : '提示' }}</a-tag>
+                {{ it.message }}
+              </div>
+            </div>
+            <div v-if="autoAi" class="auto-review-line">
+              文本 AI：<b>{{ autoAi.decision }}</b> · 风险 {{ autoAi.risk }} · 置信度 {{ autoAi.score }}
+              <span v-if="autoAi.issues && autoAi.issues.length"> · {{ autoAi.issues.map(i => i.message).join('；') }}</span>
+            </div>
+            <div v-if="autoVision" class="auto-review-line">
+              主图视觉：{{ autoVision.match ? '匹配' : '不匹配' }} · 风险 {{ autoVision.risk }}
+              <span v-if="autoVision.issues && autoVision.issues.length"> · {{ autoVision.issues.join('；') }}</span>
+            </div>
+          </div>
+          <div v-else class="text-muted empty-tip">暂无自动审核记录（历史商品或本轮尚未完成）</div>
+        </div>
+
         <!-- 模块 5：审核操作与决策 -->
         <div class="section-card audit-action-card">
           <div class="section-title">
@@ -526,6 +564,33 @@
       </div>
     </a-drawer>
 
+    <!-- 自动审核设置 -->
+    <a-modal v-model:open="autoConfigOpen" title="商品自动审核设置" width="520px"
+             :confirm-loading="autoConfigSaving" ok-text="保存" cancel-text="取消" @ok="saveAutoConfig">
+      <a-form layout="vertical" class="auto-config-form">
+        <a-form-item label="启用自动审核">
+          <a-switch v-model:checked="autoConfig.auto_enabled" />
+          <span class="auto-config-hint">关闭后仅生成建议，审核状态仍由人工决定</span>
+        </a-form-item>
+        <a-form-item label="启用文本 AI 复核">
+          <a-switch v-model:checked="autoConfig.ai_enabled" />
+          <span class="auto-config-hint">复用现有出站模型渠道，判断内容合规与虚假宣传</span>
+        </a-form-item>
+        <a-form-item label="启用主图视觉复核">
+          <a-switch v-model:checked="autoConfig.vision_enabled" />
+          <span class="auto-config-hint">调用本地 qwen2.5-vl 检查图片与商品匹配度、违禁内容</span>
+        </a-form-item>
+        <a-form-item label="自动通过分数阈值">
+          <a-input-number v-model:value="autoConfig.auto_approve_score" :min="60" :max="100" :precision="0" style="width: 160px" />
+          <span class="auto-config-hint">规则分与 AI 置信度均需达到该分数才会自动通过</span>
+        </a-form-item>
+        <a-form-item label="每日 AI 审核预算（次）">
+          <a-input-number v-model:value="autoConfig.daily_ai_budget" :min="0" :max="5000" :precision="0" style="width: 160px" />
+          <span class="auto-config-hint">超过预算后自动转人工，避免模型成本失控</span>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
     <!-- ======================================================== -->
     <!-- 四级弹窗 ①：穿透关联商户资质核验浮窗 -->
     <!-- ======================================================== -->
@@ -555,7 +620,7 @@
 
         <a-descriptions bordered size="small" :column="2" class="custom-descriptions">
           <a-descriptions-item label="主体类型">{{ merchantDetail.merchant?.regType || '企业' }}</a-descriptions-item>
-          <a-descriptions-item label="注册资本">¥{{ merchantDetail.merchant?.regCapital || '0.00' }}</a-descriptions-item>
+          <a-descriptions-item label="实缴资本">¥{{ merchantDetail.merchant?.regCapital || '0.00' }}</a-descriptions-item>
           <a-descriptions-item label="法人姓名">{{ merchantDetail.merchant?.legalPerson || '—' }}</a-descriptions-item>
           <a-descriptions-item label="联系电话">{{ merchantDetail.merchant?.contactPhone || '—' }}</a-descriptions-item>
           <a-descriptions-item label="对公银行">{{ merchantDetail.merchant?.bankName || '—' }}</a-descriptions-item>
@@ -841,7 +906,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined,
@@ -907,12 +972,23 @@ function hasSensitiveWord(text) {
   return sensitiveWords.some(w => text.includes(w))
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]))
+}
+
 function highlightViolations(text) {
   if (!text) return ''
-  let html = text
+  let html = escapeHtml(text)
   sensitiveWords.forEach(w => {
-    if (html.includes(w)) {
-      html = html.replaceAll(w, `<mark class="violation-mark">${w}</mark>`)
+    const escapedWord = escapeHtml(w)
+    if (html.includes(escapedWord)) {
+      html = html.replaceAll(escapedWord, `<mark class="violation-mark">${escapedWord}</mark>`)
     }
   })
   return html
@@ -943,7 +1019,9 @@ async function loadStats() {
   }
 }
 
+let loadSeq = 0
 async function load() {
+  const seq = ++loadSeq
   loading.value = true
   try {
     const params = {
@@ -954,10 +1032,11 @@ async function load() {
       status: statusFilter.value
     }
     const page = await productApi.adminList(params)
+    if (seq !== loadSeq) return
     rows.value = page.records || []
     total.value = page.total || 0
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -1074,13 +1153,19 @@ async function doBatchReject() {
 }
 
 // 快捷操作
+const acting = reactive({})
 async function quickApprove(record) {
+  if (acting[record.prodId]) return
+  acting[record.prodId] = true
   try {
     await productApi.adminReview(record.prodId, 1)
     message.success(`已通过「${record.title}」，商品自动上架`)
     load()
     loadStats()
-  } catch (e) {}
+  } catch (e) {
+  } finally {
+    acting[record.prodId] = false
+  }
 }
 
 const singleRejectOpen = ref(false)
@@ -1112,12 +1197,17 @@ async function doSingleReject() {
 }
 
 async function toggleStatus(record, st) {
+  if (acting[record.prodId]) return
+  acting[record.prodId] = true
   try {
     await productApi.adminStatus(record.prodId, st)
     message.success(st === 1 ? '商品已上架' : '商品已下架')
     load()
     loadStats()
-  } catch (e) {}
+  } catch (e) {
+  } finally {
+    acting[record.prodId] = false
+  }
 }
 
 // ==========================================
@@ -1129,18 +1219,87 @@ const detailData = ref(null)
 const drawerRejectReason = ref('')
 const drawerActionLoading = ref(false)
 
+// 自动审核结论 / 配置
+const autoReview = ref(null)
+const autoRunning = ref(false)
+const autoConfigOpen = ref(false)
+const autoConfigSaving = ref(false)
+const autoConfig = reactive({
+  auto_enabled: true,
+  ai_enabled: true,
+  vision_enabled: true,
+  auto_approve_score: 85,
+  daily_ai_budget: 300
+})
+const parseAutoJson = (s) => {
+  if (!s) return null
+  try { return typeof s === 'string' ? JSON.parse(s) : s } catch (e) { return null }
+}
+const autoRule = computed(() => parseAutoJson(autoReview.value?.ruleResult))
+const autoAi = computed(() => parseAutoJson(autoReview.value?.aiResult))
+const autoVision = computed(() => parseAutoJson(autoReview.value?.visionResult))
+const autoDecisionText = (d) => ({
+  AUTO_APPROVE: '自动通过', AUTO_REJECT: '自动驳回', MANUAL: '转人工', SUGGEST: '仅建议'
+}[d] || d)
+const autoDecisionColor = (d) => ({
+  AUTO_APPROVE: 'green', AUTO_REJECT: 'red', MANUAL: 'orange', SUGGEST: 'blue'
+}[d] || 'default')
+
 async function openDrawer(record) {
   drawerOpen.value = true
   drawerLoading.value = true
+  autoReview.value = null
   drawerRejectReason.value = record.rejectReason || ''
   try {
     const res = await productApi.adminDetail(record.prodId)
     detailData.value = res
+    try {
+      autoReview.value = await productApi.adminAutoReviewLatest(record.prodId)
+    } catch (e) { /* 无自动审核记录时静默 */ }
   } catch (e) {
     message.error('获取商品详情失败')
     drawerOpen.value = false
   } finally {
     drawerLoading.value = false
+  }
+}
+
+async function rerunAutoReview() {
+  if (!detailData.value?.product?.prodId || autoRunning.value) return
+  autoRunning.value = true
+  try {
+    autoReview.value = await productApi.adminRerunAutoReview(detailData.value.product.prodId)
+    message.success('自动审核已重跑，结论已更新')
+    load()
+    loadStats()
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    autoRunning.value = false
+  }
+}
+
+async function openAutoConfig() {
+  autoConfigOpen.value = true
+  try {
+    const cfg = await productApi.adminAutoReviewConfig()
+    Object.assign(autoConfig, cfg || {})
+  } catch (e) {
+    message.error('读取自动审核配置失败')
+  }
+}
+
+async function saveAutoConfig() {
+  autoConfigSaving.value = true
+  try {
+    const cfg = await productApi.adminUpdateAutoReviewConfig({ ...autoConfig })
+    Object.assign(autoConfig, cfg || {})
+    message.success('自动审核配置已保存')
+    autoConfigOpen.value = false
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    autoConfigSaving.value = false
   }
 }
 
@@ -1330,6 +1489,14 @@ onMounted(() => {
 .text-green { color: #059669; }
 .text-red { color: #dc2626; }
 .text-muted { color: #64748b; }
+/* ===== 自动审核结论 ===== */
+.auto-review-box { display: flex; flex-direction: column; gap: 10px; }
+.auto-review-meta { display: flex; flex-wrap: wrap; gap: 14px; color: #64748b; font-size: 12px; }
+.auto-review-meta b { color: #0f172a; }
+.auto-review-list { display: flex; flex-direction: column; gap: 6px; }
+.auto-review-item { font-size: 12px; color: #475569; display: flex; align-items: flex-start; gap: 8px; }
+.auto-review-line { font-size: 12px; color: #475569; line-height: 1.6; }
+.auto-config-hint { margin-left: 10px; color: #94a3b8; font-size: 12px; }
 .text-gradient {
   background: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%);
   -webkit-background-clip: text;

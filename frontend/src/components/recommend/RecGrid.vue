@@ -12,9 +12,9 @@
     <div class="rec-items">
       <div
         v-for="p in items" :key="p.prodId"
-        class="rec-card" @click="$router.push('/product/' + p.prodId)"
+        class="rec-card" @click="goDetail(p)"
       >
-        <img :src="p.coverUrl || fallbackImg" :alt="p.title" loading="lazy" />
+        <img :src="resolveStorageUrl(p.coverUrl) || fallbackImg" :alt="p.title" loading="lazy" />
         <div class="rec-info">
           <p class="rec-name">{{ p.title }}</p>
           <span class="rec-price">¥{{ p.price }}</span>
@@ -27,7 +27,11 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { recommendApi } from '../../api'
+import { useRouter } from 'vue-router'
+import { recommendApi, trafficApi } from '../../api'
+import { resolveStorageUrl } from '../../utils/storageUrl'
+
+const router = useRouter()
 
 defineProps({
   personalized: { type: Boolean, default: false }
@@ -46,8 +50,31 @@ onMounted(async () => {
       // 个性化状态回传父组件（未授权时父组件显示"热门商品"语义）
       emitPersonalized(r.personalized)
     }
+    // 推荐位曝光埋点：sourceType='recommend' 与有机流量隔离（平台看板按来源算 CTR，
+    // 共现/热度物化排除该来源）。analytics 门控在 trackPage 内，未授权时静默跳过。
+    const seen = new Set()
+    items.value.forEach(p => {
+      if (!p?.prodId || seen.has(p.prodId)) return
+      seen.add(p.prodId)
+      trackRec('VIEW_PRODUCT', p)
+    })
   } catch (e) { /* 推荐位静默失败，不影响主列表 */ }
 })
+
+/** 推荐位点击：跳详情 + 点击埋点（推荐位 CTR 评估的分子，与曝光同来源口径） */
+function goDetail(p) {
+  trackRec('CLICK_PRODUCT', p)
+  router.push('/product/' + p.prodId)
+}
+
+function trackRec(eventType, p) {
+  trafficApi.trackPage({
+    merchantId: p.merId,
+    productId: p.prodId,
+    eventType,
+    sourceType: 'recommend'
+  }).catch(() => {})
+}
 
 function emitPersonalized(v) {
   emit('personalized', !!v)

@@ -43,7 +43,12 @@
             <span class="kicker">WATCHLIST</span>
             <h3>监控商品</h3>
           </div>
-          <a-tag color="blue">{{ filtered.length }}</a-tag>
+          <div class="panel-tags">
+            <a-tag v-if="analyzedReady && analyzedCount" color="green" class="coverage-tag">
+              已分析 {{ analyzedCount }}/{{ products.length }}
+            </a-tag>
+            <a-tag color="blue">{{ filtered.length }}</a-tag>
+          </div>
         </div>
         <a-input v-model:value="query" placeholder="搜索商品名称" allow-clear size="small" class="search" />
         <div class="product-list">
@@ -57,6 +62,16 @@
           >
             <div class="pi-title">
               <span class="pi-name">{{ p.title }}</span>
+              <span
+                v-if="analyzedMap[p.prodId]"
+                class="analyzed-dot"
+                :title="'已分析 ' + analyzeStamp(analyzedMap[p.prodId].generatedAt)"
+              ></span>
+              <span
+                v-else-if="analyzedReady"
+                class="analyzed-dot pending"
+                title="未分析 · 整点 50 分后自动纳入"
+              ></span>
               <span v-if="p.anomaly" class="anomaly-dot" title="近30日异常波动">!</span>
             </div>
             <div class="pi-meta">
@@ -96,6 +111,9 @@
             <span>30日波动率 {{ Number(analysis.volatilityPct ?? 0).toFixed(2) }}%</span>
           </div>
         </MagicCard>
+
+        <!-- 自主分析快照：五维因子 + 网络资讯（自动分析链产出，不实时触发重算） -->
+        <FactorSnapshotPanel :snapshot="snapshot" :loading="snapshotLoading" />
 
         <div class="two-col">
           <!-- AI 洞察 -->
@@ -260,7 +278,9 @@ import {
   openNewsLink,
   safeHttpUrl
 } from '../utils/newsLink'
+import { analyzeStamp, buildAnalyzedMap } from '../utils/analyzeCoverage'
 import PriceTrendChart from '../components/pricemonitor/PriceTrendChart.vue'
+import FactorSnapshotPanel from '../components/pricemonitor/FactorSnapshotPanel.vue'
 import SegmentedControl from '../components/ui/SegmentedControl.vue'
 import MagicCard from '../components/ui/MagicCard.vue'
 import NumberTicker from '../components/ui/NumberTicker.vue'
@@ -275,6 +295,13 @@ const selectedId = ref(null)
 const trend = ref(null)
 const days = ref(30)
 const analysis = ref(null)
+// 自主分析快照（auto-profile 落库结果）：snapshot 传给 FactorSnapshotPanel；
+// analyzedMap（prodId → { generatedAt, webInfoCount }）驱动商品列表“已分析”绿点徽标，
+// analyzedReady 防索引未返回时把全部商品误显示为“未分析”
+const snapshot = ref(null)
+const snapshotLoading = ref(false)
+const analyzedMap = ref({})
+const analyzedReady = ref(false)
 const ai = ref(null)
 const aiLoading = ref(false)
 const question = ref('')
@@ -315,6 +342,8 @@ watch(days, () => { loadTrend() })
 const newsSegOptions = computed(() => newsCategories.map(c => ({ value: c.key, label: c.label })))
 
 const selected = computed(() => products.value.find(p => p.prodId === selectedId.value) || null)
+/** 快照覆盖计数（监控列表头部徽标）：已分析 N/监控商品总数 */
+const analyzedCount = computed(() => Object.keys(analyzedMap.value).length)
 const relativeLevel = computed(() => {
   if (!ai.value || ai.value.relativePct == null) return null
   const r = Number(ai.value.relativePct)
@@ -420,8 +449,18 @@ async function loadProducts() {
         lastChangePct: p.lastChangePct, changeCount30d: p.changeCount30d, anomaly: !!p.anomaly
       }))
     } else {
-      const res = await productApi.page({ current: 1, size: 100 })
-      const recs = res?.records || res?.list || (Array.isArray(res) ? res : [])
+      // 循环拉到 total（上限 500），全部商品可选——原单次 size:100 会把列表截断在前 100 条
+      const PAGE_SIZE = 100
+      const first = await productApi.page({ current: 1, size: PAGE_SIZE })
+      const firstRecs = first?.records || first?.list || (Array.isArray(first) ? first : [])
+      const total = Math.min(Number(first?.total) || firstRecs.length, 500)
+      const recs = [...firstRecs]
+      for (let current = 2; recs.length < total; current++) {
+        const page = await productApi.page({ current, size: PAGE_SIZE })
+        const part = page?.records || page?.list || (Array.isArray(page) ? page : [])
+        if (!part.length) break
+        recs.push(...part)
+      }
       products.value = recs.map(p => ({
         prodId: p.prodId, title: p.title, price: p.price,
         lastChangePct: null, changeCount30d: 0, anomaly: false
@@ -440,10 +479,24 @@ async function loadProducts() {
       selectedId.value = products.value[0]?.prodId || null
       if (selectedId.value) await loadProduct(selectedId.value)
     }
+    // 商品列表就绪后拉快照索引（一次请求覆盖全量，379 行约 20KB），失败静默不影响列表
+    loadAnalyzedIndex()
   } catch (e) {
     message.error('加载监控商品失败')
   } finally {
     loadingAll.value = false
+  }
+}
+
+/** 快照索引：prodId → { generatedAt, webInfoCount }，商品列表“已分析”绿点数据源 */
+async function loadAnalyzedIndex() {
+  try {
+    const rows = await priceMonitorApi.autoProfileIndex()
+    analyzedMap.value = buildAnalyzedMap(rows)
+  } catch (e) {
+    /* 静默：徽标缺失不影响列表 */
+  } finally {
+    analyzedReady.value = true
   }
 }
 
@@ -452,8 +505,27 @@ async function loadProduct(prodId) {
   analysis.value = null
   ai.value = null
   askResult.value = null
-  await Promise.all([loadTrend(), loadAnalysis()])
+  snapshot.value = null // 先清上一商品的快照，防止切换瞬间串显
+  snapshotLoading.value = true
+  try {
+    await Promise.all([loadTrend(), loadAnalysis(), loadSnapshot(prodId)])
+  } finally {
+    snapshotLoading.value = false
+  }
   loadAi()
+}
+
+/** 自主分析快照：只读自动分析链的落库结果，不触发实时因子重算 */
+async function loadSnapshot(prodId) {
+  if (!prodId) { snapshot.value = null; return }
+  try {
+    const data = await priceMonitorApi.autoProfile(prodId)
+    // 快速切换商品时只回填当前商品的结果，避免旧响应覆盖
+    if (Number(selectedId.value) === Number(prodId)) snapshot.value = data || null
+  } catch (e) {
+    // 失败分支同样守卫当前商品（否则旧商品失败会清掉已回填的新商品快照）
+    if (Number(selectedId.value) === Number(prodId)) snapshot.value = null
+  }
 }
 
 async function loadTrend() {
@@ -622,32 +694,35 @@ onBeforeUnmount(() => {
   display: grid; grid-template-columns: 1fr auto; gap: 24px;
   padding: 46px 52px; margin-bottom: 20px;
   border-radius: 30px;
-  border: 1px solid rgba(255, 255, 255, .16);
+  border: 1px solid #C9E2F6;
   background:
-    radial-gradient(620px 340px at 92% 4%, rgba(246, 211, 138, .26), transparent 66%),
-    radial-gradient(680px 420px at 106% 108%, rgba(30, 110, 184, .24), transparent 64%),
-    linear-gradient(135deg, #101B2D 0%, #16294A 58%, #1E3A5F 100%);
-  box-shadow: 0 24px 60px rgba(19, 35, 58, .18);
+    radial-gradient(620px 340px at 92% 4%, rgba(255, 255, 255, .55), transparent 66%),
+    radial-gradient(680px 420px at 106% 108%, rgba(30, 110, 184, .14), transparent 64%),
+    linear-gradient(135deg, #EAF5FE 0%, #DCEDFC 58%, #CBE5FB 100%);
+  box-shadow: 0 24px 60px rgba(30, 110, 184, .12);
 }
-.hero-glow { position: absolute; inset: -30%; background: radial-gradient(50% 40% at 70% 25%, rgba(246,211,138,.14), transparent 70%); pointer-events: none; }
+.hero-glow { position: absolute; inset: -30%; background: radial-gradient(50% 40% at 70% 25%, rgba(255,255,255,.5), transparent 70%); pointer-events: none; }
 .hero-copy { position: relative; z-index: 2; max-width: 760px; }
-.eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .2em; color: rgba(246, 211, 138, .92); }
-.hero-copy h1 { margin: 14px 0 12px; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif; font-size: clamp(32px, 4vw, 52px); line-height: 1.08; letter-spacing: -.04em; font-weight: 650; color: #fff; }
-.hero-copy h1 em { font-style: normal; background: linear-gradient(100deg, #F6D38A, #E8C67A 55%, #9FC3F0); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero-copy p { margin: 0; max-width: 680px; color: rgba(255, 255, 255, .74); font-size: 15px; line-height: 1.8; }
+.eyebrow { font-size: 10.5px; font-weight: 800; letter-spacing: .2em; color: #1E6EB8; }
+.hero-copy h1 { margin: 14px 0 12px; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif; font-size: clamp(32px, 4vw, 52px); line-height: 1.08; letter-spacing: -.04em; font-weight: 650; color: #13233A; }
+.hero-copy h1 em { font-style: normal; background: linear-gradient(100deg, #1E6EB8, #0EA5E9 55%, #38BDF8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero-copy p { margin: 0; max-width: 680px; color: #4A6B8A; font-size: 15px; line-height: 1.8; }
 .hero-actions { display: flex; align-items: center; gap: 12px; margin-top: 22px; }
-.live-pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: rgba(255,255,255,.78); font-size: 11.5px; }
-.pulse { width: 6px; height: 6px; border-radius: 50%; background: #6EE7B7; box-shadow: 0 0 0 0 rgba(110,231,183,.7); animation: pulse 2s infinite; }
-@keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(110,231,183,0); } 100% { box-shadow: 0 0 0 0 rgba(110,231,183,0); } }
+.live-pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid #B9D9F2; background: rgba(255,255,255,.6); color: #33618E; font-size: 11.5px; }
+.pulse { width: 6px; height: 6px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 0 0 rgba(34,197,94,.5); animation: pulse 2s infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
 .hero-stats { position: relative; z-index: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: center; }
-.hero-stat { min-width: 120px; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.07); backdrop-filter: blur(12px); }
-.hero-stat b { display: block; color: #F6D38A; font-size: 24px; letter-spacing: -.02em; }
-.hero-stat span { font-size: 10.5px; color: rgba(255,255,255,.6); letter-spacing: .06em; }
+.hero-stat { min-width: 120px; padding: 14px 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,.8); background: rgba(255,255,255,.55); backdrop-filter: blur(12px); }
+.hero-stat b { display: block; color: #1E6EB8; font-size: 24px; letter-spacing: -.02em; }
+.hero-stat span { font-size: 10.5px; color: #5B7A99; letter-spacing: .06em; }
 
 .pi-grid { display: grid; grid-template-columns: 264px minmax(0, 1fr) 336px; gap: 18px; align-items: start; }
 .main-col { display: grid; gap: 18px; min-width: 0; }
 .panel-head, .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .panel-head h3, .card-head h3 { margin: 4px 0 0; font-size: 16px; font-weight: 700; color: var(--pi-ink); }
+/* 覆盖徽标组：已分析 N/M（快照索引全量）+ 监控商品数 */
+.panel-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.coverage-tag { margin: 0; border-radius: 999px; font-variant-numeric: tabular-nums; }
 .product-panel, .news-panel { padding: 18px; position: sticky; top: 84px; min-width: 0; }
 .search { margin: 12px 0 10px; border-radius: 10px; }
 .product-list { display: flex; flex-direction: column; gap: 6px; max-height: 620px; overflow: auto; }
@@ -657,6 +732,10 @@ onBeforeUnmount(() => {
 .pi-title { display: flex; align-items: center; gap: 6px; }
 .pi-name { font-size: 13px; color: var(--pi-ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .anomaly-dot { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; background: #F9EDEA; color: #9B2D20; font-size: 9px; font-weight: 800; }
+/* “已分析”绿点：与 anomaly-dot 同行对称的小圆徽标，绿色取自页内 live-dot */
+.analyzed-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 0 3px rgba(34, 197, 94, .14); }
+/* “未分析”灰点：快照索引确认该商品暂无快照，空态指引见 title（整点 50 分自动纳入） */
+.analyzed-dot.pending { background: #94A3B8; box-shadow: 0 0 0 3px rgba(148, 163, 184, .14); }
 .pi-meta { display: flex; align-items: baseline; gap: 8px; margin-top: 4px; font-size: 11.5px; }
 .pi-meta b { color: #13233A; font-size: 13px; }
 .pi-meta .up { color: #B45309; }

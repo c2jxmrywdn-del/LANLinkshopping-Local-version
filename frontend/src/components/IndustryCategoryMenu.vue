@@ -114,7 +114,7 @@
         <i>→</i>
       </button>
       <button type="button" class="shortcut-card" @click.stop="quick('promotions')">
-        <b>采购优惠</b>
+        <b>采购活动</b>
         <span>满减与行业折扣</span>
         <i>→</i>
       </button>

@@ -162,11 +162,11 @@
         <a-form-item v-if="accountReviewMode === 'ACTIVE'" label="批准额度">
           <a-input-number v-model:value="accountForm.approvedLimit" :min="1000" :max="500000" :precision="2" style="width:100%" />
         </a-form-item>
-        <a-form-item v-if="accountReviewMode === 'ACTIVE'" label="账期">
+        <a-form-item v-if="accountReviewMode === 'ACTIVE'" label="账期（7 ~ 15 天）">
           <a-select v-model:value="accountForm.termDays" style="width:100%">
-            <a-select-option :value="30">30 天</a-select-option>
-            <a-select-option :value="60">60 天</a-select-option>
-            <a-select-option :value="90">90 天</a-select-option>
+            <a-select-option :value="7">7 天 (敏捷短融)</a-select-option>
+            <a-select-option :value="10">10 天 (周转备货)</a-select-option>
+            <a-select-option :value="15">15 天 (赊销上限)</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="审核备注">
@@ -187,11 +187,11 @@
         <a-form-item v-if="adjustReviewMode === 'APPROVED'" label="批准额度">
           <a-input-number v-model:value="adjustForm.approvedLimit" :min="1000" :max="500000" :precision="2" style="width:100%" />
         </a-form-item>
-        <a-form-item v-if="adjustReviewMode === 'APPROVED'" label="批准账期">
+        <a-form-item v-if="adjustReviewMode === 'APPROVED'" label="批准账期（7 ~ 15 天）">
           <a-select v-model:value="adjustForm.termDays" style="width:100%">
-            <a-select-option :value="30">30 天</a-select-option>
-            <a-select-option :value="60">60 天</a-select-option>
-            <a-select-option :value="90">90 天</a-select-option>
+            <a-select-option :value="7">7 天 (敏捷短融)</a-select-option>
+            <a-select-option :value="10">10 天 (周转备货)</a-select-option>
+            <a-select-option :value="15">15 天 (赊销上限)</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item label="审核备注">
@@ -239,7 +239,7 @@ const accountReviewOpen = ref(false)
 const accountReviewMode = ref('ACTIVE')
 const accountCurrent = ref(null)
 const accountSubmitting = ref(false)
-const accountForm = reactive({ approvedLimit: 0, termDays: 30, remark: '' })
+const accountForm = reactive({ approvedLimit: 0, termDays: 7, remark: '' })
 
 const adjustments = ref([])
 const loadingAdjustments = ref(false)
@@ -248,7 +248,7 @@ const adjustReviewOpen = ref(false)
 const adjustReviewMode = ref('APPROVED')
 const adjustCurrent = ref(null)
 const adjustSubmitting = ref(false)
-const adjustForm = reactive({ approvedLimit: 0, termDays: 30, remark: '' })
+const adjustForm = reactive({ approvedLimit: 0, termDays: 7, remark: '' })
 
 const transfers = ref([])
 const loadingTransfers = ref(false)
@@ -265,36 +265,48 @@ const adjustStatusLabel = (s) =>
 const adjustStatusColor = (s) =>
   s === 'PENDING' ? 'orange' : s === 'APPROVED' ? 'green' : s === 'REJECTED' ? 'red' : 'default'
 
+let accountsSeq = 0
 async function loadAccounts() {
+  const seq = ++accountsSeq
   loadingAccounts.value = true
   try {
-    accounts.value = await creditTermApi.adminAccounts(accountStatus.value) || []
+    const list = await creditTermApi.adminAccounts(accountStatus.value) || []
+    if (seq !== accountsSeq) return
+    accounts.value = list
   } catch (e) {
-    accounts.value = []
+    if (seq === accountsSeq) accounts.value = []
   } finally {
-    loadingAccounts.value = false
+    if (seq === accountsSeq) loadingAccounts.value = false
   }
 }
 
+let adjustmentsSeq = 0
 async function loadAdjustments() {
+  const seq = ++adjustmentsSeq
   loadingAdjustments.value = true
   try {
-    adjustments.value = await creditTermApi.adminAdjustments(adjustStatus.value) || []
+    const list = await creditTermApi.adminAdjustments(adjustStatus.value) || []
+    if (seq !== adjustmentsSeq) return
+    adjustments.value = list
   } catch (e) {
-    adjustments.value = []
+    if (seq === adjustmentsSeq) adjustments.value = []
   } finally {
-    loadingAdjustments.value = false
+    if (seq === adjustmentsSeq) loadingAdjustments.value = false
   }
 }
 
+let transfersSeq = 0
 async function loadTransfers() {
+  const seq = ++transfersSeq
   loadingTransfers.value = true
   try {
-    transfers.value = await creditTermApi.adminRepayments(transferStatus.value) || []
+    const list = await creditTermApi.adminRepayments(transferStatus.value) || []
+    if (seq !== transfersSeq) return
+    transfers.value = list
   } catch (e) {
-    transfers.value = []
+    if (seq === transfersSeq) transfers.value = []
   } finally {
-    loadingTransfers.value = false
+    if (seq === transfersSeq) loadingTransfers.value = false
   }
 }
 
@@ -308,7 +320,7 @@ function openAccountReview(row, mode) {
   accountCurrent.value = row
   accountReviewMode.value = mode
   accountForm.approvedLimit = Number(row.creditLimit || row.requestedLimit || 0)
-  accountForm.termDays = row.termDays || 30
+  accountForm.termDays = (row.termDays >= 7 && row.termDays <= 15) ? row.termDays : 7
   accountForm.remark = ''
   accountReviewOpen.value = true
 }
@@ -336,7 +348,7 @@ function openAdjustReview(row, mode) {
   adjustCurrent.value = row
   adjustReviewMode.value = mode
   adjustForm.approvedLimit = Number(row.requestedLimit || 0)
-  adjustForm.termDays = row.termDays || 30
+  adjustForm.termDays = (row.termDays >= 7 && row.termDays <= 15) ? row.termDays : 7
   adjustForm.remark = ''
   adjustReviewOpen.value = true
 }

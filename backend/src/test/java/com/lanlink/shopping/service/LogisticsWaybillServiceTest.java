@@ -6,15 +6,19 @@ import com.lanlink.shopping.entity.LogisticsProvider;
 import com.lanlink.shopping.entity.LogisticsTemplate;
 import com.lanlink.shopping.entity.LogisticsTrace;
 import com.lanlink.shopping.entity.LogisticsWaybill;
+import com.lanlink.shopping.entity.Merchant;
 import com.lanlink.shopping.entity.Order;
+import com.lanlink.shopping.entity.OrderItem;
 import com.lanlink.shopping.mapper.LogisticsAlertMapper;
 import com.lanlink.shopping.mapper.LogisticsProviderMapper;
 import com.lanlink.shopping.mapper.LogisticsTemplateMapper;
 import com.lanlink.shopping.mapper.LogisticsTraceMapper;
 import com.lanlink.shopping.mapper.LogisticsWaybillMapper;
+import com.lanlink.shopping.mapper.MerchantMapper;
 import com.lanlink.shopping.mapper.OrderMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -202,5 +206,134 @@ class LogisticsWaybillServiceTest {
                 Map.of("traceTime", "2026-10-16T12:00:00", "description", "快件已到达中转场", "location", "深圳")
         ));
         assertEquals(2, ((Number) result.get("imported")).intValue());
+    }
+
+    // ===== traces 归属校验（与 orderWaybills 三分支一致：管理员/买家属主/订单相关商户，其余一律拒绝） =====
+
+    private LogisticsWaybill waybillOfPaidOrder() {
+        LogisticsWaybill wb = new LogisticsWaybill();
+        wb.setWaybillId(1L);
+        wb.setWaybillNo("LL202610160001");
+        wb.setOrderNo("LL20261016001");
+        return wb;
+    }
+
+    @Test
+    void tracesRejectsNonOwner() {
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder()); // 订单属主 userId=1
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.traces(1L, 2L, false)); // 他人 waybillId 枚举
+        assertTrue(ex.getMessage().contains("无权查看"));
+    }
+
+    @Test
+    void tracesRejectsAnonymous() {
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder());
+        assertThrows(BusinessException.class, () -> service.traces(1L, null, false)); // 未归属一律拒绝
+    }
+
+    @Test
+    void tracesAllowsOrderOwner() {
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder());
+        LogisticsTrace node = new LogisticsTrace();
+        node.setWaybillId(1L);
+        when(traceMapper.selectList(any())).thenReturn(List.of(node));
+        List<LogisticsTrace> result = service.traces(1L, 1L, false);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    void tracesAllowsAdmin() {
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder());
+        List<LogisticsTrace> result = service.traces(1L, 2L, true); // 平台运营放行
+        assertNotNull(result);
+    }
+
+    @Test
+    void tracesAllowsRelatedMerchant() {
+        MerchantMapper merchantMapper = mock(MerchantMapper.class);
+        ReflectionTestUtils.setField(service, "merchantMapper", merchantMapper);
+        Merchant m = new Merchant();
+        m.setMerId(7L);
+        m.setUserId(2L);
+        when(merchantMapper.selectOne(any())).thenReturn(m);
+        when(orderMapper.merchantItems(7L, List.of("LL20261016001"))).thenReturn(List.of(new OrderItem()));
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder()); // 订单属主是 1，非当前商户
+        assertDoesNotThrow(() -> service.traces(1L, 2L, false)); // 订单含本店商品 → 商户放行
+    }
+
+    @Test
+    void tracesRejectsUnrelatedMerchant() {
+        MerchantMapper merchantMapper = mock(MerchantMapper.class);
+        ReflectionTestUtils.setField(service, "merchantMapper", merchantMapper);
+        Merchant m = new Merchant();
+        m.setMerId(7L);
+        m.setUserId(2L);
+        when(merchantMapper.selectOne(any())).thenReturn(m);
+        when(orderMapper.merchantItems(7L, List.of("LL20261016001"))).thenReturn(List.of()); // 不含该订单
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(paidOrder());
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.traces(1L, 2L, false));
+        assertTrue(ex.getMessage().contains("无权查看"));
+    }
+
+    @Test
+    void tracesRejectsMissingWaybill() {
+        when(waybillMapper.selectById(404L)).thenReturn(null);
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.traces(404L, 1L, false));
+        assertTrue(ex.getMessage().contains("运单不存在"));
+    }
+
+    @Test
+    void tracesRejectsMissingOrder() {
+        when(waybillMapper.selectById(1L)).thenReturn(waybillOfPaidOrder());
+        when(orderMapper.selectById("LL20261016001")).thenReturn(null); // 订单已不存在 → fail-closed
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.traces(1L, 1L, false));
+        assertTrue(ex.getMessage().contains("订单不存在"));
+    }
+
+    @Test
+    void resolveWaybillIdAcceptsNumericPrimaryKeyAndWaybillNo() {
+        assertEquals(2L, service.resolveWaybillId("2")); // 纯数字 = 主键，零查询
+        LogisticsWaybill wb = new LogisticsWaybill();
+        wb.setWaybillId(2L);
+        when(waybillMapper.selectOne(any())).thenReturn(wb);
+        assertEquals(2L, service.resolveWaybillId(" LL202611070001 ")); // LL 前缀运单号按 waybill_no 定位
+    }
+
+    @Test
+    void resolveWaybillIdRejectsUnknownNoAndNumericOverflow() {
+        when(waybillMapper.selectOne(any())).thenReturn(null);
+        BusinessException byNo = assertThrows(BusinessException.class,
+                () -> service.resolveWaybillId("LL202611099999"));
+        assertTrue(byNo.getMessage().contains("运单不存在"));
+        BusinessException overflow = assertThrows(BusinessException.class,
+                () -> service.resolveWaybillId("99999999999999999999")); // 超出 Long 的数字串
+        assertTrue(overflow.getMessage().contains("运单不存在"));
+    }
+
+    @Test
+    void tracesByWaybillNoResolvesThenAppliesOwnerCheck() {
+        LogisticsWaybill wb = new LogisticsWaybill();
+        wb.setWaybillId(2L);
+        wb.setWaybillNo("LL202611070001");
+        wb.setOrderNo("LL20261016001");
+        when(waybillMapper.selectOne(any())).thenReturn(wb);
+        when(waybillMapper.selectById(2L)).thenReturn(wb);
+        when(traceMapper.selectList(any())).thenReturn(List.of());
+        Order o = paidOrder();
+        o.setUserId(4L); // 买家本人
+        when(orderMapper.selectById("LL20261016001")).thenReturn(o);
+        assertEquals(List.of(), service.traces("LL202611070001", 4L, false));
+
+        // 非属主买家经同一入口仍被拒绝（归属校验不可绕过）
+        BusinessException denied = assertThrows(BusinessException.class,
+                () -> service.traces("LL202611070001", 99L, false));
+        assertTrue(denied.getMessage().contains("无权查看"));
     }
 }

@@ -19,7 +19,7 @@ public class Merchant {
     private Long entId;
     private Long userId;
     private String regType;         // 公司 / 个体工商户
-    private BigDecimal regCapital;  // 注册资本(元)
+    private BigDecimal regCapital;  // 实缴资本(元，准入门槛>=10万元)
     private Integer taxStatus;      // 0未知 1稳定
     private String joinType;        // 加盟/入驻/邀约
     private String joinCode;        // 平台邀约码 / 特约加盟码

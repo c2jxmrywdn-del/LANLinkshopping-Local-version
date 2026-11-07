@@ -1,0 +1,443 @@
+- generic [ref=e1]:
+  - generic [ref=e148]:
+    - generic [ref=e150]:
+      - generic [ref=e151] [cursor=pointer]: LANLinkshopping
+      - menu [ref=e154]:
+        - menuitem "首页" [ref=e155] [cursor=pointer]
+        - menuitem "商城" [ref=e160] [cursor=pointer]
+        - menuitem "活动" [ref=e165] [cursor=pointer]
+        - menuitem "技术服务" [ref=e167] [cursor=pointer]
+        - menuitem "直播" [ref=e169] [cursor=pointer]
+        - menuitem "账期" [ref=e171] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=e175] [cursor=pointer]
+      - generic [ref=e178]:
+        - button "Switch to English" [ref=e179] [cursor=pointer]:
+          - generic [ref=e180]:
+            - generic [ref=e182]: 中
+            - generic [ref=e183]: EN
+        - generic [ref=e184]:
+          - button "消息" [ref=e185] [cursor=pointer]
+          - superscript [ref=e190]:
+            - paragraph [ref=e192]: "3"
+            - paragraph [ref=e194]: "3"
+        - button "购物车" [ref=e196] [cursor=pointer]
+        - generic [ref=e202] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=e203]:
+            - generic [aria-hidden] [ref=e204]: 用户
+          - generic "入驻商户" [ref=e205]: 商户
+          - generic [ref=e206]: 入驻测试用户
+    - main [ref=e209]:
+      - main [ref=e210]:
+        - generic [ref=e212]:
+          - complementary [ref=e213]:
+            - generic [ref=e214]:
+              - img "重庆建工实业集团 的头像" [ref=e215]:
+                - generic [aria-hidden] [ref=e216]: 重庆
+              - generic [ref=e217]:
+                - generic "重庆建工实业集团" [ref=e218]
+                - generic [ref=e219]: 已通过
+            - navigation [ref=e220]:
+              - button "工作台" [ref=e221] [cursor=pointer]
+              - button "商品管理" [ref=e223] [cursor=pointer]
+              - button "营销活动" [ref=e225] [cursor=pointer]
+              - button "直播带货" [ref=e227] [cursor=pointer]
+              - button "价格监控" [ref=e229] [cursor=pointer]
+              - button "订单管理 3" [ref=e231] [cursor=pointer]:
+                - generic [ref=e232]: 订单管理
+                - generic [ref=e233]: "3"
+              - button "客户消息" [ref=e234] [cursor=pointer]
+              - button "物流发货" [ref=e236] [cursor=pointer]
+              - button "流量推广" [ref=e238] [cursor=pointer]
+              - button "流量分析" [ref=e240] [cursor=pointer]
+              - button "资金结算" [ref=e242] [cursor=pointer]
+              - button "店铺设置" [ref=e244] [cursor=pointer]
+            - generic [ref=e246]:
+              - paragraph [ref=e247]: 商户服务专线
+              - generic [ref=e248]: 400-888-0 LAN
+              - text: 工作日 9:00 - 18:00
+          - generic [ref=e250]:
+            - generic [ref=e251]:
+              - generic [ref=e252]:
+                - generic [ref=e253]: 商户中心
+                - heading "商品管理" [level=1] [ref=e255]
+                - paragraph [ref=e256]: 发布、编辑商品并跟踪审核进度，审核通过后即可上架销售。
+              - generic [ref=e257]:
+                - button "价格监控" [ref=e258] [cursor=pointer]
+                - button "批量导入" [ref=e263] [cursor=pointer]
+                - button "＋ 发布商品" [ref=e268] [cursor=pointer]
+            - generic [ref=e270]:
+              - generic [ref=e272]:
+                - textbox "搜索商品名称" [ref=e274]
+                - button [ref=e277] [cursor=pointer]:
+                  - img "search" [ref=e278]
+              - generic [ref=e282] [cursor=pointer]:
+                - combobox [ref=e284]
+                - generic [ref=e285]: 全部审核状态
+              - generic [ref=e287] [cursor=pointer]:
+                - combobox [ref=e289]
+                - generic [ref=e290]: 全部上架状态
+              - button "重 置" [ref=e291] [cursor=pointer]
+              - button "刷 新" [ref=e293] [cursor=pointer]
+            - generic [ref=e299]:
+              - table [ref=e303]:
+                - rowgroup [ref=e313]:
+                  - row [ref=e314]:
+                    - columnheader "商品" [ref=e315]
+                    - columnheader "价格" [ref=e316]
+                    - columnheader "库存" [ref=e317]
+                    - columnheader "销量" [ref=e318]
+                    - columnheader "审核状态" [ref=e319]
+                    - columnheader "在售" [ref=e320]
+                    - columnheader "发布时间" [ref=e321]
+                    - columnheader "操作" [ref=e322]
+                - rowgroup [ref=e323]:
+                  - row [ref=e324]:
+                    - cell [ref=e325]:
+                      - button "整车控制器 VCU 商用车 整车控制器 VCU 商用车 骏驰汽配 · VCU 商用车" [ref=e326] [cursor=pointer]:
+                        - img "整车控制器 VCU 商用车" [ref=e328]
+                        - generic [ref=e329]:
+                          - generic [ref=e330]: 整车控制器 VCU 商用车
+                          - text: 骏驰汽配 · VCU 商用车
+                    - cell "¥2,650.00" [ref=e331]
+                    - cell "680" [ref=e332]
+                    - cell "61" [ref=e333]
+                    - cell "审核通过" [ref=e334]
+                    - cell [ref=e336]:
+                      - switch [checked] [ref=e337] [cursor=pointer]:
+                        - generic [ref=e339]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e340]
+                    - cell [ref=e341]:
+                      - generic [ref=e342]:
+                        - button "详情" [ref=e344] [cursor=pointer]
+                        - button "编辑" [ref=e347] [cursor=pointer]
+                        - button "商城页" [ref=e350] [cursor=pointer]
+                  - row [ref=e352]:
+                    - cell [ref=e353]:
+                      - button "热轧工字钢 Q235B 10# 12m 定尺 热轧工字钢 Q235B 10# 12m 定尺 华冶工贸 · Q235B 10# 12m 定尺" [ref=e354] [cursor=pointer]:
+                        - img "热轧工字钢 Q235B 10# 12m 定尺" [ref=e356]
+                        - generic [ref=e357]:
+                          - generic [ref=e358]: 热轧工字钢 Q235B 10# 12m 定尺
+                          - text: 华冶工贸 · Q235B 10# 12m 定尺
+                    - cell "¥3,860.00" [ref=e359]
+                    - cell "620" [ref=e360]
+                    - cell "37" [ref=e361]
+                    - cell "审核通过" [ref=e362]
+                    - cell [ref=e364]:
+                      - switch [checked] [ref=e365] [cursor=pointer]:
+                        - generic [ref=e367]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e368]
+                    - cell [ref=e369]:
+                      - generic [ref=e370]:
+                        - button "详情" [ref=e372] [cursor=pointer]
+                        - button "编辑" [ref=e375] [cursor=pointer]
+                        - button "商城页" [ref=e378] [cursor=pointer]
+                  - row [ref=e380]:
+                    - cell [ref=e381]:
+                      - button "分子筛 13X 球形 1.6-2.5mm 分子筛 13X 球形 1.6-2.5mm 绿净环保 · 13X 球形 1.6-2.5mm" [ref=e382] [cursor=pointer]:
+                        - img "分子筛 13X 球形 1.6-2.5mm" [ref=e384]
+                        - generic [ref=e385]:
+                          - generic [ref=e386]: 分子筛 13X 球形 1.6-2.5mm
+                          - text: 绿净环保 · 13X 球形 1.6-2.5mm
+                    - cell "¥8,600.00" [ref=e387]
+                    - cell "410" [ref=e388]
+                    - cell "19" [ref=e389]
+                    - cell "审核通过" [ref=e390]
+                    - cell [ref=e392]:
+                      - switch [checked] [ref=e393] [cursor=pointer]:
+                        - generic [ref=e395]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e396]
+                    - cell [ref=e397]:
+                      - generic [ref=e398]:
+                        - button "详情" [ref=e400] [cursor=pointer]
+                        - button "编辑" [ref=e403] [cursor=pointer]
+                        - button "商城页" [ref=e406] [cursor=pointer]
+                  - row [ref=e408]:
+                    - cell [ref=e409]:
+                      - button "PE 缠绕膜 手用 450mm×300m PE 缠绕膜 手用 450mm×300m 顺捷仓储 · 缠绕膜 手用 450mm×300m" [ref=e410] [cursor=pointer]:
+                        - img "PE 缠绕膜 手用 450mm×300m" [ref=e412]
+                        - generic [ref=e413]:
+                          - generic [ref=e414]: PE 缠绕膜 手用 450mm×300m
+                          - text: 顺捷仓储 · 缠绕膜 手用 450mm×300m
+                    - cell "¥10.60" [ref=e415]
+                    - cell "4598" [ref=e416]
+                    - cell "759" [ref=e417]
+                    - cell "审核通过" [ref=e418]
+                    - cell [ref=e420]:
+                      - switch [checked] [ref=e421] [cursor=pointer]:
+                        - generic [ref=e423]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e424]
+                    - cell [ref=e425]:
+                      - generic [ref=e426]:
+                        - button "详情" [ref=e428] [cursor=pointer]
+                        - button "编辑" [ref=e431] [cursor=pointer]
+                        - button "商城页" [ref=e434] [cursor=pointer]
+                  - row [ref=e436]:
+                    - cell [ref=e437]:
+                      - button "山楂浓缩汁 200kg/桶 山楂浓缩汁 200kg/桶 谷源食材 · 200kg/桶" [ref=e438] [cursor=pointer]:
+                        - img "山楂浓缩汁 200kg/桶" [ref=e440]
+                        - generic [ref=e441]:
+                          - generic [ref=e442]: 山楂浓缩汁 200kg/桶
+                          - text: 谷源食材 · 200kg/桶
+                    - cell "¥1,680.00" [ref=e443]
+                    - cell "890" [ref=e444]
+                    - cell "79" [ref=e445]
+                    - cell "审核通过" [ref=e446]
+                    - cell [ref=e448]:
+                      - switch [checked] [ref=e449] [cursor=pointer]:
+                        - generic [ref=e451]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e452]
+                    - cell [ref=e453]:
+                      - generic [ref=e454]:
+                        - button "详情" [ref=e456] [cursor=pointer]
+                        - button "编辑" [ref=e459] [cursor=pointer]
+                        - button "商城页" [ref=e462] [cursor=pointer]
+                  - row [ref=e464]:
+                    - cell [ref=e465]:
+                      - button "端子线束 UL1007 22AWG 150mm 双头 端子线束 UL1007 22AWG 150mm 双头 启明微电 · UL1007 22AWG 150mm 双头" [ref=e466] [cursor=pointer]:
+                        - img "端子线束 UL1007 22AWG 150mm 双头" [ref=e468]
+                        - generic [ref=e469]:
+                          - generic [ref=e470]: 端子线束 UL1007 22AWG 150mm 双头
+                          - text: 启明微电 · UL1007 22AWG 150mm 双头
+                    - cell "¥0.86" [ref=e471]
+                    - cell "910" [ref=e472]
+                    - cell "325" [ref=e473]
+                    - cell "审核通过" [ref=e474]
+                    - cell [ref=e476]:
+                      - switch [checked] [ref=e477] [cursor=pointer]:
+                        - generic [ref=e479]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-30 17:36" [ref=e480]
+                    - cell [ref=e481]:
+                      - generic [ref=e482]:
+                        - button "详情" [ref=e484] [cursor=pointer]
+                        - button "编辑" [ref=e487] [cursor=pointer]
+                        - button "商城页" [ref=e490] [cursor=pointer]
+                  - row [ref=e492]:
+                    - cell [ref=e493]:
+                      - button "颗粒硅料 FBR 掺镓 颗粒硅料 FBR 掺镓 澜能新材 · FBR 掺镓" [ref=e494] [cursor=pointer]:
+                        - img "颗粒硅料 FBR 掺镓" [ref=e496]
+                        - generic [ref=e497]:
+                          - generic [ref=e498]: 颗粒硅料 FBR 掺镓
+                          - text: 澜能新材 · FBR 掺镓
+                    - cell "¥46,800.00" [ref=e499]
+                    - cell "32" [ref=e500]
+                    - cell "3" [ref=e501]
+                    - cell "审核通过" [ref=e502]
+                    - cell [ref=e504]:
+                      - switch [checked] [ref=e505] [cursor=pointer]:
+                        - generic [ref=e507]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-28 17:36" [ref=e508]
+                    - cell [ref=e509]:
+                      - generic [ref=e510]:
+                        - button "详情" [ref=e512] [cursor=pointer]
+                        - button "编辑" [ref=e515] [cursor=pointer]
+                        - button "商城页" [ref=e518] [cursor=pointer]
+                  - row [ref=e520]:
+                    - cell [ref=e521]:
+                      - button "BV 布电线 2.5mm2 100m/卷 BV 布电线 2.5mm2 100m/卷 澜电设备 · 布电线 2.5mm2 100m/卷" [ref=e522] [cursor=pointer]:
+                        - img "BV 布电线 2.5mm2 100m/卷" [ref=e524]
+                        - generic [ref=e525]:
+                          - generic [ref=e526]: BV 布电线 2.5mm2 100m/卷
+                          - text: 澜电设备 · 布电线 2.5mm2 100m/卷
+                    - cell "¥128.00" [ref=e527]
+                    - cell "2673" [ref=e528]
+                    - cell "86" [ref=e529]
+                    - cell "审核通过" [ref=e530]
+                    - cell [ref=e532]:
+                      - switch [checked] [ref=e533] [cursor=pointer]:
+                        - generic [ref=e535]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-28 17:36" [ref=e536]
+                    - cell [ref=e537]:
+                      - generic [ref=e538]:
+                        - button "详情" [ref=e540] [cursor=pointer]
+                        - button "编辑" [ref=e543] [cursor=pointer]
+                        - button "商城页" [ref=e546] [cursor=pointer]
+                  - row [ref=e548]:
+                    - cell [ref=e549]:
+                      - button "合成齿轮油 PAO220 18L/桶 合成齿轮油 PAO220 18L/桶 澜化科技 · PAO220 18L/桶" [ref=e550] [cursor=pointer]:
+                        - img "合成齿轮油 PAO220 18L/桶" [ref=e552]
+                        - generic [ref=e553]:
+                          - generic [ref=e554]: 合成齿轮油 PAO220 18L/桶
+                          - text: 澜化科技 · PAO220 18L/桶
+                    - cell "¥980.00" [ref=e555]
+                    - cell "7593" [ref=e556]
+                    - cell "662" [ref=e557]
+                    - cell "审核通过" [ref=e558]
+                    - cell [ref=e560]:
+                      - switch [checked] [ref=e561] [cursor=pointer]:
+                        - generic [ref=e563]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-28 17:36" [ref=e564]
+                    - cell [ref=e565]:
+                      - generic [ref=e566]:
+                        - button "详情" [ref=e568] [cursor=pointer]
+                        - button "编辑" [ref=e571] [cursor=pointer]
+                        - button "商城页" [ref=e574] [cursor=pointer]
+                  - row [ref=e576]:
+                    - cell [ref=e577]:
+                      - button "生鲜冷链整车 9.6m 冷藏车 生鲜冷链整车 9.6m 冷藏车 澜丰农科 · 9.6m 冷藏车" [ref=e578] [cursor=pointer]:
+                        - img "生鲜冷链整车 9.6m 冷藏车" [ref=e580]
+                        - generic [ref=e581]:
+                          - generic [ref=e582]: 生鲜冷链整车 9.6m 冷藏车
+                          - text: 澜丰农科 · 9.6m 冷藏车
+                    - cell "¥2,860.00" [ref=e583]
+                    - cell "891" [ref=e584]
+                    - cell "30" [ref=e585]
+                    - cell "审核通过" [ref=e586]
+                    - cell [ref=e588]:
+                      - switch [checked] [ref=e589] [cursor=pointer]:
+                        - generic [ref=e591]:
+                          - generic: 售
+                          - generic: 停
+                    - cell "2026-10-28 17:36" [ref=e592]
+                    - cell [ref=e593]:
+                      - generic [ref=e594]:
+                        - button "详情" [ref=e596] [cursor=pointer]
+                        - button "编辑" [ref=e599] [cursor=pointer]
+                        - button "商城页" [ref=e602] [cursor=pointer]
+              - list [ref=e604]:
+                - listitem [ref=e605]: 共 185 件商品
+                - listitem "Previous Page" [ref=e606]:
+                  - button [disabled] [ref=e607]:
+                    - img "left" [ref=e608]
+                - listitem "1" [ref=e611] [cursor=pointer]
+                - listitem "2" [ref=e613] [cursor=pointer]
+                - listitem "3" [ref=e615] [cursor=pointer]
+                - listitem "4" [ref=e617] [cursor=pointer]
+                - listitem "5" [ref=e619] [cursor=pointer]
+                - listitem "Next 5 Pages" [ref=e621] [cursor=pointer]:
+                  - generic [ref=e623]:
+                    - img "double-right" [ref=e624]
+                    - generic [ref=e627]: •••
+                - listitem "19" [ref=e628] [cursor=pointer]
+                - listitem "Next Page" [ref=e630] [cursor=pointer]:
+                  - button [ref=e631]:
+                    - img "right" [ref=e632]
+    - generic [ref=e636]:
+      - generic [ref=e637]:
+        - generic [ref=e638]: LANLinkshopping
+        - paragraph [ref=e639]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=e640]:
+        - button "商城" [ref=e641] [cursor=pointer]
+        - button "技术服务" [ref=e642] [cursor=pointer]
+        - button "关于我们" [ref=e643] [cursor=pointer]
+        - button "联系我们" [ref=e644] [cursor=pointer]
+        - button "用户服务协议" [ref=e645] [cursor=pointer]
+        - button "隐私政策" [ref=e646] [cursor=pointer]
+        - button "Cookie 政策" [ref=e647] [cursor=pointer]
+        - button "平台说明" [ref=e648] [cursor=pointer]
+        - button "免责声明" [ref=e649] [cursor=pointer]
+        - button "技术服务规则" [ref=e650] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=e651] [cursor=pointer]
+      - region "项目作者信息" [ref=e652]:
+        - generic [ref=e653]:
+          - link "在 X 查看 Jason Ouyang" [ref=e654] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=e655]
+          - generic [ref=e656]:
+            - generic [ref=e657]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=e658]: Jason Ouyang
+            - generic [ref=e659]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=e660]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=e663] [cursor=pointer]:
+      - img "智能客服头像" [ref=e664]
+      - generic [ref=e674]: 专属客服
+    - button "返回顶部"
+  - dialog "发布商品" [ref=e681]:
+    - document:
+      - generic [ref=e682]:
+        - button "Close" [ref=e683] [cursor=pointer]:
+          - img "close" [ref=e685]
+        - generic [ref=e688]: 发布商品
+        - generic [ref=e690]:
+          - alert [ref=e691]:
+            - img "info-circle" [ref=e692]
+            - generic [ref=e695]: 发布后系统将自动审核商品内容与主图；通过后自动上架，需人工复核时进入平台审核队列。
+          - generic [ref=e697]:
+            - generic [ref=e699]:
+              - generic "商品名称" [ref=e701]: "* 商品名称"
+              - generic [ref=e705]:
+                - generic [ref=e706]:
+                  - textbox "* 商品名称":
+                    - /placeholder: 2-100 个字符
+                  - generic [ref=e707]: 0 / 100
+                - button "AI 润色" [disabled] [ref=e711]
+            - generic [ref=e716]:
+              - generic [ref=e719]:
+                - generic "所属行业" [ref=e721]: "* 所属行业"
+                - generic [ref=e726] [cursor=pointer]:
+                  - combobox "* 所属行业" [ref=e728]
+                  - generic: 选择行业
+              - generic [ref=e731]:
+                - generic "商品分类" [ref=e733]: "* 商品分类"
+                - generic [ref=e738]:
+                  - combobox "* 商品分类" [disabled] [ref=e740]
+                  - generic: 先选行业
+            - generic [ref=e741]:
+              - generic [ref=e744]:
+                - generic "价格（元）" [ref=e746]: "* 价格（元）"
+                - generic [ref=e750]:
+                  - generic [ref=e751]:
+                    - button "Increase Value" [ref=e752] [cursor=pointer]:
+                      - img "up" [ref=e753]
+                    - button "Decrease Value" [ref=e756] [cursor=pointer]:
+                      - img "down" [ref=e757]
+                  - spinbutton "* 价格（元）" [ref=e761]
+              - generic [ref=e764]:
+                - generic "库存" [ref=e766]: "* 库存"
+                - generic [ref=e770]:
+                  - generic [ref=e771]:
+                    - button "Increase Value" [ref=e772] [cursor=pointer]:
+                      - img "up" [ref=e773]
+                    - button "Decrease Value" [ref=e776] [cursor=pointer]:
+                      - img "down" [ref=e777]
+                  - spinbutton "* 库存" [ref=e781]
+            - generic [ref=e783]:
+              - generic "品牌（选填）" [ref=e785]
+              - textbox "品牌（选填）" [ref=e789]:
+                - /placeholder: 如：华晨
+            - generic [ref=e791]:
+              - generic "规格参数（选填）" [ref=e793]
+              - generic [ref=e796]:
+                - generic [ref=e797]:
+                  - textbox "参数名（如：型号）" [ref=e798]
+                  - textbox "参数值（如：DN25）" [ref=e799]
+                  - button "删除" [ref=e800] [cursor=pointer]
+                - button "＋ 添加规格参数" [ref=e802] [cursor=pointer]
+            - generic [ref=e805]:
+              - generic "商品主图" [ref=e807]: "* 商品主图"
+              - generic [ref=e810]:
+                - button "plus 上传主图" [ref=e814] [cursor=pointer]:
+                  - generic [ref=e815]:
+                    - img "plus" [ref=e816]
+                    - generic [ref=e820]: 上传主图
+                - generic [ref=e821]: JPG/PNG/WebP，≤5MB，建议 ≥100×100
+            - generic [ref=e823]:
+              - generic "商品描述（选填）" [ref=e825]
+              - generic [ref=e829]:
+                - textbox "商品描述（选填）" [ref=e830]:
+                  - /placeholder: 材质、用途、交付说明等
+                - text: 0 / 2000
+            - generic [ref=e831]:
+              - button "存草稿" [ref=e832] [cursor=pointer]
+              - button "提交审核" [ref=e834] [cursor=pointer]

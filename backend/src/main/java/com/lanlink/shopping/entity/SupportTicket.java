@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 /**
  * 人工客服工单：用户在「设置 → 人工客服」提交留言，运营在工作台处理并回复。
  * status：OPEN 待处理 / PROCESSING 处理中 / REPLIED 已回复 / CLOSED 已关闭。
+ * priority：NORMAL 普通队列 / VIP 订阅专属客服通道（D7，工作台优先处理）。
  */
 @Data
 @TableName("t_support_ticket")
@@ -22,6 +23,7 @@ public class SupportTicket {
     private String title;
     private String content;
     private String status;
+    private String priority;
     private String reply;
     private Long replyBy;
     private LocalDateTime replyTime;

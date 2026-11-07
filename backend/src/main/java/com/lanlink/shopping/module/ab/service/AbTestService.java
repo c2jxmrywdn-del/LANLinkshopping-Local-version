@@ -71,10 +71,27 @@ public class AbTestService {
     private void insertLog(String expKey, String variant, Long userId, String sessionId,
                            String eventType, java.math.BigDecimal value, String dedupSuffix) {
         try {
+            // 防刷校验：实验必须存在且处于 running，variant 必须在实验定义内——
+            // 此前任意 expKey/variant 均直接落库，可被匿名脚本用于膨胀表与污染 z/t 检验指标。
+            // loadExperiment 带 30s 缓存，命中热路径时零额外查库。
+            if (expKey == null || expKey.isBlank() || expKey.length() > 64) return;
+            if (variant == null || variant.isBlank() || variant.length() > 32) return;
+            CachedExp exp = loadExperiment(expKey);
+            if (exp == null || !exp.variants().contains(variant)) return;
+            if (sessionId != null && sessionId.length() > 128) return;
             if (userId != null) {
                 int dup = jdbc.queryForObject(
                         "SELECT COUNT(*) FROM t_ab_log WHERE exp_key=? AND variant=? AND user_id=? AND event_type=?" + dedupSuffix,
                         Integer.class, expKey, variant, userId, eventType);
+                if (dup > 0) return;
+            } else {
+                // 匿名去重（原缺陷：匿名无任何去重，同 sessionId 无限重复 INSERT）：
+                // 桶身份与登录态一致——expose 按“session+实验+变体+日”去重，convert 按全期去重；
+                // 无桶身份（无 userId 且无 sessionId）的上报无法归因，直接丢弃。
+                if (sessionId == null || sessionId.isBlank()) return;
+                int dup = jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM t_ab_log WHERE exp_key=? AND variant=? AND session_id=? AND event_type=?" + dedupSuffix,
+                        Integer.class, expKey, variant, sessionId, eventType);
                 if (dup > 0) return;
             }
             jdbc.update("INSERT INTO t_ab_log(exp_key, variant, user_id, session_id, event_type, value) VALUES(?,?,?,?,?,?)",

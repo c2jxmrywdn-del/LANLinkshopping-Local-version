@@ -80,9 +80,26 @@
                 <span class="currency">¥</span><strong>{{ money(p.price) }}</strong>
                 <span v-if="user.hasPerm('vip:discount')" class="vip-badge">VIP 专享</span>
               </div>
-              <div v-if="user.hasPerm('vip:discount')" class="vip-copy">
-                VIP 价 ¥{{ money(Number(p.price) * 0.95) }} · 已自动为你应用会员折扣
+              <!-- P0 口径修复：真实等级折扣价只在 store 拉到可信数据（rate<1）时展示；折扣在结算按等级与促销取优生效 -->
+              <div v-if="membership.hasDiscount" class="vip-copy">
+                <span>会员价</span> <b>¥{{ money(memberPrice) }}</b><span> · 结算按会员等级与促销取优</span>
               </div>
+              <!-- 入口 2（设计稿 §2）：未解锁等级折扣时挂静态引导行（P0 无金额整句），× 关闭 7 天冷却 + 会话曝光上限；P1 接 price-preview 升级立省金额 -->
+              <VipPromoEntry v-if="membership.checked && !membership.hasDiscount" slot-key="pdp" variant="row">
+                <router-link to="/membership">开通会员订阅，解锁等级折扣</router-link>
+              </VipPromoEntry>
+            </div>
+
+            <!-- 生效促销（活动系统）：命中的公开促销活动，默认展示 2 条，超出可展开 -->
+            <div v-if="promos.length" class="promo-rows">
+              <div v-for="c in visiblePromos" :key="c.campaignId" class="promo-row" @click="router.push('/activity/' + c.campaignId)">
+                <span class="promo-row-tag">{{ promoTypeLabel(c.type) }}</span>
+                <span class="promo-row-title" :title="c.title">{{ c.title }}</span>
+                <span class="promo-row-th">{{ promoThreshold(c) }}</span>
+              </div>
+              <button v-if="promos.length > 2" type="button" class="promo-row-more" @click="promosExpanded = !promosExpanded">
+                {{ promosExpanded ? '收起' : `展开全部 ${promos.length} 项活动` }}
+              </button>
             </div>
 
             <!-- 价格智能监控：走势 vs 行业基准 + 降价提醒（买家侧，公开数据） -->
@@ -142,7 +159,7 @@
                           :disabled="p.stock <= 0" @click="buyNow">
                   立即购买
                 </a-button>
-                <a-button v-if="!user.logged" class="buy-btn" type="primary" size="large" @click="router.push('/login')">
+                <a-button v-if="!user.logged" class="buy-btn" type="primary" size="large" @click="needLogin()">
                   登录后购买
                 </a-button>
               </div>
@@ -161,6 +178,7 @@
             <a href="#description" :class="{ active: activeSection === 'description' }" @click="jumpTo($event, 'description')">商品介绍</a>
             <a href="#parameters" :class="{ active: activeSection === 'parameters' }" @click="jumpTo($event, 'parameters')">规格参数</a>
             <a href="#service" :class="{ active: activeSection === 'service' }" @click="jumpTo($event, 'service')">服务说明</a>
+            <a href="#reviews" :class="{ active: activeSection === 'reviews' }" @click="jumpTo($event, 'reviews')">用户评价</a>
           </div>
 
           <div id="description" class="detail-section">
@@ -198,6 +216,14 @@
             </div>
           </div>
 
+          <div id="reviews" class="detail-section reviews-section">
+            <div class="section-heading">
+              <span>REVIEWS</span>
+              <h2>用户评价</h2>
+            </div>
+            <ProductReviews :prod-id="p.prodId" />
+          </div>
+
           <!-- 看了又看：共现协同过滤推荐（冷启动回退同类目热度） -->
           <div id="similar" class="detail-section similar-section">
             <div class="section-heading">
@@ -207,7 +233,7 @@
             <div v-if="similarItems.length" class="similar-grid">
               <div v-for="s in similarItems" :key="s.prodId" class="similar-card"
                    @click="$router.push('/product/' + s.prodId)">
-                <img :src="s.coverUrl || ''" :alt="s.title" loading="lazy" />
+                <img :src="resolveStorageUrl(s.coverUrl) || ''" :alt="s.title" loading="lazy" />
                 <p class="similar-name">{{ s.title }}</p>
                 <span class="similar-price">¥{{ s.price }}</span>
               </div>
@@ -223,7 +249,7 @@
             <span class="cm-label">联系商家</span>
           </button>
           <a-button v-if="user.hasPerm('cart:manage')" class="cart-btn" @click="addCart" :disabled="p.stock <= 0">加购</a-button>
-          <a-button type="primary" class="buy-btn" @click="user.logged ? buyNow() : router.push('/login')" :disabled="p.stock <= 0">
+          <a-button type="primary" class="buy-btn" @click="buyNow()" :disabled="p.stock <= 0">
             {{ user.logged ? '立即购买' : '登录购买' }}
           </a-button>
         </div>
@@ -239,22 +265,27 @@ import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { CheckCircle2, Volume2, Square, Lock ,TrendingUp, ChevronDown, BellPlus, BellRing, Eye, ChevronRight, MessageCircle} from 'lucide-vue-next'
 import PriceChart from '../components/ui/PriceChart.vue'
+import ProductReviews from '../components/review/ProductReviews.vue'
 import AppleIcon from '../components/ui/AppleIcon.vue'
 import LivePlayerCard from '../components/product/LivePlayerCard.vue'
 import { chatApi } from '../api'
 import { message } from 'ant-design-vue'
-import { productApi, trafficApi, priceMonitorApi, liveApi } from '../api'
+import { productApi, trafficApi, priceMonitorApi, liveApi, campaignApi } from '../api'
 import * as habitTracker from '../utils/habitTracker'
 import { recommendApi } from '../api'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import { useMembershipStore } from '../store/membership'
+import VipPromoEntry from '../components/membership/VipPromoEntry.vue'
 import { translateDataText, locale } from '../i18n'
 import { speakText, stopSpeaking } from '../utils/tts'
+import { resolveStorageUrl } from '../utils/storageUrl'
 
 const route = useRoute()
 const router = useRouter()
 const cart = useCartStore()
 const user = useUserStore()
+const membership = useMembershipStore()
 const p = ref(null)
 const qty = ref(1)
 const loading = ref(true)
@@ -315,9 +346,13 @@ onBeforeUnmount(() => {
   stopSpeaking()
 })
 
-const vipRate = computed(() => user.hasPerm('vip:discount') ? 0.95 : 1)
+// P0 口径修复（设计稿 P0-2）：等级折扣只读 /membership/my 的真实 discountRate（订阅+成长值双条件，
+// 无订阅回落普通会员 1.000），写死的 0.95 假折扣删除；取不到数据回退 1.0 且不展示对比价
+const vipRate = computed(() => membership.hasDiscount ? membership.discountRate : 1)
+const memberPrice = computed(() => Number(p.value?.price || 0) * vipRate.value)
 const gallery = computed(() => {
   const raw = [p.value?.coverUrl, ...(Array.isArray(p.value?.images) ? p.value.images : [])]
+    .map(resolveStorageUrl)
   return [...new Set(raw.filter(Boolean))]
 })
 const activeImage = computed(() => gallery.value[activeIndex.value] || '')
@@ -406,6 +441,30 @@ function selectImage(i) {
 function money(value) {
   return Number(value || 0).toFixed(2)
 }
+// 本地日期（toISOString 是 UTC，北京时间 0-8 点会落到前一天）
+const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// ===== 生效促销（活动系统）：公开接口按商品命中，默认展示 2 条、超出收起 =====
+const promos = ref([])
+const promosExpanded = ref(false)
+const visiblePromos = computed(() => promosExpanded.value ? promos.value : promos.value.slice(0, 2))
+const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const rateText = (r) => trimZero(Number(r) * 10)
+const promoTypeLabel = (t) => ({ full_reduce: '满减', discount: '折扣', flash_sale: '限时秒杀', coupon: '领券' }[t] || '活动')
+const promoThreshold = (c) => {
+  if (c.type === 'full_reduce') return `满 ¥${trimZero(c.threshold)} 减 ¥${trimZero(c.benefitAmount)}`
+  if (c.type === 'discount') return `${rateText(c.discountRate)} 折${c.benefitAmount ? ` · 最高减 ¥${trimZero(c.benefitAmount)}` : ''}`
+  if (c.type === 'flash_sale') return `${rateText(c.discountRate)} 折 · 限时抢购`
+  if (c.type === 'coupon') return c.threshold > 0 ? `满 ¥${trimZero(c.threshold)} 可用` : '无门槛'
+  return ''
+}
+
+function loadPromos() {
+  // 公开接口：silent 吸收未登录/异常，促销行失败静默隐藏
+  campaignApi.forProduct(route.params.id, { silent: true })
+    .then(r => { promos.value = Array.isArray(r) ? r : [] })
+    .catch(() => { promos.value = [] })
+}
 
 // ===== 价格智能监控：走势（公开）+ 降价提醒（登录） =====
 const trendLoaded = ref(false)
@@ -420,7 +479,7 @@ async function loadPriceTrend() {
     const t = await priceMonitorApi.trend(route.params.id, 30)
     const product = (t?.series || []).map(x => ({ label: x.day, value: Number(x.price) }))
     if (t?.product?.price && product.length) {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDate()
       if (!product.some(x => x.label === today)) product.push({ label: today, value: Number(t.product.price) })
     }
     const bench = (t?.benchmark || []).map(b => ({ label: String(b.day), value: Number(b.benchmark) }))
@@ -452,6 +511,8 @@ async function subscribeAlert() {
 
 onMounted(async () => {
   loadPriceTrend()
+  membership.ensure()
+  loadPromos()
   updateZoomEnabled()
   window.addEventListener('resize', updateZoomEnabled)
   // 直播中徽章：匿名可访问；silent 吸收游客 401；从直播间跳转时写入归因标记供结算携带
@@ -574,6 +635,16 @@ async function buyNow() {
 .tts-intro:hover { border-color:var(--gold, #c8a45c); background:#fbf7ee; }
 .tts-intro.is-on { border-color:var(--gold, #c8a45c); color:var(--gold, #a97f2d); background:#fdf8ea; }
 .price-card { padding:17px 18px; background:linear-gradient(135deg,#fbf9f1,#f6f1e7); border-radius:14px; }.price-label { color:#4b5563; font-size:12px; }.price-line { display:flex; align-items:baseline; gap:3px; color:var(--red); }.price-line strong { font-size:38px; letter-spacing:-.04em; }.currency { font-size:18px; font-weight:800; }.vip-badge { margin-left:10px; background:#efe4c8; color:#765c25; padding:4px 7px; border-radius:5px; font-size:11px; font-weight:700; }.vip-copy { margin-top:4px; color:#846b35; font-size:12px; }
+/* 生效促销行：价格卡下方的活动让利提示（标签 + 标题 + 门槛摘要） */
+.promo-rows { margin:14px 0 0; padding:2px 14px; border:1px dashed #e3d9c4; border-radius:12px; background:#fffdf6; }
+.promo-row { display:flex; align-items:center; gap:10px; padding:9px 0; font-size:12.5px; cursor:pointer; }
+.promo-row + .promo-row { border-top:1px dashed #eee4cf; }
+.promo-row:hover .promo-row-title { color:var(--red); }
+.promo-row-tag { flex:0 0 auto; font-size:11px; font-weight:700; color:#9b2d20; background:rgba(155,45,32,.08); border-radius:5px; padding:2px 7px; white-space:nowrap; }
+.promo-row-title { flex:1; min-width:0; color:#303743; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; transition:color .18s ease; }
+.promo-row-th { flex:0 0 auto; color:#9b2d20; font-weight:700; white-space:nowrap; }
+.promo-row-more { display:block; width:100%; border:0; background:none; padding:7px 0; font:inherit; font-size:11.5px; color:#8A6A2F; cursor:pointer; text-align:left; }
+.promo-row-more:hover { text-decoration:underline; text-underline-offset:2px; }
 .decision-list { margin:20px 0; border-top:1px solid var(--line); }.decision-row { display:flex; gap:18px; padding:13px 0; border-bottom:1px solid var(--line); font-size:13px; }.decision-row .label { flex:0 0 48px; color:#4b5563; }.decision-row .value { color:#303743; font-weight:600; }.decision-row .danger { color:var(--red); }
 .service-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-card div { display:flex; align-items:center; gap:9px; font-size:12px; margin:7px 0; }.service-card b { width:32px; }.service-card span:last-child { color:#4b5563; }.service-icon { color:var(--gold); font-weight:800; }
 .purchase-area { margin-top:20px; }.quantity-line { display:flex; align-items:center; gap:14px; color:#555; font-size:13px; margin-bottom:13px; }.action-row { display:flex; gap:10px; }.cart-btn,.buy-btn { min-width:150px; height:46px; border-radius:9px; font-weight:700; }.cart-btn { border-color:#9b2d20; color:#9b2d20; }.buy-btn { background:#18212f; border-color:#18212f; }.secure-note { margin:10px 0 0; color:#4b5563; font-size:11px; }

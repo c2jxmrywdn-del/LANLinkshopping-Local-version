@@ -115,6 +115,27 @@ public class WechatPayClient {
         }
     }
 
+    /**
+     * 查询微信退款状态
+     * 返回 SUCCESS / PROCESSING / CHANGE / REFUNDCLOSE / null
+     */
+    public String queryRefundStatus(String orderNo, String outRefundNo) {
+        try {
+            com.github.binarywang.wxpay.bean.request.WxPayRefundQueryRequest req =
+                    com.github.binarywang.wxpay.bean.request.WxPayRefundQueryRequest.newBuilder()
+                            .outTradeNo(orderNo)
+                            .outRefundNo(outRefundNo)
+                            .build();
+            com.github.binarywang.wxpay.bean.result.WxPayRefundQueryResult res = newService().refundQuery(req);
+            if (res != null && res.getRefundRecords() != null && !res.getRefundRecords().isEmpty()) {
+                return res.getRefundRecords().get(0).getRefundStatus();
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /** 解析并验签回调 XML（验签失败抛业务异常）：返回 return_code/result_code/out_trade_no/transaction_id/total_fee */
     public Map<String, String> parseAndVerifyNotify(String xmlBody) {
         try {

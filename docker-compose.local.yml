@@ -12,8 +12,11 @@ services:
     image: axllent/mailpit:latest
     container_name: lanlink-mailpit
     ports:
-      - "1025:1025"    # SMTP（后端 spring.mail 指向 localhost:1025）
-      - "8081:8025"    # 收件箱 Web UI：http://localhost:8081（新版 Mailpit HTTP 端口 8025）
+      # A9③：仅绑回环（与根 docker-compose.yml 的 mailpit 写法一致）——验证码/找回邮件属敏感
+      # 数据，绑 0.0.0.0 时局域网任何主机都能打开收件箱 UI 读验证码，接管注册/找回流程。
+      # 裸跑后端 spring.mail 指向 localhost:1025，回环绑定不影响本机收发。
+      - "127.0.0.1:1025:1025"   # SMTP（后端 spring.mail 指向 localhost:1025）
+      - "127.0.0.1:8081:8025"   # 收件箱 Web UI：http://localhost:8081（新版 Mailpit HTTP 端口 8025）
     restart: unless-stopped
 
   support-learning-sandbox:

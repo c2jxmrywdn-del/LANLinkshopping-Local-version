@@ -141,18 +141,23 @@ class TamperAttackSimulationTest {
     // ===== 攻击 5：并发重复退款申请（refundStatus 状态机非法流转） =====
 
     @Test
-    void attackRefundStatusRaceRejectedAndAlerted() {
-        Order o = new Order();
-        o.setOrderNo("ORD-R1"); o.setUserId(7L);
-        o.setPayStatus(1); o.setPayType("corporate"); o.setRefundStatus("none");
-        o.setTotalAmount(new BigDecimal("100.00"));
-        when(orderMapper.selectById("ORD-R1")).thenReturn(o);
-        when(orderMapper.applyRefundAtomic("ORD-R1", "重复申请")).thenReturn(0);
+    void attackRefundStatusRaceRejectedAndAlerted() throws Exception {
+        String evidences = com.lanlink.shopping.support.RefundEvidenceTestFiles.writeImageEvidence(7L);
+        try {
+            Order o = new Order();
+            o.setOrderNo("ORD-R1"); o.setUserId(7L);
+            o.setPayStatus(1); o.setPayType("corporate"); o.setRefundStatus("none");
+            o.setTotalAmount(new BigDecimal("100.00"));
+            when(orderMapper.selectById("ORD-R1")).thenReturn(o);
+            when(orderMapper.applyRefundAtomic(eq("ORD-R1"), eq("重复申请"), any())).thenReturn(0);
 
-        BusinessException ex = assertThrows(BusinessException.class,
-                () -> orderService.applyRefund(7L, "ORD-R1", "重复申请"));
-        assertTrue(ex.getMessage().contains("重复"));
-        assertAlertOn("refundStatus");
+            BusinessException ex = assertThrows(BusinessException.class,
+                    () -> orderService.applyRefund(7L, "ORD-R1", "重复申请", evidences));
+            assertTrue(ex.getMessage().contains("重复"));
+            assertAlertOn("refundStatus");
+        } finally {
+            com.lanlink.shopping.support.RefundEvidenceTestFiles.deleteByUrlJson(evidences);
+        }
     }
 
     // ===== 攻击 6：金额一致性比对（checkNumeric 不一致即告警拒绝） =====

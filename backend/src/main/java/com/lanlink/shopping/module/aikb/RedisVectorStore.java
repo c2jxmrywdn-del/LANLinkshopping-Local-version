@@ -111,11 +111,31 @@ public class RedisVectorStore {
     /** 写入/更新一块（幂等：同 ID 覆盖）。向量字节同步写入 vblob 供原生 FT 索引。返回文档 id。 */
     public String upsert(String source, String refId, String title, String chunkText, float[] vector) {
         String id = docId(source, chunkText);
-        byte[] vec = toBytes(vector);
         String s = source == null ? "" : source;
         String r = refId == null ? "" : refId;
         String t = title == null ? "" : title;
         String x = chunkText == null ? "" : chunkText;
+
+        if (vector == null || vector.length == 0) {
+            log.warn("[aikb] reject empty vector for doc {}", id);
+            return null;
+        }
+        for (float vVal : vector) {
+            if (!Float.isFinite(vVal)) {
+                log.warn("[aikb] reject non-finite float vector for doc {}", id);
+                return null;
+            }
+        }
+        if (ftAvailable()) {
+            int savedDim = storedDimension();
+            if (savedDim > 0 && vector.length != savedDim) {
+                log.warn("[aikb] reject vector dim {} != index dim {} for doc {}",
+                        vector.length, savedDim, id);
+                return null;
+            }
+        }
+
+        byte[] vec = toBytes(vector);
         redis.opsForHash().putAll(DOC_PREFIX + id, Map.of(
                 "source", s,
                 "refId", r,
@@ -126,29 +146,37 @@ public class RedisVectorStore {
                 "ingestedAt", LocalDateTime.now().toString()));
         // 原生 FT 索引源：vec 原始 float32 字节 + source TAG + 冗余元数据（FT 命中直接 RETURN，免回表）
         if (ftAvailable()) {
-            ensureIndex(vector.length);
-            if (ftIndexReady) {
-                try {
-                    redis.execute((org.springframework.data.redis.core.RedisCallback<Object>) conn -> {
-                        var hc = conn.hashCommands();
-                        byte[] key = (VBLOB_PREFIX + id).getBytes(StandardCharsets.UTF_8);
-                        // 一次 HSET 写全部字段（RediSearch 未建索引的字段也随 HASH 返回，供 FT RETURN 使用）
-                        Map<byte[], byte[]> fields = new LinkedHashMap<>();
-                        fields.put("vec".getBytes(StandardCharsets.UTF_8), vec);
-                        fields.put("source".getBytes(StandardCharsets.UTF_8), s.getBytes(StandardCharsets.UTF_8));
-                        fields.put("refId".getBytes(StandardCharsets.UTF_8), r.getBytes(StandardCharsets.UTF_8));
-                        fields.put("title".getBytes(StandardCharsets.UTF_8), t.getBytes(StandardCharsets.UTF_8));
-                        fields.put("text".getBytes(StandardCharsets.UTF_8), x.getBytes(StandardCharsets.UTF_8));
-                        hc.hMSet(key, fields);
-                        return null;
-                    });
-                } catch (Exception e) {
-                    markFtBroken(e);
+            if (indexDim > 0 && vector.length != indexDim) {
+                log.warn("[aikb] dim mismatch (index={}, doc={}) - skip writing vblob to avoid index corruption",
+                        indexDim, vector.length);
+            } else {
+                ensureIndex(vector.length);
+                if (ftIndexReady) {
+                    try {
+                        redis.execute((org.springframework.data.redis.core.RedisCallback<Object>) conn -> {
+                            var hc = conn.hashCommands();
+                            byte[] key = (VBLOB_PREFIX + id).getBytes(StandardCharsets.UTF_8);
+                            // 一次 HSET 写全部字段（RediSearch 未建索引的字段也随 HASH 返回，供 FT RETURN 使用）
+                            Map<byte[], byte[]> fields = new LinkedHashMap<>();
+                            fields.put("vec".getBytes(StandardCharsets.UTF_8), vec);
+                            fields.put("source".getBytes(StandardCharsets.UTF_8), s.getBytes(StandardCharsets.UTF_8));
+                            fields.put("refId".getBytes(StandardCharsets.UTF_8), r.getBytes(StandardCharsets.UTF_8));
+                            fields.put("title".getBytes(StandardCharsets.UTF_8), t.getBytes(StandardCharsets.UTF_8));
+                            fields.put("text".getBytes(StandardCharsets.UTF_8), x.getBytes(StandardCharsets.UTF_8));
+                            hc.hMSet(key, fields);
+                            return null;
+                        });
+                    } catch (Exception e) {
+                        markFtBroken(e);
+                    }
                 }
             }
         }
         redis.opsForSet().add("aikb:src:" + source, id);
         redis.opsForSet().add("aikb:all", id);
+        if (!s.isBlank() && !r.isBlank()) {
+            redis.opsForSet().add("aikb:ref:" + s + ":" + r, id);
+        }
         synchronized (cacheLock) {
             if (cacheLoaded && cache != null) {
                 cache.put(id, new CachedDoc(id, source, refId, title, chunkText, vector));
@@ -166,6 +194,12 @@ public class RedisVectorStore {
             redis.opsForSet().remove("aikb:all", ids.toArray());
         }
         redis.delete("aikb:src:" + source);
+        try {
+            Set<String> refKeys = redis.keys("aikb:ref:" + source + ":*");
+            if (refKeys != null && !refKeys.isEmpty()) {
+                redis.delete(refKeys);
+            }
+        } catch (Exception ignored) {}
         synchronized (cacheLock) {
             if (cache != null) {
                 cache.values().removeIf(d -> source.equals(d.source()));
@@ -194,11 +228,116 @@ public class RedisVectorStore {
         redis.opsForSet().remove("aikb:all", id);
         if (existing.source() != null && !existing.source().isBlank()) {
             redis.opsForSet().remove("aikb:src:" + existing.source(), id);
+            if (existing.refId() != null && !existing.refId().isBlank()) {
+                redis.opsForSet().remove("aikb:ref:" + existing.source() + ":" + existing.refId(), id);
+            }
         }
         synchronized (cacheLock) {
             if (cache != null) cache.remove(id);
         }
         return true;
+    }
+
+    /** 按来源+业务键读取关联文档 ID；优先反向索引，历史数据无索引时回退缓存扫描。 */
+    public java.util.Set<String> docIdsByRef(String source, String refId) {
+        if (source == null || source.isBlank() || refId == null || refId.isBlank()) {
+            return java.util.Set.of();
+        }
+        try {
+            Set<String> indexed = redis.opsForSet().members("aikb:ref:" + source + ":" + refId);
+            if (indexed != null && !indexed.isEmpty()) {
+                return new java.util.LinkedHashSet<>(indexed);
+            }
+        } catch (Exception e) {
+            log.debug("[aikb] docIdsByRef reverse-index lookup failed: {}", e.getMessage());
+        }
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        for (DocInfo d : listByRef(source, refId)) out.add(d.id());
+        return out;
+    }
+
+    /**
+     * 精准删除指定文档集合，不触碰同 refId 刚写入的新分块。
+     * 这是增量 upsert-first 后清理 stale 分块的关键能力。
+     */
+    public int deleteDocs(java.util.Collection<String> ids) {
+        if (ids == null || ids.isEmpty()) return 0;
+        int deleted = 0;
+        for (String id : ids) {
+            if (deleteDoc(id)) deleted++;
+        }
+        return deleted;
+    }
+
+    /** 已持久化的索引维度；不触发 ensureIndex，也不会因降级向量误重建索引。 */
+    public int storedDimension() {
+        try {
+            String saved = redis.opsForValue().get(DIM_KEY);
+            if (saved != null && !saved.isBlank()) return Integer.parseInt(saved.trim());
+        } catch (Exception e) {
+            log.debug("[aikb] stored dimension lookup failed: {}", e.getMessage());
+        }
+        return indexDim > 0 ? indexDim : -1;
+    }
+
+    /** 轻量同步状态（如商品语义哈希），与文档集合同生命周期，避免为此新增 MySQL 表。 */
+    public String getState(String key) {
+        try {
+            return redis.opsForValue().get("aikb:state:" + key);
+        } catch (Exception e) {
+            log.debug("[aikb] state get failed key={}: {}", key, e.getMessage());
+            return null;
+        }
+    }
+
+    public void setState(String key, String value) {
+        try {
+            if (value == null) redis.delete("aikb:state:" + key);
+            else redis.opsForValue().set("aikb:state:" + key, value);
+        } catch (Exception e) {
+            log.debug("[aikb] state set failed key={}: {}", key, e.getMessage());
+        }
+    }
+
+    public void clearState(String key) {
+        setState(key, null);
+    }
+
+    /**
+     * 按来源 + 业务键(refId) 精准删除关联的所有向量与元数据分块（反向索引加速 + 回退扫描）。
+     * 避免整库清空导致的知识真空与服务雪崩。
+     *
+     * @param source 来源（如 product / learned / manual）
+     * @param refId  业务标识（如 prodId / entryId）
+     * @return 实际移除的文档分块数
+     */
+    public int deleteByRefId(String source, String refId) {
+        if (source == null || source.isBlank() || refId == null || refId.isBlank()) return 0;
+        String refKey = "aikb:ref:" + source + ":" + refId;
+        Set<String> ids = redis.opsForSet().members(refKey);
+        if (ids == null || ids.isEmpty()) {
+            // 回退按 cache 或 listByRef 扫描以防历史数据无反向索引
+            List<DocInfo> legacy = listByRef(source, refId);
+            if (legacy.isEmpty()) return 0;
+            int count = 0;
+            for (DocInfo d : legacy) {
+                if (deleteDoc(d.id())) count++;
+            }
+            return count;
+        }
+        List<String> docKeys = ids.stream().map(id -> DOC_PREFIX + id).toList();
+        List<String> vblobKeys = ids.stream().map(id -> VBLOB_PREFIX + id).toList();
+        redis.delete(docKeys);
+        redis.delete(vblobKeys);
+        redis.opsForSet().remove("aikb:all", ids.toArray());
+        redis.opsForSet().remove("aikb:src:" + source, ids.toArray());
+        redis.delete(refKey);
+        synchronized (cacheLock) {
+            if (cache != null) {
+                for (String id : ids) cache.remove(id);
+            }
+        }
+        return ids.size();
     }
 
     /** 列出知识条目（可按来源过滤，限量；用于管理端浏览）。 */
@@ -353,6 +492,14 @@ public class RedisVectorStore {
                 "SCHEMA".getBytes(StandardCharsets.UTF_8),
                 "source".getBytes(StandardCharsets.UTF_8),
                 "TAG".getBytes(StandardCharsets.UTF_8),
+                "title".getBytes(StandardCharsets.UTF_8),
+                "TEXT".getBytes(StandardCharsets.UTF_8),
+                "WEIGHT".getBytes(StandardCharsets.UTF_8),
+                "2.0".getBytes(StandardCharsets.UTF_8),
+                "text".getBytes(StandardCharsets.UTF_8),
+                "TEXT".getBytes(StandardCharsets.UTF_8),
+                "WEIGHT".getBytes(StandardCharsets.UTF_8),
+                "1.0".getBytes(StandardCharsets.UTF_8),
                 "vec".getBytes(StandardCharsets.UTF_8),
                 "VECTOR".getBytes(StandardCharsets.UTF_8),
                 "HNSW".getBytes(StandardCharsets.UTF_8),
@@ -737,11 +884,30 @@ public class RedisVectorStore {
         }
     }
 
-    /** 全量重灌后调用：强制下次检索重新加载 */
+    /** 全量重灌后调用：强制下次检索重新加载，并通过 Redis Pub/Sub 广播通知网关失效语义缓存 */
     public void invalidateCache() {
+        invalidateCache("all", "kb_updated");
+    }
+
+    public void invalidateCache(String role, String reason) {
         synchronized (cacheLock) {
             cacheLoaded = false;
             cache = null;
+        }
+        publishCacheInvalidation(role, reason);
+    }
+
+    public void publishCacheInvalidation(String role, String reason) {
+        try {
+            String channel = "aigateway:cache:invalidate";
+            String payload = String.format("{\"event\":\"cache_invalidated\",\"role\":\"%s\",\"reason\":\"%s\",\"timestamp\":%d}",
+                    role == null ? "all" : role,
+                    reason == null ? "update" : reason,
+                    System.currentTimeMillis());
+            redis.convertAndSend(channel, payload);
+            log.debug("[aikb] published cache invalidation to {}: {}", channel, payload);
+        } catch (Exception e) {
+            log.warn("[aikb] failed to publish cache invalidation event: {}", e.getMessage());
         }
     }
 

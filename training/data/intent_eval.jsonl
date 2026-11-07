@@ -1,0 +1,8 @@
+{"question": "我的快递到哪了？", "intent": "logistics_tracking", "label_source": "intent_log"}
+{"question": "我怎么登录？", "intent": "account_access", "label_source": "regression"}
+{"question": "怎么按行业分类找产品？", "intent": "product_browse", "label_source": "regression"}
+{"question": "加入购物车后在哪结算？", "intent": "cart_order", "label_source": "regression"}
+{"question": "商家如何开店？", "intent": "merchant_onboarding", "label_source": "regression"}
+{"question": "企业账期入口在哪？", "intent": "wallet_credit", "label_source": "regression"}
+{"question": "会员中心在哪里？", "intent": "membership_activity", "label_source": "regression"}
+{"question": "怎么设置 Cookie？", "intent": "message_privacy", "label_source": "regression"}

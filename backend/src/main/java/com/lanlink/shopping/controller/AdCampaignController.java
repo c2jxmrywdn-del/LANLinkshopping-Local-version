@@ -83,15 +83,20 @@ public class AdCampaignController {
 
     // ===== 商城侧（公开） =====
 
-    /** 广告位商品（商城列表插入位，按剩余预算轮换） */
+    /**
+     * 广告位商品（商城列表插入位，GSP 拍卖定序定价）。
+     * catId 为可选的类目相关性上下文（命中 1.0 / 未命中 0.5 计入质量分门槛）；
+     * 返回字段在原有基础上新增 chargePrice（本次点击 GSP 扣费价，/ad/track click 时按此计费）。
+     */
     @GetMapping("/slots")
-    public R<List<Map<String, Object>>> slots(@RequestParam(defaultValue = "3") int limit) {
-        return R.ok(adService.slots(limit));
+    public R<List<Map<String, Object>>> slots(@RequestParam(defaultValue = "3") int limit,
+                                              @RequestParam(required = false) Long catId) {
+        return R.ok(adService.slots(limit, catId));
     }
 
-    /** 曝光/点击上报：type = impression（计数）| click（按 CPC 计费） */
+    /** 曝光/点击上报：type = impression（计数）| click（按 CPC 计费，同 IP 同计划 10 分钟去重窗口） */
     @PostMapping("/track")
-    public R<Map<String, Object>> track(@RequestBody Map<String, Object> body) {
+    public R<Map<String, Object>> track(@RequestBody Map<String, Object> body, HttpServletRequest request) {
         Long campaignId = null;
         try {
             campaignId = body.get("campaignId") == null ? null : Long.valueOf(String.valueOf(body.get("campaignId")));
@@ -101,12 +106,23 @@ public class AdCampaignController {
         if (campaignId == null) return R.fail("缺少推广计划标识");
         boolean charged = false;
         if ("click".equals(type)) {
-            charged = adService.trackClick(campaignId);
+            charged = adService.trackClick(campaignId, clientIp(request));
         } else if ("impression".equals(type)) {
             adService.trackImpression(campaignId);
         } else {
             return R.fail("不支持的上报类型");
         }
         return R.ok(Map.of("charged", charged));
+    }
+
+    /** 真实客户端 IP（与 SecurityRouteGuardInterceptor 同源：CF-Connecting-IP → X-Forwarded-For 首段 → remoteAddr） */
+    private static String clientIp(HttpServletRequest request) {
+        String ip = request.getHeader("CF-Connecting-IP");
+        if (ip == null || ip.isBlank()) {
+            ip = request.getHeader("X-Forwarded-For");
+            if (ip != null && ip.contains(",")) ip = ip.substring(0, ip.indexOf(',')).trim();
+        }
+        if (ip == null || ip.isBlank()) ip = request.getRemoteAddr();
+        return ip == null ? "" : ip.trim();
     }
 }

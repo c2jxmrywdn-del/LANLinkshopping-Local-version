@@ -8,6 +8,7 @@ import com.lanlink.shopping.module.membership.mapper.MemberLevelMapper;
 import com.lanlink.shopping.module.membership.mapper.MemberPointLogMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -37,6 +38,11 @@ class MembershipServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 纯 mock 环境无 TableInfo 缓存，earnGrowth 原子累加（lambdaUpdate.set）的列名解析需先初始化实体元信息
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                MemberCard.class);
         cardMapper = mock(MemberCardMapper.class);
         levelMapper = mock(MemberLevelMapper.class);
         logMapper = mock(MemberPointLogMapper.class);
@@ -85,7 +91,7 @@ class MembershipServiceTest {
         service.earnGrowth(2L, new BigDecimal("1250"), "TEST-ORDER-1", 1);
 
         verify(cardMapper, times(1)).insert(any(MemberCard.class));      // 建卡
-        verify(cardMapper, times(1)).updateById(any(MemberCard.class));  // 更新成长值/积分
+        verify(cardMapper, times(1)).update(isNull(), any());            // 原子累加成长值/积分（lambdaUpdate）
         verify(logMapper, times(1)).insert(any(com.lanlink.shopping.module.membership.entity.MemberPointLog.class)); // 积分流水
     }
 
@@ -117,6 +123,21 @@ class MembershipServiceTest {
         // 未登录 / 缺少流水ID：直接返回 null，不触发查询
         assertNull(service.pointLog(null, 9L), "未登录不查询");
         assertNull(service.pointLog(2L, null), "缺少流水ID不查询");
+    }
+
+    @Test
+    void duplicateActivityRewardIsRejectedByUniqueKey() {
+        MemberCard card = new MemberCard();
+        card.setCardId(1L); card.setUserId(2L); card.setLevelId(1L); card.setGrowth(0); card.setPoints(100);
+        when(cardMapper.selectOne(any())).thenReturn(card);
+        when(logMapper.selectCount(any())).thenReturn(0L);
+        when(logMapper.insert(any(MemberPointLog.class)))
+                .thenThrow(new DuplicateKeyException("uk_point_user_type_ref"));
+
+        int awarded = service.awardPoints(2L, 30, "checkin:2026-11-04", "每日签到奖励");
+
+        assertEquals(0, awarded, "并发重复发奖应由唯一键拦截并返回 0");
+        verify(cardMapper, never()).updateById(any(MemberCard.class)); // 流水未落库前不得累加余额
     }
 
     private MemberLevel level(Long id, String name, int min) {

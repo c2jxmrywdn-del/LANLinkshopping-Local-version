@@ -1,5 +1,8 @@
 package com.lanlink.shopping.common;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * 数据脱敏工具类（后端向前端安全输出治理）。
  * 遵循《个人信息保护法》与金融安全规范：
@@ -15,7 +18,22 @@ package com.lanlink.shopping.common;
  */
 public final class DesensitizeUtil {
 
+    private static final Pattern PHONE_IN_TEXT = Pattern.compile("(?<!\\d)(1[3-9]\\d{9})(?!\\d)");
+    private static final Pattern EMAIL_IN_TEXT = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+    private static final Pattern ID_CARD_IN_TEXT = Pattern.compile("(?<![\\dXx])(\\d{17}[\\dXx])(?![\\dXx])");
+    private static final Pattern BANK_CARD_IN_TEXT = Pattern.compile("(?<!\\d)(\\d{16,19})(?!\\d)");
+
     private DesensitizeUtil() {}
+
+    /** 从自由文本中脱敏常见 PII，用于出站第三方模型前的数据最小化。 */
+    public static String maskPiiInText(String text) {
+        if (text == null || text.isBlank()) return text;
+        String out = EMAIL_IN_TEXT.matcher(text).replaceAll(mr -> Matcher.quoteReplacement(maskEmail(mr.group())));
+        out = ID_CARD_IN_TEXT.matcher(out).replaceAll(mr -> Matcher.quoteReplacement(maskIdCard(mr.group())));
+        out = BANK_CARD_IN_TEXT.matcher(out).replaceAll(mr -> Matcher.quoteReplacement(maskBankCard(mr.group())));
+        out = PHONE_IN_TEXT.matcher(out).replaceAll(mr -> Matcher.quoteReplacement(maskPhone(mr.group())));
+        return out;
+    }
 
     /** 检查是否为已脱敏数据（含星号掩码） */
     public static boolean isMasked(String value) {

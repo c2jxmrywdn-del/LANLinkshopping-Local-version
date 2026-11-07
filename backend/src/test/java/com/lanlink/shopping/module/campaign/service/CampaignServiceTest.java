@@ -236,52 +236,59 @@ class CampaignServiceTest {
 
     // ===== 券回退（订单取消/全额退款） =====
 
+    /**
+     * B3：回退改为 UpdateWrapper 单条条件 UPDATE——MP 默认 NOT_NULL 字段策略会跳过
+     * updateById 写入的 null（usedTime/orderNo 清空不生效），必须显式 SET used_time=NULL/order_no=NULL。
+     */
     @Test
-    void releaseCouponRestoresToUsable() {
-        UserCoupon used = myCoupon(1);
-        used.setOrderNo("ORD1");
-        when(userCouponMapper.selectList(any())).thenReturn(List.of(used));
-
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void releaseCouponExplicitlyNullsUsedTimeAndOrderNo() {
         service.releaseCoupon("ORD1");
 
-        ArgumentCaptor<UserCoupon> captor = ArgumentCaptor.forClass(UserCoupon.class);
-        verify(userCouponMapper).updateById(captor.capture());
-        assertEquals(0, captor.getValue().getStatus());
-        assertNull(captor.getValue().getOrderNo());
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<UserCoupon>> cap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(userCouponMapper).update(isNull(), cap.capture()); // 无实体参与，纯 wrapper 更新
+        com.baomidou.mybatisplus.core.conditions.update.Update w =
+                (com.baomidou.mybatisplus.core.conditions.update.Update) cap.getValue();
+        String sqlSet = w.getSqlSet();
+        assertTrue(sqlSet.contains("status"), "SET 段应含 status 置 0: " + sqlSet);
+        assertTrue(sqlSet.contains("used_time"), "SET 段应显式清空 used_time（NOT_NULL 策略绕过）: " + sqlSet);
+        assertTrue(sqlSet.contains("order_no"), "SET 段应显式清空 order_no（NOT_NULL 策略绕过）: " + sqlSet);
+        com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?> aw =
+                (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?>) cap.getValue();
+        // SET 值经参数绑定落库：包含置 0 的 status 与两个 NULL（used_time/order_no）
+        assertTrue(aw.getParamNameValuePairs().containsValue(0), "status 应被置 0: " + aw.getParamNameValuePairs());
+        assertTrue(aw.getParamNameValuePairs().containsValue(null),
+                "used_time/order_no 应显式绑定 NULL: " + aw.getParamNameValuePairs());
     }
 
     /**
-     * 回退范围由查询条件锁定：selectList 必须携带 orderNo 等值 + status=1 过滤，
-     * SQL 语义保证结果行的 order_no 必然等于传入订单号（NULL 亦不匹配），
-     * 因此"回退到不属于本单的券"在实现上不可能发生（评审 Issue 验证结论：不存在）。
+     * 回退范围由 UPDATE 条件锁定：WHERE 必须携带 orderNo 等值 + status=1 过滤，
+     * SQL 语义保证只有本单已核销券会被回退（NULL 亦不匹配），
+     * "回退到不属于本单的券"在实现上不可能发生（评审 Issue 验证结论：不存在）。
      */
     @Test
-    @SuppressWarnings("unchecked")
-    void releaseCouponScopesQueryToTheGivenOrderOnly() {
-        // 纯 mock 环境无 TableInfo 缓存，lambda 列名解析需先初始化实体元信息
-        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
-                new org.apache.ibatis.builder.MapperBuilderAssistant(
-                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
-                UserCoupon.class);
-
-        when(userCouponMapper.selectList(any())).thenReturn(List.of());
-
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void releaseCouponScopesUpdateToTheGivenOrderOnly() {
         service.releaseCoupon("ORD-A");
 
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<UserCoupon>> cap =
                 ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
-        verify(userCouponMapper).selectList(cap.capture());
+        verify(userCouponMapper).update(isNull(), cap.capture());
         com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?> w =
                 (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<UserCoupon, ?, ?>) cap.getValue();
-        // 查询参数必须同时绑定订单号与状态=1：回退集合在 SQL 层就被限定为本单已核销券
+        // 更新参数必须同时绑定订单号与状态=1：回退集合在 SQL 层就被限定为本单已核销券
         // 注：MP 条件参数是惰性注册（渲染 SQL 时才进 paramNameValuePairs），先触发渲染再断言
         String sqlSegment = w.getSqlSegment();
-        assertTrue(sqlSegment.contains("order_no"), "SQL 片段应含 order_no 等值条件: " + sqlSegment);
-        assertTrue(sqlSegment.contains("status"), "SQL 片段应含 status 条件: " + sqlSegment);
+        assertTrue(sqlSegment.contains("order_no"), "WHERE 段应含 order_no 等值条件: " + sqlSegment);
+        assertTrue(sqlSegment.contains("status"), "WHERE 段应含 status 条件: " + sqlSegment);
         assertTrue(w.getParamNameValuePairs().containsValue("ORD-A"),
-                "查询条件应绑定 orderNo 等值过滤: " + w.getParamNameValuePairs());
+                "更新条件应绑定 orderNo 等值过滤: " + w.getParamNameValuePairs());
         assertTrue(w.getParamNameValuePairs().containsValue(1),
-                "查询条件应绑定 status=1 过滤: " + w.getParamNameValuePairs());
+                "更新条件应绑定 status=1 过滤: " + w.getParamNameValuePairs());
+        // 不再先查后改（B3 前 selectList→updateById 读改写路径移除）
+        verify(userCouponMapper, never()).selectList(any());
+        verify(userCouponMapper, never()).updateById(any(UserCoupon.class));
     }
 
     // ===== 激励参与（注册有礼 / 消费有礼） =====
@@ -313,6 +320,77 @@ class CampaignServiceTest {
         verify(participantMapper, times(2)).insert(any(CampaignParticipant.class));
         verify(membershipService).awardPoints(eq(7L), eq(100), eq("campaign:1"), any());
         verify(membershipService).awardPoints(eq(7L), eq(50), eq("campaign:2"), any());
+    }
+
+    /**
+     * B4：autoJoinPurchase 查询补 start_time 过滤（未开场活动不参与），与 effectiveCampaigns 同口径。
+     * 时间过滤下沉在 SQL 条件里，故对查询 wrapper 的 SQL 片段断言。
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void autoJoinPurchaseExcludesNotYetStartedCampaigns() {
+        // 纯 mock 环境无 TableInfo 缓存，lambda 列名解析需先初始化实体元信息
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                Campaign.class);
+        when(campaignMapper.selectList(any())).thenReturn(List.of());
+
+        service.autoJoinPurchase(7L);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<Campaign>> cap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(campaignMapper).selectList(cap.capture());
+        com.baomidou.mybatisplus.core.conditions.AbstractWrapper<Campaign, ?, ?> w =
+                (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<Campaign, ?, ?>) cap.getValue();
+        String sqlSegment = w.getSqlSegment();
+        assertTrue(sqlSegment.contains("start_time"),
+                "查询应含 start_time 过滤（未开场不参与，同 effectiveCampaigns 口径）: " + sqlSegment);
+        assertTrue(sqlSegment.contains("end_time"), "查询应含 end_time 过滤: " + sqlSegment);
+        verify(participantMapper, never()).insert(any(CampaignParticipant.class));
+    }
+
+    // ===== B6：激励参与唯一键 uk_cp_campaign_user 并发兜底（DuplicateKey 幂等返回） =====
+
+    @Test
+    void joinIncentiveDuplicateKeyIsIdempotent() {
+        Campaign register = campaign("register", "all", null, null, null, null).setRewardPoints(100);
+        when(campaignMapper.selectById(1L)).thenReturn(register);
+        when(participantMapper.selectCount(any())).thenReturn(0L);
+        when(participantMapper.insert(any(CampaignParticipant.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_cp_campaign_user"));
+
+        assertDoesNotThrow(() -> service.joinIncentive(7L, 1L));
+        // 幂等返回不重复发分
+        verify(membershipService, never()).awardPoints(any(), anyInt(), any(), any());
+    }
+
+    @Test
+    void autoJoinPurchaseDuplicateKeySkipsAwardButContinues() {
+        Campaign p1 = campaign("purchase", "all", null, null, null, null).setCampaignId(1L).setRewardPoints(100);
+        Campaign p2 = campaign("purchase", "all", null, null, null, null).setCampaignId(2L).setRewardPoints(50);
+        when(campaignMapper.selectList(any())).thenReturn(List.of(p1, p2));
+        when(participantMapper.selectCount(any())).thenReturn(0L);
+        when(participantMapper.insert(any(CampaignParticipant.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_cp_campaign_user"))
+                .thenReturn(1);
+
+        assertDoesNotThrow(() -> service.autoJoinPurchase(7L));
+
+        verify(participantMapper, times(2)).insert(any(CampaignParticipant.class));
+        // 撞唯一键的活动跳过发分，后续活动正常参与
+        verify(membershipService, never()).awardPoints(eq(7L), eq(100), any(), any());
+        verify(membershipService).awardPoints(eq(7L), eq(50), eq("campaign:2"), any());
+    }
+
+    @Test
+    void merchantJoinDuplicateKeyIsIdempotent() {
+        when(merchantMapper.selectOne(any())).thenReturn(merchant(9L, 1));
+        when(campaignMapper.selectById(1L)).thenReturn(campaign("merchant_incentive", "all", null, null, null, null));
+        when(campaignMerchantMapper.insert(any(CampaignMerchant.class)))
+                .thenThrow(new org.springframework.dao.DuplicateKeyException("uk_campaign_mer"));
+
+        assertDoesNotThrow(() -> service.merchantJoin(7L, 1L));
     }
 
     // ===== 商户激励：报名 + 达标领奖 =====
@@ -403,6 +481,118 @@ class CampaignServiceTest {
         when(userCouponMapper.selectCount(any())).thenReturn(3L);
         assertThrows(BusinessException.class, () -> service.adminDelete(1L));
         verify(campaignMapper, never()).deleteById(anyLong());
+    }
+
+    // ===== B5：管理端写路径条件更新，绝不写回 claimed_count 等计数列 =====
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void adminToggleOnlySetsStatusAndUpdateTime() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                Campaign.class);
+        when(campaignMapper.update(any(), any())).thenReturn(1);
+
+        service.adminToggle(1L, 1);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<Campaign>> cap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(campaignMapper).update(isNull(), cap.capture());
+        com.baomidou.mybatisplus.core.conditions.update.Update w =
+                (com.baomidou.mybatisplus.core.conditions.update.Update) cap.getValue();
+        String sqlSet = w.getSqlSet();
+        assertTrue(sqlSet.contains("status"), "toggle 应仅 SET status: " + sqlSet);
+        assertTrue(sqlSet.contains("update_time"), "toggle 应 SET update_time: " + sqlSet);
+        assertFalse(sqlSet.contains("claimed_count"), "toggle 不得写回 claimed_count: " + sqlSet);
+        assertFalse(sqlSet.contains("title"), "toggle 不得写回其他列: " + sqlSet);
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void adminUpdateWritesOnlyTargetColumnsAndKeepsCounters() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                Campaign.class);
+        Campaign stored = new Campaign().setCampaignId(1L)
+                .setClaimedCount(88).setCreateTime(LocalDateTime.now());
+        when(campaignMapper.selectById(1L)).thenReturn(stored);
+
+        Campaign in = campaign("coupon", "all", null, new BigDecimal("200"), new BigDecimal("30"), null)
+                .setClaimedCount(999999); // 恶意/误传计数
+        Campaign saved = service.adminUpdate(1L, in);
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.Wrapper<Campaign>> cap =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(campaignMapper).update(isNull(), cap.capture());
+        com.baomidou.mybatisplus.core.conditions.update.Update w =
+                (com.baomidou.mybatisplus.core.conditions.update.Update) cap.getValue();
+        String sqlSet = w.getSqlSet();
+        assertTrue(sqlSet.contains("title"), "更新应 SET title: " + sqlSet);
+        assertTrue(sqlSet.contains("update_time"), "更新应 SET update_time: " + sqlSet);
+        assertFalse(sqlSet.contains("claimed_count"), "adminUpdate 不得写回 claimed_count: " + sqlSet);
+        assertFalse(sqlSet.contains("mer_id"), "adminUpdate 不得写回 mer_id: " + sqlSet);
+        assertFalse(sqlSet.contains("prod_ids"), "adminUpdate 不得写回 prod_ids: " + sqlSet);
+        assertFalse(sqlSet.contains("review_status"), "adminUpdate 不得写回 review_status: " + sqlSet);
+        assertFalse(sqlSet.contains("review_note"), "adminUpdate 不得写回 review_note: " + sqlSet);
+        // 响应契约：claimed_count 仍回显真实计数
+        assertEquals(88, saved.getClaimedCount());
+    }
+
+    // ===== B7：商户促销长度护栏（与 schema 列宽对齐） =====
+
+    @Test
+    void adminCreateRejectsOversizeTitleDescriptionAndProdIds() {
+        // title > 100 字符（列宽 VARCHAR(100)）
+        Campaign longTitle = campaign("full_reduce", "all", null, BigDecimal.TEN, BigDecimal.TEN, null)
+                .setTitle("长".repeat(101));
+        BusinessException ex1 = assertThrows(BusinessException.class, () -> service.adminCreate(longTitle));
+        assertTrue(ex1.getMessage().contains("活动名称"));
+        verify(campaignMapper, never()).insert(any(Campaign.class));
+
+        // description > 500 字符（列宽 VARCHAR(500)）
+        Campaign longDesc = campaign("full_reduce", "all", null, BigDecimal.TEN, BigDecimal.TEN, null)
+                .setDescription("描".repeat(501));
+        BusinessException ex2 = assertThrows(BusinessException.class, () -> service.adminCreate(longDesc));
+        assertTrue(ex2.getMessage().contains("活动描述"));
+        verify(campaignMapper, never()).insert(any(Campaign.class));
+
+        // prodIds 超量（>50 个商品）
+        StringBuilder ids = new StringBuilder();
+        for (int i = 1; i <= 51; i++) {
+            if (i > 1) ids.append(',');
+            ids.append(i);
+        }
+        Campaign tooManyProds = campaign("full_reduce", "all", null, BigDecimal.TEN, BigDecimal.TEN, null)
+                .setScope("prod").setProdIds(ids.toString());
+        BusinessException ex3 = assertThrows(BusinessException.class, () -> service.adminCreate(tooManyProds));
+        assertTrue(ex3.getMessage().contains("50 个"), "应提示商品数量上限: " + ex3.getMessage());
+        verify(campaignMapper, never()).insert(any(Campaign.class));
+
+        // prodIds 拼接超长（去重后仅 1 个商品但字符串 > 490 字符，列宽 VARCHAR(500)）
+        Campaign longProdIds = campaign("full_reduce", "all", null, BigDecimal.TEN, BigDecimal.TEN, null)
+                .setScope("prod").setProdIds("1,".repeat(250));
+        BusinessException ex4 = assertThrows(BusinessException.class, () -> service.adminCreate(longProdIds));
+        assertTrue(ex4.getMessage().contains("490"), "应提示商品列表长度上限: " + ex4.getMessage());
+        verify(campaignMapper, never()).insert(any(Campaign.class));
+    }
+
+    // ===== B9：discount_rate 先按 DECIMAL(4,3) 列精度取整再判开区间 (0,1) =====
+
+    @Test
+    void discountRateRoundedToColumnScaleBeforeRangeCheck() {
+        // 0.9995 按三位小数 HALF_UP 取整为 1.000 → 越界拒绝（防 Java 校验通过而落库被列精度收整）
+        Campaign badRate = campaign("discount", "all", null, BigDecimal.ZERO, null, new BigDecimal("0.9995"));
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.adminCreate(badRate));
+        assertTrue(ex.getMessage().contains("三位小数"), "提示应说明可用精度三位小数: " + ex.getMessage());
+        verify(campaignMapper, never()).insert(any(Campaign.class));
+
+        // 0.99945 → 取整 0.999 → 合法且按列精度落库
+        Campaign okRate = campaign("discount", "all", null, BigDecimal.ZERO, null, new BigDecimal("0.99945"));
+        Campaign saved = service.adminCreate(okRate);
+        assertEquals(0, new BigDecimal("0.999").compareTo(saved.getDiscountRate()));
+        verify(campaignMapper).insert(okRate);
     }
 
     // ===== 回归：活动未配置行业（indId=null）时，券包/试算不得因 Map.of().get(null) 抛 NPE =====

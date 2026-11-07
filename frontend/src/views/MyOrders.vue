@@ -9,10 +9,20 @@
         <a-button size="small" type="primary" @click="$router.push('/merchant/center/orders')">查看店铺销售订单</a-button>
       </template>
     </a-alert>
-    <div class="order-tabs"><a-radio-group v-model:value="filter" button-style="solid"><a-radio-button value="all">全部</a-radio-button><a-radio-button value="unpaid">待支付</a-radio-button><a-radio-button value="paid">已支付</a-radio-button><a-radio-button value="done">已完成</a-radio-button><a-radio-button value="closed">已关闭</a-radio-button></a-radio-group></div>
+    <div class="order-tabs">
+      <FluidAnimatedTabs v-model="filter" :items="orderTabs" variant="pill" />
+    </div>
     <a-table :data-source="filteredOrders" :columns="cols" row-key="orderNo" :loading="loading" :scroll="{ x: 1020 }">
       <template #bodyCell="{ column, record }">
-        <template v-if="column.key === 'total'">¥{{ record.totalAmount }}</template>
+        <template v-if="column.key === 'total'">
+          ¥{{ record.totalAmount }}
+          <!-- 优惠构成回显：促销/会员取优快照 + 券抵扣单列（promoTitle/promoSource 由下单落库） -->
+          <div v-if="Number(record.promoDiscount) > 0" class="disc-line">
+            {{ record.promoSource === 'member' ? '会员折扣' : (record.promoTitle || '促销优惠') }}
+            <em>-¥{{ record.promoDiscount }}</em>
+          </div>
+          <div v-if="Number(record.couponDiscount) > 0" class="disc-line">券抵扣 <em>-¥{{ record.couponDiscount }}</em></div>
+        </template>
         <template v-else-if="column.key === 'payType'">{{ payTypeText[record.payType] || record.payType || '—' }}</template>
         <template v-else-if="column.key === 'pay'">
           <a-tag :color="record.payStatus === 1 ? 'green' : (record.payStatus === 2 ? 'purple' : 'orange')">
@@ -42,60 +52,111 @@
       <a-button type="primary" @click="$router.push('/mall')">去下单</a-button>
     </a-empty>
 
-    <!-- 支付渠道选择弹窗 -->
-    <a-modal v-model:open="payOpen" :title="`订单支付 · ${current?.orderNo}`" :footer="null">
-      <div class="pay-amount">应付 <b>¥{{ current?.totalAmount }}</b></div>
-      <div class="pay-list">
-        <!-- 钱包余额支付 -->
-        <div class="pay-item" :class="{ disabled: walletInsufficient }" @click="payWith('wallet')">
-          <div class="pay-main">
-            <div class="pay-name"><Wallet :size="15" class="inline-block mr-1.5 align-middle text-amber-500" /> 钱包余额</div>
-            <div class="pay-sub">可用 ¥{{ walletBalance.toFixed(2) }}
-              <span v-if="walletInsufficient" class="pay-warn">（余额不足，<a @click.stop="$router.push('/wallet'); payOpen = false">去充值</a>）</span>
-            </div>
+    <!-- 支付渠道选择弹窗 (21st.dev Bento Grid 多渠道收银台) -->
+    <a-modal
+      v-model:open="payOpen"
+      :title="`收银结算 · 订单号 ${current?.orderNo}`"
+      width="680px"
+      :footer="null"
+      destroy-on-close
+    >
+      <div class="pay-modal-body">
+        <div class="pay-amount-banner">
+          <div class="banner-left">
+            <span class="banner-label">待支付订单实付金额</span>
+            <div class="banner-amt">¥<b>{{ current?.totalAmount }}</b></div>
           </div>
-          <a-tag v-if="walletInsufficient" color="red">不足</a-tag>
-          <a-tag v-else color="blue">推荐</a-tag>
-        </div>
-        <!-- 模拟渠道（mock 模式默认） -->
-        <div class="pay-item" @click="payWith('mock')">
-          <div class="pay-main">
-            <div class="pay-name"><FlaskConical :size="15" class="inline-block mr-1.5 align-middle text-sky-500" /> 模拟网关</div>
-            <div class="pay-sub">演示环境模拟支付，即时到账</div>
+          <div class="banner-right">
+            <span class="banner-badge">
+              <ShieldCheck :size="13" class="inline mr-1" /> 金融级 SSL 传输防护
+            </span>
           </div>
         </div>
-        <!-- 真实渠道（未配置凭证时禁用提示） -->
-        <div class="pay-item disabled" @click="realChannelTip('微信')">
-          <div class="pay-main">
-            <div class="pay-name"><Smartphone :size="15" class="inline-block mr-1.5 align-middle text-emerald-500" /> 微信支付</div>
-            <div class="pay-sub">扫码支付（需配置商户凭证后启用）</div>
-          </div>
-          <a-tag>未启用</a-tag>
+
+        <!-- 21st.dev 风格支付方式多通道选择器 -->
+        <div class="selector-container">
+          <div class="selector-title">选择支付方式（支持 7 种主流与国际结算）</div>
+          <PaymentMethodSelector
+            v-model="selectedPayMethod"
+            :wallet-balance="walletBalance"
+            :order-amount="Number(current?.totalAmount || 0)"
+          />
         </div>
-        <div class="pay-item disabled" @click="realChannelTip('支付宝')">
-          <div class="pay-main">
-            <div class="pay-name"><Globe :size="15" class="inline-block mr-1.5 align-middle text-blue-500" /> 支付宝</div>
-            <div class="pay-sub">电脑网站支付（需配置应用凭证后启用）</div>
+
+        <!-- Stripe 虚拟卡槽 -->
+        <div v-if="selectedPayMethod === 'stripe'" class="extra-panel">
+          <StripeCardElement />
+        </div>
+
+        <!-- 对公收款账号提示 -->
+        <div v-else-if="selectedPayMethod === 'corporate'" class="extra-panel">
+          <MerchantCorporateBankCard
+            :bank-info="{
+              bankName: '中国工商银行股份有限公司深圳科技园支行',
+              bankAccountMasked: '6212 26****** 8899',
+              legalPersonMasked: '深圳市蓝链工业互联股份有限公司',
+              taxRegNo: '91440300MA5XXXXXX',
+              verified: true
+            }"
+          />
+        </div>
+
+        <!-- 支付宝/微信说明 -->
+        <div v-else-if="selectedPayMethod === 'alipay' || selectedPayMethod === 'wechat'" class="gateway-preview-panel">
+          <QrCode :size="20" class="text-sky-500 mr-2 flex-shrink-0" />
+          <div class="gateway-tip">
+            <strong>{{ selectedPayMethod === 'alipay' ? '支付宝' : '微信支付' }}安全网关直连</strong>
+            <p>点击确认支付后将唤起{{ selectedPayMethod === 'alipay' ? '支付宝收银台' : '微信扫码二维码' }}完成交易核验。</p>
           </div>
-          <a-tag>未启用</a-tag>
+        </div>
+
+        <!-- 苹果/谷歌支付说明 -->
+        <div v-else-if="selectedPayMethod === 'apple_pay' || selectedPayMethod === 'google_pay'" class="gateway-preview-panel">
+          <Smartphone :size="20" class="text-indigo-500 mr-2 flex-shrink-0" />
+          <div class="gateway-tip">
+            <strong>{{ selectedPayMethod === 'apple_pay' ? 'Apple Pay 极速支付' : 'Google Pay 极速支付' }}</strong>
+            <p>由 Stripe Express Checkout 引擎驱动，支持原生生物识别（Touch ID / Face ID）秒级完成扣款。</p>
+          </div>
+        </div>
+
+        <!-- 确认支付大按钮 -->
+        <div class="pay-submit-bar">
+          <button
+            type="button"
+            class="pay-confirm-btn"
+            :disabled="paying || (selectedPayMethod === 'balance' && walletInsufficient)"
+            @click="payWith(selectedPayMethod)"
+          >
+            <span v-if="paying">正在建立安全加密支付通道...</span>
+            <span v-else-if="selectedPayMethod === 'balance' && walletInsufficient">钱包余额不足，请更换支付方式</span>
+            <span v-else>立即使用 {{ payMethodDisplayName(selectedPayMethod) }} 支付 ¥{{ current?.totalAmount }}</span>
+          </button>
         </div>
       </div>
-      <div class="pay-note">支付遇到问题？可前往「我的钱包」充值后使用余额支付。</div>
     </a-modal>
 
     <!-- 申请退款弹窗 -->
-    <a-modal v-model:open="refundOpen" :title="`申请退款 · ${refundTarget?.orderNo}`" ok-text="提交申请" cancel-text="取消"
+    <a-modal v-model:open="refundOpen" :title="`${t('申请退款')} · ${refundTarget?.orderNo}`" :ok-text="t('提交申请')" :cancel-text="t('取消')"
              :confirm-loading="refunding" @ok="doRefund">
       <a-form layout="vertical">
-        <a-form-item label="订单金额"><b>¥{{ refundTarget?.totalAmount }}</b>
-          <span v-if="refundTarget?.refundAmount" style="color:#999">（已退 ¥{{ refundTarget.refundAmount }}）</span>
+        <a-form-item :label="t('订单金额')"><b>¥{{ refundTarget?.totalAmount }}</b>
+          <span v-if="refundTarget?.refundAmount" class="refund-refunded-hint">（{{ t('已退金额') }} ¥{{ refundTarget.refundAmount }}）</span>
         </a-form-item>
-        <a-form-item label="退款原因（必填，将提交平台审核）" required>
+        <a-form-item :label="t('退款原因（必填，将提交平台审核）')" required>
           <a-textarea v-model:value="refundReason" :rows="3" maxlength="200" show-count
-                      placeholder="例如：商品缺货 / 与描述不符 / 沟通后协商退款" />
+                      :placeholder="t('例如：商品缺货 / 与描述不符 / 沟通后协商退款')" />
         </a-form-item>
-        <a-alert type="info" show-icon message="申请后由平台审核处理"
-                 description="申请按可退余额全额提交，平台审核通过后资金原路退回；若被驳回会展示驳回原因，你可再次申请。" />
+        <a-form-item :label="t('退款凭证（至少上传 1 项）')" required>
+          <RefundEvidenceUpload ref="evidenceUploadRef" v-model:evidences="refundEvidences" @status="onEvidenceStatus" />
+          <div class="refund-evidence-hints">
+            <p>{{ t('若已与商家沟通协商，请上传聊天记录截图或协商说明文件') }}</p>
+            <p>{{ t('图片 JPG/PNG/WEBP/GIF 单张 ≤8MB；文件 PDF ≤20MB、TXT/CSV ≤2MB') }}</p>
+            <p>{{ t('Word/压缩包等将以 .bin 附件提交，审核端可下载查看') }}</p>
+            <p>{{ t('视频 MP4/MOV 单个 ≤20MB') }}</p>
+          </div>
+        </a-form-item>
+        <a-alert type="info" show-icon :message="t('申请后由平台审核处理')"
+                 :description="t('申请按可退余额全额提交，平台审核通过后资金原路退回；若被驳回会展示驳回原因，你可再次申请。')" />
       </a-form>
     </a-modal>
   </div>
@@ -104,9 +165,19 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
-import { Wallet, FlaskConical, Smartphone, Globe } from 'lucide-vue-next'
+import {
+  Wallet, FlaskConical, Smartphone, Globe, ShieldCheck,
+  QrCode, CreditCard, Building2, CheckCircle2
+} from 'lucide-vue-next'
 import { orderApi, paymentApi, walletApi, trafficApi } from '../api'
+import { t } from '../i18n'
+import { serializeEvidences } from '../utils/refundEvidence'
+import RefundEvidenceUpload from '../components/refund/RefundEvidenceUpload.vue'
 import { useUserStore } from '../store/user'
+import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
+import MerchantCorporateBankCard from '../components/payment/MerchantCorporateBankCard.vue'
+import StripeCardElement from '../components/payment/StripeCardElement.vue'
+import FluidAnimatedTabs from '../components/ui/FluidAnimatedTabs.vue'
 
 const user = useUserStore()
 // 仅真实商户显示（admin 的 admin:all 是通配权限，会误命中，需排除）
@@ -115,10 +186,41 @@ const isMerchant = computed(() => !user.isAdmin &&
 const orders = ref([])
 const loading = ref(false)
 const filter = ref('all')
-const filteredOrders = computed(() => orders.value.filter(o => filter.value === 'all' ? true : filter.value === 'unpaid' ? Number(o.payStatus) !== 1 && Number(o.payStatus) !== 2 && Number(o.orderStatus) !== 3 : filter.value === 'paid' ? Number(o.payStatus) === 1 && Number(o.orderStatus) !== 2 && Number(o.orderStatus) !== 3 && Number(o.orderStatus) !== 4 : filter.value === 'done' ? Number(o.orderStatus) === 2 : Number(o.orderStatus) === 3 || Number(o.orderStatus) === 4))
-const statusMap = { 0: '待发货', 1: '已发货', 2: '已完成', 3: '已取消', 4: '已退款' }
-const channelText = { wallet: '钱包', mock: '模拟', wechat: '微信', alipay: '支付宝' }
-const payTypeText = { corporate: '对公转账', balance: '企业钱包', term: '企业账期' }
+const orderTabs = [
+  { value: 'all', label: '全部' },
+  { value: 'unpaid', label: '待支付' },
+  { value: 'paid', label: '已支付' },
+  { value: 'done', label: '已完成' },
+  { value: 'closed', label: '已关闭' }
+]
+const filteredOrders = computed(() => orders.value.filter(o => {
+  if (filter.value === 'all') return true
+  if (filter.value === 'unpaid') return Number(o.payStatus) !== 1 && Number(o.payStatus) !== 2 && Number(o.orderStatus) !== 3 && Number(o.orderStatus) !== 5
+  if (filter.value === 'paid') return Number(o.payStatus) === 1 && Number(o.orderStatus) !== 2 && Number(o.orderStatus) !== 3 && Number(o.orderStatus) !== 5
+  if (filter.value === 'done') return Number(o.orderStatus) === 2
+  return Number(o.orderStatus) === 3 || Number(o.orderStatus) === 5 || Number(o.payStatus) === 2
+}))
+const statusMap = { 0: '待发货', 1: '已发货', 2: '已完成', 3: '已取消', 4: '部分发货', 5: '已关闭' }
+const channelText = {
+  wallet: '钱包',
+  mock: '模拟',
+  wechat: '微信',
+  alipay: '支付宝',
+  stripe: 'Stripe 国际卡',
+  apple_pay: 'Apple Pay',
+  google_pay: 'Google Pay',
+  corporate: '企业对公'
+}
+const payTypeText = {
+  corporate: '对公转账',
+  balance: '企业钱包',
+  term: '企业账期',
+  alipay: '支付宝',
+  wechat: '微信支付',
+  stripe: 'Stripe 国际卡',
+  apple_pay: 'Apple Pay',
+  google_pay: 'Google Pay'
+}
 const cols = [
   { title: '订单号', dataIndex: 'orderNo', key: 'orderNo' },
   { title: '金额', key: 'total', width: 120 },
@@ -130,10 +232,26 @@ const cols = [
 
 // ===== 支付弹窗 =====
 const payOpen = ref(false)
+const paying = ref(false)
 const current = ref(null)
+const selectedPayMethod = ref('stripe')
 const walletBalance = ref(0)
 const walletInsufficient = computed(() =>
   !current.value || walletBalance.value < Number(current.value.totalAmount || 0))
+
+function payMethodDisplayName(k) {
+  const map = {
+    stripe: 'Stripe 国际卡',
+    apple_pay: 'Apple Pay',
+    google_pay: 'Google Pay',
+    alipay: '支付宝',
+    wechat: '微信支付',
+    balance: '企业钱包',
+    corporate: '企业对公转账',
+    mock: '模拟网关'
+  }
+  return map[k] || '推荐渠道'
+}
 
 async function load() {
   loading.value = true
@@ -143,6 +261,7 @@ async function load() {
 
 async function openPay(record) {
   current.value = record
+  selectedPayMethod.value = record.payType && record.payType !== 'term' ? record.payType : 'stripe'
   payOpen.value = true
   try {
     const w = await walletApi.my()
@@ -151,18 +270,52 @@ async function openPay(record) {
 }
 
 async function payWith(channel) {
-  if (channel === 'wallet' && walletInsufficient.value) {
-    message.warning('钱包余额不足，请先充值'); return
+  if (channel === 'balance' && walletInsufficient.value) {
+    message.warning('钱包余额不足，请先充值')
+    return
   }
+  paying.value = true
   try {
-    if (channel === 'wallet') {
+    if (channel === 'balance' || channel === 'wallet') {
       const vo = await paymentApi.create(current.value.orderNo, 'wallet')
       if (vo?.payInfo?.paid) {
         message.success(`支付成功，钱包余额 ¥${Number(vo.payInfo.balance).toFixed(2)}`)
         trackPay()
       }
+    } else if (['stripe', 'apple_pay', 'google_pay'].includes(channel)) {
+      const vo = await paymentApi.create(current.value.orderNo, 'stripe')
+      if (vo?.mock) {
+        await paymentApi.mockConfirm(current.value.orderNo)
+        message.success('Stripe 支付成功（模拟环境）')
+      } else {
+        message.success('Stripe 支付预授权已建立')
+      }
+      trackPay()
+    } else if (channel === 'alipay') {
+      const vo = await paymentApi.create(current.value.orderNo, 'alipay')
+      if (vo?.mock) {
+        await paymentApi.mockConfirm(current.value.orderNo)
+        message.success('支付宝支付成功（模拟环境）')
+      } else if (vo?.payInfo?.form) {
+        const div = document.createElement('div')
+        div.innerHTML = vo.payInfo.form
+        document.body.appendChild(div)
+        document.forms[0]?.submit()
+        return
+      }
+      trackPay()
+    } else if (channel === 'wechat') {
+      const vo = await paymentApi.create(current.value.orderNo, 'wechat')
+      if (vo?.mock) {
+        await paymentApi.mockConfirm(current.value.orderNo)
+        message.success('微信支付成功（模拟环境）')
+      } else {
+        message.success('请使用微信扫码完成支付')
+      }
+      trackPay()
+    } else if (channel === 'corporate') {
+      message.info(`对公电汇订单已就绪，请向平台对公账户转账并备注订单号 ${current.value.orderNo}`)
     } else {
-      // mock 渠道：create 生成模拟令牌后确认支付
       const vo = await paymentApi.create(current.value.orderNo, 'mock')
       if (vo?.mock) await paymentApi.mockConfirm(current.value.orderNo)
       message.success('支付成功')
@@ -171,7 +324,11 @@ async function payWith(channel) {
     payOpen.value = false
     user.fetchMe()
     await load()
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) {
+    /* 拦截器已提示 */
+  } finally {
+    paying.value = false
+  }
 }
 
 /** 支付成功埋点：订单列表无商户归属信息，PAY 作为平台级事件上报（后端以 0 兜底），失败静默 */
@@ -206,18 +363,32 @@ const refundOpen = ref(false)
 const refunding = ref(false)
 const refundTarget = ref(null)
 const refundReason = ref('')
-/** 可申请退款：已支付、非账期、订单未结束，且无进行中/已完成退款 */
+const refundEvidences = ref([])
+const evidenceUploadRef = ref(null)
+const evidenceStatus = ref({ uploading: 0, error: 0, done: 0 })
+function onEvidenceStatus(s) { evidenceStatus.value = s }
+/** 可申请退款：已支付、订单未结束，且无进行中/已完成退款 */
 function canRefund(r) {
-  return Number(r.payStatus) === 1 && r.payType !== 'term'
-    && ![3, 4].includes(Number(r.orderStatus))
-    && !['applied', 'processing', 'success'].includes(r.refundStatus || 'none')
+  return Number(r.payStatus) === 1
+    && ![3, 5].includes(Number(r.orderStatus))
+    && !['applied', 'merchant_approved', 'processing', 'success'].includes(r.refundStatus || 'none')
 }
-function openRefund(r) { refundTarget.value = r; refundReason.value = ''; refundOpen.value = true }
+function openRefund(r) {
+  refundTarget.value = r
+  refundReason.value = ''
+  refundEvidences.value = []
+  evidenceUploadRef.value?.clear?.()
+  refundOpen.value = true
+}
 async function doRefund() {
-  if (!refundReason.value.trim()) { message.warning('请填写退款原因'); return }
+  if (!refundReason.value.trim()) { message.warning(t('请填写退款原因')); return }
+  // 证据 ≥1 必填（体验层，与后端 RefundEvidenceValidator 双层拦截）
+  if (!refundEvidences.value.length) { message.warning(t('请至少上传 1 项退款凭证')); return }
+  if (evidenceStatus.value.uploading > 0) { message.warning(t('凭证上传中，请稍候')); return }
+  if (evidenceStatus.value.error > 0) { message.warning(t('凭证上传失败，请重试')); return }
   refunding.value = true
   try {
-    await orderApi.applyRefund(refundTarget.value.orderNo, refundReason.value.trim())
+    await orderApi.applyRefund(refundTarget.value.orderNo, refundReason.value.trim(), serializeEvidences(refundEvidences.value))
     message.success('退款申请已提交，请等待平台处理')
     refundOpen.value = false
     await load()
@@ -231,20 +402,123 @@ onMounted(load)
 <style scoped>
 .eyebrow{font-size:11px;letter-spacing:.16em;color:var(--ll-primary)}.sub{margin:-10px 0 12px;color:var(--ll-muted)}.merchant-bridge{margin:0 0 14px;border-radius:12px}.order-tabs{margin-bottom:16px}.order-tabs :deep(.ant-radio-button-wrapper){font-size:12px}
 .ch { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }
+/* 优惠构成回显行：金额列下方的小字明细 */
+.disc-line { font-size: 12px; color: #067647; margin-top: 2px; }
+.disc-line em { font-style: normal; font-weight: 600; }
 .rf { font-size: 12px; color: #7c3aed; margin-top: 2px; }
 .rf-wait { color: var(--ll-amber-strong, #b45309); }
 .rf-rej { color: var(--ll-price, #d93025); }
-.pay-amount { font-size: 15px; margin-bottom: 14px; color: var(--ll-gray, #4b5563); }
-.pay-amount b { color: var(--ll-price, #e4393c); font-size: 22px; margin-left: 6px; letter-spacing: -.02em; }
-.pay-list { display: flex; flex-direction: column; gap: 10px; }
-.pay-item { display: flex; align-items: center; justify-content: space-between; gap: 12px;
-            border: 1.5px solid var(--ll-border, #e5e7eb); border-radius: var(--ll-radius-md, 10px); padding: 12px 14px; cursor: pointer;
-            transition: border-color .2s ease, background-color .2s ease, transform .2s var(--ll-ease-out, ease); }
-.pay-item:hover:not(.disabled) { border-color: var(--ll-primary, #1e6eb8); background: rgba(30, 110, 184, .04); transform: translateY(-1px); }
-.pay-item:active:not(.disabled) { transform: scale(0.99); }
-.pay-item.disabled { opacity: .55; cursor: not-allowed; }
-.pay-name { font-weight: 600; }
-.pay-sub { font-size: 12px; color: var(--ll-muted, #64748b); margin-top: 2px; }
-.pay-warn a { color: var(--ll-primary, #1e6eb8); }
-.pay-note { margin-top: 14px; font-size: 12px; color: var(--ll-muted, #64748b); }
+/* 退款凭证区：说明文案小字 + 已退金额回显（颜色走令牌，零硬编码） */
+.refund-evidence-hints { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.refund-evidence-hints p { margin: 0; font-size: 11.5px; line-height: 1.55; color: var(--ll-text-secondary); }
+.refund-refunded-hint { color: var(--ll-text-tertiary); font-size: 12px; }
+.pay-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0;
+}
+.pay-amount-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  padding: 16px 20px;
+  border-radius: 14px;
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+.banner-label {
+  display: block;
+  font-size: 11.5px;
+  color: #94a3b8;
+  letter-spacing: .02em;
+}
+.banner-amt {
+  font-size: 18px;
+  font-weight: 500;
+  color: #38bdf8;
+  margin-top: 2px;
+}
+.banner-amt b {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin-left: 3px;
+  letter-spacing: -.02em;
+}
+.banner-badge {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.selector-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.selector-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.extra-panel {
+  animation: fadeIn .25s ease-out;
+}
+.gateway-preview-panel {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  animation: fadeIn .25s ease-out;
+}
+.gateway-tip strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+.gateway-tip p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+.pay-submit-bar {
+  margin-top: 8px;
+}
+.pay-confirm-btn {
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+  transition: all .2s ease;
+}
+.pay-confirm-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
+}
+.pay-confirm-btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 </style>

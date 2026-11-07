@@ -31,6 +31,12 @@ public class LogisticsProvider {
     private Integer status;
     /** 结算周期 monthly/weekly/realtime */
     private String settleCycle;
+    /** 平均干线履约时效（小时），用于 AI 时效维度推荐（如 24 / 48 / 72） */
+    private Integer avgEtaHours;
+    /** 综合服务信誉得分（0-100），如 98 分 */
+    private Integer serviceScore;
+    /** 历史准时交付率（百分比），如 99.2 */
+    private Double slaRate;
     private Integer sort;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

@@ -16,8 +16,8 @@ public class MerchantApplyDTO {
     private String creditCode;
     @NotBlank(message = "注册类型不能为空")
     private String regType;          // 公司 / 个体工商户
-    @NotNull(message = "注册资本不能为空")
-    private BigDecimal regCapital;   // 单位: 元
+    @NotNull(message = "实缴资本不能为空")
+    private BigDecimal regCapital;   // 实缴资本(单位: 元，准入门槛>=10万元)
     @NotNull(message = "请选择是否有稳定纳税记录")
     private Integer taxStatus;       // 1稳定 0无
     private String joinType = "入驻"; // 加盟/入驻/邀约

@@ -17,6 +17,29 @@
       </a-space>
     </div>
 
+    <!-- 商家咨询：买家 IM 会话列表（回访历史咨询；商户走商户中心客户消息页，不在此显示） -->
+    <template v-if="showChatBlock">
+      <a-divider orientation="left" orientation-margin="0" class="chat-divider">商家咨询</a-divider>
+      <a-spin :spinning="chatLoading">
+        <a-empty v-if="!chatLoading && !chatSessions.length" description="暂无商家咨询记录，可在商品页点击「联系商家」发起" class="empty" />
+        <div v-else class="chat-rows">
+          <button v-for="s in chatSessions" :key="s.sessionId" type="button" class="chat-row" @click="openChat(s)">
+            <span class="chat-avatar">{{ (s.peerName || '商').slice(0, 1) }}</span>
+            <span class="chat-main">
+              <span class="chat-peer">{{ s.peerName || '商家' }}<i class="chat-prod">{{ s.prodTitle }}</i></span>
+              <small class="chat-last">{{ s.lastMsg || '（无消息）' }}</small>
+            </span>
+            <span class="chat-side">
+              <b v-if="s.unreadCount" class="chat-badge">{{ s.unreadCount }}</b>
+              <small class="chat-time">{{ fmt(s.updateTime) }}</small>
+            </span>
+          </button>
+        </div>
+      </a-spin>
+    </template>
+
+    <a-divider v-if="showChatBlock" style="margin: 4px 0 12px">站内消息</a-divider>
+
     <a-spin :spinning="loading">
       <a-empty v-if="!loading && records.length === 0" description="暂无消息" class="empty" />
       <a-list v-else :data-source="records" item-layout="horizontal" class="list">
@@ -66,12 +89,36 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { userApi } from '../../api'
+import { useRouter } from 'vue-router'
+import { userApi, chatApi } from '../../api'
 import { useUserStore } from '../../store/user'
 
 const user = useUserStore()
+const router = useRouter()
+
+// 商家咨询会话（仅非商户角色显示：商户有自己的客户消息页）
+const showChatBlock = computed(() => user.logged && user.user?.roleCode !== 'merchant')
+const chatLoading = ref(false)
+const chatSessions = ref([])
+
+async function loadChatSessions() {
+  if (!showChatBlock.value) return
+  chatLoading.value = true
+  try {
+    const data = await chatApi.sessions()
+    chatSessions.value = Array.isArray(data) ? data : (data?.records || [])
+  } catch (e) { /* 拦截器已提示 */ }
+  chatLoading.value = false
+}
+
+function openChat(s) {
+  router.push('/chat/' + s.sessionId)
+}
+
+// 登录态由 App 级 /auth/me 异步水合：immediate 兼顾已就绪与挂载后才就绪两种时序
+watch(showChatBlock, (v) => { if (v) loadChatSessions() }, { immediate: true })
 
 const loading = ref(false)
 const readingAll = ref(false)
@@ -140,7 +187,9 @@ async function readAll() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+})
 </script>
 
 <style scoped>
@@ -158,4 +207,23 @@ onMounted(load)
 .meta .no { color: var(--ll-muted); }
 .read-btn { padding: 0 4px; height: auto; }
 .pager { display: flex; justify-content: center; padding: 8px 0; }
+
+/* 商家咨询会话行（与 CenterChat 列表风格一致的轻量版） */
+.chat-divider { margin: 4px 0 10px; }
+.chat-rows { display: flex; flex-direction: column; }
+.chat-row { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent;
+  font: inherit; text-align: left; padding: 11px 8px; cursor: pointer; border-bottom: 1px solid var(--ll-border, #e5e2da);
+  border-radius: 8px; transition: background .15s ease; }
+.chat-row:hover { background: var(--ll-page, #f5f6f8); }
+.chat-avatar { width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  background: linear-gradient(135deg, #EAF5FE, #D6ECFA); color: #fff; font-weight: 700; font-size: 14px; }
+.chat-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-peer { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 650; color: var(--ll-ink); }
+.chat-prod { font-style: normal; font-weight: 400; font-size: 11px; color: var(--ll-gray2, #98a2b3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-last { font-size: 12px; color: var(--ll-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.chat-badge { font-size: 10.5px; line-height: 1; color: #fff; background: var(--red, #d93025);
+  border-radius: 999px; padding: 3px 6px; font-weight: 700; }
+.chat-time { font-size: 10px; color: var(--ll-gray2, #98a2b3); }
 </style>

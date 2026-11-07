@@ -19,7 +19,7 @@
         <div class="kpi-value">{{ money(kpis.weekAmount) }}</div>
         <div class="kpi-foot">{{ kpis.weekOrders || 0 }} 笔已支付订单</div>
       </div>
-      <div class="kpi-card" @click="$router.push('/merchant/center/products')">
+      <div class="kpi-card" @click="$router.push('/merchant/center/products?status=1&reviewStatus=1')">
         <div class="kpi-top"><span>在售商品</span><span class="kpi-ico"><LayoutGrid :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.onSaleProducts || 0 }}<em>/ {{ kpis.totalProducts || 0 }}</em></div>
         <div class="kpi-foot">{{ kpis.reviewingProducts ? `另有 ${kpis.reviewingProducts} 件审核中` : '全部商品经营正常' }}</div>
@@ -32,9 +32,9 @@
       <div class="kpi-card" :class="{ warn: kpis.refundPending }" @click="$router.push('/merchant/center/orders?tab=refund')">
         <div class="kpi-top"><span>退款申请</span><span class="kpi-ico"><RotateCcw :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.refundPending || 0 }}</div>
-        <div class="kpi-foot">{{ kpis.refundPending ? '待平台处理，可查看详情' : '暂无退款申请' }}</div>
+        <div class="kpi-foot">{{ kpis.refundPending ? '待商户初审，点击立即处理' : '暂无退款申请' }}</div>
       </div>
-      <div class="kpi-card" @click="$router.push('/merchant/center/traffic')">
+      <div class="kpi-card" @click="$router.push('/merchant/center/orders?tab=shipped')">
         <div class="kpi-top"><span>在途订单</span><span class="kpi-ico"><Compass :size="18" /></span></div>
         <div class="kpi-value">{{ kpis.shipping || 0 }}</div>
         <div class="kpi-foot">已发货运输中</div>
@@ -47,7 +47,7 @@
         <template #title>
           <div class="panel-title">
             <div><strong>销售趋势</strong><small>近 7 日支付金额与订单走势</small></div>
-            <a-button type="link" @click="$router.push('/merchant/center/traffic')">流量管理 →</a-button>
+            <a-button type="link" @click="$router.push('/merchant/center/finance')">资金明细 →</a-button>
           </div>
         </template>
         <div v-if="hasTrend" class="chart">
@@ -96,8 +96,8 @@
           </template>
           <template v-else-if="column.key === 'goods'">
             <div class="goods-cell">
-              <img v-if="record.myItems?.[0]?.coverUrl" :src="record.myItems[0].coverUrl" alt="" loading="lazy" />
-              <span v-else class="goods-fallback">{{ (record.myItems?.[0]?.prodName || '商').slice(0, 1) }}</span>
+              <img v-if="record.myItems?.[0]?.coverUrl" :src="resolveStorageUrl(record.myItems[0].coverUrl)" alt="" loading="lazy" />
+              <span v-else class="goods-fallback"><Package :size="16" class="text-slate-400" /></span>
               <div>
                 <b>{{ record.myItems?.[0]?.prodName || '—' }}</b>
                 <small v-if="(record.myItems?.length || 0) > 1">等 {{ record.myItems.length }} 种商品</small>
@@ -114,7 +114,7 @@
           <template v-else-if="column.key === 'op'">
             <a-button type="link" size="small"
                       @click="$router.push(`/merchant/center/orders/${record.order.orderNo}`)">
-              {{ record.order.orderStatus === 0 && Number(record.order.payStatus) === 1 ? '去发货' : '查看详情' }}
+              {{ (record.order.orderStatus === 0 || record.order.orderStatus === 4) && Number(record.order.payStatus) === 1 ? '去发货' : '查看详情' }}
             </a-button>
           </template>
         </template>
@@ -142,6 +142,7 @@ import {
 } from 'lucide-vue-next'
 import { merchantCenterApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import ProductPublishForm from '../../components/merchant/ProductPublishForm.vue'
 
 const aEmpty = Empty

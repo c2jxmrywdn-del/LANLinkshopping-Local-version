@@ -44,7 +44,10 @@
         </div>
 
         <div class="pp-card pp-advice" v-if="analysis">
-          <div class="pp-card-head"><b>智能调价建议</b></div>
+          <div class="pp-card-head">
+            <b>智能调价建议</b>
+            <a-button type="link" size="small" @click="$router.push(`/merchant/center/products/${selectedProd}/edit`)">去修改商品价格 →</a-button>
+          </div>
           <div class="advice-badge" :class="'lv-' + analysis.level">{{ levelText(analysis.level) }}</div>
           <p class="advice-text">{{ analysis.advice }}</p>
           <div class="advice-meta" v-if="analysis.changeCount !== undefined">
@@ -97,7 +100,10 @@
             <a-tag v-else color="default">正常</a-tag>
           </template>
           <template v-else-if="column.key === 'action'">
-            <a-button type="link" size="small" @click="selectProd(record.prodId)">分析</a-button>
+            <a-space :size="4">
+              <a-button type="link" size="small" @click="selectProd(record.prodId)">分析</a-button>
+              <a-button type="link" size="small" @click="$router.push(`/merchant/center/products/${record.prodId}/edit`)">改价</a-button>
+            </a-space>
           </template>
         </template>
       </a-table>
@@ -130,19 +136,22 @@ const columns = [
   { key: 'changeCount30d', title: '30日调价', width: 90 },
   { key: 'alertCount', title: '预警订阅', width: 90 },
   { key: 'anomaly', title: '异动', width: 90 },
-  { key: 'action', title: '', width: 70 }
+  { key: 'action', title: '操作', width: 110 }
 ]
 
 const totalChanges = computed(() => overview.value.reduce((s, r) => s + Number(r.changeCount30d || 0), 0))
 const anomalyCount = computed(() => overview.value.filter(r => r.anomaly).length)
 const totalAlerts = computed(() => overview.value.reduce((s, r) => s + Number(r.alertCount || 0), 0))
 
+// 本地日期（toISOString 是 UTC，北京时间 0-8 点会落到前一天）
+const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
 const chartSeries = computed(() => {
   if (!trend.value) return []
   const product = (trend.value.series || []).map(x => ({ label: x.day, value: Number(x.price) }))
   // 补当前价作为尾点，走势延伸到"今天"
   if (trend.value.product?.price && product.length) {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDate()
     if (!product.some(p => p.label === today)) {
       product.push({ label: today, value: Number(trend.value.product.price) })
     }

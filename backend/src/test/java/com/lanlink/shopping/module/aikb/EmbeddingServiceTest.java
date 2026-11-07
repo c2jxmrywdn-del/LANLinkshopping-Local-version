@@ -1,14 +1,20 @@
 package com.lanlink.shopping.module.aikb;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -133,5 +139,41 @@ class EmbeddingServiceTest {
         assertNull(svc.chatText("你是助手", "你好"));
         assertNull(svc.getLastChatBackend());
         assertEquals("qwen2.5-7b", svc.getGatewayTextModel());
+    }
+
+    /**
+     * 文本入口必须显式关闭网关侧 RAG：网关默认 use_kb=true 会把调用方的 system 当客服问题
+     * 再检索一次并改写提示词，意图分类因此收不到 {"intent": ...}，本地 7B 分支静默失效。
+     */
+    @Test
+    void gatewayTextChatDisablesServerSideKbRetrieval() throws Exception {
+        AtomicReference<String> captured = new AtomicReference<>("");
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            captured.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] out = ("{\"choices\":[{\"message\":{\"role\":\"assistant\","
+                    + "\"content\":\"{\\\"intent\\\": \\\"cart_order\\\"}\"}}]}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, out.length);
+            exchange.getResponseBody().write(out);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String base = "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+            EmbeddingService svc = new EmbeddingService(DEAD, "nomic-embed-text", "qwen2.5:7b",
+                    "qwen2.5:0.5b", base, "test-key", "qwen2.5-vl", "qwen2.5-7b", null);
+            assertEquals("{\"intent\": \"cart_order\"}", svc.chatText("你是意图分类器", "单子没动静"));
+
+            JsonNode body = new ObjectMapper().readTree(captured.get());
+            assertFalse(body.path("use_kb").asBoolean(true),
+                    "chatText 必须下发 use_kb=false，否则网关会改写提示词做 RAG 问答");
+            assertEquals("qwen2.5-7b", body.path("model").asText());
+            assertEquals("你是意图分类器", body.path("messages").get(0).path("content").asText(),
+                    "不得篡改调用方自带的 system 提示词");
+        } finally {
+            server.stop(0);
+        }
     }
 }

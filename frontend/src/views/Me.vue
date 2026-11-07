@@ -41,6 +41,17 @@
                   <div class="id-bar"><div class="id-bar-in" :style="{ width: pct }"></div></div>
                 </div>
               </template>
+              <!-- 入口 4（设计稿 §2）：订阅转化卡（常驻，非弹窗不频控）；身份 VIP 已达标未订阅时切换措辞（双口径整合说明位）；已订阅自动隐藏 -->
+              <div v-if="membership.checked && !membership.hasActiveSub" class="sub-nudge" role="link" tabindex="0"
+                   @click="$router.push('/membership')" @keydown.enter="$router.push('/membership')">
+                <span class="sub-nudge-txt">
+                  <Crown :size="13" :stroke-width="2" aria-hidden="true" />
+                  {{ user.isVip ? '开通会员订阅，解锁等级折扣' : '开通订阅解锁等级权益' }}
+                </span>
+                <span v-if="membership.level?.levelName" class="sub-nudge-meta">
+                  当前等级 {{ membership.level.levelName }}<template v-if="membership.hasDiscount"> · 等级折扣 {{ tierRateText }}</template>
+                </span>
+              </div>
             </div>
             <a-divider style="margin: 12px 0" />
             <div class="quick">{{ t('acct.card.quick') }}</div>
@@ -50,6 +61,9 @@
               <a-button block class="touch" @click="$router.push('/wallet')">我的钱包</a-button>
               <a-button block class="touch" @click="$router.push('/membership')">会员中心</a-button>
               <a-button block class="touch" @click="$router.push('/activity')">活动中心</a-button>
+              <a-button block class="touch" @click="$router.push('/coupons')">领券中心</a-button>
+              <a-button block class="touch" @click="$router.push('/tasks')">任务中心</a-button>
+              <a-button block class="touch" @click="$router.push('/venue')">大促会场</a-button>
               <!-- 已入驻商户不再显示入驻入口（功能已迁移至商户中心） -->
               <a-button v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" block class="touch" @click="$router.push('/merchant/center')">商户中心</a-button>
               <a-button v-else-if="!user.isMerchant" block class="touch" @click="$router.push('/merchant')">{{ t('acct.card.merchant') }}</a-button>
@@ -114,6 +128,8 @@ import SettingsPanel from '../components/account/SettingsPanel.vue'
 import { useProfileStore } from '../store/profile'
 import { useSettingsStore } from '../store/settings'
 import { useUserStore } from '../store/user'
+import { useMembershipStore } from '../store/membership'
+import { Crown } from 'lucide-vue-next'
 import { userApi } from '../api'
 import { t } from '../i18n'
 import { idbDel } from '../utils/idb'
@@ -123,6 +139,13 @@ const route = useRoute()
 const profile = useProfileStore()
 const settings = useSettingsStore()
 const user = useUserStore()
+const membership = useMembershipStore()
+
+// 入口 4（设计稿 §2）：订阅转化卡（常驻）的等级折扣预览文案；身份 VIP 已达标未订阅时主文案切「开通会员订阅」
+const tierRateText = computed(() => {
+  const r = membership.discountRate
+  return r >= 1 ? '无折扣' : (r * 10).toFixed(1) + ' 折'
+})
 
 const VALID_TABS = ['profile', 'messages', 'join', 'address', 'loginlog', 'settings']
 const activeTab = ref(VALID_TABS.includes(route.query.tab) ? route.query.tab : 'profile')
@@ -198,6 +221,7 @@ function reload() {
 }
 
 onMounted(reload)
+onMounted(() => { membership.ensure() })
 </script>
 
 <style scoped>
@@ -212,6 +236,12 @@ onMounted(reload)
 .id-name { font-size: 15px; font-weight: 700; color: var(--ll-ink); }
 .id-scope { font-size: 12px; color: var(--ll-gray, #4b5563); margin-top: 2px; line-height: 1.6; }
 .id-vip-progress { margin-top: 8px; font-size: 12px; color: #b45309; }
+/* 入口 4：订阅转化卡（token 化，无新色值） */
+.sub-nudge { margin-top: 10px; padding: 10px 12px; border-radius: var(--ll-radius-md); background: var(--ll-surface-inset); cursor: pointer; display: flex; flex-direction: column; gap: 4px; transition: background var(--ll-transition-fast) ease; }
+.sub-nudge:hover { background: var(--ll-surface-overlay); }
+.sub-nudge:focus-visible { outline: none; box-shadow: var(--ll-focus-ring); }
+.sub-nudge-txt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ll-primary); }
+.sub-nudge-meta { font-size: 12px; color: var(--ll-slate-muted); font-variant-numeric: tabular-nums; }
 .id-bar { height: 6px; border-radius: 3px; background: #e5e7eb; margin-top: 4px; overflow: hidden; }
 .id-bar-in { height: 100%; border-radius: 3px; background: linear-gradient(90deg, #b45309, #f59e0b); }
 .id-badge { display: inline-block; font-size: 10px; font-weight: 700; line-height: 1;

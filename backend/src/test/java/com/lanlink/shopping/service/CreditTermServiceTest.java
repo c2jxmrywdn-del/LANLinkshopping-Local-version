@@ -86,7 +86,7 @@ class CreditTermServiceTest {
         r.setAccountId(1L);
         r.setUserId(7L);
         r.setRequestedLimit(new BigDecimal("200000"));
-        r.setTermDays(60);
+        r.setTermDays(10);
         r.setStatus(status);
         return r;
     }
@@ -95,27 +95,27 @@ class CreditTermServiceTest {
 
     @Test
     void applyAdjustmentRejectedWhenAccountNotActive() {
-        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("PENDING", "0", "0", 30));
+        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("PENDING", "0", "0", 7));
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.applyAdjustment(7L, new BigDecimal("100000"), 60, "备货"));
+                () -> service.applyAdjustment(7L, new BigDecimal("100000"), 10, "备货"));
         assertTrue(ex.getMessage().contains("生效"));
         verify(adjustMapper, never()).insert(any(CreditAdjustRequest.class));
     }
 
     @Test
     void applyAdjustmentRejectedWhenPendingExists() {
-        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("ACTIVE", "100000", "20000", 30));
+        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("ACTIVE", "100000", "20000", 7));
         when(adjustMapper.selectPendingByAccount(1L)).thenReturn(adjustRequest("PENDING"));
         BusinessException ex = assertThrows(BusinessException.class,
-                () -> service.applyAdjustment(7L, new BigDecimal("150000"), 60, "备货"));
+                () -> service.applyAdjustment(7L, new BigDecimal("150000"), 10, "备货"));
         assertTrue(ex.getMessage().contains("待审核"));
     }
 
     @Test
     void applyAdjustmentInsertsAndNotifies() {
-        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("ACTIVE", "100000", "20000", 30));
+        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("ACTIVE", "100000", "20000", 7));
         when(adjustMapper.selectPendingByAccount(1L)).thenReturn(null);
-        CreditAdjustRequest result = service.applyAdjustment(7L, new BigDecimal("150000"), 60, "备货");
+        CreditAdjustRequest result = service.applyAdjustment(7L, new BigDecimal("150000"), 10, "备货");
         assertEquals("PENDING", result.getStatus());
         assertEquals(new BigDecimal("150000"), result.getRequestedLimit());
         verify(adjustMapper).insert(result);
@@ -135,19 +135,19 @@ class CreditTermServiceTest {
     @Test
     void reviewAdjustmentApprovedRecalculatesAvailableWithUsedLimit() {
         CreditAdjustRequest preview = adjustRequest("PENDING");
-        CreditAccount a = account("ACTIVE", "100000", "30000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "30000", 7);
         when(adjustMapper.selectById(9L)).thenReturn(preview);
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
         when(adjustMapper.selectByIdForUpdate(9L)).thenReturn(preview);
         when(adjustMapper.updateById(preview)).thenReturn(1);
         when(accountMapper.updateById(a)).thenReturn(1);
 
-        CreditAdjustRequest result = service.reviewAdjustment(9L, "APPROVED", new BigDecimal("250000"), 90, "同意");
+        CreditAdjustRequest result = service.reviewAdjustment(9L, "APPROVED", new BigDecimal("250000"), 15, "同意");
 
         assertEquals("APPROVED", result.getStatus());
         assertEquals(new BigDecimal("250000"), a.getCreditLimit());
         assertEquals(new BigDecimal("220000"), a.getAvailableLimit());
-        assertEquals(90, a.getTermDays());
+        assertEquals(15, a.getTermDays());
         assertEquals(new BigDecimal("250000"), preview.getApprovedLimit());
         verify(accountMapper).updateById(a);
     }
@@ -155,7 +155,7 @@ class CreditTermServiceTest {
     @Test
     void reviewAdjustmentRejectedLeavesCreditUnchanged() {
         CreditAdjustRequest preview = adjustRequest("PENDING");
-        CreditAccount a = account("ACTIVE", "100000", "30000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "30000", 7);
         when(adjustMapper.selectById(9L)).thenReturn(preview);
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
         when(adjustMapper.selectByIdForUpdate(9L)).thenReturn(preview);
@@ -170,17 +170,53 @@ class CreditTermServiceTest {
 
     @Test
     void reviewAccountApprovedWithdrawsPendingAdjustment() {
-        CreditAccount a = account("PENDING", "0", "0", 30);
+        CreditAccount a = account("PENDING", "0", "0", 7);
         a.setRequestedLimit(new BigDecimal("100000"));
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
         when(adjustMapper.withdrawPendingByAccount(eq(1L), anyString())).thenReturn(1);
         when(accountMapper.updateById(a)).thenReturn(1);
 
-        CreditAccount result = service.review(1L, "ACTIVE", new BigDecimal("100000"), 30, "通过");
+        CreditAccount result = service.review(1L, "ACTIVE", new BigDecimal("100000"), 7, "通过");
 
         assertEquals("ACTIVE", result.getStatus());
         assertEquals(new BigDecimal("100000"), result.getAvailableLimit());
+        assertEquals(7, result.getTermDays());
+        assertEquals("第三方机构核准", result.getRiskLevel());
+        assertNotNull(result.getCreditGrantToken());
         verify(adjustMapper).withdrawPendingByAccount(eq(1L), anyString());
+    }
+
+    @Test
+    void validateTermEnforces7To15DaysRange() {
+        when(accountMapper.selectByUserForUpdate(7L)).thenReturn(account("ACTIVE", "100000", "20000", 7));
+        BusinessException ex30 = assertThrows(BusinessException.class,
+                () -> service.applyAdjustment(7L, new BigDecimal("150000"), 30, "超期30天"));
+        assertTrue(ex30.getMessage().contains("7 ~ 15 天"));
+
+        BusinessException ex5 = assertThrows(BusinessException.class,
+                () -> service.applyAdjustment(7L, new BigDecimal("150000"), 5, "过短5天"));
+        assertTrue(ex5.getMessage().contains("7 ~ 15 天"));
+    }
+
+    @Test
+    void calculateInterestTrialComputesAccurately() {
+        // 试算：10000 元，10 天账期，日利率 0.03%，免息宽限期 3 天，逾期 2 天
+        Map<String, Object> trial = service.calculateInterestTrial(
+                new BigDecimal("10000.00"), 10, new BigDecimal("0.000300"), 3, 2);
+
+        assertNotNull(trial);
+        assertEquals(new BigDecimal("10000.00"), trial.get("principal"));
+        assertEquals(10, trial.get("termDays"));
+        assertEquals(3, trial.get("graceDays"));
+        assertEquals(7, trial.get("interestBearingDays"));
+        // 正常利息 = 10000 * 0.000300 * 7 = 21.00
+        assertEquals(new BigDecimal("21.00"), trial.get("normalInterest"));
+        // 逾期罚息 = 10000 * (0.000300 * 1.5) * 2 = 10000 * 0.00045 * 2 = 9.00
+        assertEquals(new BigDecimal("9.00"), trial.get("penaltyInterest"));
+        // 总还款 = 10000 + 21 + 9 = 10030.00
+        assertEquals(new BigDecimal("10030.00"), trial.get("totalRepayment"));
+        // 单利年化 APR = 0.000300 * 360 = 0.1080 (10.80%)
+        assertEquals(new BigDecimal("0.1080"), trial.get("apr"));
     }
 
     // ==================== 还款 / 转账待确认 ====================
@@ -229,7 +265,7 @@ class CreditTermServiceTest {
     @Test
     void walletRepaySettlesBillAndReleasesCredit() {
         CreditBill b = bill("1000", "1000", "UNPAID");
-        CreditAccount a = account("ACTIVE", "100000", "1000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "1000", 7);
         when(billMapper.selectForUpdate(5L, 7L)).thenReturn(b);
         when(repaymentMapper.sumPendingAmount(5L)).thenReturn(new BigDecimal("0.00"));
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
@@ -257,7 +293,7 @@ class CreditTermServiceTest {
         r.setAmount(new BigDecimal("300"));
         r.setStatus("PENDING");
         CreditBill b = bill("1000", "1000", "UNPAID");
-        CreditAccount a = account("ACTIVE", "100000", "1000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "1000", 7);
         when(repaymentMapper.selectById(9L)).thenReturn(r);
         when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
@@ -283,7 +319,7 @@ class CreditTermServiceTest {
         r.setAmount(new BigDecimal("300"));
         r.setStatus("PENDING");
         CreditBill b = bill("1000", "1000", "UNPAID");
-        CreditAccount a = account("ACTIVE", "100000", "1000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "1000", 7);
         when(repaymentMapper.selectById(9L)).thenReturn(r);
         when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
@@ -307,7 +343,7 @@ class CreditTermServiceTest {
         r.setStatus("CONFIRMED");
         when(repaymentMapper.selectById(9L)).thenReturn(r);
         when(billMapper.selectByIdForUpdate(5L)).thenReturn(bill("1000", "700", "UNPAID"));
-        when(accountMapper.selectByIdForUpdate(1L)).thenReturn(account("ACTIVE", "100000", "300", 30));
+        when(accountMapper.selectByIdForUpdate(1L)).thenReturn(account("ACTIVE", "100000", "300", 7));
         when(repaymentMapper.selectByIdForUpdate(9L)).thenReturn(r);
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -318,7 +354,7 @@ class CreditTermServiceTest {
     @Test
     void cancelOrderBillRejectsPendingTransfersAndClearsOutstanding() {
         CreditBill b = bill("1000", "1000", "UNPAID");
-        CreditAccount a = account("ACTIVE", "100000", "1000", 30);
+        CreditAccount a = account("ACTIVE", "100000", "1000", 7);
         when(billMapper.selectOne(any())).thenReturn(b);
         when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
         when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
@@ -332,5 +368,57 @@ class CreditTermServiceTest {
         assertEquals(0, BigDecimal.ZERO.compareTo(b.getOutstandingAmount()));
         verify(repaymentMapper).rejectPendingByBill(eq(5L), anyString());
         verify(accountMapper).release(1L, new BigDecimal("1000"));
+    }
+
+    @Test
+    void refundOrderBillReleasesCreditWhenUnpaid() {
+        CreditBill b = bill("1000", "1000", "UNPAID");
+        CreditAccount a = account("ACTIVE", "100000", "1000", 7);
+        when(billMapper.selectOne(any())).thenReturn(b);
+        when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
+        when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
+        when(accountMapper.release(1L, new BigDecimal("600.00"))).thenReturn(1);
+        when(billMapper.updateById(b)).thenReturn(1);
+
+        BigDecimal refunded = service.refundOrderBill(7L, "ORD-1", new BigDecimal("600.00"));
+
+        assertEquals(0, new BigDecimal("600.00").compareTo(refunded));
+        assertEquals(0, new BigDecimal("400.00").compareTo(b.getOutstandingAmount()));
+        verify(accountMapper).release(1L, new BigDecimal("600.00"));
+        verify(walletService, never()).refundToWallet(anyLong(), any(), anyString(), anyString());
+    }
+
+    @Test
+    void refundOrderBillRefundsToWalletWhenAlreadyPaid() {
+        CreditBill b = bill("1000", "0", "PAID");
+        CreditAccount a = account("ACTIVE", "100000", "0", 7);
+        when(billMapper.selectOne(any())).thenReturn(b);
+        when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
+        when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
+        when(billMapper.updateById(b)).thenReturn(1);
+
+        BigDecimal refunded = service.refundOrderBill(7L, "ORD-1", new BigDecimal("600.00"));
+
+        assertEquals(0, new BigDecimal("600.00").compareTo(refunded));
+        verify(accountMapper, never()).release(anyLong(), any());
+        verify(walletService).refundToWallet(eq(7L), eq(new BigDecimal("600.00")), eq("ORD-1"), anyString());
+    }
+
+    @Test
+    void refundOrderBillPartialCreditPartialWallet() {
+        CreditBill b = bill("1000", "400", "UNPAID");
+        CreditAccount a = account("ACTIVE", "100000", "400", 7);
+        when(billMapper.selectOne(any())).thenReturn(b);
+        when(billMapper.selectByIdForUpdate(5L)).thenReturn(b);
+        when(accountMapper.selectByIdForUpdate(1L)).thenReturn(a);
+        when(accountMapper.release(1L, new BigDecimal("400"))).thenReturn(1);
+        when(billMapper.updateById(b)).thenReturn(1);
+
+        BigDecimal refunded = service.refundOrderBill(7L, "ORD-1", new BigDecimal("700.00"));
+
+        assertEquals(0, new BigDecimal("700.00").compareTo(refunded));
+        assertEquals(0, BigDecimal.ZERO.compareTo(b.getOutstandingAmount()));
+        verify(accountMapper).release(1L, new BigDecimal("400"));
+        verify(walletService).refundToWallet(eq(7L), eq(new BigDecimal("300.00")), eq("ORD-1"), anyString());
     }
 }

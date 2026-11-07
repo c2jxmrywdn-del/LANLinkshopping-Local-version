@@ -16,6 +16,11 @@ server:
 spring:
   profiles:
     default: dev
+  task:
+    scheduling:
+      # 本地知识库 outbox、商品索引、资讯抓取等定时任务并行，避免默认 1 线程互相饿死。
+      pool:
+        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:4}
   config:
     import: optional:classpath:application-payment.yml,optional:classpath:application-social.yml,optional:classpath:application-i18n.yml
   application:
@@ -67,13 +72,42 @@ spring:
           connectiontimeout: 10000
           timeout: 10000
           writetimeout: 10000
+  # RabbitMQ 消息队列（out/storage-mq-plan.md 任务 B2）：订单支付流
+  #   （OrderPaidEvent AFTER_COMMIT 桥接发布，生产端 publisher-confirm；业务异常上抛
+  #   → spring-retry 3 次 1s/2s/4s → 耗尽不回队列（default-requeue-rejected=false）
+  #   → 经 lanlink.dlx 进 q.order.paid.dlq 死信队列）。
+  #   消费通道开关见 app.mq.order-flow（mq/event 互斥，RabbitConfig/监听器侧条件化）。
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    # 三节点集群地址；设置后 host/port 仅作为单机回退占位
+    addresses: ${RABBITMQ_ADDRESSES:${RABBITMQ_HOST:localhost}:${RABBITMQ_PORT:5672}}
+    username: ${RABBITMQ_USER:}
+    password: ${RABBITMQ_PASSWORD:}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 10
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1000
+          multiplier: 2.0
 
 # 只公开健康状态，不公开组件详情、数据库地址或凭据。
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoint:
     health:
       show-details: never
@@ -97,3 +131,87 @@ mybatis-plus:
       logic-delete-field: deleted
       logic-delete-value: 1
       logic-not-delete-value: 0
+
+# 对象存储（out/storage-mq-plan.md 任务 A2 + security-hardening-plan.md P1-1）：库内一律存 object key
+# （如 products/1001.webp），出站由 StorageUrlSerializer/StorageUrls 统一拼公开绝对 URL；
+# enabled=false 全链路回退现状（上传落本地盘 /api/uploads/**，出站原样）。
+# 前缀统一 lanlink.storage：env LANLINK_STORAGE_ENABLED 经宽松绑定直达开关（旧 app.storage 前缀绑不上）。
+# 凭据兜底为空串——缺失或出厂弱默认值在 StorageConfig 创建 S3Client 前 fail-fast，禁止静默用弱凭据启动。
+# MinIO 必须 forcePathStyle(true)（StorageConfig Bean 侧读取）；切腾讯 COS/阿里 OSS 仅改 env。
+lanlink:
+  storage:
+    enabled: ${LANLINK_STORAGE_ENABLED:true}
+    endpoint: ${LANLINK_S3_ENDPOINT:http://localhost:9000}
+    region: ${LANLINK_S3_REGION:us-east-1}
+    access-key: ${LANLINK_S3_ACCESS_KEY:}
+    secret-key: ${LANLINK_S3_SECRET_KEY:}
+    bucket: ${LANLINK_S3_BUCKET:products}
+    path-style: ${LANLINK_S3_PATH_STYLE:true}
+    public-base-url: ${LANLINK_S3_PUBLIC_BASE_URL:http://localhost:9000/products}
+
+# 消息队列消费通道开关（out/storage-mq-plan.md B4）：mq=走 RabbitMQ（默认），event=回退 Spring 事件。
+# 必须用占位符显式桥接：Boot 宽松绑定对带连字符属性走去连字符形式（APP_MQ_ORDERFLOW），
+# LANLINK_MQ_ORDER_FLOW 无法直连 app.mq.order-flow；RabbitConfig/监听器 @ConditionalOnProperty 读此键。
+app:
+  # 超时未支付订单自动关闭（OrderTimeoutCloser）：扫表式，1 分钟一轮、每轮 50 单。
+  # 账期单（pay_type=term）不参与；关单与支付由两条互斥的条件更新裁决，多实例下只有一方成功。
+  order:
+    auto-close-enabled: ${LANLINK_ORDER_AUTOCLOSE_ENABLED:true}
+    auto-close-timeout-minutes: ${LANLINK_ORDER_AUTOCLOSE_MINUTES:30}
+    auto-close-interval-ms: ${LANLINK_ORDER_AUTOCLOSE_INTERVAL_MS:60000}
+    auto-close-initial-delay-ms: ${LANLINK_ORDER_AUTOCLOSE_INITIAL_MS:30000}
+  mq:
+    order-flow: ${LANLINK_MQ_ORDER_FLOW:mq}
+    # notify-flow 只切系统通知侧（NotifyRabbitConfig/Enqueuer/Publisher/Worker/Consumer 与
+    # TechSideEffectListener 互斥）；订单侧走 order-flow，两条链路的交换机与死信互不借用。
+    notify-flow: ${LANLINK_MQ_NOTIFY_FLOW:mq}
+    # attachment-flow 切附件缩略图链路（AttachmentRabbitConfig/Publisher/Consumer/Sweeper 一起条件化）。
+    # 关掉后上传照旧成功，只是不再有预览：thumb_status 停在 PENDING，重新打开由补投扫描接手。
+    attachment-flow: ${LANLINK_MQ_ATTACHMENT_FLOW:mq}
+    # 消费并发（min-max）：削峰演示靠它把"单消费者积压"和"多消费者排空"跑出可对比的数字
+    attachment-consumer-concurrency: ${LANLINK_MQ_ATTACHMENT_CONCURRENCY:1-3}
+    attachment-sweep-interval-ms: ${LANLINK_MQ_ATTACHMENT_SWEEP_MS:120000}
+    attachment-sweep-initial-delay-ms: ${LANLINK_MQ_ATTACHMENT_SWEEP_INITIAL_MS:45000}
+  # 高德开放平台商业图源凭据：仅由后端持有，登录用户经 GET /logistics/map-config 下发；
+  # 不再经 VITE_* 构建注入前端（历史机制会把 key/securityJsCode 明文打进 dist）。留空=前端回退内置矢量底图。
+  map:
+    amap:
+      key: ${AMAP_KEY:}
+      security-js-code: ${AMAP_SECURITY_JS_CODE:}
+
+# 物流跟踪（out/logistics-tracking-plan.md P1，module/tracking）：渠道推送回调 + 定时补拉双通道，
+# 补拉为主路径。红线 D6：真实渠道密钥一律环境变量注入（不入库不入仓），留空=对应通道
+# configured()=false，自动退化为补拉兜底；provider.api_key 列不存真实密钥。
+logistics:
+  tracking:
+    # 总开关（P4 灰度演练用：false 时 ship 主流程零影响）
+    enabled: ${TRACKING_ENABLED:true}
+    # 补拉巡检 cron：默认每 10 分钟（对齐 SLA watchdog 的 cron 调度写法，不引入 XXL-Job；
+    # 多实例部署预留 ShedLock 注释位见 TrackingSyncWorker，多副本防重由任务行级 CAS 认领兜底）
+    poll-cron: "0 */10 * * * ?"
+    # 成功回调/成功补拉后顺延 next_poll_time 的间隔 ms
+    poll-interval-ms: ${TRACKING_POLL_INTERVAL_MS:600000}
+    # 补拉触发静默阈值（小时）：运单最后渠道事件超此时长仍未签收 → 兜底补拉
+    poll-stale-hours: 4
+    # 主通道连续失败 N 次切换备用通道（fail_count 热扩列累计 + 切换日志，P2 双通道路由）
+    primary-fail-threshold: 3
+    # 渠道主→备映射（key=主渠道编码 value=备用渠道编码，如 kuaidi100→kdniao；未配置的渠道不切换）
+    fallback-routes: {}
+    # 异常识别巡检 cron（48h 无更新 → EXCEPTION 告警 + 看板；对齐 SLA watchdog 写法）
+    exception-cron: "0 */30 * * * ?"
+    # 异常识别静默阈值（小时）
+    exception-stale-hours: 48
+    # 人工复核静默阈值（小时）：签收后超此时长无更新且 e-POD 未复核 → 人工复核队列
+    review-stale-hours: 24
+    # 监控指标统计窗口（小时，GET /api/admin/logistics/metrics）
+    metrics-window-hours: 24
+    # 回调审计日志保留天数（防表膨胀）
+    callback-log-retention-days: 30
+    # 回调 URL 路径段共享 token（Mock/17TRACK 共用；默认值仅 dev 演示可用，生产必须覆盖）
+    callback-url-token: ${TRACKING_CALLBACK_URL_TOKEN:dev-callback-token}
+    kuaidi100:
+      key: ${TRACKING_KUAIDI100_KEY:}
+      customer: ${TRACKING_KUAIDI100_CUSTOMER:}
+      salt: ${TRACKING_KUAIDI100_SALT:}
+      # 请求端签名算法：官方 signType=SHA256 优先，MD5 兜底（推送回调方向固定 MD5 不可升级）
+      sign-type: ${TRACKING_KUAIDI100_SIGN_TYPE:SHA256}

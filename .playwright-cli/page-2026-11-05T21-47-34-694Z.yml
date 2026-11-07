@@ -1,0 +1,103 @@
+- generic [ref=f9e2]:
+  - generic [ref=f9e3]:
+    - generic [ref=f9e5]:
+      - generic [ref=f9e6] [cursor=pointer]: LANLinkshopping
+      - menu [ref=f9e9]:
+        - menuitem "首页" [ref=f9e10] [cursor=pointer]
+        - menuitem "商城" [ref=f9e15] [cursor=pointer]
+        - menuitem "活动" [ref=f9e20] [cursor=pointer]
+        - menuitem "技术服务" [ref=f9e22] [cursor=pointer]
+        - menuitem "直播" [ref=f9e24] [cursor=pointer]
+        - menuitem "账期" [ref=f9e26] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=f9e30] [cursor=pointer]
+      - generic [ref=f9e33]:
+        - button "Switch to English" [ref=f9e34] [cursor=pointer]:
+          - generic [ref=f9e35]:
+            - generic [ref=f9e37]: 中
+            - generic [ref=f9e38]: EN
+        - generic [ref=f9e39]:
+          - button "消息" [ref=f9e40] [cursor=pointer]
+          - superscript [ref=f9e45]:
+            - paragraph [ref=f9e47]: "3"
+            - paragraph [ref=f9e49]: "3"
+        - button "购物车" [ref=f9e51] [cursor=pointer]
+        - generic [ref=f9e57] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=f9e58]:
+            - generic [aria-hidden] [ref=f9e59]: 用户
+          - generic "入驻商户" [ref=f9e60]: 商户
+          - generic [ref=f9e61]: 入驻测试用户
+    - main [ref=f9e64]:
+      - main [ref=f9e65]:
+        - generic [ref=f9e67]:
+          - complementary [ref=f9e68]:
+            - generic [ref=f9e69]:
+              - img "入驻测试用户 的头像" [ref=f9e70]:
+                - generic [aria-hidden] [ref=f9e71]: 入驻
+              - generic [ref=f9e72]:
+                - generic "入驻测试用户" [ref=f9e73]
+                - generic [ref=f9e74]: 已通过
+            - navigation [ref=f9e75]:
+              - button "工作台" [ref=f9e76] [cursor=pointer]
+              - button "商品管理" [ref=f9e78] [cursor=pointer]
+              - button "营销活动" [ref=f9e80] [cursor=pointer]
+              - button "直播带货" [ref=f9e82] [cursor=pointer]
+              - button "价格监控" [ref=f9e84] [cursor=pointer]
+              - button "订单管理" [ref=f9e86] [cursor=pointer]
+              - button "客户消息" [ref=f9e88] [cursor=pointer]
+              - button "物流发货" [ref=f9e90] [cursor=pointer]
+              - button "流量推广" [ref=f9e92] [cursor=pointer]
+              - button "流量分析" [ref=f9e94] [cursor=pointer]
+              - button "资金结算" [ref=f9e96] [cursor=pointer]
+              - button "店铺设置" [ref=f9e98] [cursor=pointer]
+            - generic [ref=f9e100]:
+              - paragraph [ref=f9e101]: 商户服务专线
+              - generic [ref=f9e102]: 400-888-0 LAN
+              - text: 工作日 9:00 - 18:00
+          - generic [ref=f9e106]:
+            - heading "直播带货" [level=2] [ref=f9e107]
+            - paragraph [ref=f9e108]: 开播即卖货：挂载商品、实时讲解、复盘转化一站完成。
+    - generic [ref=f9e116]:
+      - generic [ref=f9e117]:
+        - generic [ref=f9e118]: LANLinkshopping
+        - paragraph [ref=f9e119]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=f9e120]:
+        - button "商城" [ref=f9e121] [cursor=pointer]
+        - button "技术服务" [ref=f9e122] [cursor=pointer]
+        - button "关于我们" [ref=f9e123] [cursor=pointer]
+        - button "联系我们" [ref=f9e124] [cursor=pointer]
+        - button "用户服务协议" [ref=f9e125] [cursor=pointer]
+        - button "隐私政策" [ref=f9e126] [cursor=pointer]
+        - button "Cookie 政策" [ref=f9e127] [cursor=pointer]
+        - button "平台说明" [ref=f9e128] [cursor=pointer]
+        - button "免责声明" [ref=f9e129] [cursor=pointer]
+        - button "技术服务规则" [ref=f9e130] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=f9e131] [cursor=pointer]
+      - region "项目作者信息" [ref=f9e132]:
+        - generic [ref=f9e133]:
+          - link "在 X 查看 Jason Ouyang" [ref=f9e134] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=f9e135]
+          - generic [ref=f9e136]:
+            - generic [ref=f9e137]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=f9e138]: Jason Ouyang
+            - generic [ref=f9e139]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=f9e140]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=f9e143] [cursor=pointer]:
+      - img "智能客服头像" [ref=f9e144]
+      - generic [ref=f9e154]: 专属客服
+    - button "返回顶部"
+  - generic [ref=f9e155]:
+    - generic [ref=f9e161]:
+      - img "LANLinkshopping" [ref=f9e162]:
+        - generic [aria-hidden] [ref=f9e163]: LΛN // L1NK // SH0PP1NG
+        - img "LANLinkshopping" [ref=f9e164]:
+          - generic [ref=f9e165]: LAN
+          - generic [ref=f9e166]: Link
+          - generic [ref=f9e167]: shopping
+        - generic [aria-hidden] [ref=f9e169]: DECODING BRAND MARK
+      - generic [ref=f9e170]: 聚合 · 连接 · 一体多元解决方案
+    - button "跳过 ›" [ref=f9e174] [cursor=pointer]

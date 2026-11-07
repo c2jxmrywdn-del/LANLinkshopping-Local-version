@@ -37,6 +37,29 @@ class AuthRateLimitInterceptorTest {
     }
 
     @Test
+    void throttlesRepeatedMaterialDeletionsForOneClient() throws Exception {
+        // 材料下线是"改状态 + 删对象"的写操作，此前拦截器只统计 POST，DELETE 完全放行
+        for (int i = 0; i < 10; i++) {
+            assertTrue(call("DELETE", "/attachment/AT20261104134320A9", "203.0.113.9", null, null).allowed(),
+                    "前 10 次下线应放行，第 " + (i + 1) + " 次被误拦");
+        }
+
+        Result blocked = call("DELETE", "/attachment/AT20261104134320A9", "203.0.113.9", null, null);
+        assertFalse(blocked.allowed());
+        assertEquals(429, blocked.response().getStatus());
+    }
+
+    @Test
+    void leavesOtherEndpointsDeleteUnthrottled() throws Exception {
+        // 新策略只作用于 /attachment/*：不得顺手改掉其它端点已有的 DELETE 语义，
+        // 否则并行施工的 /tech/** 下线操作会被莫名限流
+        for (int i = 0; i < 25; i++) {
+            assertTrue(call("DELETE", "/tech/demands/1", "203.0.113.10", null, null).allowed(),
+                    "第 " + (i + 1) + " 次 /tech DELETE 不应受限");
+        }
+    }
+
+    @Test
     void limitsRepeatedLoginAttemptsPerClient() throws Exception {
         for (int i = 0; i < 8; i++) {
             assertTrue(call("/auth/login", "198.51.100.23", null, null).allowed());

@@ -78,6 +78,18 @@ public class PaymentController {
         return paymentService.handleAlipayNotify(params);
     }
 
+    /** Stripe 异步通知（公开，无登录态，由 Stripe-Signature 头部签名防伪防重放） */
+    @PostMapping(value = "/notify/stripe", produces = MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8")
+    public org.springframework.http.ResponseEntity<String> stripeNotify(
+            @RequestBody String payload,
+            @RequestHeader(value = "Stripe-Signature", required = false) String sigHeader) {
+        if (sigHeader == null || sigHeader.isBlank()) {
+            return org.springframework.http.ResponseEntity.badRequest().body("{\"error\": \"Missing Stripe-Signature header\"}");
+        }
+        String res = paymentService.handleStripeNotify(payload, sigHeader);
+        return org.springframework.http.ResponseEntity.ok(res);
+    }
+
     /** 支付宝同步跳转落地页（浏览器回跳，无敏感操作，仅提示） */
     @GetMapping(value = "/alipay/return", produces = MediaType.TEXT_HTML_VALUE + ";charset=UTF-8")
     public String alipayReturn(@RequestParam Map<String, String> params) {

@@ -109,6 +109,15 @@ public class MerchantCenterService {
 
         out.put("trend", fillTrend(centerMapper.trendByDay(merId, 30), 30));
         out.put("settlements", centerMapper.settlementRows(merId, 50));
+
+        Map<String, Object> bankInfo = new LinkedHashMap<>();
+        bankInfo.put("bankName", m.getBankName() == null ? "" : m.getBankName());
+        bankInfo.put("bankAccountMasked", com.lanlink.shopping.common.DesensitizeUtil.maskBankCard(m.getBankAccount()));
+        bankInfo.put("legalPersonMasked", com.lanlink.shopping.common.DesensitizeUtil.maskRealName(m.getLegalPerson()));
+        bankInfo.put("taxRegNo", m.getTaxRegNo() == null ? "" : m.getTaxRegNo());
+        bankInfo.put("verified", m.getReviewStatus() != null && m.getReviewStatus() == 1);
+        out.put("receivingAccount", bankInfo);
+
         return out;
     }
 
@@ -150,6 +159,13 @@ public class MerchantCenterService {
         s.put("contactPhone", m.getContactPhone());
         s.put("contactEmail", m.getContactEmail());
         s.put("businessAddress", m.getBusinessAddress());
+        Map<String, Object> bankInfo = new LinkedHashMap<>();
+        bankInfo.put("bankName", m.getBankName() == null ? "" : m.getBankName());
+        bankInfo.put("bankAccountMasked", com.lanlink.shopping.common.DesensitizeUtil.maskBankCard(m.getBankAccount()));
+        bankInfo.put("legalPersonMasked", com.lanlink.shopping.common.DesensitizeUtil.maskRealName(m.getLegalPerson()));
+        bankInfo.put("taxRegNo", m.getTaxRegNo() == null ? "" : m.getTaxRegNo());
+        bankInfo.put("verified", m.getReviewStatus() != null && m.getReviewStatus() == 1);
+        s.put("receivingAccount", bankInfo);
         if (m.getEntId() != null) {
             Enterprise ent = enterpriseMapper.selectById(m.getEntId());
             s.put("entName", ent == null ? null : ent.getName());

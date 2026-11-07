@@ -65,6 +65,10 @@ public class SecurityRouteGuardInterceptor implements HandlerInterceptor {
         if (normalizedUri.endsWith("/actuator/health")) {
             return true;
         }
+        // Prometheus 指标端点仅允许容器网络内抓取；nginx 对公网路径返回 403
+        if (normalizedUri.endsWith("/actuator/prometheus")) {
+            return true;
+        }
 
         // 1. 扫描与敏感路径检测
         for (String pattern : SUSPICIOUS_PATTERNS) {

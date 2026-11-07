@@ -1,0 +1,157 @@
+- generic [ref=f5e2]:
+  - generic [ref=f5e3]:
+    - generic [ref=f5e5]:
+      - generic [ref=f5e6] [cursor=pointer]: LANLinkshopping
+      - menu [ref=f5e9]:
+        - menuitem "首页" [ref=f5e10] [cursor=pointer]
+        - menuitem "商城" [ref=f5e15] [cursor=pointer]
+        - menuitem "活动" [ref=f5e20] [cursor=pointer]
+        - menuitem "技术服务" [ref=f5e22] [cursor=pointer]
+        - menuitem "直播" [ref=f5e24] [cursor=pointer]
+        - menuitem "账期" [ref=f5e26] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=f5e30] [cursor=pointer]
+      - generic [ref=f5e33]:
+        - button "Switch to English" [ref=f5e34] [cursor=pointer]:
+          - generic [ref=f5e35]:
+            - generic [ref=f5e37]: 中
+            - generic [ref=f5e38]: EN
+        - generic [ref=f5e39]:
+          - button "消息" [ref=f5e40] [cursor=pointer]
+          - superscript [ref=f5e45]:
+            - paragraph [ref=f5e47]: "3"
+            - paragraph [ref=f5e49]: "3"
+        - button "购物车" [ref=f5e51] [cursor=pointer]
+        - generic [ref=f5e57] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=f5e58]:
+            - generic [aria-hidden] [ref=f5e59]: 用户
+          - generic "入驻商户" [ref=f5e60]: 商户
+          - generic [ref=f5e61]: 入驻测试用户
+    - main [ref=f5e64]:
+      - main [ref=f5e65]:
+        - generic [ref=f5e67]:
+          - complementary [ref=f5e68]:
+            - generic [ref=f5e69]:
+              - img "重庆建工实业集团 的头像" [ref=f5e70]:
+                - generic [aria-hidden] [ref=f5e71]: 重庆
+              - generic [ref=f5e72]:
+                - generic "重庆建工实业集团" [ref=f5e73]
+                - generic [ref=f5e74]: 已通过
+            - navigation [ref=f5e75]:
+              - button "工作台" [ref=f5e76] [cursor=pointer]
+              - button "商品管理" [ref=f5e78] [cursor=pointer]
+              - button "营销活动" [ref=f5e80] [cursor=pointer]
+              - button "直播带货" [ref=f5e82] [cursor=pointer]
+              - button "价格监控" [ref=f5e84] [cursor=pointer]
+              - button "订单管理 2" [ref=f5e86] [cursor=pointer]:
+                - generic [ref=f5e87]: 订单管理
+                - generic [ref=f5e88]: "2"
+              - button "客户消息" [ref=f5e89] [cursor=pointer]
+              - button "物流发货" [ref=f5e91] [cursor=pointer]
+              - button "流量推广" [ref=f5e93] [cursor=pointer]
+              - button "流量分析" [ref=f5e95] [cursor=pointer]
+              - button "资金结算" [ref=f5e97] [cursor=pointer]
+              - button "店铺设置" [ref=f5e99] [cursor=pointer]
+            - generic [ref=f5e101]:
+              - paragraph [ref=f5e102]: 商户服务专线
+              - generic [ref=f5e103]: 400-888-0 LAN
+              - text: 工作日 9:00 - 18:00
+          - generic [ref=f5e105]:
+            - generic [ref=f5e106]:
+              - generic [ref=f5e107]:
+                - generic [ref=f5e108]: 商户中心
+                - heading "物流发货" [level=1] [ref=f5e110]
+                - paragraph [ref=f5e111]: 全部运单一屏管理：跟踪配送轨迹，买家签收后确认完成。
+              - generic [ref=f5e112]:
+                - button "全景控制塔大屏" [ref=f5e113] [cursor=pointer]
+                - generic [ref=f5e118]:
+                  - textbox "按订单号筛选" [ref=f5e120]
+                  - button [ref=f5e123] [cursor=pointer]:
+                    - img "search" [ref=f5e124]
+                - generic [ref=f5e128] [cursor=pointer]:
+                  - combobox [ref=f5e130]
+                  - generic [ref=f5e131]: 全部状态
+            - generic [ref=f5e132]:
+              - generic [ref=f5e133] [cursor=pointer]:
+                - generic [ref=f5e134]: "0"
+                - text: 待揽收
+              - generic [ref=f5e135] [cursor=pointer]:
+                - generic [ref=f5e136]: "0"
+                - text: 已揽收
+              - generic [ref=f5e137] [cursor=pointer]:
+                - generic [ref=f5e138]: "0"
+                - text: 运输中
+              - generic [ref=f5e139] [cursor=pointer]:
+                - generic [ref=f5e140]: "0"
+                - text: 派送中
+              - generic [ref=f5e141] [cursor=pointer]:
+                - generic [ref=f5e142]: "0"
+                - text: 已签收
+              - generic [ref=f5e143] [cursor=pointer]:
+                - generic [ref=f5e144]: "0"
+                - text: 异常
+            - generic [ref=f5e148]:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - table:
+                        - rowgroup:
+                          - row "运单号 订单号 收货人 运单状态 单证 / e-POD 发货时间 操作":
+                            - columnheader "运单号"
+                            - columnheader "订单号"
+                            - columnheader "收货人"
+                            - columnheader "运单状态"
+                            - columnheader "单证 / e-POD"
+                            - columnheader "发货时间"
+                            - columnheader "操作"
+                        - rowgroup:
+                          - row "No data":
+                            - cell "No data":
+                              - generic:
+                                - generic:
+                                  - paragraph: No data
+    - generic [ref=f5e156]:
+      - generic [ref=f5e157]:
+        - generic [ref=f5e158]: LANLinkshopping
+        - paragraph [ref=f5e159]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=f5e160]:
+        - button "商城" [ref=f5e161] [cursor=pointer]
+        - button "技术服务" [ref=f5e162] [cursor=pointer]
+        - button "关于我们" [ref=f5e163] [cursor=pointer]
+        - button "联系我们" [ref=f5e164] [cursor=pointer]
+        - button "用户服务协议" [ref=f5e165] [cursor=pointer]
+        - button "隐私政策" [ref=f5e166] [cursor=pointer]
+        - button "Cookie 政策" [ref=f5e167] [cursor=pointer]
+        - button "平台说明" [ref=f5e168] [cursor=pointer]
+        - button "免责声明" [ref=f5e169] [cursor=pointer]
+        - button "技术服务规则" [ref=f5e170] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=f5e171] [cursor=pointer]
+      - region "项目作者信息" [ref=f5e172]:
+        - generic [ref=f5e173]:
+          - link "在 X 查看 Jason Ouyang" [ref=f5e174] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=f5e175]
+          - generic [ref=f5e176]:
+            - generic [ref=f5e177]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=f5e178]: Jason Ouyang
+            - generic [ref=f5e179]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=f5e180]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=f5e183] [cursor=pointer]:
+      - img "智能客服头像" [ref=f5e184]
+      - generic [ref=f5e194]: 专属客服
+    - button "返回顶部"
+  - generic [ref=f5e195]:
+    - generic [ref=f5e201]:
+      - img "LANLinkshopping" [ref=f5e202]:
+        - generic [aria-hidden] [ref=f5e203]: LΛN // L1NK // SH0PP1NG
+        - img "LANLinkshopping" [ref=f5e204]:
+          - generic [ref=f5e205]: LAN
+          - generic [ref=f5e206]: Link
+          - generic [ref=f5e207]: shopping
+        - generic [aria-hidden] [ref=f5e209]: DECODING BRAND MARK
+      - generic [ref=f5e210]: 聚合 · 连接 · 一体多元解决方案
+    - button "跳过 ›" [ref=f5e214] [cursor=pointer]

@@ -20,10 +20,14 @@ public class MerchantCenterController {
 
     private final MerchantCenterService centerService;
     private final MerchantService merchantService;
+    private final com.lanlink.shopping.service.OrderService orderService;
 
-    public MerchantCenterController(MerchantCenterService centerService, MerchantService merchantService) {
+    public MerchantCenterController(MerchantCenterService centerService,
+                                    MerchantService merchantService,
+                                    com.lanlink.shopping.service.OrderService orderService) {
         this.centerService = centerService;
         this.merchantService = merchantService;
+        this.orderService = orderService;
     }
 
     /** 工作台汇总：店铺信息 + 核心指标 + 待办清单 + 近 7 日趋势 + 最新订单 */
@@ -51,5 +55,36 @@ public class MerchantCenterController {
                 "contactPhone", m.getContactPhone() == null ? "" : m.getContactPhone(),
                 "contactEmail", m.getContactEmail() == null ? "" : m.getContactEmail(),
                 "businessAddress", m.getBusinessAddress() == null ? "" : m.getBusinessAddress()));
+    }
+
+    /** 对公收款账户：商户维护企业对公银行收款账户 */
+    @PutMapping("/bank-account")
+    @RequirePerm("merchant:manage")
+    public R<Map<String, Object>> updateBankAccount(@RequestBody Map<String, String> body,
+                                                    HttpServletRequest request) {
+        var m = merchantService.updateBankAccount(UserContext.currentUserId(request), body);
+        return R.ok("对公收款账户已更新", Map.of(
+                "merId", m.getMerId(),
+                "bankName", m.getBankName() == null ? "" : m.getBankName(),
+                "bankAccountMasked", com.lanlink.shopping.common.DesensitizeUtil.maskBankCard(m.getBankAccount())));
+    }
+
+    /** 商户退款初审：同意初审（流转为 merchant_approved，等待平台出款） */
+    @PostMapping("/order/refund/approve/{orderNo}")
+    @RequirePerm("merchant:manage")
+    public R<Void> approveRefund(@PathVariable String orderNo, HttpServletRequest request) {
+        orderService.merchantApproveRefund(UserContext.currentUserId(request), orderNo);
+        return R.ok("商户初审已通过，等待平台放款处理", null);
+    }
+
+    /** 商户退款初审：驳回申请（流转为 rejected 并记录原因） */
+    @PostMapping("/order/refund/reject/{orderNo}")
+    @RequirePerm("merchant:manage")
+    public R<Void> rejectRefund(@PathVariable String orderNo,
+                                @RequestBody(required = false) Map<String, String> body,
+                                HttpServletRequest request) {
+        String reason = body != null ? body.get("reason") : null;
+        orderService.merchantRejectRefund(UserContext.currentUserId(request), orderNo, reason);
+        return R.ok("退款申请已驳回", null);
     }
 }

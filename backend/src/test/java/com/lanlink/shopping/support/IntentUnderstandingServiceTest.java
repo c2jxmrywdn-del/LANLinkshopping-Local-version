@@ -2,6 +2,7 @@ package com.lanlink.shopping.support;
 
 import com.lanlink.shopping.module.aikb.EmbeddingService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -113,10 +114,9 @@ class IntentUnderstandingServiceTest {
         Map<String, Object> data = withEnhancers(vector, embedding)
                 .analyze("帮我看看订单什么时候发货", List.of()).data();
 
-        Object intent = data.get("intent");
-        assertTrue("cart_order".equals(intent) || "logistics_tracking".equals(intent),
-                "订单/发货应由规则决胜为购物车或物流，实际: " + intent);
-        assertNotEquals("complaint_human", intent);
+        // 边界口径：问「什么时候发货」时货还没发，属订单域（承运后才归物流），不再允许二选一
+        assertEquals("cart_order", data.get("intent"), "发货前追问应由规则判为订单域");
+        assertNotEquals("complaint_human", data.get("intent"));
         assertEquals("local", data.get("source"));
         verify(vector, never()).classify(anyString(), any());
         verify(embedding, never()).chatText(anyString(), anyString());
@@ -131,7 +131,7 @@ class IntentUnderstandingServiceTest {
         when(embedding.chatText(anyString(), anyString())).thenReturn("cart_order");
 
         Map<String, Object> data = withEnhancers(vector, embedding)
-                .analyze("我刚才那个单子咋还没动静", List.of()).data();
+                .analyze("这件东西有点说不清呢", List.of()).data();
 
         assertEquals("cart_order", data.get("intent"));
         assertEquals("llm", data.get("source"));
@@ -160,7 +160,7 @@ class IntentUnderstandingServiceTest {
                 vectorResult("logistics_tracking", "物流与配送", 0.72, 0.12));
 
         Map<String, Object> data = withEnhancers(vector, embedding)
-                .analyze("那个单子没动静", List.of()).data();
+                .analyze("这件东西有点说不清呢", List.of()).data();
 
         assertEquals("logistics_tracking", data.get("intent"));
         assertEquals("vector", data.get("source"));
@@ -175,7 +175,7 @@ class IntentUnderstandingServiceTest {
         when(vector.classify(anyString(), any())).thenThrow(new RuntimeException("redis down"));
 
         Map<String, Object> data = withEnhancers(vector, null)
-                .analyze("我刚才那个单子咋还没动静", List.of()).data();
+                .analyze("这件东西有点说不清呢", List.of()).data();
 
         assertEquals("local", data.get("source"));
         assertEquals("other", data.get("intent"));
@@ -188,7 +188,7 @@ class IntentUnderstandingServiceTest {
         when(vector.classify(anyString(), any())).thenReturn(vectorResult("cart_order", "购物车与订单", 0.40, 0.05));
 
         Map<String, Object> data = withEnhancers(vector, null)
-                .analyze("我刚才那个单子咋还没动静", List.of()).data();
+                .analyze("这件东西有点说不清呢", List.of()).data();
 
         assertEquals("local", data.get("source"));
         assertEquals("other", data.get("intent"));
@@ -237,7 +237,8 @@ class IntentUnderstandingServiceTest {
                 List.of(new IntentVectorService.Candidate("cart_order", "购物车与订单", 0.68),
                         new IntentVectorService.Candidate("logistics_tracking", "物流与配送", 0.58))));
 
-        Map<String, Object> data = withEnhancers(vector, null).analyze("那个单子没动静", List.of()).data();
+        // 「物流」「订单」各命中一个等权关键词 → 规则有候选但不决胜，才能真正测到三路候选合并
+        Map<String, Object> data = withEnhancers(vector, null).analyze("物流和订单一起看下", List.of()).data();
 
         assertEquals("vector", data.get("source"));
         @SuppressWarnings("unchecked")
@@ -322,5 +323,126 @@ class IntentUnderstandingServiceTest {
         assertNull(IntentUnderstandingService.parseLlmLabel("cart_orders"));
         assertNull(IntentUnderstandingService.parseLlmLabel("随便聊聊"));
         assertNull(IntentUnderstandingService.parseLlmLabel(null));
+    }
+
+    @Test
+    void parsesStrictJsonIntentOutput() {
+        assertEquals("cart_order", IntentUnderstandingService.parseLlmLabel("{\"intent\": \"cart_order\"}"));
+        assertEquals("refund_aftersale",
+                IntentUnderstandingService.parseLlmLabel("```json\n{\"intent\": \"refund_aftersale\"}\n```"));
+        assertEquals("payment_invoice",
+                IntentUnderstandingService.parseLlmLabel("好的，答案是 {\"intent\": \"payment_invoice\"}"));
+        // JSON 信封是模型明确的结构化作答：越界 code 按训练口径归 other，而不是丢弃
+        assertEquals("other", IntentUnderstandingService.parseLlmLabel("{\"intent\": \"other\"}"));
+        assertEquals("other", IntentUnderstandingService.parseLlmLabel("{\"intent\": \"member_center\"}"));
+        // 无 JSON 的乱码仍返回 null，交给向量/规则兜底，不能强行判成 other
+        assertNull(IntentUnderstandingService.parseLlmLabel("我觉得可能是投诉或者退款吧"));
+    }
+
+    @Test
+    void llmPromptCarriesTheTrainingJsonContract() {        String prompt = IntentUnderstandingService.LLM_INTENT_SYSTEM_PROMPT;
+        assertTrue(prompt.contains("只输出 JSON：{\"intent\": \"<code>\"}"), "必须是严格 JSON 契约");
+        assertTrue(prompt.contains("{\"intent\": \"other\"}"), "必须给出 other 的出口");
+        // 与 training/config.py INTENTS 同一份 code/label；任一侧变动都要同步另一侧，故此断言是漂移哨兵
+        for (String line : List.of(
+                "- account_access: 账号注册与登录", "- merchant_onboarding: 商户入驻",
+                "- product_browse: 商品浏览", "- cart_order: 购物车与订单",
+                "- wallet_credit: 钱包与账期", "- membership_activity: 会员与活动",
+                "- message_privacy: 消息与隐私", "- logistics_tracking: 物流与配送",
+                "- refund_aftersale: 退款与售后", "- payment_invoice: 支付与发票",
+                "- complaint_human: 人工客服与投诉")) {
+            assertTrue(prompt.contains(line), "提示词缺少标签行：" + line);
+        }
+    }
+
+    @Test
+    void llmOtherLabelKeepsIntentAndCategoryConsistent() {
+        IntentVectorService vector = mock(IntentVectorService.class);
+        EmbeddingService embedding = mock(EmbeddingService.class);
+        when(embedding.chatText(anyString(), anyString())).thenReturn("{\"intent\": \"other\"}");
+
+        Map<String, Object> data = withEnhancers(vector, embedding)
+                .analyze("今天天气怎么样", List.of()).data();
+
+        assertEquals("other", data.get("intent"));
+        assertEquals("其他", data.get("category"), "判为 other 时不能沿用规则候选的中文类目");
+        assertEquals("llm", data.get("source"));
+    }
+
+    @Test
+    void userMessageIsTheBareQuestion() {
+        IntentVectorService vector = mock(IntentVectorService.class);
+        EmbeddingService embedding = mock(EmbeddingService.class);
+        when(embedding.chatText(anyString(), anyString())).thenReturn("{\"intent\": \"cart_order\"}");
+
+        withEnhancers(vector, embedding).analyze("这个东西不太靠谱呢", List.of());
+
+        ArgumentCaptor<String> user = ArgumentCaptor.forClass(String.class);
+        verify(embedding).chatText(anyString(), user.capture());
+        assertEquals("这个东西不太靠谱呢", user.getValue(),
+                "训练样本的 user 内容就是问题原文，生产侧不得再加「用户问题：」前缀");
+    }
+
+    // ==================== 订单域 / 物流域边界口径 ====================
+    // 业界通行划分（AWS Lex CheckOrderStatus、Rasa ask_order_status、电商客服提示词样例）都不是按
+    // 「订单/物流」字面词切，而是按履约状态切：尚未发货的订单沉默属订单域，已进入承运（快递、运单、
+    // 轨迹、包裹、签收）属物流域。本项目的买家端只有 /orders，物流后台仅商家/运营可见，因此
+    // 「下了单没动静」类问题只有订单答案能落地——边界必须由规则决胜，不能交给模型掷硬币。
+
+    @Test
+    void preShipmentOrderSilenceBelongsToCartOrder() {
+        String[] questions = {
+                "我刚才那个单子咋还没动静",
+                "帮我看看订单什么时候发货",
+                "下单三天了还没发货怎么办",
+                "我的订单发货了吗",
+                "这个订单帮我催发货",
+                "订单到哪了",
+                "我的订单到哪了",
+                "Where is my order?",
+                "What is the status of my order?",
+        };
+        for (String q : questions) {
+            Map<String, Object> data = service.analyze(q, List.of()).data();
+            assertEquals("cart_order", data.get("intent"), "发货前的订单沉默属订单域：" + q);
+            assertEquals("local", data.get("source"), "边界问法应由规则决胜，不该交给模型/向量：" + q);
+        }
+    }
+
+    @Test
+    void postShipmentCarrierQuestionsBelongToLogistics() {
+        String[] questions = {
+                "快递怎么还没送到",
+                "物流信息一直不更新",
+                "订单显示已发货但一直没收到包裹",
+                "查一下运单号和轨迹",
+                "包裹显示签收但不是我自己签的",
+                "How to track my shipment?",
+                "Where is my parcel? shipping tracking not updated",
+        };
+        for (String q : questions) {
+            Map<String, Object> data = service.analyze(q, List.of()).data();
+            assertEquals("logistics_tracking", data.get("intent"), "已进入承运属物流域：" + q);
+            assertEquals("local", data.get("source"), "边界问法应由规则决胜，不该交给模型/向量：" + q);
+        }
+    }
+
+    @Test
+    void boundaryIsDecidedWithoutCallingModelOrVector() {
+        IntentVectorService vector = mock(IntentVectorService.class);
+        EmbeddingService embedding = mock(EmbeddingService.class);
+        IntentUnderstandingService enhanced = withEnhancers(vector, embedding);
+
+        assertEquals("cart_order", enhanced.analyze("我刚才那个单子咋还没动静", List.of()).data().get("intent"));
+        assertEquals("logistics_tracking", enhanced.analyze("快递走到哪了", List.of()).data().get("intent"));
+
+        verify(embedding, never()).chatText(anyString(), anyString());
+        verify(vector, never()).classify(anyString(), any());
+    }
+
+    @Test
+    void deliveryAddressPhraseIsNotStolenByGenericDeliveryKeyword() {
+        // cart_order 的「delivery address / 改地址」比 logistics 的裸「delivery」更具体，权重应更高
+        assertEquals("cart_order", service.analyze("怎么改 delivery address", List.of()).data().get("intent"));
     }
 }

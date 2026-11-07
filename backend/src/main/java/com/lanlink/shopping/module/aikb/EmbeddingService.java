@@ -102,12 +102,37 @@ public class EmbeddingService {
     private static final int BREAKER_THRESHOLD = 3;
     private static final long BREAKER_COOLDOWN_MS = 30 * 60_000L;
 
+    /** 当前配置的嵌入模型（仅用于状态缓存比对，不代表最近一次调用是否成功）。 */
+    public String embedModel() {
+        return embedModel;
+    }
+
+    /** 外部 OpenAI 兼容端点（AI_EMBED_PROVIDER=openai 时启用；三项齐全才生效，缺一即回退本地/哈希）。 */
+    private final String embedProviderMode;
+    private final String externalEmbedBase;
+    private final String externalEmbedKey;
+    private final String chatProviderMode;
+    private final String externalChatBase;
+    private final String externalChatKey;
+    private final String externalChatModel;
+
+    private boolean externalEmbedReady() {
+        return "openai".equalsIgnoreCase(embedProviderMode)
+                && !externalEmbedBase.isBlank() && !externalEmbedKey.isBlank() && !embedModel.isBlank();
+    }
+
+    private boolean externalChatReady() {
+        return "openai".equalsIgnoreCase(chatProviderMode)
+                && !externalChatBase.isBlank() && !externalChatKey.isBlank() && !externalChatModel.isBlank();
+    }
+
     /** 嵌入缓存统计（命中率展示；无 Redis 时仍可观测进程内计数） */
     private final AtomicLong cacheHits = new AtomicLong();
     private final AtomicLong cacheMisses = new AtomicLong();
     /** 缓存写入次数（Redis SCAN 不可用时的 size 兜底估值） */
     private final AtomicLong cacheWrites = new AtomicLong();
 
+    @org.springframework.beans.factory.annotation.Autowired
     public EmbeddingService(
             @Value("${AI_OLLAMA_BASE_URL:http://host.docker.internal:11434}") String ollamaBaseUrl,
             @Value("${AI_EMBED_MODEL:nomic-embed-text}") String embedModel,
@@ -117,6 +142,13 @@ public class EmbeddingService {
             @Value("${AI_GATEWAY_API_KEY:lanlink-local-ai-gateway}") String gatewayApiKey,
             @Value("${AI_GATEWAY_MODEL:qwen2.5-vl}") String gatewayModel,
             @Value("${AI_GATEWAY_TEXT_MODEL:qwen2.5-7b}") String gatewayTextModel,
+            @Value("${AI_EMBED_PROVIDER:ollama}") String embedProviderMode,
+            @Value("${AI_EMBED_BASE_URL:}") String externalEmbedBase,
+            @Value("${AI_EMBED_API_KEY:}") String externalEmbedKey,
+            @Value("${AI_CHAT_PROVIDER:local}") String chatProviderMode,
+            @Value("${AI_CHAT_BASE_URL:}") String externalChatBase,
+            @Value("${AI_CHAT_API_KEY:}") String externalChatKey,
+            @Value("${AI_CHAT_MODEL:}") String externalChatModel,
             StringRedisTemplate redis) {
         this.ollamaBaseUrl = trimSlash(ollamaBaseUrl);
         this.embedModel = embedModel;
@@ -126,7 +158,22 @@ public class EmbeddingService {
         this.gatewayApiKey = gatewayApiKey;
         this.gatewayModel = gatewayModel;
         this.gatewayTextModel = gatewayTextModel;
+        this.embedProviderMode = embedProviderMode == null ? "ollama" : embedProviderMode.trim();
+        this.externalEmbedBase = trimSlash(externalEmbedBase);
+        this.externalEmbedKey = externalEmbedKey == null ? "" : externalEmbedKey.trim();
+        this.chatProviderMode = chatProviderMode == null ? "local" : chatProviderMode.trim();
+        this.externalChatBase = trimSlash(externalChatBase);
+        this.externalChatKey = externalChatKey == null ? "" : externalChatKey.trim();
+        this.externalChatModel = externalChatModel == null ? "" : externalChatModel.trim();
         this.redis = redis;
+    }
+
+    /** 供单测手工构造：不启用外部端点（与原行为一致）。 */
+    EmbeddingService(String ollamaBaseUrl, String embedModel, String chatModel, String textModel,
+                     String gatewayBaseUrl, String gatewayApiKey, String gatewayModel,
+                     String gatewayTextModel, StringRedisTemplate redis) {
+        this(ollamaBaseUrl, embedModel, chatModel, textModel, gatewayBaseUrl, gatewayApiKey,
+                gatewayModel, gatewayTextModel, "ollama", "", "", "local", "", "", "", redis);
     }
 
     public String getProvider() { return provider; }
@@ -153,8 +200,13 @@ public class EmbeddingService {
 
     /** 网关对话（显式模型名重载：视觉=qwen2.5-vl / 文本=qwen2.5-7b；超时 180s，失败返回 null） */
     public String chatViaGateway(String model, String systemPrompt, String userPrompt) {
+        return chatViaGateway(model, systemPrompt, userPrompt, null);
+    }
+
+    /** 网关对话（可控制是否让网关做知识库检索：useKb=false 时完全尊重调用方自带 prompt） */
+    public String chatViaGateway(String model, String systemPrompt, String userPrompt, Boolean useKb) {
         return chatOpenAiCompatible(gatewayBaseUrl + "/chat/completions", model,
-                "Bearer " + gatewayApiKey, systemPrompt, userPrompt, 180, null, null);
+                "Bearer " + gatewayApiKey, systemPrompt, userPrompt, 180, null, null, useKb);
     }
 
     /** 旧方法兼容（原“VL 常驻模型”语义）：等价 {@link #chatViaGatewayVl(String, String)} */
@@ -162,9 +214,16 @@ public class EmbeddingService {
         return chatViaGatewayVl(systemPrompt, userPrompt);
     }
 
-    /** 网关文本模型对话（本地 qwen2.5-7B，经 ai-gateway 暴露；超时 180s，失败返回 null） */
+    /**
+     * 网关文本模型对话（本地 qwen2.5-7B，经 ai-gateway 暴露；超时 180s，失败返回 null）。
+     *
+     * <p>显式 use_kb=false：调用方（意图分类 / 资讯摘要 / KnowledgeRagService）要么不需要知识库，
+     * 要么已在自己的 prompt 里给了检索结果。网关默认 use_kb=true 会把 system 当客服问题再做一次
+     * RAG 并改写提示词——意图分类因此收不到 {@code {"intent": ...}} 而是收到一段带「来源：《…》」
+     * 的中文回答，白名单解析必然失败，本地 7B 分支形同虚设。
+     */
     public String chatViaGatewayText(String systemPrompt, String userPrompt) {
-        return chatViaGateway(gatewayTextModel, systemPrompt, userPrompt);
+        return chatViaGateway(gatewayTextModel, systemPrompt, userPrompt, false);
     }
 
     /**
@@ -173,6 +232,15 @@ public class EmbeddingService {
      * @return 生成文本；两侧均不可达返回 null
      */
     public String chatText(String systemPrompt, String userPrompt) {
+        // 本地 AI 暂停后，聊天也走外部 OpenAI 兼容端点（AI_CHAT_PROVIDER=openai）
+        if (externalChatReady()) {
+            String viaExternal = chatOpenAiCompatible(externalChatBase + "/chat/completions",
+                    externalChatModel, externalChatKey, systemPrompt, userPrompt, 180);
+            if (viaExternal != null) {
+                lastChatBackend.set("external:" + externalChatModel);
+                return viaExternal;
+            }
+        }
         String viaGateway = chatViaGatewayText(systemPrompt, userPrompt);
         if (viaGateway != null) return viaGateway;
         return chatViaOllamaText(systemPrompt, userPrompt, defaultTextNumCtx, DEFAULT_TEXT_KEEP_ALIVE);
@@ -265,7 +333,13 @@ public class EmbeddingService {
             int to = Math.min(pendingTexts.size(), from + EMBED_BATCH_SIZE);
             List<String> batch = pendingTexts.subList(from, to);
             List<float[]> vectors = null;
-            if (modelAlive(embedModel)) {
+            // 外部 OpenAI 兼容端点优先（本地 Ollama 暂停时仍可嵌入）；失败再回退本地，最后逐条哈希
+            if (externalEmbedReady()) {
+                BatchEmbedResult ext = tryExternalEmbedBatch(batch);
+                vectors = ext.vectors();
+                if (vectors != null && !vectors.isEmpty()) provider = "openai:" + embedModel;
+            }
+            if (vectors == null && modelAlive(embedModel)) {
                 BatchEmbedResult r = tryOllamaEmbedBatch(batch, embedModel);
                 List<float[]> rv = r.vectors();
                 record(embedModel, new EmbedResult(rv == null || rv.isEmpty() ? null : rv.get(0), r.permanentFail()));
@@ -323,15 +397,23 @@ public class EmbeddingService {
     private float[] embedUncached(String clipped) {
         if (clipped == null || clipped.isBlank()) return hashEmbed("");
         // 仅尝试配置的嵌入模型（对话模型绝不作为嵌入器——7B 载入即 CPU 炸弹）。
-        // 熔断器：404=模型未安装视为永久失败（长冷却），超时类失败短冷却半开重试。
+        // 外部端点优先；本地仅作兜底。熔断器：404=模型未安装视为永久失败（长冷却），超时类失败短冷却半开重试。
         float[] v = null;
-        if (modelAlive(embedModel)) {
+        if (externalEmbedReady()) {
+            BatchEmbedResult ext = tryExternalEmbedBatch(List.of(clipped));
+            List<float[]> ev = ext.vectors();
+            if (ev != null && !ev.isEmpty()) {
+                v = ev.get(0);
+                provider = "openai:" + embedModel;
+            }
+        }
+        if (v == null && modelAlive(embedModel)) {
             EmbedResult r = tryOllamaEmbed(clipped, embedModel);
             record(embedModel, r);
             v = r.vector();
         }
         if (v != null) {
-            provider = "ollama:" + embedModel;
+            if (provider.startsWith("uninit") || provider.startsWith("hash")) provider = "ollama:" + embedModel;
             cachePut(clipped, v);
             return v;
         }
@@ -406,6 +488,14 @@ public class EmbeddingService {
     private String chatOpenAiCompatible(String url, String model, String bearer,
                                         String systemPrompt, String userPrompt, int timeoutSeconds,
                                         Integer numCtx, String keepAlive) {
+        return chatOpenAiCompatible(url, model, bearer, systemPrompt, userPrompt,
+                timeoutSeconds, numCtx, keepAlive, null);
+    }
+
+    /** 同上；useKb 非空时随请求下发（ai-gateway 据此决定是否检索本地知识库并改写 prompt） */
+    private String chatOpenAiCompatible(String url, String model, String bearer,
+                                        String systemPrompt, String userPrompt, int timeoutSeconds,
+                                        Integer numCtx, String keepAlive, Boolean useKb) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
@@ -414,6 +504,7 @@ public class EmbeddingService {
                     Map.of("role", "user", "content", userPrompt)));
             body.put("stream", false);
             body.put("temperature", 0.3);
+            if (useKb != null) body.put("use_kb", useKb);
             if (numCtx != null || keepAlive != null) {
                 Map<String, Object> options = new LinkedHashMap<>();
                 if (numCtx != null) options.put("num_ctx", numCtx);
@@ -532,6 +623,49 @@ public class EmbeddingService {
     }
 
     // ==================== Ollama 嵌入调用 ====================
+
+    /** 外部 OpenAI 兼容 /v1/embeddings 批量调用；失败返回 null 由上层回退本地/哈希。 */
+    private BatchEmbedResult tryExternalEmbedBatch(List<String> texts) {
+        if (texts == null || texts.isEmpty()) return new BatchEmbedResult(List.of(), false);
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", embedModel);
+            body.put("input", texts);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(externalEmbedBase + "/embeddings"))
+                    .timeout(Duration.ofSeconds(EMBED_BATCH_TIMEOUT_SECONDS))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + externalEmbedKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                log.info("[aikb] external embed {} unavailable (http {}, n={})",
+                        embedModel, resp.statusCode(), texts.size());
+                return new BatchEmbedResult(null, resp.statusCode() == 404);
+            }
+            JsonNode data = objectMapper.readTree(resp.body()).path("data");
+            if (!data.isArray() || data.size() != texts.size()) {
+                log.info("[aikb] external embed {} unexpected response (n={}, got={})",
+                        embedModel, texts.size(), data.size());
+                return new BatchEmbedResult(null, false);
+            }
+            // OpenAI 兼容响应带 index；按 index 归位，不假设返回顺序
+            List<float[]> vectors = new ArrayList<>(java.util.Collections.nCopies(texts.size(), (float[]) null));
+            for (JsonNode node : data) {
+                int idx = node.path("index").asInt(-1);
+                JsonNode emb = node.path("embedding");
+                if (idx < 0 || idx >= texts.size() || !emb.isArray() || emb.isEmpty()) {
+                    return new BatchEmbedResult(null, false);
+                }
+                vectors.set(idx, toFloatArray(emb));
+            }
+            if (vectors.contains(null)) return new BatchEmbedResult(null, false);
+            return new BatchEmbedResult(vectors, false);
+        } catch (Exception e) {
+            log.info("[aikb] external embed {} failed: {}", embedModel, e.getMessage());
+            return new BatchEmbedResult(null, false);
+        }
+    }
 
     /** 批量嵌入：Ollama /api/embed 数组接口，一次 HTTP 返回多条向量（均 L2 归一化） */
     private BatchEmbedResult tryOllamaEmbedBatch(List<String> texts, String model) {

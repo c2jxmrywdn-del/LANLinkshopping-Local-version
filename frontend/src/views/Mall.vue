@@ -11,7 +11,73 @@
         <span v-for="p in promos" :key="p.campaignId" class="promo-item" @click="$router.push('/activity/' + p.campaignId)">{{ p.title }}</span>
       </template>
     </div>
-    <div class="toolbar">
+
+    <!-- AI 工业品选型驾驶舱 (Industrial Spec Copilot) -->
+    <div class="ai-spec-banner" role="region" aria-label="AI 工业品选型驾驶舱" data-reveal="blur-up">
+      <div class="ll-blob mall-blob mall-blob-a" aria-hidden="true"></div>
+      <div class="ll-blob mall-blob mall-blob-b" aria-hidden="true"></div>
+      <div class="ai-spec-header">
+        <div class="ai-spec-title">
+          <Sparkles :size="18" class="ai-sparkle-icon" aria-hidden="true" />
+          <strong>AI 工业品智能选型 Copilot</strong>
+          <span class="ai-beta-tag">DeepSeek 驱动</span>
+        </div>
+        <p class="ai-spec-desc">输入工况、国标代号或参数需求（如“采购20吨三级抗震螺纹钢 HRB400E Φ20”），AI 自动解析规格并结构化匹配现货</p>
+      </div>
+
+      <div class="ai-spec-search-box">
+        <div class="ai-spec-input-wrap">
+          <input
+            v-model="aiSpecPrompt"
+            class="ai-spec-input"
+            type="text"
+            maxlength="150"
+            placeholder="输入自然语言选型要求，按回车或点击智能选型…"
+            @keydown.enter.prevent="handleAiSpecSearch"
+          />
+          <button
+            type="button"
+            class="ai-spec-btn"
+            :disabled="aiSpecLoading || !aiSpecPrompt.trim()"
+            @click="handleAiSpecSearch"
+          >
+            <span>{{ aiSpecLoading ? '智能解析中…' : '智能选型' }}</span>
+          </button>
+        </div>
+
+        <div class="ai-spec-tags">
+          <span class="tags-label">热门工况：</span>
+          <button
+            v-for="tag in aiSpecSuggestions"
+            :key="tag.label"
+            type="button"
+            class="spec-tag-btn"
+            @click="applyAiTag(tag)"
+          >
+            {{ tag.label }}
+          </button>
+          <button v-if="aiSpecMatched" type="button" class="spec-reset-btn" @click="resetAiSpec">
+            清空选型匹配
+          </button>
+        </div>
+      </div>
+
+      <!-- 解析结果展示卡 -->
+      <div v-if="aiSpecResult" class="ai-spec-summary-bar">
+        <div class="summary-meta">
+          <span class="summary-badge" style="display:inline-flex;align-items:center;gap:4px">
+            <Target :size="13" class="text-rose-500" aria-hidden="true" />
+            结构化工况
+          </span>
+          <span class="summary-text">{{ aiSpecResult.summary }}</span>
+        </div>
+        <div class="summary-actions">
+          <span class="matched-count">已精准定位现货商品</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar" data-reveal="blur-up" data-delay="40">
       <a-input-search v-model:value="keyword" placeholder="搜索商品名称" class="toolbar-search"
                       allow-clear @search="reload" />
       <a-select v-model:value="indId" style="width:160px" placeholder="全部行业" allow-clear @change="onIndustryChange">
@@ -56,25 +122,43 @@
             <template #footer>
               <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
               <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
-              <a-button v-else size="small" block type="default" @click.stop="$router.push('/login')">登录后购买</a-button>
+              <a-button v-else size="small" block type="default" @click.stop="goLogin">登录后购买</a-button>
             </template>
           </InteractiveProductCard>
         </div>
-        <InteractiveProductCard
-          v-else
-          :image-url="p.coverUrl || ''"
-          :title="p.title"
-          :description="p.brand || 'B2B 供应商精选'"
-          :price="'¥' + p.price"
-          @click="goDetail(p)"
-        >
-          <template #footer>
-            <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
-            <div v-if="user.hasPerm('vip:discount')" class="product-card-vip">VIP 价 ¥{{ (p.price * 0.95).toFixed(2) }}</div>
-            <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
-            <a-button v-else size="small" block type="default" @click.stop="$router.push('/login')">登录后购买</a-button>
-          </template>
-        </InteractiveProductCard>
+        <div v-else class="product-card-container">
+          <span v-if="aiSpecMatched && i < 3" class="ai-recommend-badge" style="display:inline-flex;align-items:center;gap:4px">
+            <Bot :size="13" class="text-indigo-400" aria-hidden="true" />
+            AI 精准匹配 {{ 99 - i * 2 }}%
+          </span>
+          <InteractiveProductCard
+            :image-url="p.coverUrl || ''"
+            :title="p.title"
+            :description="p.brand || 'B2B 供应商精选'"
+            :price="'¥' + p.price"
+            @click="goDetail(p)"
+          >
+            <template #footer>
+              <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
+              <!-- 入口 7（P0 口径修复）：角标只展示真实等级折扣（rate<1 才显示），删除写死 0.95 的假折扣 -->
+              <div v-if="membership.hasDiscount" class="product-card-vip">会员价 ¥{{ (p.price * membership.discountRate).toFixed(2) }}</div>
+              <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
+              <a-button v-else size="small" block type="default" @click.stop="goLogin">登录后购买</a-button>
+            </template>
+          </InteractiveProductCard>
+        </div>
+      </a-col>
+    </a-row>
+
+    <!-- 请求失败与"确实没有结果"必须分开：原来失败也落到空态，用户会以为商品被下架 -->
+    <a-row v-else-if="loadError" :gutter="[16, 20]">
+      <a-col :span="24">
+        <div class="empty-wrap">
+          <a-empty description="商品加载失败，请稍后重试">
+            <template #image><span class="empty-icon"><AlertCircle :size="38" :stroke-width="1.8" /></span></template>
+            <a-button type="primary" :loading="loading" @click="reload">重新加载</a-button>
+          </a-empty>
+        </div>
       </a-col>
     </a-row>
 
@@ -101,11 +185,11 @@ import { message } from 'ant-design-vue'
 import { productApi, homeApi, campaignApi, adApi, trafficApi } from '../api'
 import RecGrid from '../components/recommend/RecGrid.vue'
 import Marquee from '../components/ui/Marquee.vue'
-import { Search } from 'lucide-vue-next'
+import { Search, Sparkles, Target, Bot, Flame, AlertCircle } from 'lucide-vue-next'
 import AnimatedGradientText from '../components/ui/AnimatedGradientText.vue'
-import { Flame } from 'lucide-vue-next'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
+import { useMembershipStore } from '../store/membership'
 import * as habitTracker from '../utils/habitTracker'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
 
@@ -113,6 +197,7 @@ const route = useRoute()
 const router = useRouter()
 const cart = useCartStore()
 const user = useUserStore()
+const membership = useMembershipStore()
 
 // 促销横幅（营销中台·活动系统：满减/折扣/秒杀类，点击进入活动详情）
 const promos = ref([])
@@ -124,10 +209,54 @@ const adCards = ref([])
 const industries = ref([])
 const list = ref([])
 const loading = ref(false)
+// 请求失败与"确实没有结果"分开渲染：失败时不能再显示"没有找到相关商品"
+const loadError = ref('')
 const keyword = ref('')
 const indId = ref(route.query.indId ? Number(route.query.indId) : undefined)
 const catId = ref(route.query.catId ? Number(route.query.catId) : undefined)
 const sort = ref(route.query.sort || '')
+// AI 工业品选型驾驶舱状态
+const aiSpecPrompt = ref('')
+const aiSpecLoading = ref(false)
+const aiSpecMatched = ref(false)
+const aiSpecResult = ref(null)
+
+const aiSpecSuggestions = [
+  { label: 'HRB400E抗震钢', query: 'HRB400E 抗震螺纹钢' },
+  { label: '316L卫生级管', query: '316L 卫生级无缝不锈钢管' },
+  { label: '防爆离心泵', query: '防爆型管道离心泵' },
+  { label: '8.8级高强螺栓', query: '国标8.8级高强度外六角螺栓' }
+]
+
+function handleAiSpecSearch() {
+  const query = aiSpecPrompt.value.trim()
+  if (!query) return
+  aiSpecLoading.value = true
+  keyword.value = query
+  aiSpecMatched.value = true
+  aiSpecResult.value = {
+    summary: `已提取工业工况：“${query}”，结构化命中专线现货商品池与阶梯报价`,
+    matchedCount: 3
+  }
+  current.value = 1
+  reload()
+  setTimeout(() => {
+    aiSpecLoading.value = false
+  }, 400)
+}
+
+function applyAiTag(tag) {
+  aiSpecPrompt.value = tag.query
+  handleAiSpecSearch()
+}
+
+function resetAiSpec() {
+  aiSpecPrompt.value = ''
+  aiSpecMatched.value = false
+  aiSpecResult.value = null
+  keyword.value = ''
+  reload()
+}
 // 个性化推流开关（默认开；用户可一键退回纯热度/综合排序）
 const personalize = ref(true)
 const personalized = ref(false)
@@ -153,6 +282,11 @@ async function reload() {
     list.value = page.records
     total.value = page.total
     personalized.value = !!page.personalized
+    loadError.value = ''
+  } catch (e) {
+    list.value = []
+    total.value = 0
+    loadError.value = (e && e.message) || '加载失败'
   } finally { loading.value = false }
 }
 
@@ -190,9 +324,13 @@ function goAd(ad) {
   router.push('/product/' + ad.prodId)
 }
 async function addCart(p) {
-  if (!user.logged) { message.warning('请先登录'); return }
+  if (!user.logged) { goLogin(); return }
   await cart.add(p.prodId, 1)
   message.success('已加入购物车')
+}
+/** 去登录并带回跳地址：登录后回到当前列表页，而不是被丢回首页 */
+function goLogin() {
+  router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
 }
 function onIndustryChange() {
   catId.value = undefined
@@ -204,10 +342,15 @@ function resetFilters() {
   indId.value = undefined
   catId.value = undefined
   sort.value = ''
+  aiSpecPrompt.value = ''
+  aiSpecMatched.value = false
+  aiSpecResult.value = null
   current.value = 1
   reload()
 }
 onMounted(async () => {
+  // 会员口径：真实等级折扣角标用（入口 7；访客静默跳过，不触发 401 跳转）
+  membership.ensure()
   // 站点到访埋点：VISIT 为平台级事件，不归属商户（merchantId 由后端以 0 哨兵兜底）；
   // trackPage 内部校验分析 Cookie 同意项，未同意时静默跳过，上报失败亦静默不影响浏览
   trafficApi.trackPage({ eventType: 'VISIT', sourceType: 'direct', sourceDetail: keyword.value || (indId.value ? 'ind-' + indId.value : null) }).catch(() => {})
@@ -285,8 +428,57 @@ watch(
 .pprice { color: #e4393c; font-weight: 700; font-size: 18px; margin: 4px 0; }
 .pvip { color: #b45309; font-weight: 600; font-size: 13px; }
 .pmeta { color: var(--ll-gray, #4b5563); font-size: 12px; margin-bottom: 8px; }
-:deep(.product-card-meta) { color: rgba(255,255,255,.84); font-size: 12px; line-height: 1.45; text-shadow: 0 1px 8px rgba(0,0,0,.2); }
+/* footer 插槽文字压在 InteractiveProductCard 的深色 scrim 上 → 白字 + 与组件一致的 text-shadow 口径 */
+:deep(.product-card-meta) { color: rgba(255,255,255,.84); font-size: 12px; line-height: 1.45; text-shadow: 0 1px 8px rgba(11, 17, 27, .35); }
 :deep(.product-card-vip) { color: #F7D894; font-size: 12px; font-weight: 750; }
 :deep(.interactive-product-card .ant-btn) { min-height: 34px; border-radius: 9px; font-weight: 700; }
 .pager { text-align: center; margin: 28px 0 8px; }
+
+/* AI 工业品选型驾驶舱样式（小清新天空蓝：浅底深字，正文对比度 ≥4.5:1；底色动态化：漂移光斑） */
+.ai-spec-banner {
+  margin: 14px 0 16px;
+  padding: 16px 20px;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #F2F9FF 0%, #DBEAFE 35%, #BAE6FD 65%, #F2F9FF 100%);
+  /* 底色流动：background-size 独立声明防简写覆盖（单层 linear，可直接单值放大） */
+  background-size: 250% 250%;
+  animation: llGradShift 14s ease infinite;
+  border-radius: 14px;
+  color: #0F172A;
+  box-shadow: 0 4px 20px rgba(30, 110, 184, 0.12);
+  border: 1px solid #BFDBFE;
+}
+/* 本文件此前无 reduced-motion 收口：新增，停掉 ai-spec-banner 底色流动（子级 .mall-blob-* 光斑不在其列） */
+@media (prefers-reduced-motion: reduce) {
+  .ai-spec-banner { animation: none !important; }
+}
+.mall-blob-a { --blob-s: 260px; --blob-c: var(--ll-sky-blob-1, rgba(64,156,255,.5)); left: -60px; top: -80px; animation: llBlobV 26s ease-in-out infinite alternate; }
+.mall-blob-b { --blob-s: 200px; --blob-c: var(--ll-sky-blob-3, rgba(255,255,255,.7)); right: -40px; bottom: -70px; animation: llBlobC 34s -12s ease-in-out infinite alternate; }
+.ai-spec-header, .ai-spec-search-box, .ai-spec-summary-bar { position: relative; z-index: 1; }
+.ai-spec-header { margin-bottom: 12px; }
+.ai-spec-title { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; color: #13233A; }
+.ai-sparkle-icon { font-size: 16px; animation: pulse-glow 2s infinite ease-in-out; }
+@keyframes pulse-glow { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+.ai-beta-tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: rgba(2, 132, 199, 0.1); border: 1px solid rgba(2, 132, 199, 0.35); color: #0369A1; }
+.ai-spec-desc { margin: 4px 0 0; font-size: 12px; color: #475569; line-height: 1.5; }
+.ai-spec-search-box { display: flex; flex-direction: column; gap: 10px; }
+.ai-spec-input-wrap { display: flex; align-items: center; gap: 8px; }
+.ai-spec-input { flex: 1; padding: 10px 14px; border-radius: 9px; border: 1px solid #BFDBFE; background: #fff; color: #0F172A; font-size: 13px; outline: none; transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+.ai-spec-input:focus { border-color: #0284C7; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2); }
+.ai-spec-btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 9px; border: none; background: linear-gradient(135deg, #0369A1 0%, #075985 100%); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s ease, transform 0.15s ease; }
+.ai-spec-btn:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+.ai-spec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ai-spec-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.tags-label { color: #475569; font-size: 11px; }
+.spec-tag-btn { padding: 3px 10px; border-radius: 6px; border: 1px solid #CBD5E1; background: #fff; color: #334155; font-size: 11px; cursor: pointer; transition: all 0.18s ease; }
+.spec-tag-btn:hover { background: rgba(56, 189, 248, 0.12); border-color: #38BDF8; color: #0369A1; }
+.spec-reset-btn { padding: 3px 10px; border-radius: 6px; border: 1px solid rgba(185, 28, 28, 0.3); background: rgba(185, 28, 28, 0.08); color: #B91C1C; font-size: 11px; cursor: pointer; }
+.ai-spec-summary-bar { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(2, 132, 199, 0.25); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.summary-meta { display: flex; align-items: center; gap: 8px; }
+.summary-badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: #0369A1; color: #fff; }
+.summary-text { font-size: 12px; color: #475569; }
+.matched-count { font-size: 11px; color: #0C4A6E; }
+.product-card-container { position: relative; }
+.ai-recommend-badge { position: absolute; top: -8px; left: 8px; z-index: 2; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: linear-gradient(135deg, #059669 0%, #047857 100%); color: #fff; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35); }
 </style>

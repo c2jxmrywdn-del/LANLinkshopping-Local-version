@@ -33,6 +33,10 @@
           <template #icon><DashboardOutlined /></template>
           <span>数据概览</span>
         </a-menu-item>
+        <a-menu-item key="admin-metrics">
+          <template #icon><FundOutlined /></template>
+          <span>经营指标</span>
+        </a-menu-item>
         <a-menu-item key="admin-merchants">
           <template #icon><ShopOutlined /></template>
           <span>商户管理</span>
@@ -61,9 +65,17 @@
           <template #icon><SafetyCertificateOutlined /></template>
           <span>账期审核</span>
         </a-menu-item>
+        <a-menu-item key="admin-tracking-exceptions">
+          <template #icon><WarningOutlined /></template>
+          <span>物流异常件</span>
+        </a-menu-item>
         <a-menu-item key="admin-ai-models">
           <template #icon><ApiOutlined /></template>
           <span>外部大模型</span>
+        </a-menu-item>
+        <a-menu-item key="admin-tech-service">
+          <template #icon><ExperimentOutlined /></template>
+          <span>技术服务运营</span>
         </a-menu-item>
         <a-menu-item key="admin-join-us">
           <template #icon><UserAddOutlined /></template>
@@ -182,13 +194,16 @@ import { ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   DashboardOutlined,
+  FundOutlined,
   ShopOutlined,
   AppstoreOutlined,
   GiftOutlined,
   LineChartOutlined,
   DollarCircleOutlined,
   SafetyCertificateOutlined,
+  WarningOutlined,
   ApiOutlined,
+  ExperimentOutlined,
   FileProtectOutlined,
   CommentOutlined,
   UserAddOutlined,
@@ -235,6 +250,7 @@ const communicationRouteToMenu = {
 
 const routeNameMap = {
   'admin-dash': '数据概览',
+  'admin-metrics': '经营指标',
   'admin-merchants': '商户管理',
   'admin-merchant-detail': '商户档案详情',
   'admin-products': '商品管理',
@@ -243,7 +259,9 @@ const routeNameMap = {
   'admin-live': '直播管理',
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',
+  'admin-tracking-exceptions': '物流异常件',
   'admin-ai-models': '外部大模型',
+  'admin-tech-service': '技术服务运营',
   'admin-join-us': '加入我们审核',
   'admin-audit': '审计日志',
   'admin-communications': '沟通概览',

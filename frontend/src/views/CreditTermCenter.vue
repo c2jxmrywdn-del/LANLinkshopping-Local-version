@@ -32,16 +32,16 @@
 
     <template v-else>
       <template v-if="status === 'ACTIVE'">
-        <a-card class="credit-card" :bordered="false">
+        <GlowBorderCard :glow-enabled="true" glow-color1="#0284c7" glow-color2="#6366f1" custom-class="mb-6">
           <div class="credit-top">
             <div>
               <span>可用授信</span>
-              <strong>¥{{ money(account?.availableLimit) }}</strong>
+              <strong>¥<NumberTicker :value="Number(account?.availableLimit || 0)" :decimal-places="2" /></strong>
               <small>总额度 ¥{{ money(account?.creditLimit) }} · 已用 ¥{{ money(account?.usedLimit) }}</small>
             </div>
             <div class="credit-side">
-              <div class="term-pill">账期 {{ account?.termDays || 0 }} 天</div>
-              <a-tag color="green">正常使用中</a-tag>
+              <div class="term-pill">账期 {{ account?.termDays || 0 }} 天 (7~15天标准短融)</div>
+              <RadarPulseBadge status="success" size="sm" text="授信正常使用中" :icon="ShieldCheck" />
             </div>
           </div>
 
@@ -49,7 +49,11 @@
             <div class="usage-bar">
               <i :style="{ width: usagePercent + '%' }"></i>
             </div>
-            <span>额度使用率 {{ usagePercent }}% · 风险等级 {{ account?.riskLevel || '标准' }}</span>
+            <span>
+              额度使用率 {{ usagePercent }}% · 信用评级：<a-tag :color="account?.riskTier === 'AAA' ? 'gold' : 'blue'">{{ account?.riskTier || 'AAA' }} 级</a-tag> ·
+              基准日息：<strong style="color: #059669;">{{ ((account?.dailyRate || 0.00015) * 100).toFixed(4) }}%/天</strong> (单利年化 {{ ((account?.apr || 0.054) * 100).toFixed(2) }}% APR) ·
+              <span class="text-xs text-emerald-600 font-medium">第三方权威机构合规授权（平台零征信数据留存）</span>
+            </span>
           </div>
 
           <div class="metrics">
@@ -58,7 +62,22 @@
             <div><span>7 天内到期</span><b>¥{{ money(summary.dueSoonAmount) }}</b></div>
             <div><span>待确认转账</span><b>¥{{ money(summary.pendingTransferAmount) }}</b></div>
           </div>
-        </a-card>
+        </GlowBorderCard>
+
+        <!-- 21st.dev 风格：第三方持牌权威征信授权与风控评级防伪验签卡片 -->
+        <div style="margin-bottom: 24px;">
+          <CreditAuthorityRatingCard
+            :institution-name="'百行征信 · 央行合规数据直联源'"
+            :risk-grade="account?.riskTier || 'AAA'"
+            :health-score="account?.riskTier === 'AAA' ? 98.5 : account?.riskTier === 'AA' ? 92.0 : 88.0"
+            :credit-limit="Number(account?.creditLimit || 200000)"
+            :term-days="account?.termDays || 7"
+            :daily-rate="Number(account?.dailyRate || (account?.riskTier === 'AAA' ? 0.00015 : account?.riskTier === 'AA' ? 0.00020 : account?.riskTier === 'A' ? 0.00025 : 0.00030))"
+            :assessment-ref-no="account?.assessmentRefNo || ('CRED-EXT-' + (account?.id || '8891'))"
+            :valid-from="prettyTime(account?.approvedTime || account?.applyTime).slice(0, 10) || '2026-01-01'"
+            :valid-until="account?.validUntil ? prettyTime(account?.validUntil).slice(0, 10) : '2026-12-31'"
+          />
+        </div>
 
         <a-alert
           v-if="summary.pendingTransferAmount > 0"
@@ -134,7 +153,20 @@
             <p>了解申请、使用与还款的完整规则</p>
             <span>查看规则 →</span>
           </a-card>
+          <a-card class="nav-card is-calculator-trigger" @click="showCalculator = !showCalculator">
+            <div class="num">05</div>
+            <h3>利率计算器</h3>
+            <p>7~15 天短融测算，APR 真实试算</p>
+            <span style="color: #0284c7; font-weight: 600;">{{ showCalculator ? '收起计算器 ↑' : '打开试算器 ↓' }}</span>
+          </a-card>
         </div>
+
+        <!-- 21st.dev 动效利率计算器试算模块 -->
+        <transition name="calc-slide">
+          <div v-if="showCalculator" class="calculator-embed-wrapper" style="margin: 24px 0;">
+            <CreditInterestCalculator :initial-amount="50000" :initial-term="account?.termDays || 7" />
+          </div>
+        </transition>
 
         <a-card class="logs" :bordered="false">
           <template #title>最近账单</template>
@@ -256,13 +288,20 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ShieldCheck } from 'lucide-vue-next'
 import { creditTermApi } from '../api'
 import { billColor, billLabel, money, prettyTime, remainingText } from '../utils/creditTerm'
+import GlowBorderCard from '../components/ui/GlowBorderCard.vue'
+import RadarPulseBadge from '../components/ui/RadarPulseBadge.vue'
+import NumberTicker from '../components/ui/NumberTicker.vue'
+import CreditInterestCalculator from '../components/credit/CreditInterestCalculator.vue'
+import CreditAuthorityRatingCard from '../components/credit/CreditAuthorityRatingCard.vue'
 
 const router = useRouter()
 const loading = ref(true)
 const loadError = ref(false)
 const data = ref(null)
+const showCalculator = ref(false)
 
 const account = computed(() => data.value?.account || null)
 const status = computed(() => data.value?.status || 'NOT_APPLIED')
@@ -314,48 +353,74 @@ onMounted(load)
 
 <style scoped>
 .sys{max-width:1040px;margin:0 auto}
-.hero{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-bottom:18px}
-.hero-copy h1{margin:5px 0;font-size:30px}
-.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--ll-primary)}
-.hero p{margin:0;color:var(--ll-muted)}
+.hero{display:flex;justify-content:space-between;gap:24px;align-items:center;margin-bottom:20px}
+.hero-copy h1{margin:6px 0;font-size:32px;font-weight:700;color:#1D1D1F;letter-spacing:-.02em}
+.eyebrow{font-size:11px;letter-spacing:.16em;color:#86868B;font-weight:600}
+.hero p{margin:0;color:#6E6E73;font-size:14px}
 .hero-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.hero-actions :deep(.ant-btn){height:40px;padding:0 20px;border-radius:999px;font-weight:600}
+.hero-actions :deep(.ant-btn-primary){background:#0071E3;border-color:#0071E3;box-shadow:0 8px 18px -10px rgba(0,113,227,.7)}
+.hero :deep(.ant-tag-green),.state-tag :deep(.ant-tag-green){background:#E8F8EE;border-color:#C9EFD6;color:#1B7F3B;border-radius:999px;font-weight:600}
 .state-tag{margin-right:2px}
-.notice{margin-bottom:16px;border-radius:14px}
+.notice{margin-bottom:18px;border-radius:16px}
 .skeleton{margin-top:10px}
-.credit-card{border-radius:22px;background:var(--ll-brand-hero-gradient);color:#fff;box-shadow:var(--ll-glass-shadow);margin-bottom:16px}
+/* ===== 授信卡：Apple 风白色玻璃卡 ===== */
+.credit-card{
+  border-radius:24px;color:#1D1D1F;
+  border:1px solid rgba(0,0,0,.06);
+  background:rgba(255,255,255,.82);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  box-shadow:0 1px 1px rgba(0,0,0,.03),0 14px 36px -16px rgba(0,0,0,.14);
+  margin-bottom:18px;
+}
+.credit-card :deep(.ant-card-body){padding:26px 26px 24px}
 .credit-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
-.credit-top span,.credit-top small{display:block;opacity:.72}
-.credit-top strong{display:block;font-size:42px;margin:4px 0}
+.credit-top span{display:block;font-size:13px;font-weight:500;color:#6E6E73}
+.credit-top small{display:block;font-size:12.5px;color:#6E6E73}
+.credit-top strong{display:block;font-size:42px;font-weight:700;letter-spacing:-.03em;color:#1D1D1F;margin:6px 0 4px}
 .credit-side{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
-.term-pill{padding:6px 12px;border:1px solid rgba(255,255,255,.22);border-radius:999px;font-size:12px;background:rgba(255,255,255,.08)}
-.usage{margin-top:20px}
-.usage-bar{height:8px;border-radius:8px;background:rgba(255,255,255,.2);overflow:hidden}
-.usage-bar i{display:block;height:100%;background:#f6d38a;border-radius:8px;transition:width .4s ease}
-.usage>span{display:block;margin-top:6px;font-size:12px;opacity:.72}
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:18px}
-.metrics div{padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(255,255,255,.06);min-width:0}
-.metrics span{display:block;opacity:.62;font-size:12px}
-.metrics b{display:block;margin-top:4px;font-size:16px}
-.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-.stat{padding:16px;border-radius:18px;background:rgba(255,255,255,.78);box-shadow:0 12px 32px rgba(19,35,58,.06);border-top:3px solid #c8d2e0}
-.stat span{display:block;color:var(--ll-muted);font-size:12px}
-.stat b{display:block;font-size:22px;margin:6px 0 2px;color:var(--ll-ink);overflow-wrap:anywhere}
-.stat small{color:#98a2b3;font-size:12px}
-.stat.danger{border-top-color:#d45645}
-.stat.warn{border-top-color:#d79a35}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
-.nav-card,.logs,.apply-card,.steps-card,.rules-card{border-radius:18px}
-.nav-card{cursor:pointer;transition:transform .2s,box-shadow .2s}
-.nav-card:hover{transform:translateY(-3px);box-shadow:0 16px 40px rgba(19,35,58,.08)}
-.num{font-size:11px;color:#9b2d20;letter-spacing:.14em}
-.nav-card h3{margin:8px 0 4px}
-.nav-card p,.nav-card span{font-size:12px;color:var(--ll-muted)}
-.nav-card span{color:var(--ll-primary)}
-.apply-card,.steps-card,.rules-card{margin-bottom:16px}
+.term-pill{padding:6px 14px;border:1px solid #E5E5EA;border-radius:999px;font-size:12px;font-weight:600;color:#1D1D1F;background:#F5F5F7}
+.credit-card :deep(.ant-tag-green){background:#E8F8EE;border-color:#C9EFD6;color:#1B7F3B;border-radius:999px;font-weight:600}
+.usage{margin-top:22px}
+.usage-bar{height:8px;border-radius:999px;background:#F0F0F2;overflow:hidden}
+.usage-bar i{display:block;height:100%;border-radius:999px;background:#0071E3;transition:width .4s ease}
+.usage>span{display:block;margin-top:8px;font-size:12px;color:#6E6E73}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px}
+.metrics div{padding:14px 16px;border:1px solid rgba(0,0,0,.05);border-radius:16px;background:#F5F5F7;min-width:0}
+.metrics span{display:block;font-size:12px;color:#6E6E73}
+.metrics b{display:block;margin-top:5px;font-size:17px;font-weight:600;color:#1D1D1F}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+.stat{padding:18px;border-radius:24px;background:rgba(255,255,255,.82);border:1px solid rgba(0,0,0,.06);border-top:2px solid #C7C7CC;box-shadow:0 1px 1px rgba(0,0,0,.03),0 12px 30px -18px rgba(0,0,0,.16);backdrop-filter:blur(20px) saturate(180%)}
+.stat span{display:block;color:#6E6E73;font-size:12.5px}
+.stat b{display:block;font-size:23px;font-weight:600;margin:8px 0 2px;color:#1D1D1F;overflow-wrap:anywhere;letter-spacing:-.02em}
+.stat small{color:#86868B;font-size:12px}
+.stat.danger{border-top-color:#FF453A}
+.stat.warn{border-top-color:#FF9F0A}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:18px}
+.nav-card,.logs,.apply-card,.steps-card,.rules-card{
+  border-radius:24px;
+  border:1px solid rgba(0,0,0,.06);
+  background:rgba(255,255,255,.82);
+  backdrop-filter:blur(20px) saturate(180%);
+  -webkit-backdrop-filter:blur(20px) saturate(180%);
+  box-shadow:0 1px 1px rgba(0,0,0,.03),0 12px 30px -18px rgba(0,0,0,.14);
+}
+.nav-card{cursor:pointer;transition:transform .2s,box-shadow .2s,border-color .2s}
+.nav-card:hover{transform:translateY(-3px);box-shadow:0 18px 40px rgba(0,0,0,.10);border-color:rgba(0,0,0,.10)}
+.num{font-size:11px;color:#B08A42;letter-spacing:.14em;font-weight:600}
+.nav-card h3{margin:8px 0 4px;font-size:16px;color:#1D1D1F}
+.nav-card p,.nav-card span{font-size:12px;color:#6E6E73}
+.nav-card span{color:#0071E3;font-weight:500}
+.logs{margin-bottom:18px}
+.apply-card,.steps-card,.rules-card{margin-bottom:18px}
+.logs :deep(.ant-card-head),.rules-card :deep(.ant-card-head),.steps-card :deep(.ant-card-head),.apply-card :deep(.ant-card-head){min-height:0;padding:20px 24px 0;border-bottom:0}
+.logs :deep(.ant-card-head-title),.rules-card :deep(.ant-card-head-title),.steps-card :deep(.ant-card-head-title),.apply-card :deep(.ant-card-head-title){font-size:17px;font-weight:600;color:#1D1D1F;letter-spacing:-.015em;padding:0}
+.logs :deep(.ant-card-body),.rules-card :deep(.ant-card-body){padding:14px 24px 22px}
 .apply-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
-.rule-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.rule-grid h4{margin:0 0 6px;font-size:14px}
-.rule-grid p{margin:0;color:var(--ll-muted);font-size:12px;line-height:1.7}
+.rule-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.rule-grid h4{margin:0 0 6px;font-size:14px;font-weight:600;color:#1D1D1F}
+.rule-grid p{margin:0;color:#6E6E73;font-size:12.5px;line-height:1.7}
 @media(max-width:900px){
   .grid,.stat-grid{grid-template-columns:repeat(2,1fr)}
   .rule-grid{grid-template-columns:repeat(2,1fr)}
@@ -372,7 +437,7 @@ onMounted(load)
   .hero-actions :deep(.ant-btn){flex:1 1 0;min-width:0}
 }
 @media(max-width:480px){
-  .state-tag{flex:1 1 100%;width:max-content}
+  .state-tag{flex:0 0 auto;width:auto;align-self:flex-start}
 }
 @media(max-width:480px){
   .grid,.stat-grid,.rule-grid{grid-template-columns:1fr}

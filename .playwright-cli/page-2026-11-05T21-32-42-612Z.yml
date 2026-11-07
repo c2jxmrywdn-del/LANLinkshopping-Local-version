@@ -1,0 +1,226 @@
+- generic [ref=f3e2]:
+  - generic [ref=f3e3]:
+    - generic [ref=f3e5]:
+      - generic [ref=f3e6] [cursor=pointer]: LANLinkshopping
+      - menu [ref=f3e9]:
+        - menuitem "首页" [ref=f3e10] [cursor=pointer]
+        - menuitem "商城" [ref=f3e15] [cursor=pointer]
+        - menuitem "活动" [ref=f3e20] [cursor=pointer]
+        - menuitem "技术服务" [ref=f3e22] [cursor=pointer]
+        - menuitem "直播" [ref=f3e24] [cursor=pointer]
+        - menuitem "账期" [ref=f3e26] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=f3e30] [cursor=pointer]
+      - generic [ref=f3e33]:
+        - button "Switch to English" [ref=f3e34] [cursor=pointer]:
+          - generic [ref=f3e35]:
+            - generic [ref=f3e37]: 中
+            - generic [ref=f3e38]: EN
+        - generic [ref=f3e39]:
+          - button "消息" [ref=f3e40] [cursor=pointer]
+          - superscript [ref=f3e45]:
+            - paragraph [ref=f3e47]: "3"
+            - paragraph [ref=f3e49]: "3"
+        - button "购物车" [ref=f3e51] [cursor=pointer]
+        - generic [ref=f3e57] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=f3e58]:
+            - generic [aria-hidden] [ref=f3e59]: 用户
+          - generic "入驻商户" [ref=f3e60]: 商户
+          - generic [ref=f3e61]: 入驻测试用户
+    - main [ref=f3e64]:
+      - main [ref=f3e65]:
+        - generic [ref=f3e67]:
+          - complementary [ref=f3e68]:
+            - generic [ref=f3e69]:
+              - img "重庆建工实业集团 的头像" [ref=f3e70]:
+                - generic [aria-hidden] [ref=f3e71]: 重庆
+              - generic [ref=f3e72]:
+                - generic "重庆建工实业集团" [ref=f3e73]
+                - generic [ref=f3e74]: 已通过
+            - navigation [ref=f3e75]:
+              - button "工作台" [ref=f3e76] [cursor=pointer]
+              - button "商品管理" [ref=f3e78] [cursor=pointer]
+              - button "营销活动" [ref=f3e80] [cursor=pointer]
+              - button "直播带货" [ref=f3e82] [cursor=pointer]
+              - button "价格监控" [ref=f3e84] [cursor=pointer]
+              - button "订单管理 2" [ref=f3e86] [cursor=pointer]:
+                - generic [ref=f3e87]: 订单管理
+                - generic [ref=f3e88]: "2"
+              - button "客户消息" [ref=f3e89] [cursor=pointer]
+              - button "物流发货" [ref=f3e91] [cursor=pointer]
+              - button "流量推广" [ref=f3e93] [cursor=pointer]
+              - button "流量分析" [ref=f3e95] [cursor=pointer]
+              - button "资金结算" [ref=f3e97] [cursor=pointer]
+              - button "店铺设置" [ref=f3e99] [cursor=pointer]
+            - generic [ref=f3e101]:
+              - paragraph [ref=f3e102]: 商户服务专线
+              - generic [ref=f3e103]: 400-888-0 LAN
+              - text: 工作日 9:00 - 18:00
+          - generic [ref=f3e105]:
+            - generic [ref=f3e106]:
+              - generic [ref=f3e107]:
+                - heading "营销活动" [level=2] [ref=f3e108]
+                - paragraph [ref=f3e109]: 报名平台大促、自建店铺促销，冲刺销售目标赢取积分激励。
+              - button "查看用户端活动" [ref=f3e110] [cursor=pointer]
+            - generic [ref=f3e112]:
+              - generic:
+                - generic:
+                  - generic: 激励奖励 按活动时间窗内本店已支付销售额计算进度
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: 商户激励
+                        - generic: 2026-10-24 ~ 2026-11-24
+                      - heading "商户销售冲刺 · 满 ¥50,000 奖 2000 积分" [level=3]
+                      - generic:
+                        - generic: 销售目标 ¥50,000.00
+                        - generic: 奖励 2000 积分
+                      - generic:
+                        - generic:
+                          - generic: 已完成 ¥3,890.00
+                          - generic: 7%
+                      - generic:
+                        - button "报名参加"
+                - generic:
+                  - generic: 平台大促 报名后店铺商品将参与活动会场
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: 满减大促
+                        - generic: 2026-10-24 ~ 2026-11-09
+                      - heading "双十一工业品大促 · 商户报名中" [level=3]
+                      - paragraph: 活动说明由平台运营在后台维护。
+                      - generic:
+                        - generic: 全场
+                        - button "立即报名"
+            - generic [ref=f3e119]:
+              - generic [ref=f3e120]: 自建促销 提交后由平台审核，审核通过前不会对用户展示
+              - generic [ref=f3e124]:
+                - generic [ref=f3e125]: 创建促销
+                - generic [ref=f3e133]:
+                  - generic [ref=f3e134]:
+                    - generic [ref=f3e136]:
+                      - generic "活动标题" [ref=f3e138]: "* 活动标题"
+                      - generic [ref=f3e142]:
+                        - textbox "如：全场满 200 减 30" [ref=f3e143]
+                        - generic [ref=f3e144]: 0 / 60
+                    - generic [ref=f3e147]:
+                      - generic "促销类型" [ref=f3e149]: "* 促销类型"
+                      - generic [ref=f3e152]:
+                        - generic [ref=f3e154] [cursor=pointer]:
+                          - combobox [ref=f3e156]
+                          - generic "满减" [ref=f3e157]
+                        - generic [ref=f3e158]: 满 X 元立减 Y 元
+                  - generic [ref=f3e159]:
+                    - generic [ref=f3e161]:
+                      - generic "起止时间" [ref=f3e163]: "* 起止时间"
+                      - generic [ref=f3e167]:
+                        - textbox "开始时间" [ref=f3e169]
+                        - generic "to" [ref=f3e171]:
+                          - img "swap-right" [ref=f3e172]
+                        - textbox "结束时间" [ref=f3e176]
+                        - generic:
+                          - img "calendar"
+                    - generic [ref=f3e178]:
+                      - generic "门槛金额（元）" [ref=f3e180]: "* 门槛金额（元）"
+                      - generic [ref=f3e184]:
+                        - generic [ref=f3e185]:
+                          - button "Increase Value" [ref=f3e186] [cursor=pointer]:
+                            - img "up" [ref=f3e187]
+                          - button "Decrease Value" [ref=f3e190] [cursor=pointer]:
+                            - img "down" [ref=f3e191]
+                        - spinbutton "满 X 元生效（0 = 无门槛）" [ref=f3e195]
+                  - generic [ref=f3e198]:
+                    - generic "优惠金额（元）" [ref=f3e200]: "* 优惠金额（元）"
+                    - generic [ref=f3e204]:
+                      - generic [ref=f3e205]:
+                        - button "Increase Value" [ref=f3e206] [cursor=pointer]:
+                          - img "up" [ref=f3e207]
+                        - button "Decrease Value" [ref=f3e210] [cursor=pointer]:
+                          - img "down" [ref=f3e211]
+                      - spinbutton "满 X 减 Y 的 Y" [ref=f3e215]
+                  - generic [ref=f3e217]:
+                    - generic "选择商品" [ref=f3e219]: "* 选择商品"
+                    - generic [ref=f3e224]:
+                      - combobox [ref=f3e228]
+                      - generic: 选择参与促销的在售商品（至少 1 件）
+                  - generic [ref=f3e230]:
+                    - generic "活动说明" [ref=f3e232]
+                    - textbox "展示给用户的促销说明" [ref=f3e236]
+                  - generic [ref=f3e237]:
+                    - button "提交审核" [ref=f3e238] [cursor=pointer]
+                    - generic [ref=f3e240]: 提交后进入平台审核队列，审核通过后才可上架
+              - generic [ref=f3e241]:
+                - generic [ref=f3e243]:
+                  - generic [ref=f3e244]: 我的促销
+                  - button "刷新" [ref=f3e250] [cursor=pointer]
+                - generic [ref=f3e254]:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - table:
+                            - rowgroup:
+                              - row "标题 类型 时间窗 门槛与优惠 审核状态 上下架":
+                                - columnheader "标题"
+                                - columnheader "类型"
+                                - columnheader "时间窗"
+                                - columnheader "门槛与优惠"
+                                - columnheader "审核状态"
+                                - columnheader "上下架"
+                            - rowgroup:
+                              - row "重庆建工：线材专项折扣 绑定 1 件商品 · 独立复核 折扣 2026-10-30 00:00 ~ 2026-11-30 23:59 9 折 · 满 ¥500 已通过":
+                                - cell "重庆建工：线材专项折扣 绑定 1 件商品 · 独立复核":
+                                  - generic:
+                                    - generic: 重庆建工：线材专项折扣
+                                    - generic: 绑定 1 件商品 · 独立复核
+                                - cell "折扣"
+                                - cell "2026-10-30 00:00 ~ 2026-11-30 23:59"
+                                - cell "9 折 · 满 ¥500"
+                                - cell "已通过"
+                                - cell:
+                                  - switch [checked]
+    - generic [ref=f3e262]:
+      - generic [ref=f3e263]:
+        - generic [ref=f3e264]: LANLinkshopping
+        - paragraph [ref=f3e265]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=f3e266]:
+        - button "商城" [ref=f3e267] [cursor=pointer]
+        - button "技术服务" [ref=f3e268] [cursor=pointer]
+        - button "关于我们" [ref=f3e269] [cursor=pointer]
+        - button "联系我们" [ref=f3e270] [cursor=pointer]
+        - button "用户服务协议" [ref=f3e271] [cursor=pointer]
+        - button "隐私政策" [ref=f3e272] [cursor=pointer]
+        - button "Cookie 政策" [ref=f3e273] [cursor=pointer]
+        - button "平台说明" [ref=f3e274] [cursor=pointer]
+        - button "免责声明" [ref=f3e275] [cursor=pointer]
+        - button "技术服务规则" [ref=f3e276] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=f3e277] [cursor=pointer]
+      - region "项目作者信息" [ref=f3e278]:
+        - generic [ref=f3e279]:
+          - link "在 X 查看 Jason Ouyang" [ref=f3e280] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=f3e281]
+          - generic [ref=f3e282]:
+            - generic [ref=f3e283]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=f3e284]: Jason Ouyang
+            - generic [ref=f3e285]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=f3e286]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=f3e289] [cursor=pointer]:
+      - img "智能客服头像" [ref=f3e290]
+      - generic [ref=f3e300]: 专属客服
+    - button "返回顶部"
+  - generic [ref=f3e301]:
+    - generic [ref=f3e307]:
+      - img "LANLinkshopping" [ref=f3e308]:
+        - generic [aria-hidden] [ref=f3e309]: LΛN // L1NK // SH0PP1NG
+        - img "LANLinkshopping" [ref=f3e310]:
+          - generic [ref=f3e311]: LAN
+          - generic [ref=f3e312]: Link
+          - generic [ref=f3e313]: shopping
+        - generic [aria-hidden] [ref=f3e315]: DECODING BRAND MARK
+      - generic [ref=f3e316]: 聚合 · 连接 · 一体多元解决方案
+    - button "跳过 ›" [ref=f3e320] [cursor=pointer]

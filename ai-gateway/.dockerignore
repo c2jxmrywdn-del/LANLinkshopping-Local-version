@@ -1,0 +1,9 @@
+# 构建上下文裁剪：缓存与运行期产物不进入任何阶段。
+# 注意：不要排除 tests/，test 阶段依赖它执行质量门禁。
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+data/
+metrics/
+app;E/
+*.md

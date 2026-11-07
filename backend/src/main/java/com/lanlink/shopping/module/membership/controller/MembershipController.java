@@ -47,4 +47,14 @@ public class MembershipController {
                                               HttpServletRequest request) {
         return R.ok(membershipService.redeemQuote(UserContext.currentUserId(request), points, orderAmount));
     }
+
+    /**
+     * 会员价试算（P1-7）：按当前成长值可达档位（非最高档）返回该商品立省金额。
+     * 返回 {applicable, levelName, discountRate, prodPrice, saving, hasActiveSubscription}；
+     * 可达档仍为普通会员（1.000）时 applicable=false，前端回退为无金额整句。
+     */
+    @GetMapping("/price-preview")
+    public R<Map<String, Object>> pricePreview(@RequestParam Long prodId, HttpServletRequest request) {
+        return R.ok(membershipService.pricePreview(UserContext.currentUserId(request), prodId));
+    }
 }

@@ -46,6 +46,8 @@ public class KnowledgeQueryController {
         String model = body.get("model") == null ? AiModelRouter.AUTO : String.valueOf(body.get("model"));
         // 工具增强：本地库无命中时允许模型走联网搜索/网页抓取/Context7（网关自动路由）
         boolean enableTools = Boolean.TRUE.equals(body.get("enableTools"));
-        return R.ok(ragService.ask(question.trim(), Math.min(Math.max(topK, 1), 10), source, model, enableTools));
+        // 传入登录用户 id：外部大模型兜底计费链的用户级成本护栏与风控事件需要用户维度
+        return R.ok(ragService.ask(question.trim(), Math.min(Math.max(topK, 1), 10), source, model, enableTools,
+                UserContext.currentUserId(request)));
     }
 }

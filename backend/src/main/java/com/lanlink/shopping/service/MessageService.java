@@ -65,6 +65,13 @@ public class MessageService {
                 .set(Message::getReadFlag, 1));
     }
 
+    /** 同一关联号消息计数（调度类通知幂等去重：relatedNo 含业务键+周期，重跑不重复发送） */
+    public long countByRelatedNo(Long userId, String relatedNo) {
+        Long n = mapper.selectCount(new LambdaQueryWrapper<Message>()
+                .eq(Message::getUserId, userId).eq(Message::getRelatedNo, relatedNo));
+        return n == null ? 0 : n;
+    }
+
     /** 发送一条消息（订单埋点等场景调用） */
     public void send(Long userId, String type, String title, String content, String relatedNo) {
         Message m = new Message();

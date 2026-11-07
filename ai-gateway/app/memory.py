@@ -14,8 +14,13 @@ from collections import OrderedDict
 BUDGET = int(os.environ.get("SESSION_TOKEN_BUDGET", "8000"))
 KEEP_RECENT = int(os.environ.get("SESSION_KEEP_RECENT", "8"))   # 保留最近 N 轮原文
 SUMMARY_TRIGGER = int(os.environ.get("SESSION_SUMMARY_TRIGGER", "12"))  # 超过 N 轮开始摘要
+# 每来源 IP 可同时持有的会话数上限：防匿名脚本用随机 session_id 灌满全局 5000 条 LRU、
+# 驱逐真实会话（来源 IP 由 TCP 对端给出，不可伪造）
+MAX_SESSIONS_PER_IP = int(os.environ.get("SESSION_MAX_PER_IP", "50"))
+_MAX_TRACKED_IPS = 2000
 
 _sessions = OrderedDict()
+_ip_sessions = OrderedDict()   # owner_ip -> OrderedDict(session_id -> None)，LRU
 
 
 def _est_tokens(msgs):
@@ -23,11 +28,21 @@ def _est_tokens(msgs):
     return sum(len(str(m.get("content", ""))) for m in msgs) // 2 + len(msgs) * 4
 
 
-def append_turn(session_id, role, content):
+def append_turn(session_id, role, content, owner_ip=None):
     h = _sessions.setdefault(session_id, [])
     h.append({"role": role, "content": content, "ts": time.time()})
     if len(_sessions) > 5000:                      # 简单 LRU 上限，防内存膨胀
         _sessions.popitem(last=False)
+    if owner_ip:
+        if owner_ip not in _ip_sessions and len(_ip_sessions) >= _MAX_TRACKED_IPS:
+            _ip_sessions.popitem(last=False)
+        bucket = _ip_sessions.setdefault(owner_ip, OrderedDict())
+        bucket[session_id] = None
+        bucket.move_to_end(session_id)
+        while len(bucket) > MAX_SESSIONS_PER_IP:
+            old_sid, _ = bucket.popitem(last=False)
+            if old_sid != session_id:
+                _sessions.pop(old_sid, None)       # 连带清历史，防止绕过全局 LRU 计数
 
 
 def history(session_id):
@@ -36,6 +51,8 @@ def history(session_id):
 
 def clear(session_id):
     _sessions.pop(session_id, None)
+    for bucket in _ip_sessions.values():
+        bucket.pop(session_id, None)
 
 
 def build_messages(session_id, system_prompt, summarize=None):

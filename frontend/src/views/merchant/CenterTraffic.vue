@@ -86,14 +86,32 @@
       <a-tab-pane key="products" tab="商品流量">
         <a-card :bordered="false" class="panel table-panel">
           <template #title><div class="panel-title"><div><strong>商品流量表现</strong><small>识别高流量、高意向商品</small></div></div></template>
-          <a-table :data-source="products" :pagination="{pageSize:10,showSizeChanger:false}" row-key="prodId" :columns="productCols"/>
+          <a-table :data-source="products" :pagination="{pageSize:10,showSizeChanger:false}" row-key="prodId" :columns="productCols">
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'title'">
+                <a class="prod-link" @click="$router.push(`/merchant/center/products/${record.prodId}/edit`)">{{ record.title }}</a>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-button type="link" size="small" @click="$router.push(`/merchant/center/products/${record.prodId}/edit`)">编辑商品</a-button>
+              </template>
+            </template>
+          </a-table>
         </a-card>
       </a-tab-pane>
 
       <a-tab-pane key="conversion" tab="转化分析">
         <a-card :bordered="false" class="panel table-panel">
           <template #title><div class="panel-title"><div><strong>商品转化分析</strong><small>找到“浏览高、成交低”的优化对象</small></div></div></template>
-          <a-table :data-source="conversion.products" row-key="prodId" :pagination="{pageSize:10,showSizeChanger:false}" :columns="funnelCols"/>
+          <a-table :data-source="conversion.products" row-key="prodId" :pagination="{pageSize:10,showSizeChanger:false}" :columns="funnelCols">
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'title'">
+                <a class="prod-link" @click="$router.push(`/merchant/center/products/${record.prodId}/edit`)">{{ record.title }}</a>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-button type="link" size="small" @click="$router.push(`/merchant/center/products/${record.prodId}/edit`)">优化详情</a-button>
+              </template>
+            </template>
+          </a-table>
         </a-card>
       </a-tab-pane>
 
@@ -101,7 +119,7 @@
         <div class="diagnosis-grid">
           <div v-for="d in diagnosis" :key="d.code" class="diagnosis-card" :class="d.level">
             <div class="diagnosis-head"><span><AppleIcon :name="d.level==='success'?'confirm':'warning'" :size="12" /></span><b>{{d.title}}</b></div>
-            <p>{{d.suggestion}}</p><a-button v-if="d.level!=='success'" type="link">查看建议 →</a-button>
+            <p>{{d.suggestion}}</p><a-button v-if="d.level!=='success'" type="link" @click="handleDiagnosisClick(d)">查看建议 →</a-button>
           </div>
           <div v-if="!diagnosis.length" class="empty-diagnosis">暂无诊断结果</div>
         </div>
@@ -112,9 +130,12 @@
 
 <script setup>
 import {ref,computed,onMounted} from 'vue'
+import { useRouter } from 'vue-router'
 import {trafficApi} from '../../api'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
 import { Empty } from 'ant-design-vue'
+
+const router = useRouter()
 const aEmpty=Empty
 const tab=ref('overview'),days=ref(30),ov=ref({}),trend=ref([]),sources=ref([]),products=ref([]),conversion=ref({products:[]}),diagnosis=ref([])
 const fmt=n=>Number(n||0).toFixed(2)
@@ -127,14 +148,39 @@ const metrics=computed(()=>[
  {label:'累计销量',value:ov.value.totalSold||0,sub:'累计成交件数',icon:'grid'}
 ])
 const sourceCols=[{title:'来源',dataIndex:'source'},{title:'访客 UV',dataIndex:'uv'},{title:'商品浏览',dataIndex:'productViews'},{title:'加购',dataIndex:'carts'},{title:'支付',dataIndex:'pays'}]
-const productCols=[{title:'商品',dataIndex:'title'},{title:'浏览 UV',dataIndex:'views'},{title:'加购 UV',dataIndex:'carts'},{title:'支付 UV',dataIndex:'pays'}]
-const funnelCols=[{title:'商品',dataIndex:'title'},{title:'浏览 UV',dataIndex:'views'},{title:'加购 UV',dataIndex:'carts'},{title:'支付 UV',dataIndex:'pays'}]
+const productCols=[
+  {title:'商品',dataIndex:'title',key:'title'},
+  {title:'浏览 UV',dataIndex:'views'},
+  {title:'加购 UV',dataIndex:'carts'},
+  {title:'支付 UV',dataIndex:'pays'},
+  {title:'操作',key:'action',width:100}
+]
+const funnelCols=[
+  {title:'商品',dataIndex:'title',key:'title'},
+  {title:'浏览 UV',dataIndex:'views'},
+  {title:'加购 UV',dataIndex:'carts'},
+  {title:'支付 UV',dataIndex:'pays'},
+  {title:'操作',key:'action',width:100}
+]
 const maxAmount=computed(()=>Math.max(...trend.value.map(x=>Number(x.amount||0)),.01))
 const maxUv=computed(()=>Math.max(...sources.value.map(x=>Number(x.uv||0)),1))
 const barHeight=d=>Math.max(5,Number(d.amount||0)/maxAmount.value*100)+'%'
 const sourceWidth=v=>Math.max(6,Number(v||0)/maxUv.value*100)
 const healthScore=computed(()=>Math.max(62,Math.min(98,100-(diagnosis.value.filter(x=>x.level!=='success').length*9))))
 const funnelItems=computed(()=>{const c=conversion.value||{};const base=Number(c.visits||0)||1;return [{label:'访问',value:c.visits||0,width:100,rate:'—'},{label:'商品浏览',value:c.views||0,width:Math.max(12,Number(c.views||0)/base*100),rate:c.viewRate||0},{label:'加购',value:c.carts||0,width:Math.max(8,Number(c.carts||0)/base*100),rate:c.cartRate||0},{label:'支付',value:c.pays||0,width:Math.max(5,Number(c.pays||0)/base*100),rate:c.payRate||0}]})
+
+function handleDiagnosisClick(d) {
+  if (d.code === 'VIEW_LOSS') {
+    router.push('/merchant/center/promotion')
+  } else if (d.code === 'CART_LOSS') {
+    router.push('/merchant/center/pricing')
+  } else if (d.code === 'PAY_LOSS') {
+    router.push('/merchant/center/marketing')
+  } else {
+    router.push('/merchant/center/products')
+  }
+}
+
 async function reload(){const d=days.value;try{const [o,t,s,p,c,di]=await Promise.all([trafficApi.overview(),trafficApi.trend(d),trafficApi.sources(d),trafficApi.products(d),trafficApi.conversion(d),trafficApi.diagnosis(d)]);ov.value=o||{};trend.value=t||[];sources.value=s||[];products.value=p||[];conversion.value=c||{products:[]};diagnosis.value=di||[]}catch(e){}}
 onMounted(reload)
 </script>
@@ -150,6 +196,8 @@ onMounted(reload)
 .source-rank{display:flex;flex-direction:column;gap:14px}.source-row{display:grid;grid-template-columns:28px 1fr 48px 24px;align-items:center;gap:8px}.rank{font-size:11px;color:#a4a9b2}.source-name b{font-size:12px;font-weight:600}.source-name i{display:block;height:4px;background:var(--mc-border-soft, #f0eee9);border-radius:4px;margin-top:6px;overflow:hidden}.source-name i span{display:block;height:100%;background:var(--mc-chart-solid, #0ea5e9);border-radius:4px}.source-row strong{text-align:right;font-size:13px}.source-row small{color:#a0a6b0;font-size:10px}
 .funnel-modern{padding-top:2px}.funnel-step{margin-bottom:13px}.funnel-label{display:flex;justify-content:space-between;font-size:12px}.funnel-label b{font-size:13px}.funnel-track{height:9px;background:var(--mc-border-soft, #f1eee9);border-radius:99px;margin-top:6px;overflow:hidden}.funnel-track i{display:block;height:100%;background:var(--mc-chart-muted, #9db4cc);border-radius:99px}.funnel-step:last-child .funnel-track i{background:var(--mc-chart-solid, #38bdf8)}.funnel-step small{color:#a0a6b0;font-size:10px;display:block;margin-top:4px}
 .table-panel{margin-bottom:10px}.table-panel :deep(.ant-table-thead > tr > th){background:#fbf9f1;color:#596273;font-size:12px}.table-panel :deep(.ant-table-tbody > tr > td){font-size:12px}
+.prod-link{color:#1e6eb8;cursor:pointer;font-weight:500;transition:color .15s}
+.prod-link:hover{color:#104d80;text-decoration:underline}
 .diagnosis-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.diagnosis-card{background:#fff;border:1px solid var(--mc-border, #ebe8e2);border-radius:14px;padding:20px;min-height:145px}.diagnosis-card.warning{border-top:3px solid #c98b2b}.diagnosis-card.info{border-top:3px solid #78879a}.diagnosis-card.success{border-top:3px solid #16805a}.diagnosis-head{display:flex;align-items:center;gap:9px}.diagnosis-head span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--mc-decor, #f5f0e8);color:#9b2d20;font-size:12px}.diagnosis-card.success .diagnosis-head span{color:#16805a}.diagnosis-card p{font-size:12px;color:#7f8794;line-height:1.6;margin:12px 0}.diagnosis-card :deep(.ant-btn-link){padding:0;color:#9b2d20;font-size:12px}.empty-diagnosis{grid-column:1/-1;text-align:center;padding:60px;color:#9ca3af}
 @media(max-width:1050px){.kpi-grid{grid-template-columns:repeat(3,1fr)}.grid-main{grid-template-columns:1fr}.diagnosis-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.traffic-page{padding:0 8px 30px}.hero{align-items:flex-start;gap:16px;flex-direction:column}.hero-actions{width:100%;flex-wrap:wrap}.hero-actions .ant-radio-group{width:100%}.hero-actions .ant-radio-button-wrapper{width:33.33%;text-align:center}.kpi-grid{grid-template-columns:repeat(2,1fr)}.kpi-card{padding:14px}.kpi-value{font-size:19px}.grid-two,.diagnosis-grid{grid-template-columns:1fr}.panel :deep(.ant-card-body){padding:15px}.source-row{grid-template-columns:24px 1fr 42px 20px}}

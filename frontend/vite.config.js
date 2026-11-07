@@ -4,6 +4,17 @@ import { gzipSync, brotliCompressSync, constants } from 'node:zlib'
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, extname } from 'node:path'
 
+// 启动即加载仓库根 .env 到 process.env（仅填充缺失项，不覆盖真实环境变量）：
+// Vite 只把 .env 注入 import.meta.env，而本配置在 config 阶段读 process.env.SUPPORT_PROXY_SECRET
+// （客服链路代理密钥）——不加载会导致任何裸 `npx vite` 启动的 dev server 客服 403。
+try {
+  const rootEnv = readFileSync(new URL('../.env', import.meta.url), 'utf8')
+  for (const line of rootEnv.split(/\r?\n/)) {
+    const m = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2]
+  }
+} catch { /* 无根 .env 时静默跳过 */ }
+
 /**
  * 构建期预压缩插件：为 dist 内 JS/CSS/HTML/JSON/SVG 生成 .gz（Gzip）与 .br（Brotli）文件。
  * 部署侧（Nginx/静态托管）按 Accept-Encoding 直接回源压缩文件，省去实时压缩 CPU，
@@ -134,6 +145,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // 注意：更精确的路径必须放在 /api 之前（按声明顺序匹配）
+      '/api/support/ask-stream': supportProxy,
       '/api/support/ask': supportProxy,
       '/api': apiProxy
     }
@@ -142,6 +154,7 @@ export default defineConfig({
   preview: {
     port: 4173,
     proxy: {
+      '/api/support/ask-stream': supportProxy,
       '/api/support/ask': supportProxy,
       '/api': apiProxy
     }

@@ -28,6 +28,16 @@ public class OrderController {
 
     private final OrderService orderService;
 
+    /**
+     * 只有模拟支付环境才允许「不走渠道直接把订单置为已付」。
+     *
+     * <p>生产（lanlink.payment.mock=false）下这条口子等于免付款下单：
+     * 真实资金必须由 /payment/create 建单、渠道回调 settlePaid 结算。
+     * 用字段注入而不是构造参数，避免改动既有构造签名、连带他人测试。
+     */
+    @org.springframework.beans.factory.annotation.Value("${lanlink.payment.mock:false}")
+    private boolean mockPayment;
+
     public OrderController(OrderService orderService) {
         this.orderService = orderService;
     }
@@ -60,6 +70,10 @@ public class OrderController {
 
     @PostMapping("/pay/{orderNo}")
     public R<Order> pay(@PathVariable String orderNo, HttpServletRequest request) {
+        if (!mockPayment) {
+            throw new com.lanlink.shopping.common.BusinessException(403,
+                    "该接口仅用于本地模拟支付；生产环境请通过 /payment/create 发起渠道支付并等待回调");
+        }
         return R.ok("支付成功", orderService.pay(UserContext.currentUserId(request), orderNo));
     }
 
@@ -89,7 +103,8 @@ public class OrderController {
                                @RequestBody(required = false) Map<String, String> body,
                                HttpServletRequest request) {
         orderService.applyRefund(UserContext.currentUserId(request), orderNo,
-                body == null ? null : body.get("reason"));
+                body == null ? null : body.get("reason"),
+                body == null ? null : body.get("evidences"));
         return R.ok("退款申请已提交", null);
     }
 
@@ -128,5 +143,28 @@ public class OrderController {
     public R<com.lanlink.shopping.vo.MerchantOrderVO> merchantDetail(@PathVariable String orderNo,
                                                                      HttpServletRequest request) {
         return R.ok(orderService.merchantOrderDetail(UserContext.currentUserId(request), orderNo));
+    }
+
+    /**
+     * 商户退款初审：同意初审（流转为 merchant_approved，等待平台出款）
+     */
+    @PostMapping("/merchant/refund/approve/{orderNo}")
+    @RequirePerm("merchant:manage")
+    public R<Void> merchantApproveRefund(@PathVariable String orderNo, HttpServletRequest request) {
+        orderService.merchantApproveRefund(UserContext.currentUserId(request), orderNo);
+        return R.ok("商户初审已通过，等待平台放款处理", null);
+    }
+
+    /**
+     * 商户退款初审：驳回申请（流转为 rejected 并记录原因）
+     */
+    @PostMapping("/merchant/refund/reject/{orderNo}")
+    @RequirePerm("merchant:manage")
+    public R<Void> merchantRejectRefund(@PathVariable String orderNo,
+                                        @RequestBody(required = false) java.util.Map<String, String> body,
+                                        HttpServletRequest request) {
+        String reason = body != null ? body.get("reason") : null;
+        orderService.merchantRejectRefund(UserContext.currentUserId(request), orderNo, reason);
+        return R.ok("退款申请已驳回", null);
     }
 }

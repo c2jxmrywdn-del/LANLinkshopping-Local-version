@@ -8,6 +8,7 @@ import com.lanlink.shopping.payment.alipay.AlipayPayClient;
 import com.lanlink.shopping.payment.dto.RefundRequest;
 import com.lanlink.shopping.payment.service.PaymentLogService;
 import com.lanlink.shopping.payment.service.PaymentService;
+import com.lanlink.shopping.payment.stripe.StripePayClient;
 import com.lanlink.shopping.payment.vo.PayCreateVO;
 import com.lanlink.shopping.payment.vo.PayStatusVO;
 import com.lanlink.shopping.payment.wallet.entity.WalletLog;
@@ -71,7 +72,8 @@ class PaymentFlowTest {
         orderMapper = mock(OrderMapper.class);
         payLog = mock(PaymentLogService.class);
         walletService = mock(WalletService.class);
-        service = new PaymentService(props, wechat, alipay, orderService, orderMapper, payLog, walletService);
+        StripePayClient stripe = mock(StripePayClient.class);
+        service = new PaymentService(props, wechat, alipay, stripe, orderService, orderMapper, payLog, walletService);
     }
 
     // ===== 发起支付：wallet 渠道 =====

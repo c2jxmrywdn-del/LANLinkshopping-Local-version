@@ -8,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理。
@@ -46,7 +47,21 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public R<Void> handleIllegalArgument(IllegalArgumentException e) {
-        return R.fail(400, e.getMessage());
+        log.warn("[bad-request] 参数校验失败已对外脱敏: {}", e.getMessage());
+        return R.fail(400, "请求参数不合法");
+    }
+
+    /**
+     * 未注册的接口路径与不存在的静态资源：这是路由问题，按 404 返回。
+     *
+     * <p>不单独处理时它会落进下面的 {@code Exception} 分支，对外报「服务器内部错误」——
+     * 前端调了一个后端不存在的接口，看起来却像服务崩了，排障方向会被整个带偏。
+     * 被探测的路径只写服务端日志，不回显给调用方。
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public R<Void> handleNoResource(NoResourceFoundException e) {
+        log.warn("[no-route] 未注册的请求路径: {}", e.getResourcePath());
+        return R.fail(404, "请求的接口不存在");
     }
 
     @ExceptionHandler(Exception.class)

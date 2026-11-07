@@ -135,10 +135,10 @@ onBeforeUnmount(() => window.removeEventListener('ll-cookie-consent-changed', sy
 <style scoped>
 .privacy-page { max-width: 1040px; margin: 0 auto; }
 .hero-card, .status-card { border: 1px solid #e6e9ef; border-radius: 18px; background: rgba(255,255,255,.86); box-shadow: 0 14px 36px rgba(15,23,42,.07); }
-.hero-card { margin: 8px 0 16px; padding: 28px; display: flex; align-items: center; justify-content: space-between; gap: 24px; background: linear-gradient(135deg, rgba(19,35,58,.97), rgba(31,56,100,.92)); color: #fff; overflow: hidden; }
-.eyebrow { color: #F6D38A; font-size: 10px; letter-spacing: .16em; font-weight: 800; }
+.hero-card { margin: 8px 0 16px; padding: 28px; display: flex; align-items: center; justify-content: space-between; gap: 24px; background: linear-gradient(135deg, #EAF5FE, #D6ECFA); color: #13233A; overflow: hidden; border: 1px solid #C9E2F6; }
+.eyebrow { color: #1E6EB8; font-size: 10px; letter-spacing: .16em; font-weight: 800; }
 .hero-card h2 { margin: 7px 0 8px; font-size: 25px; }
-.hero-card p { max-width: 700px; margin: 0; color: rgba(255,255,255,.76); line-height: 1.75; font-size: 13px; }
+.hero-card p { max-width: 700px; margin: 0; color: #4A6B8A; line-height: 1.75; font-size: 13px; }
 .status-card { padding: 20px; margin-bottom: 16px; }
 .status-head { display: flex; align-items: center; justify-content: space-between; color: #13233A; margin-bottom: 14px; }
 .status-head span { color: #667085; font-size: 12px; }

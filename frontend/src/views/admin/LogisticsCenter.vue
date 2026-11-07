@@ -1,6 +1,6 @@
 <template>
   <div class="logistics-page">
-    <a-page-header title="物流中心" sub-title="服务商 / 运费模板 / 运单 / 异常告警 / 物流售后 / 物流结算">
+    <a-page-header title="物流中心" sub-title="服务商 / 运费模板 / 运单 / 异常告警 / 物流售后 / 物流结算 / 三单智能勾稽 / 6% 货运专票池">
       <a-tabs v-model:activeKey="tab">
         <a-tab-pane key="provider" tab="物流服务商">
           <a-button type="primary" @click="openProvider()">新增服务商</a-button>
@@ -78,20 +78,41 @@
           <a-table :data-source="settlements" :columns="settleCols" row-key="settlementId" size="middle"
             :pagination="{ current: settlePage.page, pageSize: settlePage.size, total: settlePage.total, onChange: loadSettlements }">
             <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'status' || column.dataIndex === 'status'">
+                <a-tag v-if="record.status === 'paid' && record.payMethod === 'credit_guarantee'" color="cyan">
+                  <ShieldCheck :size="11" class="inline mr-1 align-middle" />账期担保已付
+                </a-tag>
+                <a-tag v-else-if="record.status === 'paid'" color="green">已打款</a-tag>
+                <a-tag v-else-if="record.status === 'approved'" color="blue">待打款</a-tag>
+                <a-tag v-else-if="record.status === 'pending_review'" color="orange">待审核</a-tag>
+                <a-tag v-else-if="record.status === 'draft'" color="default">草稿</a-tag>
+                <a-tag v-else color="default">{{ record.status }}</a-tag>
+              </template>
               <template v-if="column.key === 'action'">
-                <a-space>
+                <a-space :size="8">
                   <a v-if="record.status === 'draft'" @click="reviewSettle(record, 'submit')">提交</a>
                   <a v-if="record.status === 'pending_review'" @click="reviewSettle(record, 'approve')">通过</a>
                   <a-popconfirm v-if="record.status === 'pending_review'" title="确认驳回该结算单？驳回后将退回草稿。" ok-text="驳回" cancel-text="取消"
                                 @confirm="reviewSettle(record, 'reject')">
                     <a style="color:#d93025">驳回</a>
                   </a-popconfirm>
-                  <a v-if="record.status === 'approved'" @click="reviewSettle(record, 'pay')">打款</a>
+                  <a v-if="record.status === 'approved'" @click="reviewSettle(record, 'pay')">现结打款</a>
+                  <a v-if="record.status === 'approved'" class="credit-pay-link" @click="openCreditPay(record)">
+                    <ShieldCheck :size="13" class="inline mr-0.5 align-middle text-emerald-600" />账期担保支付
+                  </a>
                   <a @click="showItems(record)">明细</a>
                 </a-space>
               </template>
             </template>
           </a-table>
+        </a-tab-pane>
+
+        <a-tab-pane key="reconciliation" tab="三单智能勾稽">
+          <ReconciliationWorkbench />
+        </a-tab-pane>
+
+        <a-tab-pane key="invoice" tab="6% 货运专票池">
+          <InvoicePoolWorkbench />
         </a-tab-pane>
       </a-tabs>
     </a-page-header>
@@ -149,7 +170,13 @@
     </a-modal>
 
     <!-- 轨迹弹窗：查看 + 运营同步节点（后端按描述关键词流转状态机，签收会联动订单完成） -->
-    <a-modal v-model:open="traceVisible" :title="`物流轨迹 · ${traceWaybill?.waybillNo || ''}`" :footer="null">
+    <a-modal v-model:open="traceVisible" :title="`物流轨迹感知 · ${traceWaybill?.waybillNo || ''}`" :footer="null" :width="800">
+      <div v-if="traceWaybill" style="margin-bottom:14px">
+        <LogisticsDynamicMap
+          :waybill-info="traceWaybill"
+          :interactive="true"
+        />
+      </div>
       <a-divider orientation="left" orientation-margin="0" style="font-size:12px">同步轨迹节点</a-divider>
       <a-space compact style="width:100%; margin-bottom:6px; flex-wrap:wrap" >
         <a-select v-model:value="syncForm.node" style="width:150px">
@@ -214,13 +241,138 @@
     <a-drawer v-model:open="itemsVisible" :title="`结算明细 · ${itemsSettleNo}`" width="520">
       <a-table :data-source="items" :columns="itemCols" row-key="itemId" size="small" :loading="itemsLoading" :pagination="false" />
     </a-drawer>
+
+    <!-- 账期担保支付确认弹窗 -->
+    <a-modal
+      v-model:open="creditPayVisible"
+      title="企业账期担保支付 · 运费月结核销"
+      :width="580"
+      :confirm-loading="creditPaySubmitting"
+      :ok-button-props="{ disabled: !canSubmitCreditPay }"
+      ok-text="确认账期担保支付"
+      cancel-text="取消"
+      @ok="submitCreditPay"
+    >
+      <a-spin :spinning="creditLoading">
+        <div v-if="selectedSettlement" class="credit-pay-modal-content">
+          <!-- 分支 A: 未开通账期 -->
+          <a-alert
+            v-if="!creditAccount || creditAccount.status !== 'ACTIVE'"
+            type="warning"
+            show-icon
+            class="mb-3"
+          >
+            <template #message>当前企业未开通企业账期授信</template>
+            <template #description>
+              <div class="mt-1">
+                当前账期授信状态为【{{ creditAccount?.status || '未申请' }}】。需先通过持牌权威征信机构准入授信后，方可使用账期垫付运费。
+                <div class="mt-2">
+                  <a-button type="primary" size="small" @click="router.push('/credit-term/apply')">
+                    前往申请企业账期
+                  </a-button>
+                </div>
+              </div>
+            </template>
+          </a-alert>
+
+          <!-- 分支 B: 额度不足 -->
+          <a-alert
+            v-else-if="Number(creditAccount.availableLimit || 0) < Number(selectedSettlement.payableAmount || 0)"
+            type="error"
+            show-icon
+            class="mb-3"
+          >
+            <template #message>可用授信额度不足</template>
+            <template #description>
+              <div class="mt-1">
+                当前可用额度为 <b>¥{{ Number(creditAccount.availableLimit || 0).toFixed(2) }}</b>，
+                本次结算需支付 <b>¥{{ Number(selectedSettlement.payableAmount || 0).toFixed(2) }}</b>，
+                差额为 <span style="color:#d93025; font-weight:600">¥{{ (Number(selectedSettlement.payableAmount) - Number(creditAccount.availableLimit)).toFixed(2) }}</span>。
+                <div class="mt-2">
+                  <a-button type="primary" size="small" @click="router.push('/credit-term/adjust')">
+                    申请提升额度
+                  </a-button>
+                </div>
+              </div>
+            </template>
+          </a-alert>
+
+          <!-- 分支 C: 额度充足正常对比 -->
+          <div v-else class="credit-pay-details">
+            <div class="bento-summary-grid">
+              <div class="bento-box">
+                <span class="box-label">结算单号</span>
+                <span class="box-val mono">{{ selectedSettlement.settlementNo }}</span>
+              </div>
+              <div class="bento-box">
+                <span class="box-label">承运服务商</span>
+                <span class="box-val font-semibold">{{ getProviderName(selectedSettlement.providerId) }}</span>
+              </div>
+              <div class="bento-box">
+                <span class="box-label">核销运单总量</span>
+                <span class="box-val">{{ selectedSettlement.waybillCount }} 单</span>
+              </div>
+              <div class="bento-box highlight-box">
+                <span class="box-label">应付运费总额</span>
+                <span class="box-val price-highlight">¥{{ Number(selectedSettlement.payableAmount || 0).toFixed(2) }}</span>
+              </div>
+            </div>
+
+            <div class="credit-calc-card">
+              <div class="calc-row">
+                <span>当前可用账期额度</span>
+                <span class="mono">¥{{ Number(creditAccount.availableLimit || 0).toFixed(2) }}</span>
+              </div>
+              <div class="calc-row" style="color: #e11d48;">
+                <span>本次账期担保支付</span>
+                <span class="mono">- ¥{{ Number(selectedSettlement.payableAmount || 0).toFixed(2) }}</span>
+              </div>
+              <div class="calc-divider"></div>
+              <div class="calc-row calc-result">
+                <span>支付后剩余可用额度</span>
+                <span class="mono" style="color: #059669; font-weight: 700;">
+                  ¥{{ (Number(creditAccount.availableLimit) - Number(selectedSettlement.payableAmount)).toFixed(2) }}
+                </span>
+              </div>
+            </div>
+
+            <div class="credit-terms-pill">
+              <div class="term-item">
+                <Clock :size="13" class="inline mr-1 text-sky-600" />
+                周转账期：<strong>{{ creditAccount.termDays || 15 }} 天</strong>
+              </div>
+              <div class="term-item">
+                <ShieldCheck :size="13" class="inline mr-1 text-emerald-600" />
+                免息宽限期：<strong>3 天</strong>
+              </div>
+              <div class="term-item">
+                <Percent :size="13" class="inline mr-1 text-indigo-600" />
+                单利年化 APR：<strong>{{ ((creditAccount.apr || 0.108) * 100).toFixed(2) }}%</strong>
+              </div>
+            </div>
+
+            <div class="guarantee-note">
+              <Info :size="13" class="inline mr-1 text-slate-400 align-middle" />
+              确认支付后，承运商将即刻收到结算打款确认，结算单状态流转为【已打款】；同时系统为企业生成对应的物流运费账期账单，可在【企业账期】中心查看并还款。
+            </div>
+          </div>
+        </div>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { logisticsApi } from '../../api'
+import { ShieldCheck, CreditCard, Clock, Percent, Info } from 'lucide-vue-next'
+import { logisticsApi, creditTermApi } from '../../api'
+import LogisticsDynamicMap from '../../components/logistics/LogisticsDynamicMap.vue'
+import ReconciliationWorkbench from '../../components/logistics/ReconciliationWorkbench.vue'
+import InvoicePoolWorkbench from '../../components/logistics/InvoicePoolWorkbench.vue'
+
+const router = useRouter()
 
 const tab = ref('provider')
 const providers = ref([])
@@ -255,6 +407,26 @@ const itemsSettleNo = ref('')
 const traceWaybill = ref(null)
 const syncing = ref(false)
 const syncForm = ref({ node: 'in_transit', location: '' })
+
+// 账期担保支付弹窗状态
+const creditPayVisible = ref(false)
+const creditPaySubmitting = ref(false)
+const creditLoading = ref(false)
+const selectedSettlement = ref(null)
+const creditAccount = ref(null)
+
+const canSubmitCreditPay = computed(() => {
+  if (!creditAccount.value || creditAccount.value.status !== 'ACTIVE') return false
+  if (!selectedSettlement.value) return false
+  const available = Number(creditAccount.value.availableLimit || 0)
+  const payable = Number(selectedSettlement.value.payableAmount || 0)
+  return available >= payable
+})
+
+function getProviderName(providerId) {
+  const p = providers.value.find(item => item.providerId === providerId)
+  return p ? p.providerName : `承运服务商 #${providerId}`
+}
 
 const aftersaleTypes = [
   { value: 'expedite', label: '催件' },
@@ -394,6 +566,33 @@ async function reviewSettle(record, action) {
   message.success(action === 'reject' ? '已驳回，结算单退回草稿' : '结算操作成功')
   loadSettlements()
 }
+async function openCreditPay(record) {
+  selectedSettlement.value = record
+  creditPayVisible.value = true
+  creditLoading.value = true
+  try {
+    const res = await creditTermApi.overview()
+    creditAccount.value = res?.account || null
+  } catch (e) {
+    creditAccount.value = null
+  } finally {
+    creditLoading.value = false
+  }
+}
+async function submitCreditPay() {
+  if (!selectedSettlement.value) return
+  creditPaySubmitting.value = true
+  try {
+    await creditTermApi.paySettlement(selectedSettlement.value.settlementId)
+    message.success('结算单账期担保支付成功！已生成物流运费账期账单。')
+    creditPayVisible.value = false
+    loadSettlements(settlePage.value.page)
+  } catch (e) {
+    // 拦截器已提示
+  } finally {
+    creditPaySubmitting.value = false
+  }
+}
 async function showTrace(record) {
   traceWaybill.value = record
   syncForm.value = { node: 'in_transit', location: '' }
@@ -502,5 +701,142 @@ onMounted(() => {
 <style scoped>
 .logistics-page {
   padding: 16px;
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+
+.credit-pay-link {
+  color: #059669 !important;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  transition: color 0.15s ease;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 4px;
+}
+.credit-pay-link:hover {
+  color: #047857 !important;
+}
+
+.credit-pay-modal-content {
+  padding-top: 6px;
+}
+
+.bento-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.bento-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.highlight-box {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.box-label {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.box-val {
+  font-size: 13.5px;
+  color: #1e293b;
+}
+
+.price-highlight {
+  font-size: 18px;
+  font-weight: 700;
+  color: #059669;
+}
+
+.credit-calc-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.calc-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.calc-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 8px 0;
+}
+
+.calc-result {
+  margin-bottom: 0;
+  font-size: 14px;
+}
+
+.credit-terms-pill {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: #1e40af;
+}
+
+.term-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.guarantee-note {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+@media (max-width: 768px) {
+  .logistics-page {
+    padding: 8px;
+  }
+  :deep(.ant-tabs-nav) {
+    margin-bottom: 12px;
+  }
+  :deep(.ant-table-wrapper) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  :deep(.ant-btn) {
+    min-height: 40px;
+    touch-action: manipulation;
+  }
+  .bento-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

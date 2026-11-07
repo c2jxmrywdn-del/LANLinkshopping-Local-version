@@ -76,11 +76,12 @@ class OutboundModelConfigServiceTest {
 
     @Test
     void upsertEmptyKeyKeepsOldCipher() {
-        // 模拟已有旧密钥
+        // 模拟已有旧密钥与已保存地址（按 SQL 区分：base_url 查询返回已保存地址，其余返回旧密文）
         AtomicReference<String> updatedCipher = new AtomicReference<>();
         when(jdbc.query(anyString(), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq("deepseek")))
                 .thenAnswer(inv -> {
-                    org.springframework.jdbc.core.ResultSetExtractor<String> ext = inv.getArgument(1);
+                    String sql = inv.getArgument(0);
+                    if (sql != null && sql.contains("base_url")) return "https://api.deepseek.com";
                     return "old-cipher";
                 });
         when(jdbc.update(contains("UPDATE t_outbound_model_config"), any(), any(), any(), any(), any(), any()))
@@ -90,6 +91,23 @@ class OutboundModelConfigServiceTest {
                 });
         service.upsert("deepseek", "https://api.deepseek.com", "", true, 1L, null);
         assertEquals("old-cipher", updatedCipher.get(), "空密钥应保留旧密文不覆盖");
+    }
+
+    @Test
+    void upsertRejectsBaseUrlChangeWithoutNewKey() {
+        // 已保存渠道：地址 https://api.deepseek.com/v1，旧密文存在
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq("deepseek")))
+                .thenAnswer(inv -> {
+                    String sql = inv.getArgument(0);
+                    if (sql != null && sql.contains("base_url")) return "https://api.deepseek.com/v1";
+                    return "old-cipher";
+                });
+        // 保留旧密钥 × 更换 Base URL → 拒绝（防止把已存计费密钥指向任意地址再经 test/invoke 外带）
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> service.upsert("deepseek", "https://evil.example.com/v1", "", true, 1L, null));
+        assertTrue(ex.getMessage().contains("安全限制"));
+        // 地址一致（仅末尾斜杠差异）→ 允许保留密钥更新（仅改启用状态/模型名等）
+        assertDoesNotThrow(() -> service.upsert("deepseek", "https://api.deepseek.com/v1/", "", true, 1L, null));
     }
 
     @Test
@@ -185,7 +203,9 @@ class OutboundModelConfigServiceTest {
         assertEquals(400, resInvalidUrl.get("statusCode"));
         assertTrue(String.valueOf(resInvalidUrl.get("error")).contains("Base URL"));
 
-        // 3. 停用渠道（enabled=0）在有已保存密钥时，仍可通过 storedChannel 读取到密钥并执行探测（而非因 enabled=0 直接抛未配置密钥）
+        // 3. 停用渠道（enabled=0）在有已保存密钥时，仍可通过 storedChannel 读取到密钥并执行探测（而非因 enabled=0 直接抛未配置密钥）。
+        //    安全约束：使用已保存密钥时 Base URL 必须与已保存地址一致——这里不传 baseUrl，由服务回退到已保存地址；
+        //    Mock 传输层抛连接拒绝（不触网），验证确实走到了 HTTP 探测阶段并返回标准失败结构。
         String cipher = service.encrypt("sk-saved-secret-key");
         when(jdbc.query(contains("FROM t_outbound_model_config WHERE channel = ?"), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq("deepseek")))
                 .thenAnswer(inv -> {
@@ -198,13 +218,92 @@ class OutboundModelConfigServiceTest {
                     org.springframework.jdbc.core.ResultSetExtractor<?> ext = inv.getArgument(1);
                     return ext.extractData(rs);
                 });
-        // 探测本地不可达测试地址，验证走到了 HTTP 探测阶段并返回标准失败结构（包含 reachable 与 error，而非报缺失密钥）
-        Map<String, Object> resWithSavedKey = service.testConnection("deepseek", "http://127.0.0.1:54321/v1", "", "");
+        java.util.concurrent.atomic.AtomicReference<String> seenEndpoint = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> seenKey = new java.util.concurrent.atomic.AtomicReference<>();
+        OutboundModelConfigService custom = serviceWithChatCall((endpoint, key, payload, timeout) -> {
+            seenEndpoint.set(endpoint);
+            seenKey.set(key);
+            throw new ConnectException("refused");
+        });
+        Map<String, Object> resWithSavedKey = custom.testConnection("deepseek", "", "", "");
         assertEquals(Boolean.FALSE, resWithSavedKey.get("success"));
         assertEquals(Boolean.FALSE, resWithSavedKey.get("reachable"));
         assertNotNull(resWithSavedKey.get("error"));
         assertFalse(String.valueOf(resWithSavedKey.get("error")).contains("未提供 API Key"),
                 "已保存密钥的停用渠道应能成功读取密钥进行连通测试");
+        assertEquals("https://api.deepseek.com/v1/chat/completions", seenEndpoint.get(),
+                "未传 baseUrl 时应回退到已保存地址并拼接探测端点");
+        assertEquals("sk-saved-secret-key", seenKey.get(), "应使用已保存密钥");
+    }
+
+    // ===== 密钥-地址绑定防护（防密钥外带）=====
+
+    @Test
+    void testConnectionRejectsSavedKeyWithCallerBaseUrl() {
+        mockStoredChannel("deepseek", "https://api.deepseek.com/v1", "deepseek-flash", "sk-saved-secret-key");
+        // 若防护失效，Mock 传输层会返回 200——断言 success=false 即证明请求在防护处被拦截，未发起外呼
+        OutboundModelConfigService custom = serviceWithChatCall((endpoint, key, payload, timeout) ->
+                new OutboundModelConfigService.Upstream(200,
+                        "{\"choices\":[{\"message\":{\"content\":\"pong\"}}]}"));
+
+        // 已存密钥 × 调用方自填地址 → 400 拒绝，绝不外呼
+        Map<String, Object> res = custom.testConnection("deepseek", "https://evil.example.com/v1", "", "");
+        assertEquals(Boolean.FALSE, res.get("success"));
+        assertEquals(Boolean.FALSE, res.get("reachable"));
+        assertEquals(400, res.get("statusCode"));
+        assertTrue(String.valueOf(res.get("error")).contains("安全限制"),
+                "应提示需显式重输 API Key 才能测试其他地址");
+
+        // 与已保存地址一致（末尾斜杠差异）→ 放行，正常探测
+        Map<String, Object> resSame = custom.testConnection("deepseek", "https://api.deepseek.com/v1/", "", "");
+        assertEquals(Boolean.TRUE, resSame.get("success"));
+        // 同主机不同路径（v2）→ 视为不同地址，仍拒绝
+        Map<String, Object> resOtherPath = custom.testConnection("deepseek", "https://api.deepseek.com/v2", "", "");
+        assertEquals(400, resOtherPath.get("statusCode"));
+    }
+
+    @Test
+    void invokeRejectsSavedKeyWithCallerBaseUrlAndAudits() {
+        // invoke 依次查 activeChannel（含 fallback）与 storedChannel——统一按 SQL 无关的渠道行返回
+        String cipher = service.encrypt("sk-saved-secret-key");
+        when(jdbc.query(anyString(), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq("deepseek")))
+                .thenAnswer(inv -> {
+                    java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+                    when(rs.next()).thenReturn(true, false);
+                    when(rs.getString("channel")).thenReturn("deepseek");
+                    when(rs.getString("base_url")).thenReturn("https://api.deepseek.com/v1");
+                    when(rs.getString("api_key_cipher")).thenReturn(cipher);
+                    when(rs.getInt("enabled")).thenReturn(1);
+                    when(rs.getString("model_name")).thenReturn("deepseek-flash");
+                    org.springframework.jdbc.core.ResultSetExtractor<?> ext = inv.getArgument(1);
+                    return ext.extractData(rs);
+                });
+        OutboundModelConfigService custom = serviceWithChatCall((endpoint, key, payload, timeout) ->
+                new OutboundModelConfigService.Upstream(200,
+                        "{\"choices\":[{\"message\":{\"content\":\"pong\"}}]}"));
+
+        // 已存密钥 × 调用方自填地址 → 400 拒绝 + 审计（OUTBOUND_MODEL_KEY_GUARD）
+        Map<String, Object> res = custom.invoke("deepseek", "https://evil.example.com/v1", "", "deepseek-flash",
+                "hello", null, null, 42L, null);
+        assertEquals(Boolean.FALSE, res.get("success"));
+        assertEquals(400, res.get("statusCode"));
+        assertTrue(String.valueOf(res.get("error")).contains("安全限制"));
+        verify(auditService).record(eq(42L), eq("OUTBOUND_MODEL_KEY_GUARD"), contains("不一致"), isNull());
+
+        // 未传 baseUrl（回退已保存地址）→ 正常调用
+        Map<String, Object> ok = custom.invoke("deepseek", "", "", "deepseek-flash",
+                "hello", null, null, 42L, null);
+        assertEquals(Boolean.TRUE, ok.get("success"));
+        // 显式同时提供 baseUrl + apiKey，但主机不在默认出站白名单 → 仍拒绝
+        Map<String, Object> blocked = custom.invoke("deepseek", "https://evil.example.com/v1", "sk-my-own-key-123",
+                "deepseek-flash", "hello", null, null, 42L, null);
+        assertEquals(Boolean.FALSE, blocked.get("success"));
+        assertEquals(400, blocked.get("statusCode"));
+        assertTrue(String.valueOf(blocked.get("error")).contains("白名单"));
+        // 显式白名单主机 + 自带密钥 → 允许
+        Map<String, Object> explicit = custom.invoke("deepseek", "https://api.deepseek.com/v2", "sk-my-own-key-123",
+                "deepseek-flash", "hello", null, null, 42L, null);
+        assertEquals(Boolean.TRUE, explicit.get("success"));
     }
 
     // ===== 连通性判定的边界用例 =====

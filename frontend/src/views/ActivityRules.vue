@@ -11,7 +11,7 @@
         </a-collapse-panel>
         <a-collapse-panel key="2">
           <template #header><span class="rl-head"><Zap :size="15" /> 促销活动（满减 / 折扣 / 限时秒杀）</span></template>
-          <p>促销活动无需领取，结算时订单金额满足门槛即自动享受。促销优惠与会员等级折扣互斥，系统自动按对您更优的一种结算；同类多个促销同时生效时取优惠最大的一种。限时秒杀有严格时间窗，逾时自动恢复原价，以下单结算时间为准。</p>
+          <p>促销活动无需领取，结算时订单金额满足门槛即自动享受。促销活动与会员等级折扣互斥，系统自动按对您更优的一种结算；同类多个促销同时生效时取让利最大的一种。限时秒杀有严格时间窗，逾时自动恢复原价，以下单结算时间为准。</p>
         </a-collapse-panel>
         <a-collapse-panel key="3">
           <template #header><span class="rl-head"><Gift :size="15" /> 积分激励（注册有礼 / 消费有礼）</span></template>

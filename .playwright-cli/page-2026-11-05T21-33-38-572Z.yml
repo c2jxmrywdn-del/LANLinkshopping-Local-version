@@ -1,0 +1,277 @@
+- generic [ref=f4e2]:
+  - generic [ref=f4e3]:
+    - generic [ref=f4e5]:
+      - generic [ref=f4e6] [cursor=pointer]: LANLinkshopping
+      - menu [ref=f4e9]:
+        - menuitem "首页" [ref=f4e10] [cursor=pointer]
+        - menuitem "商城" [ref=f4e15] [cursor=pointer]
+        - menuitem "活动" [ref=f4e20] [cursor=pointer]
+        - menuitem "技术服务" [ref=f4e22] [cursor=pointer]
+        - menuitem "直播" [ref=f4e24] [cursor=pointer]
+        - menuitem "账期" [ref=f4e26] [cursor=pointer]
+        - generic: 我的订单
+        - generic: 商户中心
+        - generic: 关于我们
+        - img "ellipsis" [ref=f4e30] [cursor=pointer]
+      - generic [ref=f4e33]:
+        - button "Switch to English" [ref=f4e34] [cursor=pointer]:
+          - generic [ref=f4e35]:
+            - generic [ref=f4e37]: 中
+            - generic [ref=f4e38]: EN
+        - generic [ref=f4e39]:
+          - button "消息" [ref=f4e40] [cursor=pointer]
+          - superscript [ref=f4e45]:
+            - paragraph [ref=f4e47]: "3"
+            - paragraph [ref=f4e49]: "3"
+        - button "购物车" [ref=f4e51] [cursor=pointer]
+        - generic [ref=f4e57] [cursor=pointer]:
+          - img "入驻测试用户 的头像" [ref=f4e58]:
+            - generic [aria-hidden] [ref=f4e59]: 用户
+          - generic "入驻商户" [ref=f4e60]: 商户
+          - generic [ref=f4e61]: 入驻测试用户
+    - main [ref=f4e64]:
+      - main [ref=f4e65]:
+        - generic [ref=f4e67]:
+          - complementary [ref=f4e68]:
+            - generic [ref=f4e69]:
+              - img "重庆建工实业集团 的头像" [ref=f4e70]:
+                - generic [aria-hidden] [ref=f4e71]: 重庆
+              - generic [ref=f4e72]:
+                - generic "重庆建工实业集团" [ref=f4e73]
+                - generic [ref=f4e74]: 已通过
+            - navigation [ref=f4e75]:
+              - button "工作台" [ref=f4e76] [cursor=pointer]
+              - button "商品管理" [ref=f4e78] [cursor=pointer]
+              - button "营销活动" [ref=f4e80] [cursor=pointer]
+              - button "直播带货" [ref=f4e82] [cursor=pointer]
+              - button "价格监控" [ref=f4e84] [cursor=pointer]
+              - button "订单管理 2" [ref=f4e86] [cursor=pointer]:
+                - generic [ref=f4e87]: 订单管理
+                - generic [ref=f4e88]: "2"
+              - button "客户消息" [ref=f4e89] [cursor=pointer]
+              - button "物流发货" [ref=f4e91] [cursor=pointer]
+              - button "流量推广" [ref=f4e93] [cursor=pointer]
+              - button "流量分析" [ref=f4e95] [cursor=pointer]
+              - button "资金结算" [ref=f4e97] [cursor=pointer]
+              - button "店铺设置" [ref=f4e99] [cursor=pointer]
+            - generic [ref=f4e101]:
+              - paragraph [ref=f4e102]: 商户服务专线
+              - generic [ref=f4e103]: 400-888-0 LAN
+              - text: 工作日 9:00 - 18:00
+          - generic [ref=f4e105]:
+            - generic [ref=f4e106]:
+              - generic [ref=f4e107]:
+                - generic [ref=f4e108]: 商户中心
+                - heading "资金结算" [level=1] [ref=f4e110]
+                - paragraph [ref=f4e111]: 本店商品的成交收入、退款与结算明细，全部透明可查。
+              - generic [ref=f4e112]:
+                - button "刷新数据" [ref=f4e113] [cursor=pointer]
+                - button "申请提现" [ref=f4e120] [cursor=pointer]
+            - generic [ref=f4e125]:
+              - generic [ref=f4e126]:
+                - generic [ref=f4e127]: 累计收入
+                - generic [ref=f4e133]:
+                  - text: ¥
+                  - generic [ref=f4e134]: "0.00"
+                - generic [ref=f4e135]: 历史已支付订单的本店金额
+              - generic [ref=f4e136]:
+                - generic [ref=f4e137]: 本月收入
+                - generic [ref=f4e143]:
+                  - text: ¥
+                  - generic [ref=f4e144]: "0.00"
+                - generic [ref=f4e145]: 近 30 天 · 2 笔订单
+              - generic [ref=f4e146]:
+                - generic [ref=f4e147]: 累计退款
+                - generic [ref=f4e153]:
+                  - text: ¥
+                  - generic [ref=f4e154]: "0.00"
+                - generic [ref=f4e155]: 已全额退款订单的本店金额
+              - generic [ref=f4e156]:
+                - generic [ref=f4e157]: 净收入
+                - generic [ref=f4e165]:
+                  - text: ¥
+                  - generic [ref=f4e166]: "0.00"
+                - generic [ref=f4e167]: 累计收入 − 累计退款
+              - generic [ref=f4e168]:
+                - generic [ref=f4e169]: 待结算
+                - generic [ref=f4e175]:
+                  - text: ¥
+                  - generic [ref=f4e176]: "0.00"
+                - generic [ref=f4e177]: 已支付、履约中的订单金额
+            - generic [ref=f4e178]:
+              - generic [ref=f4e179]:
+                - generic [ref=f4e183]:
+                  - generic [ref=f4e184]:
+                    - strong [ref=f4e185]: 收入趋势
+                    - generic [ref=f4e186]: 近 30 天按日结算金额
+                  - generic [ref=f4e187]: 30D
+                - generic [ref=f4e188]:
+                  - generic [ref=f4e193]:
+                    - generic "2026-10-08 0.00 元 / 0 单" [ref=f4e194]
+                    - generic "2026-10-09 0.00 元 / 0 单" [ref=f4e196]
+                    - generic "2026-10-10 0.00 元 / 0 单" [ref=f4e198]
+                    - generic "2026-10-11 0.00 元 / 0 单" [ref=f4e200]
+                    - generic "2026-10-12 0.00 元 / 0 单" [ref=f4e202]
+                    - generic "2026-10-13 0.00 元 / 0 单" [ref=f4e204]
+                    - generic "2026-10-14 0.00 元 / 0 单" [ref=f4e206]
+                    - generic "2026-10-15 0.00 元 / 0 单" [ref=f4e208]
+                    - generic "2026-10-16 0.00 元 / 0 单" [ref=f4e210]
+                    - generic "2026-10-17 0.00 元 / 0 单" [ref=f4e212]
+                    - generic "2026-10-18 0.00 元 / 0 单" [ref=f4e214]
+                    - generic "2026-10-19 0.00 元 / 0 单" [ref=f4e216]
+                    - generic "2026-10-20 0.00 元 / 0 单" [ref=f4e218]
+                    - generic "2026-10-21 0.00 元 / 0 单" [ref=f4e220]
+                    - generic "2026-10-22 0.00 元 / 0 单" [ref=f4e222]
+                    - generic "2026-10-23 16,180.00 元 / 1 单" [ref=f4e224]
+                    - generic "2026-10-24 0.00 元 / 0 单" [ref=f4e226]
+                    - generic "2026-10-25 0.00 元 / 0 单" [ref=f4e228]
+                    - generic "2026-10-26 0.00 元 / 0 单" [ref=f4e230]
+                    - generic "2026-10-27 0.00 元 / 0 单" [ref=f4e232]
+                    - generic "2026-10-28 0.00 元 / 0 单" [ref=f4e234]
+                    - generic "2026-10-29 0.00 元 / 0 单" [ref=f4e236]
+                    - generic "2026-10-30 0.00 元 / 0 单" [ref=f4e238]
+                    - generic "2026-10-31 0.00 元 / 0 单" [ref=f4e240]
+                    - generic "2026-11-01 0.00 元 / 0 单" [ref=f4e242]
+                    - generic "2026-11-02 0.00 元 / 0 单" [ref=f4e244]
+                    - generic "2026-11-03 0.00 元 / 0 单" [ref=f4e246]
+                    - generic "2026-11-04 0.00 元 / 0 单" [ref=f4e248]
+                    - generic "2026-11-05 0.00 元 / 0 单" [ref=f4e250]
+                    - generic "2026-11-06 3,890.00 元 / 1 单" [ref=f4e252]
+                  - generic [ref=f4e254]:
+                    - generic [ref=f4e255]: 2026-10-08
+                    - generic [ref=f4e256]: 2026-11-06
+              - generic [ref=f4e257]:
+                - generic [ref=f4e262]:
+                  - strong [ref=f4e263]: 结算规则
+                  - generic [ref=f4e264]: 平台统一结算口径
+                - generic [ref=f4e266]:
+                  - generic [ref=f4e267]:
+                    - generic [ref=f4e268]: "1"
+                    - generic [ref=f4e269]:
+                      - text: 结算口径
+                      - paragraph [ref=f4e270]: 按订单明细中本店商品的小计金额结算，不含平台运费与优惠分摊。
+                  - generic [ref=f4e271]:
+                    - generic [ref=f4e272]: "2"
+                    - generic [ref=f4e273]:
+                      - text: 结算时点
+                      - paragraph [ref=f4e274]: 订单完成（买家签收）后计入可结算余额；退款订单自动扣减。
+                  - generic [ref=f4e275]:
+                    - generic [ref=f4e276]: "3"
+                    - generic [ref=f4e277]:
+                      - text: 对账凭证
+                      - paragraph [ref=f4e278]: 每笔支付均有支付渠道流水号，可在订单详情中核对。
+                  - generic [ref=f4e279]:
+                    - generic [ref=f4e280]: "4"
+                    - generic [ref=f4e281]:
+                      - text: 税务上报
+                      - paragraph [ref=f4e282]: 月度完税证明请在「店铺设置 → 资质证照」中上传。
+            - generic [ref=f4e283]:
+              - generic [ref=f4e287]:
+                - generic [ref=f4e288]:
+                  - strong [ref=f4e289]: 企业对公收款账户
+                  - generic [ref=f4e290]: 用于接收买家对公转账电汇款项及平台资金周期结算
+                - button "更新对公账户" [ref=f4e291] [cursor=pointer]
+              - generic [ref=f4e296]:
+                - generic [ref=f4e297]:
+                  - generic [ref=f4e304]:
+                    - heading "招商银行北京分行建国门支行" [level=4] [ref=f4e305]
+                    - text: 供货商认证对公收款专用账户
+                  - generic [ref=f4e306]: 已企业认证
+                - generic [ref=f4e310]:
+                  - generic [ref=f4e311]:
+                    - generic [ref=f4e312]: 对公银行账号
+                    - generic [ref=f4e313]:
+                      - generic [ref=f4e314]: 6222***********6789
+                      - button "复制账号" [ref=f4e315] [cursor=pointer]
+                  - generic [ref=f4e320]:
+                    - generic [ref=f4e321]:
+                      - generic [ref=f4e322]: 收款人全称 (户名)
+                      - generic [ref=f4e323]: 赵*
+                    - generic [ref=f4e324]:
+                      - generic [ref=f4e325]: 纳税人识别号 / 统一信用代码
+                      - generic [ref=f4e326]: 91500000MA5U0000XA
+            - generic [ref=f4e327]:
+              - generic [ref=f4e331]:
+                - generic [ref=f4e332]:
+                  - strong [ref=f4e333]: 结算明细
+                  - generic [ref=f4e334]: 最近已支付 / 已退款订单
+                - button "导出对账单 (CSV)" [ref=f4e335] [cursor=pointer]
+              - generic [ref=f4e342]:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - table:
+                          - rowgroup:
+                            - row "订单号 本店金额 商品种数 支付渠道 结算状态 支付时间":
+                              - columnheader "订单号"
+                              - columnheader "本店金额"
+                              - columnheader "商品种数"
+                              - columnheader "支付渠道"
+                              - columnheader "结算状态"
+                              - columnheader "支付时间"
+                          - rowgroup:
+                            - row "20261030215808885820 ¥3,890.00 1 模拟网关 履约中 2026-11-06 01:27":
+                              - cell "20261030215808885820"
+                              - cell "¥3,890.00"
+                              - cell "1"
+                              - cell "模拟网关"
+                              - cell "履约中"
+                              - cell "2026-11-06 01:27"
+                            - row "20261023195824219802 ¥16,180.00 2 — 履约中 2026-10-23 19:58":
+                              - cell "20261023195824219802"
+                              - cell "¥16,180.00"
+                              - cell "2"
+                              - cell "—"
+                              - cell "履约中"
+                              - cell "2026-10-23 19:58"
+                  - list:
+                    - listitem "Previous Page":
+                      - button "left" [disabled]:
+                        - img "left"
+                    - listitem "1"
+                    - listitem "Next Page":
+                      - button "right" [disabled]:
+                        - img "right"
+    - generic [ref=f4e350]:
+      - generic [ref=f4e351]:
+        - generic [ref=f4e352]: LANLinkshopping
+        - paragraph [ref=f4e353]: 让每一次连接，都产生价值。
+        - text: CONNECTED COMMERCE · B2B DEMO PLATFORM
+      - generic [ref=f4e354]:
+        - button "商城" [ref=f4e355] [cursor=pointer]
+        - button "技术服务" [ref=f4e356] [cursor=pointer]
+        - button "关于我们" [ref=f4e357] [cursor=pointer]
+        - button "联系我们" [ref=f4e358] [cursor=pointer]
+        - button "用户服务协议" [ref=f4e359] [cursor=pointer]
+        - button "隐私政策" [ref=f4e360] [cursor=pointer]
+        - button "Cookie 政策" [ref=f4e361] [cursor=pointer]
+        - button "平台说明" [ref=f4e362] [cursor=pointer]
+        - button "免责声明" [ref=f4e363] [cursor=pointer]
+        - button "技术服务规则" [ref=f4e364] [cursor=pointer]
+        - button "隐私与 Cookie" [ref=f4e365] [cursor=pointer]
+      - region "项目作者信息" [ref=f4e366]:
+        - generic [ref=f4e367]:
+          - link "在 X 查看 Jason Ouyang" [ref=f4e368] [cursor=pointer]:
+            - /url: https://x.com/Orion_Yves_Jude
+            - img "Jason Ouyang X 头像" [ref=f4e369]
+          - generic [ref=f4e370]:
+            - generic [ref=f4e371]: PROJECT AUTHOR · LANLINKSHOPPING
+            - strong [ref=f4e372]: Jason Ouyang
+            - generic [ref=f4e373]: LANLinkshopping · B2B 聚合型电商平台毕业设计
+        - generic [ref=f4e374]: © 2026 Jason Ouyang
+    - button "智能客服头像 专属客服" [ref=f4e377] [cursor=pointer]:
+      - img "智能客服头像" [ref=f4e378]
+      - generic [ref=f4e388]: 专属客服
+    - button "返回顶部"
+  - generic [ref=f4e389]:
+    - generic [ref=f4e395]:
+      - img "LANLinkshopping" [ref=f4e396]:
+        - generic [aria-hidden] [ref=f4e397]: LΛN // L1NK // SH0PP1NG
+        - img "LANLinkshopping" [ref=f4e398]:
+          - generic [ref=f4e399]: LAN
+          - generic [ref=f4e400]: Link
+          - generic [ref=f4e401]: shopping
+        - generic [aria-hidden] [ref=f4e403]: DECODING BRAND MARK
+      - generic [ref=f4e404]: 聚合 · 连接 · 一体多元解决方案
+    - button "跳过 ›" [ref=f4e408] [cursor=pointer]

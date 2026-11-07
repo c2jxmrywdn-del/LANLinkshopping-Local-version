@@ -7,7 +7,7 @@
         <p>发布、编辑商品并跟踪审核进度，审核通过后即可上架销售。</p>
       </div>
       <div class="hero-actions">
-        <a-button size="large" class="pill" @click="$router.push('/price-monitor')"><AppleIcon name="chart" :size="15" /> 价格监控</a-button>
+        <a-button size="large" class="pill" @click="$router.push('/merchant/center/pricing')"><AppleIcon name="chart" :size="15" /> 价格监控</a-button>
         <a-button size="large" class="pill" @click="$router.push('/merchant/center/products/import')"><AppleIcon name="upload" :size="15" /> 批量导入</a-button>
         <a-button size="large" type="primary" class="pill" @click="publishOpen = true">＋ 发布商品</a-button>
       </div>
@@ -46,8 +46,8 @@
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'prod'">            <button type="button" class="prod-cell" @click="openDetail(record)">
               <span class="thumb">
-                <img v-if="record.coverUrl" :src="record.coverUrl" :alt="record.title" loading="lazy" />
-                <i v-else>{{ (record.title || '商').slice(0, 1) }}</i>
+                <img v-if="record.coverUrl" :src="resolveStorageUrl(record.coverUrl)" :alt="record.title" loading="lazy" />
+                <Package v-else :size="16" class="text-slate-400" />
               </span>
               <span class="pt">
                 <b>{{ record.title }}</b>
@@ -64,6 +64,7 @@
               <a-tag :color="REVIEW_STATUS[record.reviewStatus]?.color">{{ REVIEW_STATUS[record.reviewStatus]?.text }} ⓘ</a-tag>
             </a-tooltip>
             <a-tag v-else :color="REVIEW_STATUS[record.reviewStatus]?.color">{{ REVIEW_STATUS[record.reviewStatus]?.text }}</a-tag>
+            <a-tag v-if="record.reviewSource === 'AUTO'" color="blue">自动审核</a-tag>
           </template>
           <template v-else-if="column.key === 'sale'">
             <a-switch v-if="record.reviewStatus === 1" size="small"
@@ -93,12 +94,13 @@
     <a-drawer v-model:open="detailOpen" title="商品详情" width="460" placement="right" class="prod-drawer">
       <template v-if="detail">
         <div class="d-hero">
-          <img v-if="detail.coverUrl" :src="detail.coverUrl" alt="" />
-          <div v-else class="d-hero-fallback">{{ (detail.title || '商').slice(0, 1) }}</div>
+          <img v-if="detail.coverUrl" :src="resolveStorageUrl(detail.coverUrl)" alt="" />
+          <div v-else class="d-hero-fallback"><Package :size="24" class="text-slate-400" /></div>
           <div class="d-hero-meta">
             <h3>{{ detail.title }}</h3>
             <div class="d-tags">
               <a-tag :color="REVIEW_STATUS[detail.reviewStatus]?.color">{{ REVIEW_STATUS[detail.reviewStatus]?.text }}</a-tag>
+              <a-tag v-if="detail.reviewSource === 'AUTO'" color="blue">自动审核{{ detail.autoScore != null ? ' · ' + detail.autoScore + ' 分' : '' }}</a-tag>
               <a-tag :color="detail.status === 1 ? 'green' : 'default'">{{ detail.status === 1 ? '在售中' : '未上架' }}</a-tag>
             </div>
             <div class="d-price">¥{{ money(detail.price) }}<small>库存 {{ detail.stock }} · 已售 {{ detail.sales || 0 }}</small></div>
@@ -137,8 +139,10 @@
 import { onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import { Package } from 'lucide-vue-next'
 import { productApi } from '../../api'
 import { REVIEW_STATUS, fmtMoney } from '../../utils/merchantStatus'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import ProductPublishForm from '../../components/merchant/ProductPublishForm.vue'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
 
@@ -162,8 +166,8 @@ const cols = [
   { title: '销量', dataIndex: 'sales', width: 76 },
   { title: '审核状态', key: 'rv', width: 104 },
   { title: '在售', key: 'sale', width: 74 },
-  { title: '操作', key: 'op', width: 128 },
-  { title: '发布时间', key: 'time', width: 104 }
+  { title: '发布时间', key: 'time', width: 110 },
+  { title: '操作', key: 'op', width: 128, fixed: 'right' }
 ]
 
 const money = fmtMoney
@@ -219,11 +223,13 @@ function openDetail(record) {
   detailOpen.value = true
 }
 
-// 工作台待办跳转（?reviewStatus=0/2）进入时自动应用筛选
-watch(() => route.query.reviewStatus, (v) => {
-  if (v !== undefined && v !== '') {
-    reviewStatus.value = Number(v)
-    current.value = 1
+// 工作台待办跳转（?reviewStatus=0/2 或 ?status=1）进入时自动应用筛选与路由联动
+watch(() => [route.query.reviewStatus, route.query.status], ([rv, st], oldVal) => {
+  reviewStatus.value = (rv !== undefined && rv !== '') ? Number(rv) : null
+  status.value = (st !== undefined && st !== '') ? Number(st) : null
+  current.value = 1
+  if (oldVal !== undefined) {
+    load()
   }
 }, { immediate: true })
 

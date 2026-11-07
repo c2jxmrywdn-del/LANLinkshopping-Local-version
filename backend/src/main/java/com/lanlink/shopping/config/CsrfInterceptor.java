@@ -10,11 +10,13 @@ import org.springframework.web.servlet.HandlerInterceptor;
 import java.util.UUID;
 
 /**
- * CSRF 拦截器（仅作用于 /user/** 的写操作）：
+ * CSRF 拦截器（写操作通用；注册范围见 WebConfig——/user/**、/admin/**、
+ * /merchant/traffic/events、/price-monitor/alerts[/*]）：
  * - 令牌为会话级：GET /user/csrf-token 获取（幂等，未生成则生成），存 session attr CSRF_TOKEN
- * - 非 GET / OPTIONS 且非 /user/csrf-token 的 /user/** 请求，须携带 X-CSRF-TOKEN 头且与会话令牌一致
+ * - 非 GET / OPTIONS 且非 /user/csrf-token 的受保护请求，须携带 X-CSRF-TOKEN 头且与会话令牌一致
  * - 校验失败：R.fail(403, "CSRF校验失败...")——message 必须包含 "CSRF"，
  *   前端 request.js 检测到 403+CSRF 会自动换新令牌并重放一次该请求
+ * - 前端镜像策略：frontend/src/api/csrfPolicy.js（新增受保护路径须两处同步）
  */
 public class CsrfInterceptor implements HandlerInterceptor {
 

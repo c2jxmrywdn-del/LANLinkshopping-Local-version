@@ -235,7 +235,8 @@ public class IntentVectorService {
                 for (CandidateExample example : CORPUS) {
                     float[] vector = embeddingService.embed(example.text());
                     if (vector == null || vector.length == 0) continue;
-                    store.upsert(SOURCE, example.intent(), LABELS.get(example.intent()), example.text(), vector);
+                    String docId = store.upsert(SOURCE, example.intent(), LABELS.get(example.intent()), example.text(), vector);
+                    if (docId == null) continue;
                     count++;
                 }
                 if (count > 0) {
@@ -338,6 +339,11 @@ public class IntentVectorService {
             new CandidateExample("cart_order", "想把订单的收货地址改一下"),
             new CandidateExample("cart_order", "提交订单的时候一直失败"),
             new CandidateExample("cart_order", "单子下了怎么还没动静"),
+            // 边界口径：尚未发货的追问属订单域（与规则关键词一致，避免向量与规则给出相反答案）
+            new CandidateExample("cart_order", "下单好几天了还没人发货"),
+            new CandidateExample("cart_order", "帮我催一下这单发货"),
+            new CandidateExample("cart_order", "我下的订单现在到哪一步了"),
+            new CandidateExample("cart_order", "Where is my order?"),
             // wallet_credit 钱包与账期
             new CandidateExample("wallet_credit", "钱包余额怎么提现"),
             new CandidateExample("wallet_credit", "企业账期授信额度怎么申请"),
@@ -366,6 +372,10 @@ public class IntentVectorService {
             new CandidateExample("logistics_tracking", "订单显示已发货但一直没收到包裹"),
             new CandidateExample("logistics_tracking", "运费是怎么计算的"),
             new CandidateExample("logistics_tracking", "快递到哪了怎么还没送到"),
+            // 边界口径：已进入承运（运单/轨迹/包裹/签收）属物流域
+            new CandidateExample("logistics_tracking", "包裹显示已签收但本人没收到"),
+            new CandidateExample("logistics_tracking", "运单轨迹三天没更新了"),
+            new CandidateExample("logistics_tracking", "How to track my shipment?"),
             // refund_aftersale 退款与售后
             new CandidateExample("refund_aftersale", "商品有质量问题想申请退款"),
             new CandidateExample("refund_aftersale", "收到的东西损坏了怎么换货"),

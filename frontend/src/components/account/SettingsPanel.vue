@@ -102,6 +102,20 @@
         <a-button size="small" danger class="touch-xs" @click="confirmRevoke(ta)">{{ t('acct.settings.revoke') }}</a-button>
       </div>
 
+      <!-- 社交账号绑定（OAuth 身份，与上方平台内第三方授权不同表） -->
+      <a-divider style="margin: 4px 0 12px">社交账号绑定</a-divider>
+      <div v-if="socialBindings.length === 0" class="empty">暂无社交账号绑定；可在登录页使用 Google / Apple 登录后自动建立绑定。</div>
+      <div v-for="sb in socialBindings" :key="sb.id" class="third-row">
+        <span class="third-icon">{{ (sb.name || sb.provider || 'S').slice(0, 1) }}</span>
+        <div class="row-main">
+          <div class="row-title">{{ sb.name || sb.provider }}<span v-if="sb.nickname" class="sb-nick">（{{ sb.nickname }}）</span></div>
+          <div class="row-desc">
+            {{ sb.email || '未提供邮箱' }} · 绑定标识 {{ sb.subjectMasked }} · 绑定于 {{ (sb.createTime || '').replace('T', ' ').slice(0, 16) }}
+          </div>
+        </div>
+        <a-button size="small" danger class="touch-xs" @click="confirmUnbind(sb)">解绑</a-button>
+      </div>
+
       <a-divider style="margin: 12px 0" />
       <div class="cookie-setting-row">
         <div class="row-main">
@@ -231,7 +245,7 @@ import { message, Modal } from 'ant-design-vue'
 import TotpSetup from './TotpSetup.vue'
 import AppleIcon from '../ui/AppleIcon.vue'
 import { useSettingsStore } from '../../store/settings'
-import { userApi, supportTicketApi } from '../../api'
+import { userApi, supportTicketApi, socialApi } from '../../api'
 import { t, locale } from '../../i18n'
 import { passwordStrength } from '../../utils/validators'
 import { openCookiePreferences, readCookieConsent } from '../../utils/cookieConsent'
@@ -379,6 +393,25 @@ function confirmRevoke(ta) {
   })
 }
 
+// ===== 社交账号绑定（socialApi：OAuth 身份绑定/解绑） =====
+const socialBindings = ref([])
+async function loadSocialBindings() {
+  try { socialBindings.value = (await socialApi.myBindings()) || [] } catch (e) { socialBindings.value = [] }
+}
+function confirmUnbind(sb) {
+  Modal.confirm({
+    title: '解绑社交账号',
+    content: `解绑后需重新登录 ${sb.name || sb.provider} 才能再次绑定，确认解绑？`,
+    okText: '解绑', cancelText: '取消',
+    okButtonProps: { danger: true },
+    onOk: async () => {
+      await socialApi.unbind(sb.provider)
+      message.success('已解绑', 3)
+      loadSocialBindings()
+    }
+  })
+}
+
 // ===== 人工客服：工单 =====
 const CS_STATUS = { OPEN: 'Open', PROCESSING: 'Processing', REPLIED: 'Replied', CLOSED: 'Closed' }
 const CS_STATUS_COLOR = { OPEN: 'orange', PROCESSING: 'blue', REPLIED: 'green', CLOSED: 'default' }
@@ -482,6 +515,7 @@ function confirmReset() {
 onMounted(() => {
   refreshSecurity()
   loadThirdAuths()
+  loadSocialBindings()
   loadTickets()
   window.addEventListener('ll-cookie-consent-changed', handleCookieConsentChanged)
 })

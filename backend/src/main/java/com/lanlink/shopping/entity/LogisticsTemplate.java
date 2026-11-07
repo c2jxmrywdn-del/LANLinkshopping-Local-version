@@ -18,12 +18,20 @@ public class LogisticsTemplate {
     private Long providerId;
     /** weight按重量 volume按体积 fixed固定 piece按件 */
     private String pricingType;
+    /** 计费阶梯模式：linear 线性 / tiered 阶梯 / ton 纯吨位 */
+    private String tierMode;
     private BigDecimal firstWeight;
     private BigDecimal firstPrice;
     private BigDecimal continuedWeight;
     private BigDecimal continuedPrice;
     private BigDecimal volumeFactor;
     private BigDecimal freeThreshold;
+    /** 大宗阶梯区间规则 JSON [{"minWeight":0,"maxWeight":300,"unitPrice":1.5,"basePrice":30.0}, ...] */
+    private String tierRuleJson;
+    /** 工业增值服务费率池 JSON (叉车/上楼/木架/超重超长) */
+    private String vasRuleJson;
+    /** 单票最低起运保底价 */
+    private BigDecimal minCharge;
     /** 区域加价规则 JSON（存储层内部格式，服务层解析，不外发） */
     @JsonIgnore
     private String regionRuleJson;

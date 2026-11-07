@@ -25,7 +25,10 @@ import java.util.stream.Collectors;
  *       ll_analytics=1 Cookie（双信号同时成立）；任一不成立即回退非个性化（热度+新品）；</li>
  *   <li>画像行由前端在 analytics 授权下上报产生，撤回时删除行 + ll_analytics Cookie 置空，
  *       下一次请求自动降级，无需额外代码路径；</li>
- *   <li>所有召回候选必须可售（status=1 AND review_status=1 AND deleted=0）。</li>
+ *   <li>所有召回候选必须可售（status=1 AND review_status=1 AND deleted=0）；</li>
+ *   <li>重排环：个性化融合候选交 {@link MmrReranker} 做 MMR 多样性重排
+ *       （类目连续≤2 / 同品牌连续≤1，尽力而为松弛）；未授权/无画像/异常的
+ *       fallback 热榜路径不经重排，维持现状。</li>
  * </ul>
  */
 @Service
@@ -41,6 +44,10 @@ public class RecommendService {
 
     @Value("${lanlink.recommend.enabled:true}")
     private boolean enabled;
+
+    /** MMR 相关性/多样性权衡系数（1=纯相关性，默认 0.7），lanlink.recommend.mmr.lambda 可配 */
+    @Value("${lanlink.recommend.mmr.lambda:0.7}")
+    private double mmrLambda = 0.7;
 
     public RecommendService(ProductMapper productMapper, CategoryMapper categoryMapper,
                             RecommendStatMapper statMapper,
@@ -101,11 +108,9 @@ public class RecommendService {
             List<Long> exclude = excludeIds(userId, recent);
             List<Product> items = materialize(scores, exclude, limit);
             if (items.size() < Math.min(limit, 4)) {
-                // 召回不足：热度/新品补齐（标记仍为个性化，因为是融合结果）
-                Set<Long> have = items.stream().map(Product::getProdId).collect(Collectors.toSet());
-                for (Product p : fallbackProducts(limit - items.size())) {
-                    if (!have.contains(p.getProdId())) items.add(p);
-                }
+                // 召回不足：热度/新品补齐（标记仍为个性化，因为是融合结果）；
+                // 补齐候选同样走硬规则尽力而为松弛（违例者暂缓，合规耗尽仍收录，列表不缩短）
+                MmrReranker.appendRelaxed(items, fallbackProducts(limit - items.size()), limit);
             }
             if (items.isEmpty()) return fallback("empty", limit);
             log.debug("[recommend] personalized home: content={} cf={} exclude={} final={}",
@@ -232,15 +237,20 @@ public class RecommendService {
         return exclude;
     }
 
-    /** 按融合分降序物化商品实体 */
+    /**
+     * 按融合分降序物化 Top 5×limit 候选池，交 MMR 多样性重排后截取 limit 条
+     * （重排仅作用于个性化融合路径：rel=融合分/池内最大分，sim 同类目 0.6+同品牌 0.4，
+     * 硬规则类目连续≤2/同品牌连续≤1 尽力而为松弛，池≤limit 不丢候选仅重排）。
+     */
     private List<Product> materialize(Map<Long, Double> scores, List<Long> exclude, int limit) {
         List<Long> ordered = scores.entrySet().stream()
                 .filter(e -> !exclude.contains(e.getKey()))
                 .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                .limit(limit)
+                .limit(limit * 5L)
                 .map(Map.Entry::getKey)
                 .toList();
-        return byIdsOrdered(ordered);
+        List<Product> pool = byIdsOrdered(ordered);
+        return MmrReranker.rerank(pool, scores, limit, mmrLambda);
     }
 
     private List<Product> byIdsOrdered(List<Long> ids) {

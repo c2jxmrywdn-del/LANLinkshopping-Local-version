@@ -45,4 +45,14 @@ public interface AdCampaignMapper extends BaseMapper<AdCampaign> {
     /** 到期待结算的计划（投放中/暂停 且已过结束时间） */
     @Select("SELECT * FROM t_ad_campaign WHERE status IN ('active','paused') AND end_time <= NOW() AND deleted = 0")
     List<AdCampaign> expiredCampaigns();
+
+    /**
+     * 结算权原子抢占：settled 为 NULL 的行以条件 UPDATE 置 ended 并就地按当前行值落 settled 金额
+     * （GREATEST(total_budget - spent, 0)，行锁内计算，避免快照差价多退）。返回 1 表示抢占成功，
+     * 0 表示已被并发路径（到期定时/手动终止/预算耗尽）结算，调用方不得再退钱包。
+     */
+    @Update("UPDATE t_ad_campaign SET status = 'ended', end_reason = #{reason},"
+            + " settled = GREATEST(total_budget - spent, 0), settle_time = NOW(), update_time = NOW()"
+            + " WHERE campaign_id = #{campaignId} AND settled IS NULL AND status IN ('active','paused','ended')")
+    int claimSettle(@Param("campaignId") Long campaignId, @Param("reason") String reason);
 }

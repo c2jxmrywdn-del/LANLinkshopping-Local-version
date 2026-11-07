@@ -1,5 +1,6 @@
 # LANLink AI 网关沙盒镜像：OpenAI 兼容网关 + 本地知识库 RAG
-FROM python:3.12-alpine
+# 多阶段构建：test 阶段执行全量 pytest 质量门禁，runtime 阶段不携带测试与测试依赖。
+FROM python:3.12-alpine AS deps
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,19 +9,26 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LLM_MODEL=qwen2.5:0.5b \
     KB_PATH=/app/kb_data/ecommerce_kb.json
 
-RUN addgroup -S gateway && adduser -S -D -H -u 10001 -G gateway gateway
 WORKDIR /app
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ---- 构建期质量门禁：pytest 收集 unittest 与 pytest 两种风格用例 ----
+FROM deps AS test
+COPY requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY app ./app
 COPY kb_data ./kb_data
 COPY tests ./tests
-
-# 构建期自检：单元测试 + 编译校验，保证镜像内代码可运行
-RUN python -m unittest discover -s tests -v \
+RUN python -m pytest tests -q \
     && python -m py_compile app/*.py
+
+# ---- 运行镜像：只保留应用代码；app 取自通过测试的 test 阶段，确保门禁必然执行 ----
+FROM deps AS runtime
+RUN addgroup -S gateway && adduser -S -D -H -u 10001 -G gateway gateway
+COPY --from=test /app/app ./app
+COPY kb_data ./kb_data
 
 USER 10001:10001
 EXPOSE 8090

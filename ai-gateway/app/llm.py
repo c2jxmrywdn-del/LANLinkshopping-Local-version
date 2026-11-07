@@ -30,6 +30,8 @@ import jieba
 
 from .model_manager import KIND_TEXT, KIND_VL, ModelManager, model_kind
 from .hardware_scheduler import HardwareScheduler
+from .rate_limiter import CircuitBreaker
+from .fallback_engine import FALLBACK_ENGINE
 
 logger = logging.getLogger(__name__)
 
@@ -194,33 +196,19 @@ class OllamaBackend:
 
 
 class MockBackend:
-    """离线兜底后端：从知识库上下文中抽取句子组装回答，用于链路可用性验证。"""
+    """离线兜底后端：结合启发式规则降级引擎与离线知识库，实现高可用业务兜底。"""
 
     def available(self) -> bool:
         return True
 
-    def chat(self, messages: list, temperature: float = 0.3, max_tokens: int = 512) -> str:
-        system = next((m["content"] for m in messages if m["role"] == "system"), "")
-        user = next((m["content"] for m in messages if m["role"] == "user"), "")
-        m = re.search(r"用户问题：(.+)", user)
-        question = m.group(1).strip() if m else user
-        ctx = re.search(r"【知识库内容】\n(.*?)\n——【知识库内容结束】——", system, re.S)
-        if not ctx:
-            return "（知识库为空）来源：无"
-        q_tokens = set(jieba.cut(question))
-        best, best_score, best_title = "", 0.0, ""
-        for block in ctx.group(1).split("\n\n"):
-            if "：" not in block:
-                continue
-            title_part, content = block.split("：", 1)
-            score = sum(1 for t in q_tokens if len(t) > 1 and t in block)
-            if score > best_score:
-                best, best_score, best_title = content, score, title_part.strip("《》（）分类：")
-        if not best:
-            return "该问题超出知识库范围，可转人工客服（工作日 9:00-18:00）。来源：无"
-        sentences = [s.strip() for s in re.split(r"[。；]", best) if s.strip()]
-        picked = [s for s in sentences if any(t in s for t in q_tokens if len(t) > 1)][:3] or sentences[:2]
-        return "；".join(picked) + f"。来源：《{best_title}》"
+    def chat(self, messages: list, temperature: float = 0.3, max_tokens: int = 512, role: str = "buyer") -> str:
+        user = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+        question = str(user or "").strip()
+        m = re.search(r"用户问题：(.+)", question)
+        if m:
+            question = m.group(1).strip()
+        res = FALLBACK_ENGINE.handle(question, messages=messages, role=role)
+        return res.get("text", "")
 
 
 class LlamaCppBackend:
@@ -229,11 +217,14 @@ class LlamaCppBackend:
     def __init__(self, base_url: str, model: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.model = model or "qwen2.5-7b"
-        self.timeout = _float_env("LLAMA_TIMEOUT", 240.0)
+        # 快速失败与超时保护：大模型常规推理超时默认 3.0s（避免故障时拖垮网关），可通过 LLAMA_FAST_TIMEOUT 调控
+        self.timeout = _float_env("LLAMA_FAST_TIMEOUT", 3.0)
         self.vision_timeout = _float_env("LLAMA_VISION_TIMEOUT", 300.0)
         # 采样收紧（"提高注意力"）：top_p 0.9 收窄尾部分布降低跑偏，repeat_penalty 1.05 事前防复读
         self.top_p = _float_env("LLAMA_TOP_P", 0.9)
         self.repeat_penalty = _float_env("LLAMA_REPEAT_PENALTY", 1.05)
+        # 熔断器：连续 3 次失败触发熔断 OPEN，15 秒恢复期内试探探测，避免每请求死等超时
+        self.circuit_breaker = CircuitBreaker(failure_threshold=3, recovery_timeout=15.0)
 
     def available(self) -> bool:
         try:
@@ -243,6 +234,8 @@ class LlamaCppBackend:
             return False
 
     def _post(self, messages, temperature, max_tokens, model=None, timeout=None) -> str:
+        if not self.circuit_breaker.allow_request():
+            raise urllib.error.URLError("llama-server 处于熔断保护状态 (OPEN)，快速失败切流")
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -256,8 +249,13 @@ class LlamaCppBackend:
             self.base_url + "/v1/chat/completions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
-            data = json.loads(r.read().decode("utf-8", "replace"))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
+                data = json.loads(r.read().decode("utf-8", "replace"))
+            self.circuit_breaker.record_success()
+        except Exception:
+            self.circuit_breaker.record_failure()
+            raise
         choices = data.get("choices") or []
         if not choices:
             return ""
@@ -289,6 +287,8 @@ class LlamaCppBackend:
 
     def _post_raw(self, messages, temperature, max_tokens, model=None, timeout=None,
                   tools=None, tool_choice=None):
+        if not self.circuit_breaker.allow_request():
+            raise urllib.error.URLError("llama-server 处于熔断保护状态 (OPEN)，快速失败切流")
         payload = {
             "model": model or self.model,
             "messages": messages,
@@ -306,8 +306,13 @@ class LlamaCppBackend:
             self.base_url + "/v1/chat/completions",
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
             headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
-            data = json.loads(r.read().decode("utf-8", "replace"))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as r:
+                data = json.loads(r.read().decode("utf-8", "replace"))
+            self.circuit_breaker.record_success()
+        except Exception:
+            self.circuit_breaker.record_failure()
+            raise
         choices = data.get("choices") or []
         if not choices:
             return {"role": "assistant", "content": ""}, "stop"
@@ -468,7 +473,7 @@ class LLMClient:
 
     # ------------------------------ 文本推理 ------------------------------
 
-    def chat(self, messages, temperature=0.3, max_tokens=512, model=None):
+    def chat(self, messages, temperature=0.3, max_tokens=512, model=None, role: str = "buyer"):
         """返回 (text, backend_label, latency_sec)；按请求 model 路由到 text/vl。
 
         单 GPU 约束：llama.cpp 的 ensure + 推理在全局锁内串行，避免并发请求让
@@ -478,10 +483,18 @@ class LLMClient:
         start = time.time()
         kind = model_kind(model) if model else KIND_TEXT
         if self.backend_pref == "mock":
-            self._record_route(kind, model, None, {"reason": "mock_backend"})
-            self._last_backend = "mock"
-            return self.mock.chat(messages, temperature, max_tokens), "mock", time.time() - start
+            user_q = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+            res = FALLBACK_ENGINE.handle(str(user_q or ""), messages=messages, role=role)
+            self._record_route(kind, model, None, {"reason": "mock_backend"}, {
+                "fallback": "heuristic",
+                "fallback_reason": "mock_preference",
+                "fallback_intent": res["intent"],
+                "fallback_trace": res["tool_trace"],
+            })
+            self._last_backend = "mock:heuristic"
+            return res["text"], "mock:heuristic", time.time() - start
 
+        acquired = False
         models = self._llama_models()
         if self.backend_pref in ("llamacpp", "auto") and models:
             acquired, waited = self.gate.acquire(kind, self.lock_timeout)
@@ -540,25 +553,53 @@ class LLMClient:
                 return text, "ollama:" + self.ollama.model, time.time() - start
             except Exception as exc:
                 logger.warning("ollama 推理失败: %s", exc)
-        self._last_backend = "mock"
-        return self.mock.chat(messages, temperature, max_tokens), "mock", time.time() - start
+
+        user_q = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+        res = FALLBACK_ENGINE.handle(str(user_q or ""), messages=messages, role=role)
+
+        fb_reason = "llm_unavailable"
+        fallback_extra = {
+            "fallback": "heuristic",
+            "fallback_intent": res["intent"],
+            "fallback_trace": res["tool_trace"],
+        }
+        if not acquired and models:
+            fb_reason = "llm_lock_timeout"
+            fallback_extra["lock_timeout"] = True
+            fallback_extra["queued"] = True
+            fallback_extra["queue_wait_ms"] = int(waited * 1000)
+        elif not self.llama.circuit_breaker.allow_request():
+            fb_reason = "llm_circuit_breaker"
+        fallback_extra["fallback_reason"] = fb_reason
+
+        self._record_route(kind, model, None, {"reason": fb_reason}, fallback_extra)
+        self._last_backend = "mock:heuristic"
+        return res["text"], "mock:heuristic", time.time() - start
 
     def chat_raw(self, messages, temperature=0.3, max_tokens=512, model=None,
-                 tools=None, tool_choice=None):
+                 tools=None, tool_choice=None, role: str = "buyer"):
         """工具调用版推理：返回 (message dict, finish_reason, backend_label, latency)。
 
-        与 chat() 相同的降级链（llamacpp → ollama[auto/ollama 时] → mock），但保留完整
+        与 chat() 相同的降级链（llamacpp → ollama[auto/ollama 时] → mock:heuristic），但保留完整
         message（含 tool_calls）与 finish_reason；agent 循环在主链路之外逐轮调用，
         每轮各自进出 ModelCallGate（工具执行发生在锁外，不嵌套取锁）。
         """
         start = time.time()
         kind = model_kind(model) if model else KIND_TEXT
         if self.backend_pref == "mock":
-            self._record_route(kind, model, None, {"reason": "mock_backend"})
-            self._last_backend = "mock"
-            return ({"role": "assistant", "content": self.mock.chat(messages, temperature, max_tokens)},
-                    "stop", "mock", time.time() - start)
+            user_q = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+            res = FALLBACK_ENGINE.handle(str(user_q or ""), messages=messages, role=role)
+            self._record_route(kind, model, None, {"reason": "mock_backend"}, {
+                "fallback": "heuristic",
+                "fallback_reason": "mock_preference",
+                "fallback_intent": res["intent"],
+                "fallback_trace": res["tool_trace"],
+            })
+            self._last_backend = "mock:heuristic"
+            return ({"role": "assistant", "content": res["text"]},
+                    "stop", "mock:heuristic", time.time() - start)
 
+        acquired = False
         models = self._llama_models()
         if self.backend_pref in ("llamacpp", "auto") and models:
             acquired, waited = self.gate.acquire(kind, self.lock_timeout)
@@ -590,9 +631,30 @@ class LLMClient:
                 return msg, finish, "ollama:" + self.ollama.model, time.time() - start
             except Exception as exc:
                 logger.warning("ollama chat_raw 失败: %s", exc)
-        self._last_backend = "mock"
-        return ({"role": "assistant", "content": self.mock.chat(messages, temperature, max_tokens)},
-                "stop", "mock", time.time() - start)
+
+        user_q = next((m.get("content") for m in reversed(messages) if m.get("role") == "user"), "")
+        res = FALLBACK_ENGINE.handle(str(user_q or ""), messages=messages, role=role)
+
+        # 触发启发式规则降级引擎接管
+        fb_reason = "llm_unavailable"
+        fallback_extra = {
+            "fallback": "heuristic",
+            "fallback_intent": res["intent"],
+            "fallback_trace": res["tool_trace"],
+        }
+        if not acquired and models:
+            fb_reason = "llm_lock_timeout"
+            fallback_extra["lock_timeout"] = True
+            fallback_extra["queued"] = True
+            fallback_extra["queue_wait_ms"] = int(waited * 1000)
+        elif not self.llama.circuit_breaker.allow_request():
+            fb_reason = "llm_circuit_breaker"
+        fallback_extra["fallback_reason"] = fb_reason
+
+        self._record_route(kind, model, None, {"reason": fb_reason}, fallback_extra)
+        self._last_backend = "mock:heuristic"
+        return ({"role": "assistant", "content": res["text"]},
+                "stop", "mock:heuristic", time.time() - start)
 
     # ------------------------------ 视觉推理 ------------------------------
 

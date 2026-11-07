@@ -10,4 +10,6 @@ import java.util.List;
 public class CouponQuoteDTO {
     /** 结算的购物车行ID列表（空则按"已勾选"口径试算） */
     private List<Long> cartIds;
+    /** 领券中心批量领取的活动ID列表（POST /campaign/coupons/batch-claim，D4） */
+    private List<Long> ids;
 }

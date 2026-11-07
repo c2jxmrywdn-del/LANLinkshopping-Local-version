@@ -125,6 +125,7 @@
           </template>
           <template v-else-if="column.key === 'effect'">
             <div class="effect-cell">
+              <span>出价 ¥{{ money(record.campaign.cpcPrice) }}/次</span>
               <span>曝光 {{ record.campaign.impressions }}</span>
               <span>点击 {{ record.campaign.clicks }}</span>
             </div>
@@ -179,6 +180,10 @@
             </a-form-item>
           </a-col>
         </a-row>
+        <a-form-item label="点击出价（元/次）" extra="0.10 - 5.00，留空按 0.50；出价越高排名越靠前，按下一位价格计费（GSP）">
+          <a-input-number v-model:value="form.cpcPrice" :min="0.1" :max="5" :precision="2" :step="0.1"
+                          style="width:100%" placeholder="0.10 - 5.00" />
+        </a-form-item>
         <a-form-item label="预计可得">
           <div class="estimate">约 <b>{{ estClicks }}</b> 次点击 · 钱包余额 ¥{{ money(stats.walletBalance) }}
             <span v-if="insufficient" class="insufficient">（余额不足，<a @click="$router.push('/wallet'); createOpen = false">去充值</a>）</span>
@@ -200,7 +205,13 @@ const money = fmtMoney
 const loading = ref(true)
 const rows = ref([])
 const stats = ref({})
-const cpc = computed(() => Number(stats.value.cpcPrice || 0.5).toFixed(2))
+/** 单价展示：有实扣优先实付均价 avgActualCpc，否则全部计划出价均价 cpcPrice（GSP 拍卖下单价随市场竞争浮动） */
+const cpc = computed(() => {
+  const actual = Number(stats.value.avgActualCpc)
+  if (Number.isFinite(actual) && actual > 0) return actual.toFixed(2)
+  const planned = Number(stats.value.cpcPrice)
+  return Number.isFinite(planned) && planned > 0 ? planned.toFixed(2) : '0.50'
+})
 
 const cols = [
   { title: '计划 / 商品', key: 'prod', width: 240 },
@@ -261,7 +272,7 @@ const createOpen = ref(false)
 const creating = ref(false)
 const prods = ref([])
 const prodsLoading = ref(false)
-const form = reactive({ prodId: null, totalBudget: null, durationDays: 7 })
+const form = reactive({ prodId: null, totalBudget: null, cpcPrice: null, durationDays: 7 })
 
 const estClicks = computed(() => {
   const b = Number(form.totalBudget || 0)
@@ -271,7 +282,7 @@ const insufficient = computed(() =>
   Number(form.totalBudget || 0) > Number(stats.value.walletBalance || 0))
 
 function openCreate() {
-  Object.assign(form, { prodId: null, totalBudget: null, durationDays: 7 })
+  Object.assign(form, { prodId: null, totalBudget: null, cpcPrice: null, durationDays: 7 })
   createOpen.value = true
   if (!prods.value.length) loadProds()
 }
@@ -298,7 +309,7 @@ async function submitCreate() {
 async function pay(r) {
   Modal.confirm({
     title: `支付推广预算 ¥${money(r.campaign.totalBudget)}`,
-    content: `从钱包余额冻结（当前余额 ¥${money(stats.walletBalance)}），投放期间按点击扣减，结束退回剩余部分。`,
+    content: `从钱包余额冻结（当前余额 ¥${money(stats.value.walletBalance)}），投放期间按点击扣减，结束退回剩余部分。`,
     okText: '确认支付', cancelText: '取消',
     onOk: async () => {
       try {
@@ -330,7 +341,7 @@ function terminate(r) {
   })
 }
 function renew(r) {
-  Object.assign(form, { prodId: r.campaign.prodId, totalBudget: r.campaign.totalBudget, durationDays: r.campaign.durationDays })
+  Object.assign(form, { prodId: r.campaign.prodId, totalBudget: r.campaign.totalBudget, cpcPrice: r.campaign.cpcPrice, durationDays: r.campaign.durationDays })
   createOpen.value = true
   if (!prods.value.length) loadProds()
 }

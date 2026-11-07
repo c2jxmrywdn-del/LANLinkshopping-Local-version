@@ -15,7 +15,7 @@
     <div class="cd-cols">
       <!-- 左列：票券预览 + 规格 -->
       <div class="cd-main">
-        <!-- 券面 / 优惠横幅 -->
+        <!-- 券面 / 活动横幅 -->
         <div class="cd-face" v-if="c.type === 'coupon'">
           <div class="face-stub">
             <span class="face-kind">{{ c.discountRate ? '折扣' : '满减券' }}</span>
@@ -67,14 +67,14 @@
           <b>{{ remainText }}</b>
         </div>
         <template v-if="c.type === 'coupon'">
-          <button type="button" class="act-btn" :disabled="!c.canClaim" @click="claim">
-            {{ c.limitReached ? '已达限领上限' : (c.remainQuota === 0 ? '已抢完' : '立即领取') }}
+          <button type="button" class="act-btn" :disabled="!c.canClaim || acting" @click="claim">
+            {{ acting ? '领取中…' : (c.limitReached ? '已达限领上限' : (c.remainQuota === 0 ? '已抢完' : '立即领取')) }}
           </button>
           <p class="act-hint">领取后进入"我的券包"，结算下单时选用核销。</p>
           <button type="button" class="act-btn ghost" @click="$router.push('/activity/my')">查看我的券包</button>
         </template>
         <template v-else-if="c.type === 'register'">
-          <button type="button" class="act-btn" :disabled="c.joined" @click="join">{{ c.joined ? '已参与' : '立即参与' }}</button>
+          <button type="button" class="act-btn" :disabled="c.joined || acting" @click="join">{{ acting ? '提交中…' : (c.joined ? '已参与' : '立即参与') }}</button>
           <p class="act-hint">参与成功后积分即时到账，可在会员中心查看流水。</p>
           <button type="button" class="act-btn ghost" @click="$router.push('/membership/points')">查看积分</button>
         </template>
@@ -135,25 +135,32 @@ function requireLogin() {
   message.info('请先登录')
   router.push({ path: '/login', query: { redirect: route.fullPath } })
 }
+// 领取/参与请求进行中：防抖守卫，按钮禁用防重复触发
+const acting = ref(false)
+
 async function claim() {
   if (!logged()) return requireLogin()
+  if (acting.value) return
+  acting.value = true
   try {
     await campaignApi.claim(c.value.campaignId)
     message.success('领取成功，结算时可用')
     load()
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) { /* 拦截器已提示 */ } finally { acting.value = false }
 }
 async function join() {
   if (!logged()) return requireLogin()
+  if (acting.value) return
+  acting.value = true
   try {
     await campaignApi.join(c.value.campaignId)
     router.push(`/activity/${c.value.campaignId}/participation`)
-  } catch (e) { /* 拦截器已提示 */ }
+  } catch (e) { /* 拦截器已提示 */ } finally { acting.value = false }
 }
 
 // ===== 展示口径 =====
 const typeLabel = (t) => ({ coupon: '领券活动', full_reduce: '满减促销', discount: '折扣促销', flash_sale: '限时秒杀', register: '注册有礼', purchase: '消费有礼' }[t] || '平台活动')
-const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
+const trimZero = (v) => { const n = Math.round(Number(v) * 100) / 100; return String(n) }
 const rateText = (r) => trimZero(Number(r) * 10)
 const fmt = (v) => v ? String(v).replace('T', ' ').slice(0, 16) : ''
 // [label, value] 规格行
@@ -164,8 +171,8 @@ function rules(cm) {
   ]
   if (cm.type === 'coupon') {
     rows.push(['使用门槛', cm.threshold > 0 ? `订单满 ¥${trimZero(cm.threshold)}` : '无门槛'])
-    rows.push(['优惠方式', cm.discountRate
-      ? `按 ${rateText(cm.discountRate)} 折结算${cm.benefitAmount ? `，最高优惠 ¥${trimZero(cm.benefitAmount)}` : ''}`
+    rows.push(['活动方式', cm.discountRate
+      ? `按 ${rateText(cm.discountRate)} 折结算${cm.benefitAmount ? `，最高让利 ¥${trimZero(cm.benefitAmount)}` : ''}`
       : `下单立减 ¥${trimZero(cm.benefitAmount)}`])
     rows.push(['领取限制', `每人限领 ${cm.perUserLimit || 1} 张${cm.totalQuota > 0 ? `，共 ${cm.totalQuota} 张` : '，不限总量'}`])
   } else if (['full_reduce', 'discount', 'flash_sale'].includes(cm.type)) {

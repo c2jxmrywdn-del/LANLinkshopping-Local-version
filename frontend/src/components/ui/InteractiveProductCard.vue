@@ -17,7 +17,7 @@
     <img
       v-if="imageUrl"
       class="interactive-product-card__image"
-      :src="imageUrl"
+      :src="resolvedImageUrl"
       :alt="title"
       loading="lazy"
       decoding="async"
@@ -57,9 +57,10 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 
-defineProps({
+const props = defineProps({
   imageUrl: { type: String, default: '' },
   logoUrl: { type: String, default: '' },
   title: { type: String, required: true },
@@ -72,6 +73,8 @@ defineProps({
 const emit = defineEmits(['click'])
 const cardRef = ref(null)
 const tiltStyle = ref({})
+// 商品封面渲染前过集中解析层（对象存储绝对 URL / 历史相对路径兜底），调用方传值无需预处理
+const resolvedImageUrl = computed(() => resolveStorageUrl(props.imageUrl))
 
 function handlePointerMove(event) {
   if (event.pointerType === 'touch' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
@@ -163,7 +166,7 @@ function activate(event) {
   position: absolute;
   inset: 3px;
   border-radius: 19px;
-  background: linear-gradient(180deg, rgba(11, 17, 27, .12) 0%, rgba(11, 17, 27, .03) 28%, rgba(11, 17, 27, .52) 100%);
+  background: linear-gradient(180deg, rgba(11, 17, 27, .12) 0%, rgba(11, 17, 27, .08) 28%, rgba(11, 17, 27, .68) 100%);
   pointer-events: none;
 }
 .interactive-product-card__content {
@@ -197,6 +200,7 @@ function activate(event) {
   font-weight: 800;
   line-height: 1.25;
   letter-spacing: -.035em;
+  text-shadow: 0 1px 8px rgba(11, 17, 27, .35);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -208,6 +212,7 @@ function activate(event) {
   color: rgba(255, 255, 255, .78);
   font-size: 12px;
   line-height: 1.45;
+  text-shadow: 0 1px 8px rgba(11, 17, 27, .35);
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -239,7 +244,7 @@ function activate(event) {
   border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 999px;
   color: #fff;
-  background: rgba(86, 15, 24, .72);
+  background: rgba(86, 15, 24, .82);
   box-shadow: 0 6px 16px rgba(11, 17, 27, .16);
   font-size: 16px;
   font-weight: 850;

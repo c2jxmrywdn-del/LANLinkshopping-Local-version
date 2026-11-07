@@ -16,15 +16,10 @@
 
     <!-- 状态筛选 -->
     <div class="seg-row">
-      <a-radio-group v-model:value="tab" button-style="solid" class="seg" @change="onFilter">
-        <a-radio-button value="all">全部</a-radio-button>
-        <a-radio-button value="unpaid">待付款</a-radio-button>
-        <a-radio-button value="paid">待发货</a-radio-button>
-        <a-radio-button value="shipped">已发货</a-radio-button>
-        <a-radio-button value="done">已完成</a-radio-button>
-        <a-radio-button value="refund">退款相关</a-radio-button>
-      </a-radio-group>
-      <a-button type="text" @click="load"><AppleIcon name="refresh" :size="15" /> 刷新</a-button>
+      <FluidAnimatedTabs v-model="tab" :items="merchantOrderTabs" variant="pill" @change="onFilter" />
+      <a-button type="text" class="refresh-btn" @click="load">
+        <RefreshCw :size="14" class="inline-block mr-1 align-middle" /> 刷新
+      </a-button>
     </div>
 
     <a-card :bordered="false" class="panel">
@@ -43,19 +38,19 @@
       <a-table :data-source="rows" :columns="cols" row-key="orderNo" :loading="loading" class="mc-table"
                :scroll="{ x: 1150 }"
                :pagination="{ current, pageSize, total, showSizeChanger: false,
-                              onChange: (p) => { current = p; load() },
+                              onChange: onPageChange,
                               showTotal: (t) => `共 ${t} 笔订单` }">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'orderNo'">
             <div class="no-cell">
-              <a class="mono" @click="$router.push(`/merchant/center/orders/${record.order.orderNo}`)">{{ record.order.orderNo }}</a>
+              <a class="mono" @click="$router.push({ path: `/merchant/center/orders/${record.order.orderNo}`, query: { fromTab: tab } })">{{ record.order.orderNo }}</a>
               <small>{{ shortTime(record.order.createTime) }}</small>
             </div>
           </template>
           <template v-else-if="column.key === 'goods'">
             <div class="goods-cell">
-              <img v-if="record.myItems?.[0]?.coverUrl" :src="record.myItems[0].coverUrl" alt="" loading="lazy" />
-              <span v-else class="goods-fallback">{{ (record.myItems?.[0]?.prodName || '商').slice(0, 1) }}</span>
+              <img v-if="record.myItems?.[0]?.coverUrl" :src="resolveStorageUrl(record.myItems[0].coverUrl)" alt="" loading="lazy" />
+              <span v-else class="goods-fallback"><Package :size="16" class="text-slate-400" /></span>
               <div class="goods-meta">
                 <b>{{ record.myItems?.[0]?.prodName || '—' }}</b>
                 <small>
@@ -80,17 +75,26 @@
           <template v-else-if="column.key === 'status'">
             <div class="status-cell">
               <a-tag :color="ORDER_STATUS[record.order.orderStatus]?.color">{{ ORDER_STATUS[record.order.orderStatus]?.text }}</a-tag>
-              <small v-if="record.order.refundStatus === 'applied'" class="rf-warn">退款申请中</small>
+              <small v-if="record.order.refundStatus === 'applied'" class="rf-warn">待商户初审</small>
+              <small v-else-if="record.order.refundStatus === 'merchant_approved'" class="rf-info">初审通过</small>
+              <small v-else-if="record.order.refundStatus === 'shipping_back'" class="rf-warn">已寄回待质检</small>
+              <small v-else-if="record.order.refundStatus === 'received'" class="rf-info">质检中</small>
+              <small v-else-if="record.order.refundStatus === 'dispute'" class="rf-warn">质检异常</small>
               <small v-else-if="record.order.refundStatus === 'partial'" class="rf-warn">已部分退款</small>
               <small v-else-if="record.order.refundStatus === 'success'" class="rf-done">已退款</small>
             </div>
           </template>
           <template v-else-if="column.key === 'op'">
             <a-space :size="0">
+              <a-button v-if="record.order.refundStatus === 'applied'" type="link" size="small"
+                        danger @click="openRefundAudit(record)">审核退款</a-button>
+              <a-button v-else-if="record.order.refundStatus === 'shipping_back' || record.order.refundStatus === 'received'"
+                        type="link" size="small"
+                        @click="$router.push({ path: `/merchant/center/orders/${record.order.orderNo}`, query: { action: 'inspect', fromTab: tab } })">验货质检</a-button>
               <a-button v-if="canShip(record.order)" type="link" size="small"
                         @click="openShip(record)">去发货</a-button>
               <a-button type="link" size="small"
-                        @click="$router.push(`/merchant/center/orders/${record.order.orderNo}`)">详情</a-button>
+                        @click="$router.push({ path: `/merchant/center/orders/${record.order.orderNo}`, query: { fromTab: tab } })">详情</a-button>
             </a-space>
           </template>
         </template>
@@ -99,29 +103,105 @@
 
     <!-- L4：发货弹窗 -->
     <ShipModal v-model:open="shipOpen" :order-no="shipOrderNo" :sender="sender" @shipped="load" />
+
+    <!-- 商户退款初审弹窗 -->
+    <a-modal v-model:open="auditOpen" title="商户退款初审" :footer="null">
+      <div v-if="auditOrder" class="audit-modal-body">
+        <a-descriptions :column="1" size="small" bordered style="margin-bottom: 16px;">
+          <a-descriptions-item label="订单编号"><b class="mono">{{ auditOrder.order.orderNo }}</b></a-descriptions-item>
+          <a-descriptions-item label="退款原因">{{ auditOrder.order.refundReason || '未填写' }}</a-descriptions-item>
+          <a-descriptions-item label="订单金额">¥{{ fmtMoney(auditOrder.order.totalAmount) }}</a-descriptions-item>
+          <a-descriptions-item label="本店小计">¥{{ fmtMoney(auditOrder.myAmount) }}</a-descriptions-item>
+        </a-descriptions>
+        <a-form layout="vertical">
+          <a-form-item label="驳回原因（仅驳回时必填）">
+            <a-textarea v-model:value="auditRejectReason" :rows="3" placeholder="若不同意退款，请填写具体驳回原因..." maxlength="200" show-count />
+          </a-form-item>
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px;">
+            <a-button :loading="auditLoading" @click="auditOpen = false">取消</a-button>
+            <a-button danger :loading="auditLoading" @click="confirmRejectRefund">驳回申请</a-button>
+            <a-button type="primary" :loading="auditLoading" @click="confirmApproveRefund">同意初审</a-button>
+          </div>
+        </a-form>
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { Package } from 'lucide-vue-next'
 import { orderApi, merchantCenterApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'
+import { resolveStorageUrl } from '../../utils/storageUrl'
 import ShipModal from '../../components/merchant/ShipModal.vue'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
+import { RefreshCw } from 'lucide-vue-next'
+import FluidAnimatedTabs from '../../components/ui/FluidAnimatedTabs.vue'
 
 const route = useRoute()
+const router = useRouter()
 const rows = ref([])
 const loading = ref(false)
 const tab = ref('all')
+const merchantOrderTabs = [
+  { value: 'all', label: '全部' },
+  { value: 'unpaid', label: '待付款' },
+  { value: 'paid', label: '待发货' },
+  { value: 'shipped', label: '已发货' },
+  { value: 'done', label: '已完成' },
+  { value: 'refund', label: '退款相关' }
+]
 const keyword = ref('')
-const current = ref(1)
+const current = ref(Math.max(1, Number(route.query.page) || 1))
 const pageSize = 10
 const total = ref(0)
 
 const shipOpen = ref(false)
 const shipOrderNo = ref('')
 const sender = ref({})
+
+// 商户退款初审状态
+const auditOpen = ref(false)
+const auditOrder = ref(null)
+const auditRejectReason = ref('')
+const auditLoading = ref(false)
+
+function openRefundAudit(record) {
+  auditOrder.value = record
+  auditRejectReason.value = ''
+  auditOpen.value = true
+}
+
+async function confirmApproveRefund() {
+  if (!auditOrder.value) return
+  auditLoading.value = true
+  try {
+    await merchantCenterApi.approveRefund(auditOrder.value.order.orderNo)
+    message.success('商户初审通过，已提交平台出款')
+    auditOpen.value = false
+    await load()
+  } catch (e) { /* 拦截器已提示 */ }
+  finally { auditLoading.value = false }
+}
+
+async function confirmRejectRefund() {
+  if (!auditOrder.value) return
+  if (!auditRejectReason.value.trim()) {
+    message.warning('驳回退款申请时，必须填写驳回原因')
+    return
+  }
+  auditLoading.value = true
+  try {
+    await merchantCenterApi.rejectRefund(auditOrder.value.order.orderNo, auditRejectReason.value.trim())
+    message.success('已驳回该退款申请')
+    auditOpen.value = false
+    await load()
+  } catch (e) { /* 拦截器已提示 */ }
+  finally { auditLoading.value = false }
+}
 
 const cols = [
   { title: '订单号', key: 'orderNo', width: 178 },
@@ -130,7 +210,7 @@ const cols = [
   { title: '买家', key: 'buyer', width: 128 },
   { title: '支付', key: 'pay', width: 88 },
   { title: '状态', key: 'status', width: 104 },
-  { title: '操作', key: 'op', width: 118 }
+  { title: '操作', key: 'op', width: 130, fixed: 'right' }
 ]
 
 const money = fmtMoney
@@ -140,7 +220,10 @@ function maskPhone(p) {
   return s.length === 11 ? s.slice(0, 3) + '****' + s.slice(7) : s
 }
 function canShip(o) {
-  return Number(o?.payStatus) === 1 && o?.orderStatus === 0
+  if (o?.refundStatus && !['none', 'rejected'].includes(o.refundStatus)) {
+    return false
+  }
+  return Number(o?.payStatus) === 1 && (o?.orderStatus === 0 || o?.orderStatus === 4)
 }
 
 /** tab → 后端过滤参数 */
@@ -155,8 +238,28 @@ function tabParams() {
   }
 }
 
-function onSearch() { current.value = 1; load() }
-function onFilter() { current.value = 1; load() }
+function onSearch() { current.value = 1; dropPageParam(); load() }
+
+/** tab 切换写入 URL（刷新/分享/后退不丢状态）；tab 真变化时由 route.query.tab watcher 统一触发加载，避免双请求 */
+function onFilter() {
+  current.value = 1
+  const tabChanged = route.query.tab !== tab.value
+  router.replace({ query: { ...route.query, tab: tab.value, page: undefined } })
+  if (!tabChanged) load()
+}
+
+/** 分页写入 URL（第 1 页不携带 page 参数） */
+function onPageChange(p) {
+  current.value = p
+  router.replace({ query: { ...route.query, tab: tab.value, ...(p > 1 ? { page: String(p) } : {}) } })
+  load()
+}
+
+function dropPageParam() {
+  if (route.query.page !== undefined) {
+    router.replace({ query: { ...route.query, page: undefined } })
+  }
+}
 
 async function load() {
   loading.value = true
@@ -187,11 +290,16 @@ async function loadSender() {
   } catch (e) { /* 忽略 */ }
 }
 
-// 工作台待办跳转（?tab=paid/refund）
-watch(() => route.query.tab, (v) => {
-  if (v && ['all', 'unpaid', 'paid', 'shipped', 'done', 'refund'].includes(v)) {
-    tab.value = v
+// 工作台待办跳转（?tab=paid/refund）与路由变动联动；首次进入保留 URL 中的 page（分页深链）
+watch(() => route.query.tab, (v, oldV) => {
+  const target = v && ['all', 'unpaid', 'paid', 'shipped', 'done', 'refund'].includes(v) ? v : 'all'
+  if (target !== tab.value) {
+    tab.value = target
+  }
+  if (oldV !== undefined) {
     current.value = 1
+    dropPageParam()
+    load()
   }
 }, { immediate: true })
 
@@ -231,6 +339,7 @@ onMounted(() => { load(); loadSender() })
 .buyer-cell small { color: var(--mc-faint, #a1a1a6); font-size: 11px; }
 .status-cell small { display: block; margin-top: 3px; font-size: 11px; }
 .rf-warn { color: #c2410c; }
+.rf-info { color: #0284c7; }
 .rf-done { color: #8e44ad; }
 
 @media (max-width: 900px) {

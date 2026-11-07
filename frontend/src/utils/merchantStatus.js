@@ -9,7 +9,8 @@ export const ORDER_STATUS = {
   1: { text: '已发货', color: 'blue' },
   2: { text: '已完成', color: 'green' },
   3: { text: '已取消', color: 'default' },
-  4: { text: '已退款', color: 'default' }
+  4: { text: '部分发货', color: 'cyan' },
+  5: { text: '已关闭', color: 'default' }
 }
 
 /** 支付状态 t_order.pay_status */
@@ -22,7 +23,11 @@ export const PAY_STATUS = {
 /** 退款申请状态 t_order.refund_status */
 export const REFUND_STATUS = {
   none: { text: '无退款', color: 'default' },
-  applied: { text: '退款申请中 · 待平台处理', color: 'orange' },
+  applied: { text: '退款申请中 · 待商家初审', color: 'orange' },
+  merchant_approved: { text: '初审通过 · 待买家寄回/出款', color: 'blue' },
+  shipping_back: { text: '买家已寄回 · 待仓库验货', color: 'cyan' },
+  received: { text: '仓库已收货 · 质检中', color: 'blue' },
+  dispute: { text: '验货异常协商中', color: 'red' },
   rejected: { text: '退款申请被驳回', color: 'default' },
   processing: { text: '退款处理中', color: 'blue' },
   partial: { text: '已部分退款 · 剩余可再次申请', color: 'gold' },

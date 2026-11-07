@@ -8,6 +8,7 @@ import com.lanlink.shopping.module.campaign.mapper.CampaignMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -24,13 +25,21 @@ import java.util.Map;
  *   13800000000 平台运营 admin
  *   13900000001 采购方 buyer
  *   13700000002 商户 merchant(已通过审核)
+ *
+ * <p>安全默认值：演示数据默认<b>关闭</b>（lanlink.demo-data.enabled:false）。
+ * 演示账号含平台运营 admin 且密码固定为 123456，局域网可达的部署一旦默认开启，
+ * 任何内网用户都可用该 admin 进入后台外带已配置的外部模型计费密钥——
+ * 因此只有显式配置（如 dev profile 或 LANLINK_DEMO_DATA_ENABLED=true）才会播种；
+ * 生产/局域网部署必须保持关闭（见 DemoAccountLockdown 的 prod 兜底锁定）。
  */
 @Component
+@Order(1)
 public class DataInitializer implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
-    @Value("${lanlink.demo-data.enabled:true}")
+    /** 默认 false：演示数据含固定口令的 admin 账号，不显式开启就不播种 */
+    @Value("${lanlink.demo-data.enabled:false}")
     private boolean demoDataEnabled;
 
     private final UserMapper userMapper;
@@ -139,8 +148,10 @@ public class DataInitializer implements CommandLineRunner {
             products.add(mkProduct(m.getMerId(), "IPS 显示面板 7寸 1024*600", "京东方", "7inch", "96.00", 11L, 3000, "片", 130));
             for (Product p : products) {
                 productMapper.insert(p);
-                // 挂上无水印商品图（public/products/{id}.webp，已由位图转为 WebP 以减小体积）
-                p.setCoverUrl("/products/" + p.getProdId() + ".webp");
+                // 挂上无水印商品图：库内存 object key（{id}.webp，与 MinIO 桶根 / 前端 public
+                // 的同名文件一一对应，minio-init 已全量镜像），出站由 StorageUrlSerializer
+                // 拼公开绝对 URL；存量 DB cover_url 不直改（out/storage-mq-plan.md A3/A4）
+                p.setCoverUrl(p.getProdId() + ".webp");
                 productMapper.updateById(p);
             }
         }
@@ -275,6 +286,11 @@ public class DataInitializer implements CommandLineRunner {
         campaignMapper.insert(c);
     }
 
+    /**
+     * 幂等确保演示账号存在。安全约束：只在<b>首次创建</b>时写入固定演示密码 123456；
+     * 已存在的账号不再把密码强制回写为 123456（旧逻辑会在每次启动时把已轮换的强密码
+     * 重置回 123456，使"轮换演示账号密码"的加固措施失效），仅在密码为空时补种。
+     */
     private User ensureUser(String phone, String nick, Long roleId, Long entId) {
         User u = userMapper.selectOne(Wrappers.<User>lambdaQuery().eq(User::getPhone, phone));
         if (u == null) {
@@ -287,7 +303,7 @@ public class DataInitializer implements CommandLineRunner {
             u.setCreateTime(LocalDateTime.now());
             u.setUpdateTime(LocalDateTime.now());
             userMapper.insert(u);
-        } else if (u.getPassword() == null || !passwordEncoder.matches("123456", u.getPassword())) {
+        } else if (u.getPassword() == null || u.getPassword().isBlank()) {
             u.setPassword(passwordEncoder.encode("123456"));
             u.setUpdateTime(LocalDateTime.now());
             userMapper.updateById(u);

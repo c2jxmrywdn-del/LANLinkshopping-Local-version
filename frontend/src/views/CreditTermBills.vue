@@ -83,10 +83,27 @@
           }"
           @change="onTableChange"
         >
-          <a-table-column title="账单号" data-index="id" key="id" width="90" />
-          <a-table-column title="订单号" key="orderNo" width="200">
+          <a-table-column title="账单号" data-index="id" key="id" width="80" />
+          <a-table-column title="业务类型" key="billType" width="130">
             <template #default="{ record }">
-              <a class="order-link" @click="goOrder(record.orderNo)">{{ record.orderNo }}</a>
+              <a-tag v-if="record.billType === 'LOGISTICS_FREIGHT'" color="purple">
+                <Truck :size="12" class="inline mr-1 align-middle text-purple-600" />物流运费月结
+              </a-tag>
+              <a-tag v-else color="blue">
+                <Package :size="12" class="inline mr-1 align-middle text-blue-600" />商品集采挂账
+              </a-tag>
+            </template>
+          </a-table-column>
+          <a-table-column title="关联单号" key="orderNo" width="190">
+            <template #default="{ record }">
+              <template v-if="record.billType === 'LOGISTICS_FREIGHT'">
+                <span class="font-mono" style="color: #7c3aed; font-size: 13px; font-weight: 500;">{{ record.settlementNo || record.orderNo }}</span>
+                <span style="font-size: 11px; color: #94a3b8; display: block;">月结对账单</span>
+              </template>
+              <template v-else>
+                <a class="order-link font-mono" @click="goOrder(record.orderNo)">{{ record.orderNo }}</a>
+                <span style="font-size: 11px; color: #94a3b8; display: block;">集采订单</span>
+              </template>
             </template>
           </a-table-column>
           <a-table-column title="账单金额" key="amount" width="120">
@@ -139,6 +156,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Truck, Package } from 'lucide-vue-next'
 import { creditTermApi } from '../api'
 import {
   billCategory,

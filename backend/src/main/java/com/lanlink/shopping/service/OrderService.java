@@ -3,13 +3,21 @@ package com.lanlink.shopping.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.DesensitizeUtil;
+import com.lanlink.shopping.common.RefundEvidenceValidator;
+import com.lanlink.shopping.common.storage.StorageUrls;
 import com.lanlink.shopping.dto.CheckoutDTO;
 import com.lanlink.shopping.entity.*;
 import com.lanlink.shopping.integration.event.OrderPaidEvent;
+import com.lanlink.shopping.integration.event.OrderNotificationEvent;
+import com.lanlink.shopping.integration.pricing.MemberEligibility;
+import com.lanlink.shopping.integration.pricing.MemberTierPolicy;
 import com.lanlink.shopping.integration.pricing.PricingFacade;
+import com.lanlink.shopping.integration.pricing.TierPricing;
+import com.lanlink.shopping.module.campaign.service.CampaignService;
 import com.lanlink.shopping.module.membership.constant.MemberRule;
 import com.lanlink.shopping.mapper.*;
 import com.lanlink.shopping.vo.OrderDetailVO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,12 +25,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 订单服务(下单主流程含事务: 校验库存 -> 生成订单+明细 -> 扣库存 -> 清购物车)
  */
+@Slf4j
 @Service
 public class OrderService {
 
@@ -59,6 +71,18 @@ public class OrderService {
     private MerchantMapper merchantMapper;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LogisticsWaybillMapper waybillMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LogisticsWaybillItemMapper waybillItemMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private OrderRmaMapper rmaMapper;
+
+    public void setMerchantMapper(MerchantMapper merchantMapper) {
+        this.merchantMapper = merchantMapper;
+    }
+
+    public void setRmaMapper(OrderRmaMapper rmaMapper) {
+        this.rmaMapper = rmaMapper;
+    }
 
     /** 支付方式白名单（需求 1/3：与前端 validationRules.js 同契约，见 ValidationRules） */
     private static final java.util.Set<String> ALLOWED_PAY_TYPES =
@@ -171,8 +195,15 @@ public class OrderService {
 
         // 先校验库存（并确认商品可售：仅审核通过的商品可下单），累计原价与行业
         // 需求 1：价格/金额由后端按商品当前价重算，禁止信任前端传入金额
-        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal listTotal = BigDecimal.ZERO;
+        BigDecimal tierTotal = BigDecimal.ZERO;
         Long orderIndId = null;
+        // 行快照两套：阶梯价行金额 / 原价行金额。最终只选一套参与促销与券的门槛计算，
+        // 避免"按阶梯价成交、按原价凑门槛"的口径分裂。
+        List<CampaignService.Line> tierLines = new ArrayList<>();
+        List<CampaignService.Line> listLines = new ArrayList<>();
+        // 选中的成交单价（按 prodId）：明细快照必须与总额同源
+        Map<Long, BigDecimal> unitPriceByProd = new HashMap<>();
         for (Cart c : carts) {
             Product p = productMapper.selectById(c.getProdId());
             if (p == null) throw new BusinessException("商品不存在: " + c.getProdId());
@@ -183,12 +214,39 @@ public class OrderService {
             if (p.getPrice() == null || p.getPrice().signum() <= 0) {
                 throw new BusinessException("商品价格异常: " + p.getTitle());
             }
-            total = total.add(p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity())));
+            BigDecimal qty = BigDecimal.valueOf(c.getQuantity());
+            // 阶梯价：B2B 的单品成交价是数量的函数；未配置/未达档回落基准价
+            BigDecimal tierUnit = TierPricing.resolve(p.getPrice(), p.getTierPriceJson(), c.getQuantity()).unitPrice();
+            BigDecimal listAmount = p.getPrice().multiply(qty);
+            BigDecimal tierAmount = tierUnit.multiply(qty);
+            listTotal = listTotal.add(listAmount);
+            tierTotal = tierTotal.add(tierAmount);
+            listLines.add(new CampaignService.Line(p.getProdId(), p.getMerId(), listAmount));
+            tierLines.add(new CampaignService.Line(p.getProdId(), p.getMerId(), tierAmount));
+            unitPriceByProd.put(p.getProdId(), tierUnit);
             if (orderIndId == null) orderIndId = p.getIndId();
         }
-        // 营销中台价格编排：促销满减/折扣/秒杀 与 会员等级折扣 互斥取优（采购方享有会员折扣）
-        boolean memberEligible = user != null && user.getRoleId() != null && user.getRoleId() == 1L;
-        PricingFacade.Quote quote = pricingFacade.quote(userId, total, orderIndId, memberEligible);
+        // 会员折扣与阶梯价**互斥取优**，不叠乘：阶梯价是商家让出的批发毛利，
+        // 再叠一层会员折扣会把利润双重击穿（对账也说不清是谁让的价）。
+        // 取优口径：谁让得多用谁——阶梯省得 ≥ 会员省得 → 只用阶梯、关闭会员折扣；
+        // 反之回到原价成交、只吃会员折扣（此时明细快照回落到原价单价）。
+        boolean memberEligible = MemberEligibility.isMemberEligible(user);
+        BigDecimal memberRate = memberEligible ? membershipService.levelDiscountRate(userId) : BigDecimal.ONE;
+        MemberTierPolicy.Decision decision = MemberTierPolicy.decide(listTotal, tierTotal, memberRate);
+        boolean useTier = decision.useTier();
+        boolean applyMember = decision.applyMember();
+        BigDecimal total = decision.goodsTotal();
+        List<CampaignService.Line> promoLines = useTier ? tierLines : listLines;
+        if (!useTier) {
+            // 会员胜出：明细按原价快照，会员折扣由 PricingFacade 在订单级折让
+            for (Cart c : carts) {
+                Product p = productMapper.selectById(c.getProdId());
+                unitPriceByProd.put(p.getProdId(), p.getPrice());
+            }
+        }
+        // 营销中台价格编排：促销满减/折扣/秒杀（平台按订单总额 + 商户按命中行金额） 与 会员等级折扣 互斥取优
+        // 会员资格判定走共用工具（下单与促销预览同口径，防预览与实付漂移）
+        PricingFacade.Quote quote = pricingFacade.quote(userId, total, orderIndId, applyMember, promoLines);
         BigDecimal payable = quote.finalAmount();
         // 活动优惠券核销：在促销/会员最优价基础上抵扣，券面值受"券前应付"封顶（保证应付 ≥ 0）
         BigDecimal couponDiscount = BigDecimal.ZERO;
@@ -197,7 +255,7 @@ public class OrderService {
                 throw new BusinessException("订单已享全额优惠，无需使用优惠券");
             }
             couponDiscount = campaignService.applyCouponForOrder(userId, dto.getCouponId(),
-                    total, orderIndId, payable, order.getOrderNo());
+                    total, orderIndId, payable, order.getOrderNo(), promoLines);
             payable = payable.subtract(couponDiscount);
             if (payable.compareTo(BigDecimal.ZERO) < 0) payable = BigDecimal.ZERO;
         }
@@ -214,6 +272,9 @@ public class OrderService {
         order.setPointDeductAmount(pointDeductAmount);
         order.setPointDeductPoints(pointDeductPoints);
         order.setPromoDiscount(quote.appliedDiscount());
+        // 优惠构成快照（纯展示，不参与计价）：生效促销标题 + 来源（promotion/member），会员折扣生效或无促销时 promoTitle 为 null
+        order.setPromoTitle(quote.getAppliedTitle());
+        order.setPromoSource(quote.getSource());
         order.setCouponDiscount(couponDiscount);
         order.setCouponId(couponDiscount.signum() >= 0 && dto.getCouponId() != null ? dto.getCouponId() : null);
         order.setTotalAmount(payable);
@@ -241,15 +302,17 @@ public class OrderService {
         // 明细 + 扣库存（需求 2：数据库原子扣减防并发超卖）
         for (Cart c : carts) {
             Product p = productMapper.selectById(c.getProdId());
-            BigDecimal subtotal = p.getPrice().multiply(BigDecimal.valueOf(c.getQuantity()));
+            // 成交单价来自上面的取优结果（阶梯 或 原价），保证"总额 / 明细 / 券门槛"三者同源
+            BigDecimal unitPrice = unitPriceByProd.getOrDefault(p.getProdId(), p.getPrice());
+            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(c.getQuantity()));
             OrderItem item = new OrderItem();
             item.setOrderNo(order.getOrderNo());
             item.setProdId(p.getProdId());
             item.setProdName(p.getTitle());     // 冗余快照
-            item.setPrice(p.getPrice());        // 冗余快照
+            item.setPrice(unitPrice);           // 成交单价（已含阶梯价）
             item.setQuantity(c.getQuantity());
             item.setSubtotal(subtotal);
-            item.setCoverUrl(p.getCoverUrl());
+            item.setCoverUrl(StorageUrls.toKey(p.getCoverUrl()));  // 快照与商品表同形态（key 归一），换图不断历史
             orderItemMapper.insert(item);
             // 原子扣库存 + 加销量（条件更新 stock >= quantity，失败回滚整个事务）
             int affected = productMapper.deductStockAtomic(p.getProdId(), c.getQuantity());
@@ -335,8 +398,9 @@ public class OrderService {
             throw new BusinessException("订单已支付或当前状态不允许支付");
         }
         o = orderMapper.selectById(orderNo); // 刷新最新状态
-        messageService.send(userId, "order", "支付成功",
-                "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo);
+        // 站内消息改由 AFTER_COMMIT 监听器写入，事务内不做外部 IO（pay 为非事务入口时回退为即时发送）
+        eventPublisher.publishEvent(new OrderNotificationEvent(userId, "支付成功",
+                "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo));
         // 跨模块事件：通知营销中台（会员累计积分/成长值、消费活动自动参与）
         eventPublisher.publishEvent(new OrderPaidEvent(this, userId, orderNo, o.getTotalAmount()));
         // 身份平滑切换检测：支付后若累计已支付金额首次达标，采购方自动升级为 VIP（实时生效，无需重新登录）
@@ -359,15 +423,14 @@ public class OrderService {
     public boolean settlePaid(String orderNo, String channel, String transactionId) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null) throw new BusinessException("订单不存在: " + orderNo);
-        if (o.getPayStatus() != null && o.getPayStatus() == 1) return false; // 幂等：已支付
-        o.setPayStatus(1);
-        o.setPayTime(LocalDateTime.now());
-        o.setPayChannel(channel);
-        if (transactionId != null && !transactionId.isBlank()) o.setTransactionId(transactionId);
-        o.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(o);
-        messageService.send(o.getUserId(), "order", "支付成功",
-                "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo);
+        // 竞态裁决交给单条条件更新：并发回调/渠道重发只有一方能把 pay_status 0→1。
+        // 读后写（先 if 判断再 updateById）在并发下会两路都通过，导致 OrderPaidEvent 重复发布、
+        // 积分/成长值被重复累计。
+        if (orderMapper.markPaidAtomic(orderNo) == 0) return false;
+        orderMapper.bindPaidChannel(orderNo, channel, transactionId);
+        o = orderMapper.selectById(orderNo);
+        eventPublisher.publishEvent(new OrderNotificationEvent(o.getUserId(), "支付成功",
+                "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo));
         eventPublisher.publishEvent(new OrderPaidEvent(this, o.getUserId(), orderNo, o.getTotalAmount()));
         User u = userMapper.selectById(o.getUserId());
         if (u != null && u.getRoleId() != null && u.getRoleId() == 1L) {
@@ -421,20 +484,25 @@ public class OrderService {
         orderMapper.updateById(o);
     }
 
+    /**
+     * 取消订单（事务闭环）：取消状态原子流转 + 恢复库存/释放账期/返还积分/优惠券回退同事务。
+     * 原子流转失败（并发已取消/状态已变化）时抛异常整体回滚，杜绝"库存已恢复但订单未取消"的半取消状态。
+     */
+    @Transactional
     public void cancel(Long userId, String orderNo) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null || !o.getUserId().equals(userId)) throw new BusinessException("订单不存在");
         if (o.getPayStatus() != null && o.getPayStatus() == 1 && !"term".equals(o.getPayType())) throw new BusinessException("已支付订单不可取消，请前往订单列表申请退款");
         // 幂等：已取消订单直接返回，防止重复恢复库存/重复返还积分
         if (o.getOrderStatus() != null && o.getOrderStatus() == 3) return;
-        // 账期订单先释放未结清授信
+        // 取消状态原子流转（防并发重复取消/先读后改竞态，口径同 markPaidAtomic 等）：
+        // 影响行数=0 即状态已变化，抛异常回滚本事务（含下方账期释放/库存恢复）
+        int affected = orderMapper.cancelAtomic(orderNo);
+        if (affected == 0) throw new BusinessException("订单状态已变化");
+        // 账期订单先释放未结清授信（账期单 pay_status 同步置 2 由 cancelAtomic 内 IF() 完成）
         if ("term".equals(o.getPayType())) creditTermService.cancelOrderBill(userId, orderNo);
         // 恢复库存
         restoreStock(orderNo);
-        o.setOrderStatus(3);
-        if ("term".equals(o.getPayType())) o.setPayStatus(2);
-        o.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(o);
         // 积分抵现返还（幂等：按流水判定，无抵现记录返回 0）
         int refunded = membershipService.refundPoints(userId, orderNo);
         if (refunded > 0) {
@@ -455,6 +523,37 @@ public class OrderService {
     }
 
     /**
+     * 系统关单（超时未支付）：释放库存、优惠券与积分抵现。
+     *
+     * <p>刻意不复用 {@link #cancel}：那个入口按 userId 校验归属，且它的条件更新只判
+     * order_status&lt;&gt;3，会把已支付订单一起关掉。这里的条件更新要求
+     * pay_status=0 且 order_status=0 且非账期单，与支付侧 markPaidAtomic（要求 order_status=0）
+     * 互为否定条件——并发的「关单」与「支付成功」只有一个能成功。
+     *
+     * <p>资源释放只在 CAS 成功后执行：{@code restoreStock} 是累加式 UPDATE（非幂等），
+     * 一旦重复执行会把库存越补越多，所以必须由 affected 行数把关。
+     *
+     * @return true 表示本次真正关闭了订单；false 表示订单已支付/已取消/账期单，放弃
+     */
+    @Transactional
+    public boolean closeUnpaid(String orderNo) {
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null) return false;
+        if (orderMapper.closeUnpaidAtomic(orderNo) == 0) return false;
+        restoreStock(orderNo);
+        int refunded = membershipService.refundPoints(o.getUserId(), orderNo);
+        if (refunded > 0) {
+            messageService.send(o.getUserId(), "order", "积分返还",
+                    "订单 " + orderNo + " 超时未支付已关闭，抵扣的 " + refunded + " 积分已返还。", orderNo);
+        }
+        campaignService.releaseCoupon(orderNo);
+        messageService.send(o.getUserId(), "order", "订单已超时关闭",
+                "订单 " + orderNo + " 超过支付时限已自动关闭，占用库存与优惠券已释放。", orderNo);
+        // 不记 R01：系统关单不是用户主动取消，计入会把取消率口径污染成风控信号
+        return true;
+    }
+
+    /**
      * 用户申请退款：进入平台审核队列（refundStatus=applied），由平台在交易管理中受理。
      * 规则：
      *  - 仅"已支付"且非账期订单可申请（账期走账单还款）；
@@ -463,32 +562,100 @@ public class OrderService {
      *  - 申请按"可退余额全额"提交，平台实际退款时可选全额或部分。
      */
     @Transactional
-    public void applyRefund(Long userId, String orderNo, String reason) {
+    public void applyRefund(Long userId, String orderNo, String reason, String evidencesJson) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null || !o.getUserId().equals(userId)) throw new BusinessException("订单不存在");
         if (o.getPayStatus() == null || o.getPayStatus() != 1) throw new BusinessException("仅已支付订单可申请退款");
-        if ("term".equals(o.getPayType())) throw new BusinessException("账期订单请前往账期账单处理还款，不支持退款申请");
-        if (o.getOrderStatus() != null && (o.getOrderStatus() == 3 || o.getOrderStatus() == 4)) {
-            throw new BusinessException("该订单已结束，无法申请退款");
+        if (o.getOrderStatus() != null && (o.getOrderStatus() == 3 || o.getOrderStatus() == 5)) {
+            throw new BusinessException("该订单已取消或已关闭，无法申请退款");
         }
         if (reason == null || reason.isBlank()) throw new BusinessException("请填写退款原因");
+        // 证据 ≥1 必填 + 权威校验归一（type 白名单/URL 前缀/扩展名一致/归属当前用户/File.exists）
+        String evidences = RefundEvidenceValidator.normalize(evidencesJson, userId, ChatMediaService.chatUploadRoot());
         BigDecimal already = o.getRefundAmount() == null ? BigDecimal.ZERO : o.getRefundAmount();
         if (o.getTotalAmount().subtract(already).compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("该订单已无可退金额");
         }
         // 需求 2：退款状态原子流转（防并发重复申请/防退款状态篡改，移除前置Java状态判断消除竞态）
-        int affected = orderMapper.applyRefundAtomic(orderNo, reason.trim());
+        int affected = orderMapper.applyRefundAtomic(orderNo, reason.trim(), evidences);
         if (affected == 0) {
             tamperGuardService.report(userId, "order", "refundStatus", "apply", o.getRefundStatus() == null ? "none" : o.getRefundStatus(),
                     "退款状态原子流转失败(并发重复申请/状态篡改)", null);
             throw new BusinessException("退款申请已提交或订单状态不允许申请，请等待平台处理，请勿重复操作");
         }
         messageService.send(userId, "order", "退款申请已提交",
-                "订单 " + orderNo + " 的退款申请已提交，平台将尽快处理。", orderNo);
+                "订单 " + orderNo + " 的退款申请已提交，等待商户初审与平台处理。", orderNo);
         // 风控旁路：R04 重复退款（90 天窗口由周期任务聚合判定）
         try {
             riskEventService.record(userId, "R04", 30, "用户申请退款", "order", orderNo);
         } catch (Exception ignore) { /* 风控旁路不阻断交易 */ }
+    }
+
+    /**
+     * 商户审核退款申请：初审通过
+     * 强校验：当前操作人必须是入驻商户，且该订单中包含本商户的商品，杜绝越权
+     */
+    @Transactional
+    public void merchantApproveRefund(Long userId, String orderNo) {
+        Merchant m = mustMerchantForOrders(userId);
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null) throw new BusinessException("订单不存在");
+        List<OrderItem> items = orderMapper.merchantItems(m.getMerId(), List.of(orderNo));
+        if (items.isEmpty()) throw new BusinessException("无权操作非本店商品的订单退款");
+
+        int affected = orderMapper.merchantApproveRefundAtomic(orderNo);
+        if (affected == 0) {
+            throw new BusinessException("该订单没有待初审的退款申请或状态已变更，请刷新后重试");
+        }
+
+        // RMA 双向状态同步：若该订单关联 RMA 售后单，同步流转为 merchant_approved 并下发商户退货收件信息
+        if (rmaMapper != null) {
+            OrderRma rma = rmaMapper.findLatestByOrderNo(orderNo);
+            if (rma != null && "buyer_applied".equals(rma.getStatus())) {
+                String receiver = m.getLegalPerson() != null && !m.getLegalPerson().isBlank() ? m.getLegalPerson() : "售后质检部";
+                String phone = m.getContactPhone() != null && !m.getContactPhone().isBlank() ? m.getContactPhone() : "";
+                String addr = m.getBusinessAddress() != null && !m.getBusinessAddress().isBlank() ? m.getBusinessAddress() : "商户发货仓";
+                rmaMapper.merchantApproveAtomic(rma.getRmaNo(), receiver, phone, addr, "商户初审同意");
+
+                o.setReturnReceiverName(receiver);
+                o.setReturnReceiverPhone(phone);
+                o.setReturnWarehouseAddr(addr);
+                orderMapper.updateById(o);
+            }
+        }
+
+        messageService.send(o.getUserId(), "order", "商户退款初审已通过",
+                "订单 " + orderNo + " 退款申请已由商户初审通过，平台将进行打款处理。", orderNo);
+    }
+
+    /**
+     * 商户审核退款申请：初审驳回
+     * 强校验：当前操作人必须是入驻商户，且该订单中包含本商户的商品，杜绝越权
+     */
+    @Transactional
+    public void merchantRejectRefund(Long userId, String orderNo, String reason) {
+        Merchant m = mustMerchantForOrders(userId);
+        Order o = orderMapper.selectById(orderNo);
+        if (o == null) throw new BusinessException("订单不存在");
+        List<OrderItem> items = orderMapper.merchantItems(m.getMerId(), List.of(orderNo));
+        if (items.isEmpty()) throw new BusinessException("无权操作非本店商品的订单退款");
+
+        String why = reason == null || reason.isBlank() ? "商户初审未通过" : reason.trim();
+        int affected = orderMapper.merchantRejectRefundAtomic(orderNo, why);
+        if (affected == 0) {
+            throw new BusinessException("该订单没有待初审的退款申请或状态已变更，请刷新后重试");
+        }
+
+        // RMA 双向状态同步：若关联 RMA 售后单，同步更新为 rejected
+        if (rmaMapper != null) {
+            OrderRma rma = rmaMapper.findLatestByOrderNo(orderNo);
+            if (rma != null && ("buyer_applied".equals(rma.getStatus()) || "dispute".equals(rma.getStatus()))) {
+                rmaMapper.rejectAtomic(rma.getRmaNo(), why);
+            }
+        }
+
+        messageService.send(o.getUserId(), "order", "商户退款初审未通过",
+                "订单 " + orderNo + " 退款申请已被商户驳回：" + why, orderNo);
     }
 
     /**
@@ -504,6 +671,15 @@ public class OrderService {
         if (affected == 0) {
             throw new BusinessException("该订单没有待处理的退款申请或状态已变更，请刷新后重试");
         }
+
+        // RMA 双向状态同步：若关联 RMA 售后单，同步更新为 rejected
+        if (rmaMapper != null) {
+            OrderRma rma = rmaMapper.findLatestByOrderNo(orderNo);
+            if (rma != null && ("buyer_applied".equals(rma.getStatus()) || "dispute".equals(rma.getStatus()))) {
+                rmaMapper.rejectAtomic(rma.getRmaNo(), why);
+            }
+        }
+
         messageService.send(o.getUserId(), "order", "退款申请未通过",
                 "订单 " + orderNo + " 的退款申请未通过：" + why, orderNo);
     }
@@ -526,11 +702,30 @@ public class OrderService {
     @Transactional
     public void fullRefundSettle(Order o) {
         if ("term".equals(o.getPayType())) creditTermService.cancelOrderBill(o.getUserId(), o.getOrderNo());
-        restoreStock(o.getOrderNo());
-        o.setOrderStatus(4);
+        // 幂等防重：若已在 RMA 验货质检环节恢复过物理库存，跳过二次恢复，消除库存双重虚增 Bug
+        boolean alreadyRestocked = false;
+        if (rmaMapper != null) {
+            OrderRma rma = rmaMapper.findLatestByOrderNo(o.getOrderNo());
+            if (rma != null && Integer.valueOf(1).equals(rma.getIsRestocked())) {
+                alreadyRestocked = true;
+            }
+        }
+        if (!alreadyRestocked) {
+            restoreStock(o.getOrderNo());
+        }
+        o.setOrderStatus(5);
         o.setPayStatus(2);
         o.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(o);
+        // 更新订单明细行行级退款状态与已退金额
+        List<OrderItem> items = orderItemMapper.selectList(Wrappers.<OrderItem>lambdaQuery()
+                .eq(OrderItem::getOrderNo, o.getOrderNo()));
+        for (OrderItem it : items) {
+            it.setRefundedQuantity(it.getQuantity());
+            it.setRefundAmount(it.getSubtotal());
+            it.setRefundStatus("refunded");
+            orderItemMapper.updateById(it);
+        }
         int earnedBack = membershipService.reverseEarn(o.getUserId(), o.getOrderNo());
         int redeemed = membershipService.refundPoints(o.getUserId(), o.getOrderNo());
         // 优惠券回退：本单核销的券回到可用状态
@@ -554,14 +749,14 @@ public class OrderService {
 
     // ===== 商户端：订单管理（仅包含本商户商品的订单，明细只暴露本商户部分） =====
 
-    /** 商户订单分页：附带每单中本商户商品的明细子集与金额小计 */
+    /** 商户订单分页：附带每单中本商户商品的明细子集与金额小计（size 上限 100，防超大页拖库） */
     public com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.lanlink.shopping.vo.MerchantOrderVO> merchantOrders(
             Long userId, long page, long size, Integer payStatus, Integer orderStatus,
             String refundFlag, String keyword) {
         Merchant m = mustMerchantForOrders(userId);
         String kw = keyword == null || keyword.isBlank() ? null : keyword.trim();
         var po = orderMapper.merchantPage(
-                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, size),
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(page, Math.min(size, 100)),
                 m.getMerId(), payStatus, orderStatus,
                 refundFlag == null || refundFlag.isBlank() ? null : refundFlag, kw);
         var out = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<com.lanlink.shopping.vo.MerchantOrderVO>(
@@ -595,9 +790,24 @@ public class OrderService {
         vo.setOrder(o);
         fillMine(vo, items);
         if (waybillMapper != null) {
-            vo.setWaybills(waybillMapper.selectList(Wrappers.<LogisticsWaybill>lambdaQuery()
+            List<LogisticsWaybill> allWaybills = waybillMapper.selectList(Wrappers.<LogisticsWaybill>lambdaQuery()
                     .eq(LogisticsWaybill::getOrderNo, orderNo)
-                    .orderByDesc(LogisticsWaybill::getCreateTime)));
+                    .orderByDesc(LogisticsWaybill::getCreateTime));
+            if (!allWaybills.isEmpty() && waybillItemMapper != null) {
+                java.util.Set<Long> myItemIds = items.stream().map(OrderItem::getItemId).collect(java.util.stream.Collectors.toSet());
+                java.util.Set<Long> myProdIds = items.stream().map(OrderItem::getProdId).collect(java.util.stream.Collectors.toSet());
+                List<Long> waybillIds = allWaybills.stream().map(LogisticsWaybill::getWaybillId).toList();
+                List<LogisticsWaybillItem> wbItems = waybillItemMapper.selectList(Wrappers.<LogisticsWaybillItem>lambdaQuery()
+                        .in(LogisticsWaybillItem::getWaybillId, waybillIds));
+                java.util.Set<Long> myWaybillIds = wbItems.stream()
+                        .filter(wbi -> myItemIds.contains(wbi.getOrderItemId()) || myProdIds.contains(wbi.getProdId()))
+                        .map(LogisticsWaybillItem::getWaybillId)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (!myWaybillIds.isEmpty()) {
+                    allWaybills = allWaybills.stream().filter(wb -> myWaybillIds.contains(wb.getWaybillId())).toList();
+                }
+            }
+            vo.setWaybills(allWaybills);
         }
         return vo;
     }

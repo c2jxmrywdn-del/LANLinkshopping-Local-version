@@ -32,6 +32,8 @@ class IntentVectorServiceTest {
     }
 
     private IntentVectorService newService(EmbeddingService embedding, RedisVectorStore store) {
+        org.mockito.Mockito.when(store.upsert(anyString(), anyString(), anyString(), anyString(), any(float[].class)))
+                .thenReturn("intent-doc");
         return new IntentVectorService(embedding, store, 0.55);
     }
 
@@ -192,9 +194,8 @@ class IntentVectorServiceTest {
         IntentVectorService service = newService(embedding, store);
         int corpusSize = IntentVectorService.corpusSize();
 
-        assertEquals(66, corpusSize, "11 类意图 × 6 条示例");
+        assertEquals(73, corpusSize, "内置意图示例语料条数");
         assertEquals(11, IntentVectorService.LABELS.size());
-        assertEquals(corpusSize, IntentVectorService.LABELS.size() * 6);
         assertNotNull(service.classify("我要找人工"));
         assertEquals(corpusSize, service.seededCount());
         verify(store, times(corpusSize))

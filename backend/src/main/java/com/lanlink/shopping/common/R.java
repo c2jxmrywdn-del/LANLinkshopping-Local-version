@@ -1,5 +1,6 @@
 package com.lanlink.shopping.common;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 
 /**
@@ -10,6 +11,12 @@ public class R<T> {
     private Integer code;
     private String message;
     private T data;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String errorCode;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String requestId;
 
     public static <T> R<T> ok() { return build(200, "操作成功", null); }
     public static <T> R<T> ok(T data) { return build(200, "操作成功", data); }

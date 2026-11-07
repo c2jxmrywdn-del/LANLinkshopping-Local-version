@@ -53,6 +53,28 @@ public class CustomerCommunicationSchemaInitializer implements ApplicationRunner
               PRIMARY KEY (id), UNIQUE KEY ux_ai_key_hash (key_hash), KEY idx_ai_key_status_expiry (status, expires_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """);
+        // 商品知识同步 outbox：与商品写操作同事务落库，异步 worker 至少一次投递。
+        // 进程崩溃/事件丢失时仍可补偿；消费端按商品当前状态幂等 upsert/delete。
+        jdbcTemplate.execute("""
+            CREATE TABLE IF NOT EXISTS t_ai_kb_outbox (
+              id BIGINT NOT NULL AUTO_INCREMENT,
+              prod_id BIGINT NOT NULL,
+              action VARCHAR(32) NOT NULL DEFAULT 'SYNC',
+              status TINYINT NOT NULL DEFAULT 0,
+              pending_key BIGINT NULL,
+              retry_count INT NOT NULL DEFAULT 0,
+              next_retry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              locked_at DATETIME NULL,
+              last_error VARCHAR(500) NULL,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (id),
+              UNIQUE KEY ux_kb_outbox_pending (pending_key),
+              KEY idx_kb_outbox_poll (status, next_retry_at, id),
+              KEY idx_kb_outbox_locked (status, locked_at),
+              KEY idx_kb_outbox_prod (prod_id, id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            """);
         // 出站模型渠道配置（后台可管，密钥 AES-GCM 加密存储、脱敏回显）
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS t_outbound_model_config (
@@ -72,14 +94,16 @@ public class CustomerCommunicationSchemaInitializer implements ApplicationRunner
               PRIMARY KEY (toggle_key)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """);
-        // 意图理解日志（本地/外部分类来源统计）
+        // 意图理解日志（本地/外部分类来源统计；question_text 为训练语料留存，旧库自动补列）
         jdbcTemplate.execute("""
             CREATE TABLE IF NOT EXISTS t_support_intent_log (
-              id BIGINT NOT NULL AUTO_INCREMENT, question_hash CHAR(64) NOT NULL, intent VARCHAR(40) NOT NULL,
+              id BIGINT NOT NULL AUTO_INCREMENT, question_hash CHAR(64) NOT NULL, question_text VARCHAR(500) NULL,
+              intent VARCHAR(40) NOT NULL,
               source VARCHAR(16) NOT NULL DEFAULT 'local', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
               PRIMARY KEY (id), KEY idx_intent_log_time (created_at, intent)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
             """);
+        addColumnIfMissing("t_support_intent_log", "question_text", "VARCHAR(500) NULL");
         // 候选表迁移：自动学习候选无会话上下文（conversation/message id 改可空）、来源与问题哈希去重
         jdbcTemplate.execute("ALTER TABLE t_support_learning_candidate "
                 + "MODIFY COLUMN conversation_id BIGINT NULL, "
@@ -88,6 +112,10 @@ public class CustomerCommunicationSchemaInitializer implements ApplicationRunner
         addColumnIfMissing("t_support_learning_candidate", "source", "VARCHAR(16) NOT NULL DEFAULT 'manual'");
         addColumnIfMissing("t_support_learning_candidate", "question_hash", "CHAR(64) NULL");
         addColumnIfMissing("t_outbound_model_config", "model_name", "VARCHAR(64) NULL");
+        addColumnIfMissing("t_ai_kb_outbox", "pending_key", "BIGINT NULL");
+        if (!indexExists("t_ai_kb_outbox", "ux_kb_outbox_pending")) {
+            jdbcTemplate.execute("ALTER TABLE t_ai_kb_outbox ADD UNIQUE KEY ux_kb_outbox_pending (pending_key)");
+        }
         if (!indexExists("t_support_learning_candidate", "ux_candidate_qhash")) {
             jdbcTemplate.execute("ALTER TABLE t_support_learning_candidate "
                     + "ADD UNIQUE KEY ux_candidate_qhash (question_hash, status)");

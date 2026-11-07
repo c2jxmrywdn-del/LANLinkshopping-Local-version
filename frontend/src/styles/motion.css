@@ -9,25 +9,67 @@
   opacity: 0;
   will-change: opacity, transform;
 }
-.ll-reveal-armed[data-reveal="fade-up"],
-.ll-reveal-armed:not([data-reveal="fade-right"]):not([data-reveal="fade-left"]):not([data-reveal="scale"]) {
+.ll-reveal-armed:not(.ll-revealed)[data-reveal="fade-up"],
+/* catch-all 链必须排除 blur-up，否则会叠加 fade-up 的 22px 位移（blur-up 自带 6px） */
+.ll-reveal-armed:not(.ll-revealed):not([data-reveal="fade-right"]):not([data-reveal="fade-left"]):not([data-reveal="scale"]):not([data-reveal="blur-up"]) {
   transform: translateY(22px);
 }
-.ll-reveal-armed[data-reveal="fade-right"] { transform: translateX(-28px); }
-.ll-reveal-armed[data-reveal="fade-left"]  { transform: translateX(28px); }
-.ll-reveal-armed[data-reveal="scale"]      { transform: scale(0.94); }
+.ll-reveal-armed:not(.ll-revealed)[data-reveal="fade-right"] { transform: translateX(-28px); }
+.ll-reveal-armed:not(.ll-revealed)[data-reveal="fade-left"]  { transform: translateX(28px); }
+.ll-reveal-armed:not(.ll-revealed)[data-reveal="scale"]      { transform: scale(0.94); }
 
 .ll-revealed {
   opacity: 1;
-  transform: none;
   transition:
     opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1),
     transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 复位位移需高于 .ll-reveal-armed[data-reveal] 的优先级，否则元素显现后仍残留 22/28px 偏移 */
+.ll-reveal-armed.ll-revealed {
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ll-reveal-armed { opacity: 1; transform: none; }
   .ll-revealed { transition: none; }
+}
+
+/* ---------- blur-up 进场变体：朦胧浮现（6px 上浮 + 6px 模糊消散） ----------
+   幅度比 fade-up 更轻；依赖上方 catch-all 链的 :not([data-reveal="blur-up"])
+   排除项，避免叠加 22px 位移。 */
+.ll-reveal-armed:not(.ll-revealed)[data-reveal="blur-up"] {
+  opacity: 0;
+  transform: translateY(6px);
+  filter: blur(6px);
+}
+/* 显现态：0.4s 标准 ease-out（覆盖通用 .ll-revealed 的 0.55s），并补 filter 过渡 */
+.ll-reveal-armed.ll-revealed[data-reveal="blur-up"] {
+  transition:
+    opacity 0.4s cubic-bezier(0, 0, 0.2, 1),
+    transform 0.4s cubic-bezier(0, 0, 0.2, 1),
+    filter 0.4s cubic-bezier(0, 0, 0.2, 1);
+  filter: blur(0);
+}
+/* 减少动效兜底：跳过模糊/位移，直接呈现（避免 reduced-motion 下残留 blur(6px)） */
+@media (prefers-reduced-motion: reduce) {
+  .ll-reveal-armed:not(.ll-revealed)[data-reveal="blur-up"],
+  .ll-reveal-armed.ll-revealed[data-reveal="blur-up"] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+}
+/* 性能分级兜底：reduced 缩短显现时长；suspended 直接呈现、不留残影 */
+[data-perf-tier="reduced"] .ll-reveal-armed.ll-revealed[data-reveal="blur-up"] {
+  transition-duration: 0.32s;
+}
+[data-perf-tier="suspended"] .ll-reveal-armed:not(.ll-revealed)[data-reveal="blur-up"],
+[data-perf-tier="suspended"] .ll-reveal-armed.ll-revealed[data-reveal="blur-up"] {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  transition: none;
 }
 
 /* ---------- 卡片浮层体系（全站通用类 .ll-card） ---------- */
@@ -389,6 +431,21 @@ html {
 }
 
 /* =====================================================
+   组 A · Hero 漂移体系降级收口（光斑 / 浅底玻璃扫光）
+   reduced：光斑缓漂降至 34s（与 techservice 同策略，降频不灭灯）；
+   suspended：熔断关闭光斑、day glass 扫光及 pane / brand-hero /
+   tech-hero 的装饰性伪元素动画，仅保留关键反馈。
+   ===================================================== */
+[data-perf-tier="reduced"] .ll-blob,
+[data-perf-tier="reduced"] .ll-glass--day::before { animation-duration: 34s; }
+[data-perf-tier="suspended"] .ll-blob,
+[data-perf-tier="suspended"] .ll-glass--day::before,
+[data-perf-tier="suspended"] [class*="pane-"],
+[data-perf-tier="suspended"] .brand-hero::before,
+[data-perf-tier="suspended"] .tech-hero::before,
+[data-perf-tier="suspended"] .tech-hero::after { animation: none !important; }
+
+/* =====================================================
    交互原语（Interaction Primitives · 苹果 HIG 手感）
    与 --ll-dur-* / --ll-ease-* / --ll-elev-* 语义令牌绑定；
    减少动效与性能降级时自动收敛为静态反馈。
@@ -471,4 +528,17 @@ html {
 [data-perf-tier="suspended"] .ll-sheet-up,
 [data-perf-tier="suspended"] .ll-stagger > * {
   animation: none;
+}
+
+/* =====================================================
+   Hero 底色流动：大面积元素专用（background-position 逐帧重绘，hero 规模可接受），
+   transform 类动画勿引用此名。
+   使用前提：元素 background 为 linear 渐变且 background-size ≥250%（多背景层时
+   仅 linear 段放大、radial 光斑层保持 auto，避免光斑随位移动画漂移出画）；
+   停点须维持浅天空蓝区间（#13233A 系文字任意停点 ≥11:1）。
+   ===================================================== */
+@keyframes llGradShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
