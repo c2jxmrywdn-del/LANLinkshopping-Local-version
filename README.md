@@ -14,6 +14,8 @@
 ![Redis](https://img.shields.io/badge/Redis-Stack%20HNSW-dc382d)
 ![MinIO](https://img.shields.io/badge/MinIO-S3%20Storage-c72c48)
 ![RabbitMQ](https://img.shields.io/badge/RabbitMQ-4.0%20Outbox-ff6600)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04%20LTS-E95420?logo=ubuntu&logoColor=white)
+![CUDA](https://img.shields.io/badge/CUDA-12.4%20%7C%2012.8%20%7C%2013.0-76B900?logo=nvidia&logoColor=white)
 ![License](https://img.shields.io/badge/License-GNU%20GPL%20v3-blue)
 [![Twitter / X](https://img.shields.io/badge/X-@Orion__Yves__Jude-000000?logo=x&logoColor=white)](https://x.com/Orion_Yves_Jude)
 [![Facebook](https://img.shields.io/badge/Facebook-Jason_Ouyang-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61590596057471)
@@ -186,7 +188,9 @@ sequenceDiagram
 | | 消息队列 | RabbitMQ 4.0 (`rabbitmq:4-management`) | 事务外发模式（Transactional Outbox）、唯一键去重、死信兜底 |
 | | 数据库 | MySQL 8.0+ (InnoDB) | 行级排他锁、多表事务 ACID 保证、索引与外键约束优化 |
 | | 缓存与向量库 | Redis Stack 7.4 (RediSearch) | 整合 HNSW 向量索引、分布式缓存、分布式限流原子计数 |
-| **AI / 大模型** | 推理底座 | llama.cpp (Docker) | 本地运行 Qwen2.5-7B (文本) 与 Qwen2.5-VL (视觉) GGUF 模型 |
+| **AI / 大模型** | 推理底座 | llama.cpp (Docker + cuBLAS) | 本地默认适配 Qwen2.5-7B 与 Qwen2.5-VL（受限于 RTX 4070 Laptop 8G 显存；硬件宽裕者可无缝扩展至 14B/32B/72B） |
+| | 系统环境 | Ubuntu 22.04 / 24.04 LTS | 原生 Linux 或 Windows WSL2 容器与微调运行环境 |
+| | GPU 加速 | CUDA 12.4 / 12.8 / 13.0 | cuBLAS 与 FlashAttention-2 高性能并行计算 |
 | | AI 网关 | FastAPI + Uvicorn | 兼容 OpenAI 标准 API、多工具调用 (Tool Calling)、流式输出 |
 | | 向量嵌入 | BAAI/bge-m3 | 1024 维多语言高维密集向量嵌入模型 |
 | | 多智能体编排 | Dify DSL + MCP | 编排多 Agent 协作工作流；标准 MCP 协议只读向量检索 (`lanlink_kb_search`) |
@@ -287,8 +291,19 @@ sequenceDiagram
 ### 10. 本地双大模型编排与 MCP 向量中枢
 
 - **双模型 Router 架构**：Docker 部署 llama.cpp，运行时支持按请求意图无缝调度 **Qwen2.5-7B（大语言模型）** 与 **Qwen2.5-VL（视觉多模态大模型）**。
-- **硬件显存自适应调度器**（[`hardware_scheduler.py`](file:///d:/桌面/LANLinkShopping/Shopping/ai-gateway/hardware_scheduler.py)）：实时感知 GPU 显存与温度；优先全显存加载，显存轻微不足时自动进行 CPU 卸载辅助，告急时主动启动降级保护；支持 `GET /v1/hardware` 查询调度依据。
+- **硬件显存自适应调度器**（[`hardware_scheduler.py`](file:///d:/桌面/LANLinkShopping/Shopping/ai-gateway/app/hardware_scheduler.py)）：实时感知 GPU 显存与温度；优先全显存加载，显存轻微不足时自动进行 CPU 卸载辅助，告急时主动启动降级保护；支持 `GET /v1/hardware` 查询调度依据。
 - **网关侧只读向量库 MCP 工具**（[`ai-gateway/MCP_KB_SPEC.md`](file:///d:/桌面/LANLinkShopping/Shopping/ai-gateway/MCP_KB_SPEC.md)）：暴露 `lanlink_kb_search` 标准 MCP 工具，外部智能体可直接经 `/mcp` 端点以工具调用方式检索共享向量索引 `aikb-idx`。
+
+> [!NOTE]
+> **💻 操作系统、CUDA 版本与本地硬件适配特别说明**：
+> 1. **推荐系统与驱动环境**：
+>    - **操作系统环境**：**Ubuntu 22.04 LTS / 24.04 LTS**（强烈推荐原生 Linux 或 Windows 11 WSL2 深度集成运行）。
+>    - **CUDA 运行时版本**：**CUDA 12.4+ / 12.8 (`cu128`) / 13.0 (`cu130`)**，宿主机 NVIDIA 显卡驱动建议 `>= 550.x` 或 `>= 560.x`。
+> 2. **移动端硬件基准与模型规格限制**：
+>    - 本项目作者研发与基准测试环境基于移动便携设备（**Intel Core i7-14650HX / NVIDIA GeForce RTX 4070 Laptop 8GB 独立显存 / 24GB DDR5 内存**）。
+>    - **由于受限于笔记本版 RTX 4070 8G 显存的物理硬件条件限制，在兼顾推理吞吐、交互响应延迟与微中台多任务并发的前提下，本地大模型推理与微调工程暂且默认适配并深度支持 Qwen 2.5 7B**（如 `Qwen2.5-7B-Instruct-Q4_K_M` 与 `Qwen2.5-VL` 视觉大模型双模型热切换）。
+> 3. **硬件宽裕开发者自行适配建议**：
+>    - 本系统模型层采用高度解耦的模块化插拔协议。**对于硬件条件相对宽裕的伙伴们（如拥有单卡/多卡 RTX 3090 / 4090 24G 显存，或拥有 A100 / H100 等充足算力集群），大家完全可以根据自身算力条件自行适配并无缝升级至 Qwen 2.5 14B、32B、72B 或全精度 FP16 / BF16 大模型**，仅需在 `.env` 与 `docker-compose.yml` 中调整模型权重挂载与参数，业务中台核心代码零改动。
 
 ---
 
@@ -396,6 +411,8 @@ LANLINK_MQ_NOTIFY_FLOW=mq
 
 | 组件要求 | 建议版本 | 校验命令 | 说明 |
 |:---|:---|:---|:---|
+| **操作系统** | Ubuntu 22.04 / 24.04 LTS | `lsb_release -a` | 推荐原生 Linux 或 Windows 11 WSL2，保障容器与 CUDA 驱动稳定 |
+| **GPU 与 CUDA** | NVIDIA 驱动 >= 550.x + CUDA 12.4 / 12.8 / 13.0 | `nvidia-smi` / `nvcc -V` | 本地 RTX 4070 Laptop (8G) 默认适配 Qwen2.5-7B；算力宽裕者可自由适配更高尺寸模型 |
 | **JDK** | 17 LTS | `java -version` | 推荐 OpenJDK 17 / Eclipse Temurin 17 |
 | **Maven** | 3.8+ | `mvn -version` | 项目自带完整 Maven Wrapper (`./mvnw`) |
 | **Node.js** | 18+ / 20+ LTS | `node -v` | 前端工程与 Vite 构建环境 |
