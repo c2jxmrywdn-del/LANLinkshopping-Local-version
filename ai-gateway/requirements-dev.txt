@@ -2,4 +2,4 @@
 # 与 CI（.github/workflows/ci.yml 的 ai-gateway job）保持同一条 pytest 路线。
 -r requirements.txt
 pytest>=8
-pytest-asyncio>=0.23
+pytest-asyncio>=1.4.1.post1
