@@ -121,7 +121,7 @@
         <dependency>
             <groupId>com.github.binarywang</groupId>
             <artifactId>weixin-java-pay</artifactId>
-            <version>4.8.0</version>
+            <version>4.8.6-20261102.143550</version>
         </dependency>
 
         <!-- 支付宝官方 SDK（电脑网站支付/手机网站支付 + RSA2 签名验签） -->
