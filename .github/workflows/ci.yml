@@ -127,7 +127,7 @@ jobs:
           python scripts/stress_benchmark.py --mode in-process --scale quick --report reports/stress_benchmark_report.md
 
       - name: Upload Stress Benchmark Report Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: stress-benchmark-report
