@@ -21,7 +21,7 @@
         <java.version>17</java.version>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <lombok.version>1.18.48</lombok.version>
-        <thumbnailator.version>0.4.20</thumbnailator.version>
+        <thumbnailator.version>0.4.21</thumbnailator.version>
     </properties>
 
     <dependencyManagement>
