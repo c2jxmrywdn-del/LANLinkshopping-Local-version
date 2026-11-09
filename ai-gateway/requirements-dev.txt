@@ -1,5 +1,5 @@
 # 构建期测试依赖：仅 Dockerfile 的 test 阶段安装，不进入 runtime 镜像。
 # 与 CI（.github/workflows/ci.yml 的 ai-gateway job）保持同一条 pytest 路线。
 -r requirements.txt
-pytest>=8
+pytest>=9.2.0
 pytest-asyncio>=0.23
