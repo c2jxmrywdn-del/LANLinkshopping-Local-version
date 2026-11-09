@@ -1,7 +1,7 @@
 # 国内网络环境使用阿里云 PyPI 镜像加速镜像构建（本机 PyPI 直连仅 ~8KB/s）；
 # 如需官方源，删除下面两行或执行 pip install -i <index> 覆盖即可。
 --index-url https://mirrors.aliyun.com/pypi/simple/
-fastapi>=0.110
+fastapi>=0.162.2
 uvicorn>=0.29
 pydantic>=2.6
 jieba>=0.42
