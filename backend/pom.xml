@@ -128,7 +128,7 @@
         <dependency>
             <groupId>com.alipay.sdk</groupId>
             <artifactId>alipay-sdk-java</artifactId>
-            <version>4.40.1026.ALL</version>
+            <version>4.40.1067.ALL</version>
         </dependency>
 
         <!-- Stripe 官方 Java SDK（Payment Intents API + Webhook 签名验签 + 原路退款） -->
