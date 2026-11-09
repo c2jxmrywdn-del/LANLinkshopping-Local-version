@@ -1,12 +1,21 @@
 package com.lanlink.shopping.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.dto.MerchantApplyDTO;
 import com.lanlink.shopping.entity.Merchant;
+import com.lanlink.shopping.entity.User;
+import com.lanlink.shopping.service.LicenseImageWatermark;
+import com.lanlink.shopping.service.LicenseViewGateService;
 import com.lanlink.shopping.service.MerchantService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -15,6 +24,9 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
@@ -26,9 +38,12 @@ import java.util.Map;
 public class MerchantController {
 
     private final MerchantService merchantService;
+    private final LicenseViewGateService licenseViewGateService;
+    private final ObjectMapper json = new ObjectMapper();
 
-    public MerchantController(MerchantService merchantService) {
+    public MerchantController(MerchantService merchantService, LicenseViewGateService licenseViewGateService) {
         this.merchantService = merchantService;
+        this.licenseViewGateService = licenseViewGateService;
     }
 
     /** 营业执照上传目录：{user.dir}/uploads/licenses（WebConfig 已映射 /uploads/**） */
@@ -168,6 +183,111 @@ public class MerchantController {
     @GetMapping("/admin/audit-logs/{merId}")
     public R<List<com.lanlink.shopping.entity.AuditLog>> adminAuditLogs(@PathVariable Long merId) {
         return R.ok(merchantService.auditLogs(merId));
+    }
+
+    // ===== 营业执照查看：人机验证门 + 水印注入 =====
+
+    /**
+     * 运营端: 获取营业执照查看图形验证码（PNG base64，点击可刷新）。
+     * 验证码与商户绑定：校验时票据只签给同一商户。
+     */
+    @GetMapping("/admin/license-captcha")
+    public R<Map<String, String>> licenseCaptcha(@RequestParam Long merId) {
+        LicenseViewGateService.CaptchaIssue issue = licenseViewGateService.newCaptcha(merId);
+        return R.ok(Map.of("captchaId", issue.captchaId(), "image", issue.imageBase64()));
+    }
+
+    /** 运营端: 校验验证码并签发短时效查看票据（5 分钟、绑定当前运营账号与商户、单次使用） */
+    @PostMapping("/admin/license-verify")
+    public R<Map<String, String>> licenseVerify(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        Long merId = body.get("merId") instanceof Number n ? n.longValue() : null;
+        String captchaId = body.get("captchaId") instanceof String s ? s : null;
+        String captchaCode = body.get("captchaCode") instanceof String s ? s : null;
+        String ticket = licenseViewGateService.issueTicket(userId, merId, captchaId, captchaCode);
+        return R.ok("验证通过", Map.of("ticket", ticket));
+    }
+
+    /**
+     * 运营端: 含水印营业执照（PNG 流式输出，no-store 禁缓存）。
+     * admin 角色门槛由 AuthInterceptor 的 /admin/ 规则维持；票据无效/过期/重放/错商户/错账号一律 HTTP 403。
+     */
+    @GetMapping("/admin/license-watermarked/{merId}")
+    public ResponseEntity<byte[]> licenseWatermarked(@PathVariable Long merId,
+                                                     @RequestParam(required = false) String ticket,
+                                                     HttpServletRequest request) {
+        User admin = UserContext.current(request);
+        if (admin == null) {
+            return gateError(HttpStatus.UNAUTHORIZED, "请先登录");
+        }
+        try {
+            licenseViewGateService.consumeTicket(admin.getUserId(), merId, ticket);
+        } catch (BusinessException e) {
+            // 票据类拒绝按请求要求落真实 HTTP 403（GlobalExceptionHandler 只回业务体不落状态码）
+            return gateError(HttpStatus.FORBIDDEN, e.getMessage());
+        }
+        byte[] original;
+        String merchantName;
+        try {
+            Merchant m = merchantService.requireMerchant(merId);
+            if (m.getLicenseUrl() == null || m.getLicenseUrl().isBlank()) {
+                return gateError(HttpStatus.NOT_FOUND, "商户暂未上传营业执照原件");
+            }
+            merchantName = merchantService.merchantDisplayName(m);
+            original = Files.readAllBytes(resolveLicenseFile(m.getLicenseUrl()).toPath());
+        } catch (BusinessException e) {
+            return gateError(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (IOException e) {
+            return gateError(HttpStatus.NOT_FOUND, "营业执照文件不存在或已清理");
+        }
+        byte[] png;
+        try {
+            png = LicenseImageWatermark.applyPng(original,
+                    LicenseViewGateService.buildWatermarkLines(
+                            merchantService.adminDisplayName(admin.getUserId()),
+                            merchantName));
+        } catch (IOException e) {
+            return gateError(HttpStatus.UNPROCESSABLE_ENTITY, "营业执照图片解析失败");
+        }
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .cacheControl(CacheControl.noStore())
+                .body(png);
+    }
+
+    /** 网关错误统一以 R 结构输出真实 HTTP 状态码（<img> 侧无法读 body，状态码是唯一信号） */
+    private ResponseEntity<byte[]> gateError(HttpStatus status, String message) {
+        try {
+            return ResponseEntity.status(status)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(json.writeValueAsBytes(R.fail(status.value(), message)));
+        } catch (IOException ex) {
+            return ResponseEntity.status(status).build();
+        }
+    }
+
+    /**
+     * license_url 落盘文件解析：规范形态 /api/uploads/licenses/{name}（context-path=/api，
+     * 历史数据存在缺 /api 前缀形态）；归一化后必须仍位于 uploads 根内，阻断路径穿越。
+     */
+    private File resolveLicenseFile(String licenseUrl) {
+        String path = licenseUrl.trim();
+        if (path.startsWith("/api/")) {
+            path = path.substring("/api".length());
+        }
+        if (!path.startsWith("/uploads/licenses/")) {
+            throw new BusinessException("营业执照地址不合规");
+        }
+        Path root = Paths.get(System.getProperty("user.dir"), "uploads").normalize();
+        Path target = root.resolve(path.substring("/uploads/".length())).normalize();
+        if (!target.startsWith(root)) {
+            throw new BusinessException("营业执照地址不合规");
+        }
+        File file = target.toFile();
+        if (!file.isFile() || !file.canRead()) {
+            throw new BusinessException("营业执照文件不存在或已清理");
+        }
+        return file;
     }
 
     // ===== 上传文件落盘与合规校验 =====

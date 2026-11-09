@@ -114,6 +114,8 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             Map.entry("/admin/tech-service/*", new Policy(30, 60)),
             // ---- 商户流量事件上报（登录态逐请求 INSERT，需限流防表膨胀）----
             Map.entry("/merchant/traffic/events", new Policy(60, 240)),
+        // 营业执照查看验证门：验证码校验端点按 IP 限流防爆破（验证码本身另有 5 次错码作废）
+        Map.entry("/merchant/admin/license-verify", new Policy(10, 60)),
             // ---- AI 推理端点：单请求 10-60s 串行 GPU 推理，按分钟桶约束占用 ----
             // ingress 取 120：开发态多用户经 Vite 代理共享 127.0.0.1 入口桶时的聚合余量
             Map.entry("/kb/ask", new Policy(10, 120)),

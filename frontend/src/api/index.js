@@ -475,7 +475,10 @@ export const merchantApi = {
   adminSensitive: (merId) => request.get(`/merchant/admin/sensitive/${merId}`),
   adminBatchReview: (payload) => request.post('/merchant/admin/batch-review', payload),
   adminAuditLogs: (merId) => request.get(`/merchant/admin/audit-logs/${merId}`),
-  adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } })
+  adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } }),
+  // 营业执照查看验证门：验证码签发与校验（校验通过换短时效单次票据，票据拼在水印图 URL 上）
+  licenseCaptcha: (merId) => request.get('/merchant/admin/license-captcha', { params: { merId } }),
+  licenseVerify: (payload) => request.post('/merchant/admin/license-verify', payload)
 }
 
 // ===== 直播带货（广场/直播间/商户控制台/管理端治理；后端 /live/** 与 /admin/live/**） =====

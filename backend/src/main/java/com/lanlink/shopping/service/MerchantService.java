@@ -233,6 +233,41 @@ public class MerchantService {
         return merchantMapper.selectOne(Wrappers.<Merchant>lambdaQuery().eq(Merchant::getUserId, userId));
     }
 
+    /** 按 merId 取商户，不存在即抛业务异常（运营端证照查看前置校验） */
+    public Merchant requireMerchant(Long merId) {
+        Merchant m = merchantMapper.selectById(merId);
+        if (m == null) throw new BusinessException("商户不存在");
+        return m;
+    }
+
+    /**
+     * 水印「查看方」显示名：优先当前运营账号所属企业名（entId→t_enterprise.name），
+     * 无企业档案回退昵称，再回退手机号（运营账号通常以手机号登录）。
+     */
+    public String adminDisplayName(Long adminUserId) {
+        if (adminUserId == null) return null;
+        User u = userMapper.selectById(adminUserId);
+        if (u == null) return null;
+        if (u.getEntId() != null) {
+            Enterprise ent = enterpriseMapper.selectById(u.getEntId());
+            if (ent != null && StringUtils.hasText(ent.getName())) return ent.getName().trim();
+        }
+        if (StringUtils.hasText(u.getNickname())) return u.getNickname().trim();
+        return StringUtils.hasText(u.getPhone()) ? u.getPhone().trim() : null;
+    }
+
+    /**
+     * 水印「商户企业名」：t_merchant 无名称列，经 entId 取 t_enterprise.name；
+     * 企业档案缺失时回退「商户#{merId}」，保证水印文字始终可溯源。
+     */
+    public String merchantDisplayName(Merchant m) {
+        if (m != null && m.getEntId() != null) {
+            Enterprise ent = enterpriseMapper.selectById(m.getEntId());
+            if (ent != null && StringUtils.hasText(ent.getName())) return ent.getName().trim();
+        }
+        return m == null ? null : "商户#" + m.getMerId();
+    }
+
     /** 商户档案必须存在（证照管理仅限已入驻商户） */
     private Merchant mustMerchant(Long userId) {
         Merchant m = getByUser(userId);

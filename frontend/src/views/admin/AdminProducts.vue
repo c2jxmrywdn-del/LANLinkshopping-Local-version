@@ -630,22 +630,22 @@
 
         <div class="cert-preview-sec">
           <div class="cert-preview-title">营业执照原件凭证</div>
-          <div v-if="merchantDetail.merchant?.licenseUrl" class="cert-img-box">
-            <CertImage
+          <!-- 人机验证门 + 服务端水印查看器：不再直连 licenseUrl（完税凭证等其他证照维持原展示） -->
+          <div class="cert-img-box">
+            <LicenseGateImage
               class="cert-img-box__media"
-              :src="merchantDetail.merchant.licenseUrl"
-              kind="license"
-              size="medium"
+              :mer-id="merchantDetail.merchant?.merId"
+              :merchant-name="merchantDetail.enterprise?.name || ''"
+              :has-license="Boolean(merchantDetail.merchant?.licenseUrl)"
               alt="营业执照"
-              error-text="原件加载失败"
+              empty-text="商户尚未上传营业执照原件"
             />
             <div class="cert-tips">
               <p><AppleIcon name="confirm" :size="13" /> 执照经高精度 OCR 初筛，主体名称与工商注册库一致</p>
               <p><AppleIcon name="confirm" :size="13" /> 包含法定代表人章与工商行政管理局电子印章</p>
-              <p><a :href="merchantDetail.merchant.licenseUrl" target="_blank">查看原图 ↗</a></p>
+              <p>查看前需通过人机验证，展示件带溯源水印</p>
             </div>
           </div>
-          <div v-else class="text-muted">商户尚未上传营业执照原件</div>
         </div>
       </div>
     </a-modal>
@@ -928,7 +928,7 @@ import {
   ExclamationCircleFilled
 } from '@ant-design/icons-vue'
 import { productApi, merchantApi } from '../../api'
-import CertImage from '../../components/ui/CertImage.vue'
+import LicenseGateImage from '../../components/admin/LicenseGateImage.vue'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
 
 // 指标统计
@@ -1993,10 +1993,9 @@ onMounted(() => {
   padding: 12px;
   border-radius: 8px;
 }
-/* 原件缩略图统一 200×150（加载失败时占位块沿用同一尺寸，布局不跳动） */
+/* 门控查看器：验证闸门面板需要的宽度比原缩略图更大，高度随内容自适应 */
 .cert-img-box__media {
-  width: 200px;
-  height: 150px;
+  width: 300px;
   flex: none;
 }
 .cert-tips p {

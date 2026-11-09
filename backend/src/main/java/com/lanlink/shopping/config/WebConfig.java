@@ -62,7 +62,9 @@ public class WebConfig implements WebMvcConfigurer {
                         "/product/ai/**",
                         // 物流跟踪回调推送（POLICIES 有 /logistics/callback/* 条目）：白名单公开路径，
                         // 用 ** 覆盖 /{provider} 与 /{provider}/{token} 两种形态（同上，只加策略不注册路径等于无限流）
-                        "/logistics/callback/**"
+                        "/logistics/callback/**",
+                        // 营业执照查看验证门（POST 校验端点防验证码爆破；GET 端点缺省豁免且已有单次票据约束）
+                        "/merchant/admin/license-verify"
                 );
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/**");

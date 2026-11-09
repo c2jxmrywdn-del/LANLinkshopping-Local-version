@@ -145,8 +145,9 @@
                     {{ detail.certReadiness?.hasLicense ? '已上传营业执照原件清晰扫描件' : '未检测到营业执照附件' }}
                   </div>
                 </div>
+                <!-- 原件入口统一收敛到双屏核验器（内含人机验证门 + 水印），不再提供 licenseUrl 直链 -->
                 <div v-if="detail.merchant.licenseUrl" class="cb-act">
-                  <a :href="detail.merchant.licenseUrl" target="_blank">查看原件 ↗</a>
+                  <a @click="openDualCertModal">验证后查看原件 ↗</a>
                 </div>
               </div>
 
@@ -406,26 +407,22 @@
           </div>
         </div>
 
-        <!-- 右屏：原件图片展示与放大核验 -->
+        <!-- 右屏：原件图片展示与放大核验（人机验证门 + 服务端水印，不再直连 licenseUrl） -->
         <div class="dual-right-panel">
           <div class="dr-header">
             <h4>营业执照原件扫描件</h4>
             <a-space>
               <a-button size="small" @click="rotateImg">旋转 90°</a-button>
-              <a v-if="detail.merchant.licenseUrl" :href="detail.merchant.licenseUrl" target="_blank" class="out-link">
-                新窗口打开原图 ↗
-              </a>
             </a-space>
           </div>
           <div class="dr-img-container">
-            <img
-              v-if="detail.merchant.licenseUrl"
-              :src="detail.merchant.licenseUrl"
+            <LicenseGateImage
+              :mer-id="detail.merchant.merId"
+              :merchant-name="detail.enterprise?.name || ''"
+              :has-license="Boolean(detail.merchant.licenseUrl)"
               alt="营业执照"
-              class="license-preview-img"
-              :style="{ transform: `rotate(${imgRotate}deg)` }"
+              :img-style="{ transform: `rotate(${imgRotate}deg)` }"
             />
-            <div v-else class="text-muted empty-tip">商户暂未上传营业执照原件</div>
           </div>
         </div>
       </div>
@@ -571,6 +568,7 @@ import {
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../../api'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
+import LicenseGateImage from '../../components/admin/LicenseGateImage.vue'
 import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const route = useRoute()

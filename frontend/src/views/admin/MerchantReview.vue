@@ -359,7 +359,8 @@
               <CheckCircleFilled v-if="detail.certReadiness?.hasLicense" class="ck ok" />
               <CloseCircleFilled v-else class="ck miss" />
               <span>营业执照清晰度与工商比对</span>
-              <a v-if="detail.merchant?.licenseUrl" :href="detail.merchant.licenseUrl" target="_blank" style="margin-left: auto">查看原件 ↗</a>
+              <!-- 原件入口统一收敛到双屏核验器（内含人机验证门 + 水印），不再提供 licenseUrl 直链 -->
+              <a v-if="detail.merchant?.licenseUrl" class="drill-link" style="margin-left: auto" @click="openDualCertModal(detail.merchant)">验证后查看原件 ↗</a>
             </div>
             <div class="cert-check" :class="{ ok: detail.certReadiness?.taxProofCount > 0 }">
               <CheckCircleFilled v-if="detail.certReadiness?.taxProofCount > 0" class="ck ok" />
@@ -561,31 +562,22 @@
           </div>
         </div>
 
-        <!-- 右屏：原件图片展示与放大核验 -->
+        <!-- 右屏：原件图片展示与放大核验（人机验证门 + 服务端水印，不再直连 licenseUrl） -->
         <div class="dual-right-panel">
           <div class="dr-header">
             <h4>营业执照原件扫描件</h4>
             <a-space>
               <a-button size="small" @click="rotateImg">旋转 90°</a-button>
-              <a v-if="dualCertTarget.licenseUrl" :href="dualCertTarget.licenseUrl" target="_blank" class="out-link">
-                新窗口打开原图 ↗
-              </a>
             </a-space>
           </div>
           <div class="dr-img-container">
-            <img
-              v-if="dualCertTarget.licenseUrl && !licenseImgBroken"
-              :src="dualCertTarget.licenseUrl"
+            <LicenseGateImage
+              :mer-id="dualCertTarget.merId"
+              :merchant-name="dualCertTarget.enterpriseName || ''"
+              :has-license="Boolean(dualCertTarget.licenseUrl)"
               alt="营业执照"
-              class="license-preview-img"
-              :style="{ transform: `rotate(${imgRotate}deg)` }"
-              @error="licenseImgBroken = true"
+              :img-style="{ transform: `rotate(${imgRotate}deg)` }"
             />
-            <div v-else class="text-muted empty-tip">
-              {{ dualCertTarget.licenseUrl
-                ? '原件图片加载失败，请点击右上角「新窗口打开原图」核验'
-                : '商户暂未上传营业执照原件' }}
-            </div>
           </div>
         </div>
       </div>
@@ -789,6 +781,7 @@ import {
 import { merchantApi } from '../../api'
 import AttachmentPanel from '../../components/AttachmentPanel.vue'
 import AppleIcon from '../../components/ui/AppleIcon.vue'
+import LicenseGateImage from '../../components/admin/LicenseGateImage.vue'
 import { fixMerchantUploadUrls } from '../../utils/uploadUrl'
 
 const router = useRouter()
@@ -1081,13 +1074,10 @@ function triggerSensitiveModal(record) {
 const dualCertModalOpen = ref(false)
 const dualCertTarget = ref(null)
 const imgRotate = ref(0)
-/** 营业执照原件加载失败标记：破图时回退为明确提示，并保留「新窗口打开原图」入口 */
-const licenseImgBroken = ref(false)
 
 function openDualCertModal(record) {
   dualCertTarget.value = record
   imgRotate.value = 0
-  licenseImgBroken.value = false
   dualCertModalOpen.value = true
 }
 
