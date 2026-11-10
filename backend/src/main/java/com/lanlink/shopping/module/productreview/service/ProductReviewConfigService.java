@@ -23,9 +23,11 @@ public class ProductReviewConfigService {
     public static final String KEY_VISION_ENABLED = "vision_enabled";
     public static final String KEY_AUTO_SCORE = "auto_approve_score";
     public static final String KEY_DAILY_BUDGET = "daily_ai_budget";
+    public static final String KEY_ALLOW_APPROVE_WITHOUT_VISION = "allow_approve_without_vision";
 
     private static final Set<String> EDITABLE = Set.of(
-            KEY_AUTO_ENABLED, KEY_AI_ENABLED, KEY_VISION_ENABLED, KEY_AUTO_SCORE, KEY_DAILY_BUDGET);
+            KEY_AUTO_ENABLED, KEY_AI_ENABLED, KEY_VISION_ENABLED, KEY_AUTO_SCORE, KEY_DAILY_BUDGET,
+            KEY_ALLOW_APPROVE_WITHOUT_VISION);
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -53,6 +55,11 @@ public class ProductReviewConfigService {
         return integer(KEY_DAILY_BUDGET, 300, 0, 5000);
     }
 
+    /** 视觉复核不可用时是否允许仅凭规则+文本 AI 自动通过；默认关闭（保守转人工）。 */
+    public boolean allowApproveWithoutVision() {
+        return bool(KEY_ALLOW_APPROVE_WITHOUT_VISION, false);
+    }
+
     public Map<String, Object> view() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put(KEY_AUTO_ENABLED, autoEnabled());
@@ -60,6 +67,7 @@ public class ProductReviewConfigService {
         out.put(KEY_VISION_ENABLED, visionEnabled());
         out.put(KEY_AUTO_SCORE, autoApproveScore());
         out.put(KEY_DAILY_BUDGET, dailyAiBudget());
+        out.put(KEY_ALLOW_APPROVE_WITHOUT_VISION, allowApproveWithoutVision());
         return out;
     }
 

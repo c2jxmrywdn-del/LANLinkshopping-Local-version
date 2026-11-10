@@ -399,9 +399,9 @@ public class ProductService {
         Category cat = categoryMapper != null && p.getCatId() != null ? categoryMapper.selectById(p.getCatId()) : null;
         Industry ind = industryMapper != null && p.getIndId() != null ? industryMapper.selectById(p.getIndId()) : null;
 
-        // 广告法违禁词合规初筛扫描
+        // 广告法违禁词合规初筛扫描（与自动审核规则引擎同源，避免清单漂移）
         List<String> bannedHits = new ArrayList<>();
-        String[] bannedWords = {"最优质", "全网第一", "顶级", "国家级", "垄断", "绝无仅有", "包治百病", "万能", "绝对", "首家", "极品"};
+        List<String> bannedWords = com.lanlink.shopping.module.productreview.service.ProductReviewRuleEngine.adAbsoluteWords();
         String textToScan = (p.getTitle() != null ? p.getTitle() : "") + " " + (p.getDetail() != null ? p.getDetail() : "");
         for (String w : bannedWords) {
             if (textToScan.contains(w)) bannedHits.add(w);

@@ -112,4 +112,14 @@ class ProductReviewRuleEngineTest {
         assertTrue(r.issues().stream().anyMatch(i -> "TITLE_TOO_SHORT".equals(i.code())));
         assertTrue(r.score() < 85);
     }
+
+    @Test
+    void expandedAbsoluteWordsAreWarnNotHard() {
+        // 扩充的广告法绝对化词：仅 WARN 扣分，绝不触发 HARD 红线
+        ProductReviewRuleEngine.RuleResult r = engine.evaluate(
+                product("顶级 最优质 工业管材 现货供应", "首家自营，行业垄断，包治百病，极品好货，交付说明齐全可开发票。"));
+        assertFalse(r.hardReject());
+        assertTrue(r.issues().stream().anyMatch(i -> "ABSOLUTE_CLAIM".equals(i.code())));
+        assertTrue(r.score() < 100);
+    }
 }

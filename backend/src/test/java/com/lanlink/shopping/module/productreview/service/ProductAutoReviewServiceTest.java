@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -164,5 +165,87 @@ class ProductAutoReviewServiceTest {
         assertNotNull(rec);
         assertEquals(ProductAutoReviewService.MANUAL, rec.getDecision());
         verify(productService, never()).applyAutoReviewDecision(any(), anyBoolean(), any(), anyInt());
+    }
+
+    @Test
+    void visionUnavailableWithFlagOnAutoApproves() {
+        when(configService.allowApproveWithoutVision()).thenReturn(true);
+        when(productMapper.selectById(100L)).thenReturn(product());
+        when(ruleEngine.evaluate(any())).thenReturn(new ProductReviewRuleEngine.RuleResult(
+                false, 92, List.of(), Map.of()));
+        when(aiService.review(any(), any())).thenReturn(Optional.of(
+                new ProductReviewAiService.TextReview("PASS", "LOW", 95, List.of(), "deepseek", "{}")));
+        when(visionService.review(any())).thenReturn(Optional.empty()); // 视觉模型不可用（如显存不足）
+
+        ProductReviewRecord rec = service.reviewNow(100L, false);
+
+        assertNotNull(rec);
+        assertEquals(ProductAutoReviewService.AUTO_APPROVE, rec.getDecision());
+        verify(productService).applyAutoReviewDecision(eq(100L), eq(true), any(), eq(92));
+    }
+
+    @Test
+    void visionUnavailableWithFlagOffFallsToManual() {
+        when(configService.allowApproveWithoutVision()).thenReturn(false);
+        when(productMapper.selectById(100L)).thenReturn(product());
+        when(ruleEngine.evaluate(any())).thenReturn(new ProductReviewRuleEngine.RuleResult(
+                false, 92, List.of(), Map.of()));
+        when(aiService.review(any(), any())).thenReturn(Optional.of(
+                new ProductReviewAiService.TextReview("PASS", "LOW", 95, List.of(), "deepseek", "{}")));
+        when(visionService.review(any())).thenReturn(Optional.empty());
+
+        ProductReviewRecord rec = service.reviewNow(100L, false);
+
+        assertEquals(ProductAutoReviewService.MANUAL, rec.getDecision());
+        verify(productService, never()).applyAutoReviewDecision(any(), anyBoolean(), any(), anyInt());
+    }
+
+    @Test
+    void visionRanAndFoundProblemWithFlagOnStillManual() {
+        when(configService.allowApproveWithoutVision()).thenReturn(true);
+        when(productMapper.selectById(100L)).thenReturn(product());
+        when(ruleEngine.evaluate(any())).thenReturn(new ProductReviewRuleEngine.RuleResult(
+                false, 92, List.of(), Map.of()));
+        when(aiService.review(any(), any())).thenReturn(Optional.of(
+                new ProductReviewAiService.TextReview("PASS", "LOW", 95, List.of(), "deepseek", "{}")));
+        // 视觉模型可用且判定不匹配：豁免只针对「不可用」，不覆盖已发现的图片问题
+        when(visionService.review(any())).thenReturn(Optional.of(
+                new ProductReviewVisionService.VisionReview(false, "HIGH", List.of("二维码"), "qwen2.5-vl", "{}")));
+
+        ProductReviewRecord rec = service.reviewNow(100L, false);
+
+        assertEquals(ProductAutoReviewService.MANUAL, rec.getDecision());
+        verify(productService, never()).applyAutoReviewDecision(any(), anyBoolean(), any(), anyInt());
+    }
+
+    @Test
+    void visionSkippedWhenDailyBudgetExhausted() {
+        // 预算耗尽（已用 300 达上限 300）：文本与视觉 AI 都不应再调用，避免成本失控
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class))).thenReturn(300);
+        when(productMapper.selectById(100L)).thenReturn(product());
+        when(ruleEngine.evaluate(any())).thenReturn(new ProductReviewRuleEngine.RuleResult(
+                false, 92, List.of(), Map.of()));
+
+        ProductReviewRecord rec = service.reviewNow(100L, false);
+
+        assertEquals(ProductAutoReviewService.MANUAL, rec.getDecision());
+        verify(aiService, never()).review(any(), any());
+        verify(visionService, never()).review(any());
+    }
+
+    @Test
+    void dailyBudgetCountsVisionOnlyRecords() {
+        when(productMapper.selectById(100L)).thenReturn(product());
+        when(ruleEngine.evaluate(any())).thenReturn(new ProductReviewRuleEngine.RuleResult(
+                false, 92, List.of(), Map.of()));
+        when(aiService.review(any(), any())).thenReturn(Optional.empty());
+        when(visionService.review(any())).thenReturn(Optional.of(
+                new ProductReviewVisionService.VisionReview(true, "LOW", List.of(), "qwen2.5-vl", "{}")));
+
+        service.reviewNow(100L, false);
+
+        // 预算计数须同时覆盖仅做了视觉、未做文本的记录
+        verify(jdbcTemplate).queryForObject(
+                argThat(sql -> sql != null && sql.contains("vision_result")), eq(Integer.class));
     }
 }

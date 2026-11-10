@@ -580,6 +580,10 @@
           <a-switch v-model:checked="autoConfig.vision_enabled" />
           <span class="auto-config-hint">调用本地 qwen2.5-vl 检查图片与商品匹配度、违禁内容</span>
         </a-form-item>
+        <a-form-item label="视觉不可用时允许自动通过">
+          <a-switch v-model:checked="autoConfig.allow_approve_without_vision" />
+          <span class="auto-config-hint">开启后：视觉模型不可用时，规则分与文本 AI 均达标即可自动通过；视觉可用但判不匹配仍转人工</span>
+        </a-form-item>
         <a-form-item label="自动通过分数阈值">
           <a-input-number v-model:value="autoConfig.auto_approve_score" :min="60" :max="100" :precision="0" style="width: 160px" />
           <span class="auto-config-hint">规则分与 AI 置信度均需达到该分数才会自动通过</span>
@@ -1228,6 +1232,7 @@ const autoConfig = reactive({
   auto_enabled: true,
   ai_enabled: true,
   vision_enabled: true,
+  allow_approve_without_vision: false,
   auto_approve_score: 85,
   daily_ai_budget: 300
 })

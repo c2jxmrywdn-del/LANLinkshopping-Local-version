@@ -133,7 +133,7 @@ public class ProductAutoReviewService {
             ai = aiService.review(p, rules);
             if (ai.isPresent()) model = "ai:" + ai.get().model();
         }
-        if (visionEnabled && !rules.hardReject()) {
+        if (visionEnabled && budgetAvailable && !rules.hardReject()) {
             vision = visionService.review(p);
             if (vision.isPresent()) model += "+vision:" + vision.get().model();
         }
@@ -151,8 +151,11 @@ public class ProductAutoReviewService {
                     && "PASS".equals(ai.get().decision()) && "LOW".equals(ai.get().risk())
                     && ai.get().score() >= configService.autoApproveScore()
                     && ai.get().issues().isEmpty();
-            boolean visionPass = !visionEnabled || (vision.isPresent()
-                    && vision.get().match() && "LOW".equals(vision.get().risk()));
+            boolean visionPass = !visionEnabled
+                    || (vision.isPresent() && vision.get().match() && "LOW".equals(vision.get().risk()))
+                    // 视觉不可用（Optional.empty）且运营显式开启「无视觉也可自动通过」时豁免；
+                    // 视觉可用但判不匹配/高风险时不豁免，仍转人工。
+                    || (configService.allowApproveWithoutVision() && vision.isEmpty());
             boolean scorePass = rules.score() >= configService.autoApproveScore();
             boolean imagesOk = !visionEnabled || (p.getCoverUrl() != null && !p.getCoverUrl().isBlank());
 
@@ -233,7 +236,8 @@ public class ProductAutoReviewService {
         try {
             Integer used = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM t_product_review_record "
-                            + "WHERE DATE(create_time) = CURDATE() AND ai_result IS NOT NULL",
+                            + "WHERE DATE(create_time) = CURDATE() "
+                            + "AND (ai_result IS NOT NULL OR vision_result IS NOT NULL)",
                     Integer.class);
             return used == null || used < budget;
         } catch (Exception e) {

@@ -2805,6 +2805,8 @@ export const UI_ZH_EN_EXTRA = {
   "规则分与 AI 置信度均需达到该分数才会自动通过": "Both the rule score and AI confidence must reach this threshold for auto approval",
   "每日 AI 审核预算（次）": "Daily AI review budget (calls)",
   "超过预算后自动转人工，避免模型成本失控": "Once the budget is exceeded, reviews go to manual to keep model costs under control",
+  "视觉不可用时允许自动通过": "Allow auto-approve when vision is unavailable",
+  "开启后：视觉模型不可用时，规则分与文本 AI 均达标即可自动通过；视觉可用但判不匹配仍转人工": "When on: if the vision model is unavailable, auto-approve as long as rule and text AI scores qualify; if vision runs and flags a mismatch, it still goes to manual",
   "自动审核结论": "Auto Review Result",
   "重跑自动审核": "Re-run auto review",
   "自动审核": "Auto-reviewed",

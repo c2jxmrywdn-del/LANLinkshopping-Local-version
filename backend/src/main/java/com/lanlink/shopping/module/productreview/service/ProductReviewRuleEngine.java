@@ -33,7 +33,8 @@ public class ProductReviewRuleEngine {
     /** 广告法绝对化/夸大用语（命中扣分，严重词组直接 HARD）。 */
     private static final String[] AD_ABSOLUTE_WORDS = {
             "国家级", "世界级", "最高级", "最佳", "第一品牌", "全网第一", "销量第一",
-            "绝无仅有", "独一无二", "史无前例", "万能", "100%", "永久", "零风险", "绝对安全"
+            "绝无仅有", "独一无二", "史无前例", "万能", "100%", "永久", "零风险", "绝对安全",
+            "顶级", "最优质", "垄断", "包治百病", "首家", "极品"
     };
 
     /** 平台禁售/高危品类词（演示起步集，正式环境应接内容安全服务）。 */
@@ -64,6 +65,11 @@ public class ProductReviewRuleEngine {
     }
 
     public record Issue(String code, String severity, String message) {}
+
+    /** 广告法绝对化词表只读快照：供管理端合规初筛与自动审核共用，避免两处清单漂移。 */
+    public static List<String> adAbsoluteWords() {
+        return List.of(AD_ABSOLUTE_WORDS);
+    }
 
     public record RuleResult(boolean hardReject, int score, List<Issue> issues,
                              Map<String, Object> dimensions) {
