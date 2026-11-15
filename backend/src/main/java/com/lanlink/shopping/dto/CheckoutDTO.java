@@ -42,4 +42,32 @@ public class CheckoutDTO {
      * 同一结算动作重试必须携带同一 key，服务端据此拦截重复下单。
      */
     private String idempotentKey;
+
+    /**
+     * 发票需求（P1-5）：null/不需要时不落发票列。需要开票时 titleType/title 必填，
+     * titleType=company 时 taxNo 必填（15-20 位大写字母数字，见 ValidationRules 契约）。
+     */
+    private InvoiceRequest invoice;
+
+    /**
+     * 发票需求子结构（随单快照落 t_order，invoice_* 前缀列）。
+     * 独立类便于后续拆独立开票模块时整体迁移，不改下单 DTO 形状。
+     */
+    @Data
+    public static class InvoiceRequest {
+        /** 是否需要发票 */
+        private Boolean needed;
+        /** 抬头类型 personal 个人 / company 单位 */
+        private String titleType;
+        /** 发票抬头名称 */
+        private String title;
+        /** 纳税人识别号（titleType=company 必填） */
+        private String taxNo;
+        /** 发票内容 category 商品类别 / detail 开具明细 */
+        private String contentType;
+        /** 商品类别（contentType=category 时） */
+        private String category;
+        /** 开具明细（contentType=detail 时） */
+        private String detail;
+    }
 }

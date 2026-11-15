@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { authApi, userApi, chatApi } from '../api'
+import { setAnalyticsUser, resetAnalyticsUser } from '../utils/analytics'
 
 export const useUserStore = defineStore('user', {
   state: () => ({ user: null, chatUnread: 0 }),
@@ -27,12 +28,14 @@ export const useUserStore = defineStore('user', {
       if (data && data.require2fa) return data
       this.user = data
       localStorage.setItem('ll_user', JSON.stringify(data))
+      setAnalyticsUser(data && data.userId)
       return data
     },
     /** 两步验证登录：校验动态码成功后建立会话 */
     async login2fa(loginTicket, code) {
       this.user = await authApi.login2fa({ loginTicket, code })
       localStorage.setItem('ll_user', JSON.stringify(this.user))
+      setAnalyticsUser(this.user && this.user.userId)
     },
     async register(payload) {
       await authApi.register(payload)
@@ -41,7 +44,29 @@ export const useUserStore = defineStore('user', {
       try {
         this.user = await authApi.me()
         localStorage.setItem('ll_user', JSON.stringify(this.user))
-      } catch (e) { this.user = null }
+        setAnalyticsUser(this.user && this.user.userId)
+      } catch (e) {
+        /*
+         * 会话失效必须同时清掉内存与快照。
+         *
+         * 原实现只把 this.user 置 null，localStorage.ll_user 原样留着；
+         * 路由守卫 readUser() 在 store 为空时会回落到该快照，于是：
+         *   快照说「已登录」→ 守卫放行受保护页 → 页面接口全部 401 → 踢回登录页
+         *   → 用户点后退/重进该 URL，快照仍说「已登录」→ 再次放行 → 再全 401。
+         * 表现为「进得去但什么都加载不出来」的循环。
+         *
+         * 注意只在「明确的未授权」时清快照：网络抖动/后端 5xx 不应把用户踢下线
+         * （那会让一次短暂故障变成所有人重新登录）。401 由 request.js 统一带出来。
+         */
+        const status = e?.response?.status
+        const bizCode = e?.response?.data?.code
+        if (status === 401 || bizCode === 401) {
+          this.user = null
+          this.chatUnread = 0
+          localStorage.removeItem('ll_user')
+          resetAnalyticsUser()
+        }
+      }
     },
     /** 写入绝对未读数（登录后由 /auth/me 带回，或读操作后本地更新） */
     setUnread(n) {
@@ -67,6 +92,7 @@ export const useUserStore = defineStore('user', {
       this.user = null
       this.chatUnread = 0
       localStorage.removeItem('ll_user')
+      resetAnalyticsUser()
     }
   }
 })

@@ -104,7 +104,22 @@
 
       <!-- 社交账号绑定（OAuth 身份，与上方平台内第三方授权不同表） -->
       <a-divider style="margin: 4px 0 12px">社交账号绑定</a-divider>
-      <div v-if="socialBindings.length === 0" class="empty">暂无社交账号绑定；可在登录页使用 Google / Apple 登录后自动建立绑定。</div>
+      <div class="row apple-bind">
+        <span class="apple-bind__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path d="M16.5 12.6c0-2.3 1.9-3.4 2-3.4-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.1-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.3.9-1.3 1.2-2.6 1.2-2.7 0-.1-2.4-.9-2.4-3.6Z" fill="#fff" />
+            <path d="M14.3 5.5c.6-.8 1.1-1.9 1-3-1 .1-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.8-1.4Z" fill="#fff" />
+          </svg>
+        </span>
+        <div class="row-main">
+          <div class="row-title">通过 Apple 登录</div>
+          <div class="row-desc">绑定后，登录页的黑色按钮会进入这个手机号账号。</div>
+        </div>
+        <a-button class="apple-bind__btn" :disabled="appleBound" :loading="appleBinding" @click="startAppleBind">
+          {{ appleBound ? '已绑定' : '绑定' }}
+        </a-button>
+      </div>
+      <div v-if="socialBindings.length === 0" class="empty">还没有绑定社交账号。请先用手机号登录，再点上面的「绑定 Apple」。</div>
       <div v-for="sb in socialBindings" :key="sb.id" class="third-row">
         <span class="third-icon">{{ (sb.name || sb.provider || 'S').slice(0, 1) }}</span>
         <div class="row-main">
@@ -395,8 +410,36 @@ function confirmRevoke(ta) {
 
 // ===== 社交账号绑定（socialApi：OAuth 身份绑定/解绑） =====
 const socialBindings = ref([])
+const appleBinding = ref(false)
+const appleBound = computed(() => socialBindings.value.some((sb) => sb.provider === 'apple'))
 async function loadSocialBindings() {
   try { socialBindings.value = (await socialApi.myBindings()) || [] } catch (e) { socialBindings.value = [] }
+}
+async function startAppleBind() {
+  appleBinding.value = true
+  try {
+    const providers = await socialApi.providers()
+    const apple = (providers || []).find((item) => item.provider === 'apple')
+    if (!apple?.configured) {
+      message.info('Apple 登录未配置：请设置 Services ID，以及 client secret，或 Team ID、Key ID 与私钥')
+      return
+    }
+    const res = await socialApi.authorize('apple')
+    if (!res?.authorizeUrl || String(res.authorizeUrl).includes('social_sandbox=')) {
+      message.warning('未取得 Apple 授权地址')
+      return
+    }
+    try {
+      sessionStorage.setItem('ll_social_provider', 'apple')
+      sessionStorage.setItem('ll_social_intent', 'bind')
+      sessionStorage.removeItem('ll_social_redirect')
+    } catch (e) { /* 隐私模式忽略 */ }
+    window.location.href = res.authorizeUrl
+  } catch (e) {
+    message.error(e?.message || '无法发起 Apple 绑定')
+  } finally {
+    appleBinding.value = false
+  }
 }
 function confirmUnbind(sb) {
   Modal.confirm({
@@ -529,6 +572,19 @@ onBeforeUnmount(() => {
 .panel { display: flex; flex-direction: column; gap: 16px; }
 .sec { border-radius: 12px; }
 .row { display: flex; align-items: center; gap: 12px; min-height: 48px; }
+.apple-bind { padding: 4px 0 8px; }
+.apple-bind__mark {
+  width: 36px; height: 36px; border-radius: 10px; background: #000;
+  display: grid; place-items: center; flex: none;
+}
+.apple-bind :deep(.ant-btn.apple-bind__btn) {
+  height: 32px; padding: 0 14px; border-radius: 999px;
+  background: #1d1d1f; border-color: #1d1d1f; color: #fff;
+}
+.apple-bind :deep(.ant-btn.apple-bind__btn:hover) { background: #000; border-color: #000; color: #fff; }
+.apple-bind :deep(.ant-btn.apple-bind__btn:disabled) {
+  background: #d2d2d7; border-color: #d2d2d7; color: #fff;
+}
 .row-main { flex: 1; min-width: 0; }
 .row-title { color: var(--ll-ink); }
 .row-desc { font-size: 12px; color: var(--ll-muted); margin-top: 2px; word-break: break-all; }

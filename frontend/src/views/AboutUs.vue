@@ -12,9 +12,6 @@
 
     <!-- 头部：品牌叙事 + 快速入口 -->
     <section class="about-hero">
-      <div class="hero-glow hero-glow-a"></div>
-      <div class="hero-glow hero-glow-b"></div>
-      <div class="hero-glow hero-glow-c" aria-hidden="true"></div>
       <div class="hero-copy">
         <span class="eyebrow">ABOUT LANLINK SHOPPING</span>
         <h1>让采购、商品与增长<br /><em>在同一个网络里连接。</em></h1>
@@ -626,19 +623,14 @@ async function copyText(text, label) {
 .hero-actions { display: flex; gap: 12px; margin-top: 28px; }
 .hero-primary { border: 0; background: linear-gradient(100deg, var(--ll-brand-gold), #F59E0B); color: var(--ll-brand-base); font-weight: 750; box-shadow: 0 10px 28px rgba(200,164,92,.22); }
 .hero-primary:hover { filter: brightness(1.06); color: var(--ll-brand-base); }
-.hero-secondary { color: #13233A; background: rgba(255,255,255,.6); border-color: rgba(30,110,184,.35); backdrop-filter: blur(10px); }
+.hero-secondary { color: #13233A; background: rgba(255,255,255,.72); border-color: rgba(30,110,184,.35); }
 .hero-secondary:hover { color: #13233A; border-color: rgba(30,110,184,.55); background: #fff; }
-/* 漂移光斑：对齐 .ll-blob 原语——颜色走 --blob-c、静态径向渐变底 + blur(40px)，
-   动效交给 liquidGlass.css 的 llBlobV / llBlobC 帧驱动（transform 合成层友好） */
-.hero-glow { position: absolute; z-index: 0; border-radius: 999px; pointer-events: none; background: radial-gradient(circle, var(--blob-c, var(--ll-sky-blob-2)) 0%, transparent 70%); filter: blur(40px); will-change: transform; }
-.hero-glow-a { width: 300px; height: 300px; right: 18%; top: -80px; --blob-c: rgba(155, 45, 32, .16); mix-blend-mode: soft-light; animation: llBlobV 26s ease-in-out infinite alternate; }
-.hero-glow-b { width: 360px; height: 360px; right: -70px; bottom: -160px; --blob-c: rgba(200, 164, 92, .18); animation: llBlobC 32s -14s ease-in-out infinite alternate; }
-.hero-glow-c { width: 320px; height: 320px; left: 20%; bottom: -60px; --blob-c: var(--ll-sky-blob-3); mix-blend-mode: screen; animation: llBlobV 22s -6s ease-in-out infinite alternate; }
 .hero-orbit { position: absolute; width: 400px; height: 400px; right: 70px; top: 18px; opacity: .92; }
 .orbit-ring { position: absolute; inset: 42px; border: 1px solid rgba(30, 110, 184, .3); border-radius: 50%; transform: rotate(-18deg) skewX(-8deg); }
 .ring-two { inset: 82px 12px; transform: rotate(28deg) skewY(-7deg); border-color: rgba(180, 140, 60, .45); }
-/* 白玻璃深底包（对齐 BrandSymbol 组 B 同病修复）：白底 + 玻璃上深字，SHOPPING 从 7px 提到 9px */
-.orbit-core { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 108px; height: 108px; border-radius: 32px; display: grid; place-items: center; background: linear-gradient(145deg, rgba(255,255,255,.62), rgba(255,255,255,.55)); border: 1px solid rgba(255,255,255,.24); box-shadow: inset 0 1px rgba(255,255,255,.35), 0 24px 50px rgba(0,0,0,.18); backdrop-filter: blur(var(--ll-glass-blur)) saturate(var(--ll-glass-saturate)); }
+/* LL 徽标块：纯白平面（原为 145deg 玻璃渐变 + backdrop-filter，
+   在浅蓝 Hero 上会透出下层色差，形成第二处斜向明暗带） */
+.orbit-core { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 108px; height: 108px; border-radius: 32px; display: grid; place-items: center; background: #FFFFFF; border: 1px solid rgba(30, 110, 184, .16); box-shadow: 0 18px 40px rgba(30, 110, 184, .18); }
 .orbit-core strong { font-size: 26px; color: var(--ll-ink-on-glass, #13233A); letter-spacing: -.08em; }
 .orbit-core span { font-size: 28px; font-weight: 800; color: var(--ll-ink-on-glass, #13233A); letter-spacing: -.08em; }
 .orbit-core::after { content: 'SHOPPING'; position: absolute; bottom: 18px; font-size: 9px; letter-spacing: .18em; color: rgba(19, 35, 58, .6); }
@@ -703,8 +695,6 @@ async function copyText(text, label) {
 .whatsapp-qr-panel { display: flex; align-items: center; gap: 10px; margin: 8px 0 10px; padding: 8px; border: 1px solid var(--ab-line); border-radius: 10px; background: var(--ab-paper); }
 .contact-qr { width: 76px; height: 76px; object-fit: contain; border: 1px solid var(--ab-line); border-radius: 8px; background: #fff; padding: 3px; }
 .whatsapp-qr-panel span { color: var(--ab-muted); font-size: 10px; line-height: 1.5; }
-.whatsapp-actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 8px; margin-top: auto; }
-.whatsapp-actions .ant-btn { margin-top: 0; }
 .contact-label { margin-top: 18px; color: var(--ab-muted); font-size: 11px; }
 .contact-card strong { margin: 5px 0; color: var(--ab-navy); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 .contact-card small { color: #98A2B3; line-height: 1.5; min-height: 36px; }
@@ -920,52 +910,30 @@ async function copyText(text, label) {
   --ab-navy: #E8EDF5;
 }
 
-/* ---------- Hero：小清新天空蓝舞台（浅底高对比，与第一份定义保持一致防回归） ----------
-   注：上方基础版 .about-hero 声明的是 background: transparent（无渐变），
-   全文件渐变仅此一处（后文同优先级、靠后生效），底色流动的 size/animation 也只在此声明。 */
+/* ---------- Hero：还原浅蓝底色（垂直方向，无斜向光栅） ----------
+   底色还原为原来的 5 段浅蓝层次（#F2F9FF → #E0F2FE → #BAE6FD → #E0F2FE → #F2F9FF），
+   但把方向从 `135deg` 改为 `180deg`（垂直）：
+   ① 斜向渐变在大面积浅底上会形成一条明显的斜向明暗分界，看起来像"光栅扫过"，
+      这正是此前反复被反馈的问题；
+   ② 垂直方向保留同样的上浅—中深—下浅层次，视觉基调一致，但不会产生斜向条纹；
+   ③ 已移除同层的 3 个 radial-gradient 亮斑与 52px 网格纹理（都会放大斜带观感）。
+   注意：这里只保留静态渐变，不加任何动画/扫光/backdrop-filter。 */
 .about-hero {
   min-height: 520px;
   padding: 68px 72px;
   border-radius: 32px;
   border: 1px solid #C9E2F6;
-  background:
-    radial-gradient(52% 46% at 74% 24%, rgba(255, 255, 255, .5), transparent 72%),
-    radial-gradient(720px 440px at 92% 6%, rgba(255, 255, 255, .6), transparent 64%),
-    radial-gradient(840px 540px at 108% 102%, rgba(125, 211, 252, .28), transparent 66%),
-    linear-gradient(135deg, #F2F9FF 0%, #E0F2FE 30%, #BAE6FD 55%, #E0F2FE 80%, #F2F9FF 100%);
-  /* 底色流动：background-size 独立声明防简写覆盖；radial 光斑层保持 auto（层级尺寸=定位区，位移动画对其零偏移），仅 linear 段放大流动 */
-  background-size: auto, auto, auto, 300% 300%;
-  animation: llGradShift 20s ease infinite;
+  background: linear-gradient(180deg,
+    #F2F9FF 0%,
+    #E0F2FE 30%,
+    #BAE6FD 55%,
+    #E0F2FE 80%,
+    #F2F9FF 100%);
   box-shadow: 0 26px 70px rgba(30, 110, 184, .14);
   align-items: center;
 }
-/* conic 光晕：整层缓慢旋转（llHaloRotate 合成层友好），原静态 radial 白高光已并入上方 background 栈首层 */
-.about-hero::before {
-  content: '';
-  position: absolute;
-  inset: -40%;
-  z-index: 0;
-  background: conic-gradient(from 120deg at 60% 40%, rgba(186, 230, 253, .45), rgba(255, 255, 255, .4), rgba(125, 211, 252, .3), rgba(186, 230, 253, .45));
-  filter: blur(64px);
-  opacity: .5;
-  animation: llHaloRotate 40s linear infinite;
-  will-change: transform;
-  pointer-events: none;
-}
-.about-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(19, 35, 58, .05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(19, 35, 58, .05) 1px, transparent 1px);
-  background-size: 52px 52px;
-  -webkit-mask-image: linear-gradient(90deg, #000, transparent 78%);
-  mask-image: linear-gradient(90deg, #000, transparent 78%);
-  opacity: .5;
-}
+/* Hero 装饰网格已移除：52px 网格 + 右侧渐隐遮罩在浅底上会与卡片边界叠加成
+   "半透明斜带"，正是被反复反馈的"光栅"。纯色底更干净。 */
 .hero-copy { position: relative; z-index: 3; max-width: 760px; }
 .hero-orbit { z-index: 2; }
 .hero-copy h1 {
@@ -997,58 +965,25 @@ async function copyText(text, label) {
   transition: transform .18s ease-out, filter .18s ease-out;
 }
 .hero-primary:hover { color: var(--ll-brand-base); filter: brightness(1.06); transform: translateY(-1px); }
-.hero-secondary { color: #13233A; border: 1px solid rgba(30, 110, 184, .35); background: rgba(255, 255, 255, .6); backdrop-filter: blur(14px) saturate(140%); }
+.hero-secondary { color: #13233A; border: 1px solid rgba(30, 110, 184, .35); background: rgba(255, 255, 255, .72); }
 .hero-secondary:hover { color: #13233A; background: #fff; border-color: rgba(30, 110, 184, .55); }
 .hero-stats { display: flex; gap: 10px; margin-top: 36px; flex-wrap: wrap; }
-/* 液态玻璃统计卡：完整 day-glass 参数包（对齐 .ll-glass--day）——双层渐变描边 +
-   blur(16px)/saturate(150%) + 三条白 inset 阴影；::after 反光沿 + ::before 6s 扫光循环 */
+/* 统计卡：纯白平面卡 + 细边（不再用 day-glass 材质）。
+   历史问题（对应截图红圈）：这张卡原本是完整的液态玻璃参数包——
+   ① `linear-gradient(140deg, 白95% → 白5% → 白55%)` 的双层描边，
+      在浅蓝底上形成一条斜向高光带，正是"变化的光栅"观感来源；
+   ② `backdrop-filter: blur(16px) saturate(150%)` 让卡片透出并放大下层渐变；
+   ③ `::before` 还有 6s 循环的斜向扫光动画（llDaySheen），持续移动。
+   三者叠加导致卡片一直在"扫光"。信息型统计卡不需要这些装饰：
+   纯白底 + 1px 边 + 极轻投影，数字与标签才是主体。 */
 .hero-stat {
-  --ll-glass-day-radius: 15px;
   position: relative;
   display: flex; flex-direction: column; gap: 2px;
   padding: 11px 17px;
-  border: 1px solid transparent;
-  border-radius: var(--ll-glass-day-radius, 15px);
-  background:
-    linear-gradient(rgba(255, 255, 255, .5), rgba(255, 255, 255, .4)) padding-box,
-    linear-gradient(140deg,
-      rgba(255, 255, 255, .95),
-      rgba(255, 255, 255, .15) 35%,
-      rgba(255, 255, 255, .05) 60%,
-      rgba(255, 255, 255, .55)) border-box;
-  backdrop-filter: blur(var(--ll-glass-day-blur, 16px)) saturate(var(--ll-glass-day-saturate, 150%));
-  -webkit-backdrop-filter: blur(var(--ll-glass-day-blur, 16px)) saturate(var(--ll-glass-day-saturate, 150%));
-  box-shadow:
-    0 8px 32px rgba(30, 110, 184, .16),
-    inset 0 4px 20px rgba(255, 255, 255, .3),
-    inset 0 1px 0 rgba(255, 255, 255, .8);
-}
-/* 底部反光沿：跨界伪元素承载三条白色 inset 阴影（与 .ll-glass--day::after 同技法，勿加 overflow:hidden） */
-.hero-stat::after {
-  content: '';
-  position: absolute;
-  inset: -10px -8px 0 -11px;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: .6;
-  filter: blur(1px) brightness(115%);
-  box-shadow:
-    inset -0.3px -1px 0 -0.35px rgba(255, 255, 255, 1),
-    inset -1px -5.8px 0 -0.35px rgba(255, 255, 255, 1),
-    inset 0 -9px 0 -8px rgba(255, 255, 255, 1);
-}
-/* 非交互面扫光：6s 循环；clip-path 收边避免裁掉 ::after；z-index:-1 依托 backdrop-filter 层叠上下文 */
-.hero-stat::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .4) 50%, transparent);
-  transform: translateX(-120%) skewX(-20deg);
-  clip-path: inset(0 round var(--ll-glass-day-radius, 15px));
-  animation: llDaySheen 6s ease-in-out infinite;
-  pointer-events: none;
+  border: 1px solid rgba(30, 110, 184, .18);
+  border-radius: 15px;
+  background: #FFFFFF;
+  box-shadow: 0 2px 6px rgba(30, 110, 184, .08);
 }
 .hero-stat b { font-size: 19px; letter-spacing: -.02em; color: #13233A; }
 .hero-stat span { font-size: 11px; letter-spacing: .16em; color: #475569; }
@@ -1162,7 +1097,26 @@ async function copyText(text, label) {
   --orbit: 165px;
   min-height: 440px; border-radius: 32px; overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .78);
-  background: linear-gradient(150deg, rgba(242, 249, 255, .84), rgba(214, 236, 250, .58));
+  /*
+   * 卡片底色要"动"：一段跨色相的浅色渐变（冷白 → 天蓝 → 薄荷青 → 藕荷紫 → 暖杏），
+   * background-size 放大到 300%，再让 background-position 缓慢往返（identityBgFlow），
+   * 卡片可见窗口内的主色调会持续游走，而不是只在同一色相里做明暗变化。
+   *
+   * 为什么不用 animation 直接改 gradient 色值：`linear-gradient()` 里的颜色
+   * 不是可插值的独立属性（除非给每个色标注册 @property），
+   * 位移 background-position 是兼容性最好、且不触发布局的方案。
+   *
+   * 色相跨度控制在浅色区（明度都 ≥ 90%），保证白色卡片、深色文字仍高对比。
+   */
+  background: linear-gradient(120deg,
+    rgba(240, 249, 255, .92) 0%,
+    rgba(186, 230, 253, .82) 24%,
+    rgba(167, 243, 208, .70) 46%,
+    rgba(199, 210, 254, .78) 68%,
+    rgba(254, 235, 200, .66) 86%,
+    rgba(240, 249, 255, .92) 100%);
+  background-size: 300% 300%;
+  animation: identityBgFlow 18s ease-in-out infinite alternate;
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
   box-shadow:
@@ -1170,20 +1124,39 @@ async function copyText(text, label) {
     inset 0 -1px 1px rgba(255, 255, 255, .4),
     0 24px 60px -24px rgba(30, 110, 184, .28);
 }
-/* 液态流光层：天蓝/青色光斑 + 玻璃高光扫掠，背景位移驱动（借鉴 magicui animated-grid-pattern 的“纹理会动”） */
+@keyframes identityBgFlow {
+  from { background-position: 0% 50%; }
+  to { background-position: 100% 50%; }
+}
+/*
+ * 身份舞台的动态层（用户明确要求保留/恢复这块的动态观感）。
+ *
+ * 注意作用域：动态光栅只出现在「02 身份」这张舞台卡上，
+ * hero 区（.about-hero / .hero-stat）保持静态平面底，两者互不影响。
+ *
+ * 三层叠加：
+ *   ① `::before` 三团天蓝/青色光斑 + 一条 115° 高光带，16s 的 liquidFlow 位移循环；
+ *   ② `::after` 24px 点阵网格，60s 的 dotsPan 平移循环（mask 径向淡出，避免成片网格感）；
+ *   ③ 两个 blur(46px) 光球（orb-a/orb-b）用 orbDrift 来回漂移。
+ * 全部只改 background-position / transform，走合成层，不触发布局。
+ */
 .identity-visual::before {
   content: ''; position: absolute; inset: -18%; pointer-events: none; z-index: 0;
+  /*
+   * 只保留三团柔光斑，删掉原先第四条 `linear-gradient(115deg, …)` 高光带——
+   * 那条会位移的斜向白带正是被反复反馈的"变化的光栅"，也是截图里那条斜亮带。
+   * 光斑本身是软边径向渐变，位移时是"颜色在慢慢游动"，不是"条纹扫过"。
+   */
   background:
-    radial-gradient(46% 42% at 22% 24%, rgba(125, 211, 252, .5), transparent 68%),
-    radial-gradient(40% 38% at 78% 76%, rgba(56, 189, 248, .34), transparent 66%),
-    radial-gradient(30% 28% at 66% 18%, rgba(255, 255, 255, .5), transparent 70%),
-    linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, .5) 50%, transparent 58%);
-  background-size: 220% 220%, 200% 200%, 180% 180%, 260% 100%;
+    radial-gradient(46% 42% at 22% 24%, rgba(125, 211, 252, .55), transparent 68%),
+    radial-gradient(40% 38% at 78% 76%, rgba(56, 189, 248, .36), transparent 66%),
+    radial-gradient(30% 28% at 66% 18%, rgba(255, 255, 255, .55), transparent 70%);
+  background-size: 220% 220%, 200% 200%, 180% 180%;
   animation: liquidFlow 16s ease-in-out infinite;
 }
 @keyframes liquidFlow {
-  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 0%, -60% 0%; }
-  50% { background-position: 70% 55%, 25% 40%, 40% 60%, 160% 0%; }
+  0%, 100% { background-position: 0% 0%, 100% 100%, 50% 0%; }
+  50% { background-position: 70% 55%, 25% 40%, 40% 60%; }
 }
 .identity-visual::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
@@ -1210,6 +1183,7 @@ async function copyText(text, label) {
   -webkit-backdrop-filter: blur(10px) saturate(150%);
 }
 .identity-center small { color: #4A6B8A; }
+/* 中心脉冲光环：3.4s 由内向外扩散淡出，提示"这里是枢纽" */
 .identity-center::after {
   content: ''; position: absolute; inset: -13px; border-radius: 44px;
   border: 1px solid rgba(30, 110, 184, .45); pointer-events: none;
@@ -1220,7 +1194,12 @@ async function copyText(text, label) {
   72% { transform: scale(1.16); opacity: 0; }
   100% { transform: scale(1.16); opacity: 0; }
 }
-/* orbiting-circles 手法（magicui registry 移植）：--angle/--orbit 驱动公转，尾段反向旋转保持文字直立 */
+/*
+ * 身份节点公转（orbiting-circles 手法，magicui registry 移植）：
+ * `--angle` 决定初始相位、`--orbit` 决定半径，46s 一圈；
+ * 尾段 `rotate(-angle - 360deg)` 反向抵消，保证节点文字始终直立。
+ * 只动 transform，走合成层。
+ */
 .orbit-point {
   position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 3;
   transform: rotate(var(--angle, 0deg)) translateY(calc(-1 * var(--orbit))) rotate(calc(-1 * var(--angle, 0deg)));
@@ -1241,7 +1220,15 @@ async function copyText(text, label) {
 }
 [data-theme='dark'] .identity-visual {
   border-color: rgba(255, 255, 255, .1);
-  background: linear-gradient(150deg, rgba(28, 31, 38, .82), rgba(35, 48, 66, .62));
+  /* 暗色同样保留底色流动，色值换成深蓝灰，避免亮底渐变在暗色主题下刺眼 */
+  background: linear-gradient(120deg,
+    rgba(28, 31, 38, .86) 0%,
+    rgba(35, 48, 66, .72) 30%,
+    rgba(30, 58, 88, .66) 55%,
+    rgba(35, 48, 66, .72) 78%,
+    rgba(28, 31, 38, .86) 100%);
+  background-size: 300% 300%;
+  animation: identityBgFlow 18s ease-in-out infinite alternate;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, .12),
     inset 0 -1px 1px rgba(255, 255, 255, .05),
@@ -1251,8 +1238,7 @@ async function copyText(text, label) {
   background:
     radial-gradient(46% 42% at 22% 24%, rgba(56, 189, 248, .2), transparent 68%),
     radial-gradient(40% 38% at 78% 76%, rgba(30, 110, 184, .22), transparent 66%),
-    radial-gradient(30% 28% at 66% 18%, rgba(255, 255, 255, .1), transparent 70%),
-    linear-gradient(115deg, transparent 42%, rgba(255, 255, 255, .12) 50%, transparent 58%);
+    radial-gradient(30% 28% at 66% 18%, rgba(255, 255, 255, .1), transparent 70%);
 }
 [data-theme='dark'] .identity-visual::after { background-image: radial-gradient(rgba(125, 211, 252, .12) 1.2px, transparent 1.3px); }
 [data-theme='dark'] .orb-a { background: rgba(56, 189, 248, .22); }
@@ -1293,9 +1279,10 @@ async function copyText(text, label) {
   transition: transform .25s ease, border-color .25s ease, box-shadow .25s ease;
 }
 .identity-row.in-view { animation: floatCardIn .6s cubic-bezier(.22, .8, .3, 1) both; animation-delay: var(--fd, 0s); }
-.identity-row.in-view.float-win { animation: floatCardIn .6s cubic-bezier(.22, .8, .3, 1) both, floatBob 6.5s ease-in-out calc(var(--fd, 0s) + .7s) infinite; }
+/* 入场动画保留（一次性），但去掉 floatBob 的 6.5s 无限浮动：
+   卡片持续上下漂移同样属于"一直在动"的装饰，信息型列表不需要。 */
+.identity-row.in-view.float-win { animation: floatCardIn .6s cubic-bezier(.22, .8, .3, 1) both; animation-delay: var(--fd, 0s); }
 @keyframes floatCardIn { from { opacity: 0; transform: translateY(26px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-@keyframes floatBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 .identity-row:hover { transform: translateY(-6px) scale(1.015); border-color: #D4B26A; box-shadow: 0 16px 44px -12px rgba(128, 96, 31, .32), inset 0 1px 0 rgba(255, 255, 255, .95); }
 .identity-spot { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s ease; background: radial-gradient(160px 110px at var(--mx, 50%) var(--my, 50%), rgba(200, 164, 92, .26), transparent 70%); }
 .identity-row:hover .identity-spot { opacity: 1; }
@@ -1368,8 +1355,20 @@ async function copyText(text, label) {
 .contact-link { margin: 6px 0; font-size: 15px; font-weight: 600; color: var(--ab-ink); }
 .contact-card small { min-height: 44px; font-size: 12.5px; color: var(--ab-muted); }
 .contact-card .ant-btn { border-radius: 999px; height: 38px; }
+/* 等宽两列 + 文字居中：`flex: 1 1 auto` 会按内容宽度分配（"直接打开 WhatsApp" 更宽），
+   导致两个按钮不等宽、文字观感偏左；改 basis:0 强制等分 */
 .whatsapp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.whatsapp-actions .ant-btn { flex: 1 1 auto; min-width: 0; }
+.whatsapp-actions .ant-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  /* 抵消 `.contact-card .ant-btn { margin-top: auto }`：在 flex 行里 auto 会把按钮顶开 */
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.whatsapp-actions .ant-btn > span { display: block; width: 100%; text-align: center; }
 [data-theme='dark'] .contact-card { background: #1C1F26; }
 
 /* AuthorCard 对齐 Apple 卡片体系（含暗色） */
@@ -1510,30 +1509,14 @@ async function copyText(text, label) {
     linear-gradient(155deg, rgba(30, 41, 59, .82), rgba(15, 23, 42, .66));
 }
 
-/* reduced-motion 收口（原 identity 段与 join/contact 段两块合并）：
-   追加 hero 漂移光斑、conic 光晕停帧，统计卡扫光整体移除 */
+/* reduced-motion 收口：hero 的漂移光斑、conic 光晕、统计卡扫光均已移除（纯静态），
+   这里只保留其它仍在使用的动效停帧。 */
 @media (prefers-reduced-motion: reduce) {
-  /* 底色流动（llGradShift）停帧 */
-  .about-hero { animation: none !important; }
+  .identity-visual,
   .orbit-point, .identity-center::after, .stage-orb,
-  .identity-visual::before, .identity-visual::after,
-  .hero-glow-a, .hero-glow-b, .hero-glow-c,
-  .about-hero::before { animation: none; }
+  .identity-visual::before, .identity-visual::after { animation: none; }
   .join-card::after, .contact-card::after { animation: none; opacity: 0; }
-  .hero-stat::before { content: none; }
 }
-
-/* 性能分级收口（对齐 motion.css reduced/suspended 约定）：
-   reduced → 光斑/扫光降频 34s；suspended → 熔断全部非必要动效 */
-[data-perf-tier='reduced'] .hero-glow-a,
-[data-perf-tier='reduced'] .hero-glow-b,
-[data-perf-tier='reduced'] .hero-glow-c,
-[data-perf-tier='reduced'] .hero-stat::before { animation-duration: 34s; }
-[data-perf-tier='suspended'] .hero-glow-a,
-[data-perf-tier='suspended'] .hero-glow-b,
-[data-perf-tier='suspended'] .hero-glow-c,
-[data-perf-tier='suspended'] .about-hero::before,
-[data-perf-tier='suspended'] .hero-stat::before { animation: none !important; }
 
 /* 03 能力矩阵文字卡：光束由 BorderBeamPanel 组件提供，卡片允许光晕外溢 */
 .module-card {
@@ -1555,9 +1538,6 @@ async function copyText(text, label) {
   .about-hero { min-height: auto; padding: 48px 26px; border-radius: 28px; }
   .hero-copy h1 { font-size: clamp(34px, 9vw, 48px); }
   .hero-orbit { display: none; }
-  /* 移动端收口：白斑光斑隐藏；conic 光晕停帧（-40% 大面积 blur 旋转在低端机代价过高） */
-  .hero-glow-c { display: none; }
-  .about-hero::before { animation: none; }
   .hero-stats { margin-top: 28px; }
   .hero-stat { padding: 10px 14px; }
   .capability-grid { grid-template-columns: 1fr; }

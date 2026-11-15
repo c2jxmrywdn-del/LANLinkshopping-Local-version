@@ -49,6 +49,7 @@
               <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 安全支付</span>
               <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 售后支持</span>
               <span><CheckCircle2 :size="13" class="text-emerald-500 inline-block align-middle mr-1" /> 商户认证</span>
+              <PlatformInvitedBadge :show="!!p.platformInvited" />
             </div>
           </div>
 
@@ -88,6 +89,25 @@
               <VipPromoEntry v-if="membership.checked && !membership.hasDiscount" slot-key="pdp" variant="row">
                 <router-link to="/membership">开通会员订阅，解锁等级折扣</router-link>
               </VipPromoEntry>
+            </div>
+
+            <!-- 阶梯批发价表（P1-17）：minQty 升序展示，当前数量命中档高亮；首档即起订量 -->
+            <div v-if="tierList.length" class="tier-card">
+              <div class="tier-head-row">
+                <span class="tier-title">批发阶梯价</span>
+                <span class="tier-moq">起订量 {{ tierMoq }} 件</span>
+              </div>
+              <div class="tier-table" role="table" aria-label="阶梯批发价">
+                <div class="tier-tr tier-th" role="row">
+                  <span>数量</span><span>单价</span>
+                </div>
+                <button v-for="(t, i) in tierDisplay" :key="i" type="button" role="row"
+                        class="tier-tr" :class="{ active: t.active }" @click="qty = t.minQty">
+                  <span class="tier-qty">{{ t.range }}</span>
+                  <span class="tier-price">¥{{ money(t.price) }}<i v-if="t.active" class="tier-cur"> · {{ locale === 'en-US' ? 'current' : '当前档' }}</i></span>
+                </button>
+              </div>
+              <p v-if="nextTier && !activeTier" class="tier-next">再买 {{ nextTier.minQty - qty }} 件，单价低至 ¥{{ money(nextTier.price) }}</p>
             </div>
 
             <!-- 生效促销（活动系统）：命中的公开促销活动，默认展示 2 条，超出可展开 -->
@@ -148,15 +168,17 @@
             <div class="purchase-area">
               <div class="quantity-line">
                 <span>购买数量</span>
-                <a-input-number v-model:value="qty" :min="1" :max="Math.max(1, p.stock || 1)" :disabled="p.stock <= 0" />
+                <a-input-number v-model:value="qty" :min="Math.max(1, tierMoq)" :max="Math.max(1, p.stock || 1)"
+                                :disabled="p.stock <= 0" @change="clampQtyToMoq" />
+                <span v-if="tierMoq > 1" class="moq-note">{{ tierMoq }} 件起批</span>
               </div>
               <div class="action-row">
                 <a-button v-if="user.hasPerm('cart:manage')" class="cart-btn" size="large"
-                          :disabled="p.stock <= 0" @click="addCart">
+                          :disabled="p.stock <= 0 || cartBusy" :loading="cartBusy" @click="addCart">
                   加入购物车
                 </a-button>
                 <a-button v-if="user.hasPerm('order:create')" class="buy-btn" type="primary" size="large"
-                          :disabled="p.stock <= 0" @click="buyNow">
+                          :disabled="p.stock <= 0 || cartBusy" :loading="cartBusy" @click="buyNow">
                   立即购买
                 </a-button>
                 <a-button v-if="!user.logged" class="buy-btn" type="primary" size="large" @click="needLogin()">
@@ -178,7 +200,7 @@
             <a href="#description" :class="{ active: activeSection === 'description' }" @click="jumpTo($event, 'description')">商品介绍</a>
             <a href="#parameters" :class="{ active: activeSection === 'parameters' }" @click="jumpTo($event, 'parameters')">规格参数</a>
             <a href="#service" :class="{ active: activeSection === 'service' }" @click="jumpTo($event, 'service')">服务说明</a>
-            <a href="#reviews" :class="{ active: activeSection === 'reviews' }" @click="jumpTo($event, 'reviews')">用户评价</a>
+            <a href="#reviews" :class="{ active: activeSection === 'reviews' }" @click="jumpTo($event, 'reviews')">{{ reviewsTitle }}</a>
           </div>
 
           <div id="description" class="detail-section">
@@ -201,6 +223,7 @@
               <div><span>累计销量</span><b>{{ p.sales || 0 }}</b></div>
               <div><span>商品编号</span><b>{{ p.prodId }}</b></div>
               <div><span>商户编号</span><b>{{ p.merId || '—' }}</b></div>
+              <div v-if="p.platformInvited"><span>店铺标识</span><b><PlatformInvitedBadge show /></b></div>
             </div>
           </div>
 
@@ -219,7 +242,7 @@
           <div id="reviews" class="detail-section reviews-section">
             <div class="section-heading">
               <span>REVIEWS</span>
-              <h2>用户评价</h2>
+              <h2>{{ reviewsTitle }}</h2>
             </div>
             <ProductReviews :prod-id="p.prodId" />
           </div>
@@ -243,19 +266,23 @@
         </section>
 
         <div class="mobile-buybar">
-          <div><small>合计</small><strong>¥{{ money(Number(p.price) * qty * vipRate) }}</strong></div>
+          <div><small>合计</small><strong>¥{{ money(Number(unitPrice) * qty) }}</strong></div>
           <button v-if="p.merId" type="button" class="contact-merchant mobile" aria-label="联系商家" @click="contactMerchant">
             <MessageCircle :size="17" :stroke-width="2" />
             <span class="cm-label">联系商家</span>
           </button>
-          <a-button v-if="user.hasPerm('cart:manage')" class="cart-btn" @click="addCart" :disabled="p.stock <= 0">加购</a-button>
-          <a-button type="primary" class="buy-btn" @click="buyNow()" :disabled="p.stock <= 0">
+          <a-button v-if="user.hasPerm('cart:manage')" class="cart-btn" @click="addCart"
+                    :disabled="p.stock <= 0 || cartBusy" :loading="cartBusy">加购</a-button>
+          <a-button type="primary" class="buy-btn" @click="buyNow()"
+                    :disabled="p.stock <= 0 || cartBusy" :loading="cartBusy">
             {{ user.logged ? '立即购买' : '登录购买' }}
           </a-button>
         </div>
       </template>
 
-      <a-empty v-else-if="!loading" description="商品不存在或已下架" />
+      <a-empty v-else-if="!loading" description="商品不存在或已下架">
+        <a-button type="primary" @click="$router.push('/mall')">去逛逛</a-button>
+      </a-empty>
     </a-spin>
   </div>
 </template>
@@ -268,6 +295,7 @@ import PriceChart from '../components/ui/PriceChart.vue'
 import ProductReviews from '../components/review/ProductReviews.vue'
 import AppleIcon from '../components/ui/AppleIcon.vue'
 import LivePlayerCard from '../components/product/LivePlayerCard.vue'
+import PlatformInvitedBadge from '../components/merchant/PlatformInvitedBadge.vue'
 import { chatApi } from '../api'
 import { message } from 'ant-design-vue'
 import { productApi, trafficApi, priceMonitorApi, liveApi, campaignApi } from '../api'
@@ -278,8 +306,10 @@ import { useUserStore } from '../store/user'
 import { useMembershipStore } from '../store/membership'
 import VipPromoEntry from '../components/membership/VipPromoEntry.vue'
 import { translateDataText, locale } from '../i18n'
+import { trackEvent } from '../utils/analytics'
 import { speakText, stopSpeaking } from '../utils/tts'
 import { resolveStorageUrl } from '../utils/storageUrl'
+import { setRouteSeo, toAbsoluteUrl } from '../utils/seo'
 
 const route = useRoute()
 const router = useRouter()
@@ -348,8 +378,30 @@ onBeforeUnmount(() => {
 
 // P0 口径修复（设计稿 P0-2）：等级折扣只读 /membership/my 的真实 discountRate（订阅+成长值双条件，
 // 无订阅回落普通会员 1.000），写死的 0.95 假折扣删除；取不到数据回退 1.0 且不展示对比价
+const reviewsTitle = computed(() => locale.value === 'en-US' ? 'Customer reviews' : '用户评价')
 const vipRate = computed(() => membership.hasDiscount ? membership.discountRate : 1)
 const memberPrice = computed(() => Number(p.value?.price || 0) * vipRate.value)
+
+// ===== 阶梯批发价（P1-17）：详情契约 tierPrices=[{minQty,price}]（minQty 升序）；数量联动命中档 =====
+const tierList = computed(() => Array.isArray(p.value?.tierPrices) ? p.value.tierPrices : [])
+const tierMoq = computed(() => tierList.value.length ? tierList.value[0].minQty : 0)
+const activeTier = computed(() => tierList.value.filter(t => qty.value >= t.minQty).pop() || null)
+const nextTier = computed(() => tierList.value.find(t => qty.value < t.minQty) || null)
+// 成交单价：命中档单价，未达档回落商品单价（与后端 TierPricing.resolve 同口径）
+const unitPrice = computed(() => activeTier.value ? activeTier.value.price : Number(p.value?.price || 0))
+const tierDisplay = computed(() => tierList.value.map((t, i) => {
+  const upper = i + 1 < tierList.value.length ? tierList.value[i + 1].minQty - 1 : null
+  return {
+    minQty: t.minQty,
+    price: t.price,
+    range: upper ? `${t.minQty} - ${upper} 件` : `≥ ${t.minQty} 件`,
+    active: qty.value >= t.minQty && (upper == null || qty.value <= upper)
+  }
+}))
+function clampQtyToMoq(v) {
+  if (tierMoq.value > 1 && Number(v) < tierMoq.value && v != null) qty.value = tierMoq.value
+}
+
 const gallery = computed(() => {
   const raw = [p.value?.coverUrl, ...(Array.isArray(p.value?.images) ? p.value.images : [])]
     .map(resolveStorageUrl)
@@ -509,6 +561,25 @@ async function subscribeAlert() {
   } catch (e) { /* 拦截器已提示 */ } finally { alertSaving.value = false }
 }
 
+/** 商品数据就绪后把 TDK 更新为真实商品名与主图；只写事实字段，不虚构价格数据。 */
+function applyProductSeo() {
+  const prod = p.value
+  if (!prod || !prod.title) return
+  const facts = [prod.subtitle, prod.brand, prod.spec].filter(Boolean).join('；')
+  const desc = facts
+    ? `${prod.title}：${facts}。LANLinkshopping B2B 商品详情，可查看规格参数与批发采购信息。`
+    : `${prod.title} —— LANLinkshopping B2B 商品详情：查看规格参数、起订量与批发采购信息。`
+  setRouteSeo({
+    title: `${prod.title} · LANLinkshopping`,
+    description: desc,
+    keywords: [prod.title, prod.brand, prod.catName || prod.categoryName, '工业品采购', '批发', 'B2B'].filter(Boolean).join(','),
+    og: {
+      'og:type': 'product',
+      ...(typeof prod.coverUrl === 'string' && prod.coverUrl ? { 'og:image': toAbsoluteUrl(resolveStorageUrl(prod.coverUrl)) } : {})
+    }
+  }, route)
+}
+
 onMounted(async () => {
   loadPriceTrend()
   membership.ensure()
@@ -530,6 +601,9 @@ onMounted(async () => {
   }
   try {
     p.value = await productApi.detail(route.params.id)
+    trackEvent('product_view', { prod_id: p.value?.prodId ?? Number(route.params.id), mer_id: p.value?.merId ?? null })
+    // 数据加载成功后把 TDK 更新为真实商品名；加载失败保持路由模板兜底
+    applyProductSeo()
     if (p.value?.merId) {
       trafficApi.trackPage({
         merchantId: p.value.merId,
@@ -576,9 +650,17 @@ async function contactMerchant() {
   } catch (e) { /* 拦截器已提示 */ }
 }
 
+// 加购/立即购买共用 in-flight 守卫：后端按数量累加，双击会重复加购
+const cartBusy = ref(false)
+
 async function addCart() {
-  if (needLogin()) return
-  await cart.add(p.value.prodId, qty.value)
+  if (needLogin() || cartBusy.value) return
+  cartBusy.value = true
+  try {
+    await cart.add(p.value.prodId, qty.value)
+  } finally {
+    cartBusy.value = false
+  }
   trafficApi.trackPage({
     merchantId: p.value.merId,
     productId: p.value.prodId,
@@ -589,8 +671,13 @@ async function addCart() {
 }
 
 async function buyNow() {
-  if (needLogin()) return
-  await cart.add(p.value.prodId, qty.value)
+  if (needLogin() || cartBusy.value) return
+  cartBusy.value = true
+  try {
+    await cart.add(p.value.prodId, qty.value)
+  } finally {
+    cartBusy.value = false
+  }
   trafficApi.trackPage({
     merchantId: p.value.merId,
     productId: p.value.prodId,
@@ -645,6 +732,23 @@ async function buyNow() {
 .promo-row-th { flex:0 0 auto; color:#9b2d20; font-weight:700; white-space:nowrap; }
 .promo-row-more { display:block; width:100%; border:0; background:none; padding:7px 0; font:inherit; font-size:11.5px; color:#8A6A2F; cursor:pointer; text-align:left; }
 .promo-row-more:hover { text-decoration:underline; text-underline-offset:2px; }
+/* 阶梯批发价卡（P1-17）：命中档高亮，行可点按直接设为该档起订量 */
+.tier-card { margin-top:14px; padding:12px 14px; border:1px dashed #e3d9c4; border-radius:12px; background:#fffdf6; }
+.tier-head-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.tier-title { font-size:12.5px; font-weight:700; color:var(--ink,#18212f); }
+.tier-moq { font-size:11.5px; font-weight:700; color:#9b2d20; background:rgba(155,45,32,.08); border-radius:5px; padding:2px 7px; }
+.tier-table { display:flex; flex-direction:column; }
+.tier-tr { display:grid; grid-template-columns:1fr 1fr; align-items:center; width:100%; padding:7px 10px; border:1px solid transparent; border-radius:8px; background:none; font:inherit; font-size:12.5px; color:#303743; text-align:left; cursor:pointer; transition:background .15s ease, border-color .15s ease; }
+.tier-tr + .tier-tr { margin-top:2px; }
+.tier-tr.th { color:#8d8579; font-size:11px; cursor:default; padding-top:0; padding-bottom:3px; }
+.tier-tr:not(.th):hover { background:rgba(138,106,47,.06); }
+.tier-tr.active { background:rgba(155,45,32,.07); border-color:rgba(155,45,32,.35); font-weight:700; }
+.tier-tr.active .tier-price { color:#9b2d20; }
+.tier-price { font-variant-numeric:tabular-nums; font-weight:600; text-align:right; }
+.tier-cur { font-style:normal; font-size:10.5px; font-weight:600; color:#9b2d20; }
+.tier-next { margin:8px 0 0; font-size:11.5px; color:#8A6A2F; }
+.moq-note { font-size:11.5px; color:#9b2d20; white-space:nowrap; }
+@media (max-width:600px) { .tier-card { padding:10px 12px; } .tier-tr { font-size:12px; } }
 .decision-list { margin:20px 0; border-top:1px solid var(--line); }.decision-row { display:flex; gap:18px; padding:13px 0; border-bottom:1px solid var(--line); font-size:13px; }.decision-row .label { flex:0 0 48px; color:#4b5563; }.decision-row .value { color:#303743; font-weight:600; }.decision-row .danger { color:var(--red); }
 .service-card { padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#fffdf8; }.service-card div { display:flex; align-items:center; gap:9px; font-size:12px; margin:7px 0; }.service-card b { width:32px; }.service-card span:last-child { color:#4b5563; }.service-icon { color:var(--gold); font-weight:800; }
 .purchase-area { margin-top:20px; }.quantity-line { display:flex; align-items:center; gap:14px; color:#555; font-size:13px; margin-bottom:13px; }.action-row { display:flex; gap:10px; }.cart-btn,.buy-btn { min-width:150px; height:46px; border-radius:9px; font-weight:700; }.cart-btn { border-color:#9b2d20; color:#9b2d20; }.buy-btn { background:#18212f; border-color:#18212f; }.secure-note { margin:10px 0 0; color:#4b5563; font-size:11px; }

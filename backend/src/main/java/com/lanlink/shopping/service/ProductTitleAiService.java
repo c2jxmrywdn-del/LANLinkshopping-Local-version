@@ -245,7 +245,9 @@ public class ProductTitleAiService {
             }
             boolean tokensOk = true;
             for (String token : tokens) {
-                if (!c.contains(token)) { // 大小写敏感、逐字符、连续
+                // ×/x 宽松归一：模型偶发把乘号 × 写成字母 x（规格如 φ57×3.5 → φ57x3.5），
+                // 语义等价不算改写硬 token；其余字符仍逐字符大小写敏感匹配
+                if (!c.contains(token) && !c.contains(token.replace('×', 'x'))) {
                     tokensOk = false;
                     break;
                 }

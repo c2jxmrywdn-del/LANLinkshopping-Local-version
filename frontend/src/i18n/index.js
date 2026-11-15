@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { LOCALE_STORAGE_KEY, detectLocale } from '../utils/localeDetect'
 import { UI_ZH_EN_EXTRA, ZH_EN_PATTERNS } from './zh-en-extra'
+import { applyLocaleTitle } from '../utils/seo'
 
 export const locale = ref('zh-CN')
 
@@ -305,6 +306,46 @@ const zh = {
       srcTechPost: '技术社区', srcTechManual: '技术服务机制',
       srcIntent: '意图示例'
     }
+  },
+  logistics: {
+    // 承运商能力标签（枚举键，前端 CarrierRecommendationCards 渲染）
+    tagHeavy: '大件专线',
+    tagPallet: '托盘运输',
+    tagGuaranteed: '限时未达全额退款',
+    tagInstall: '送装一体',
+    tagLowCost: '成本优选',
+    tagInternational: '国际线路 · 报价联系客服',
+    tagSelf: '商家自送 · 按商家承诺时效',
+    intlQuoteHint: '国际线路 · 报价联系客服',
+    intlGroupLabel: '国际线路（询价）',
+    intlBlocked: '国际线路暂不支持线上发货，请联系客服询价',
+    freeShippingOver: '满 ¥{x} 包邮',
+    // 大件推荐引导（ShipModal）
+    heavyHintLabel: '重量体积提示',
+    heavyHintText: '大件货物（>50kg 或 >0.3m³ 或单件>2.5m）请如实填写重量体积与超长超重勾选，推荐引擎将为您匹配大件专线与叉车/上楼增值服务。'
+  },
+  supportVoice: {
+    transcript: '语音转写',
+    transcriptOf: '「{name}」的转写',
+    transcriptPending: '转写中',
+    transcriptEmpty: '未能识别到语音内容',
+    transcriptReady: '已转写'
+  },
+  supportMedia: {
+    // P2 图像/文件理解扩容：图片理解摘要 / 文档解析预览 / partial 截断警示
+    insightTitle: '图片理解',
+    insightPending: '理解中',
+    docPreviewTitle: '文档解析',
+    partialTitle: '附件仅解析了部分内容'
+  },
+  supportHuman: {
+    // P1-20 客服转人工：值班排班待拍板⑦-11，时段/队列文案为如实占位
+    transfer: '转接人工客服',
+    backToAi: '返回智能客服',
+    transferred: '已转接人工客服',
+    hoursNote: '人工客服在线时间为工作日 9:00 - 18:00。',
+    queueNote: '当前时段无值班客服将进入留言队列，人工客服回复后将同步展示。',
+    markerMessage: '转接请求：需要人工客服协助'
   }
 }
 
@@ -608,6 +649,45 @@ const en = {
       srcTechPost: 'Community', srcTechManual: 'How it works',
       srcIntent: 'Intent examples'
     }
+  },
+  logistics: {
+    // Carrier capability tags (enum keys rendered by CarrierRecommendationCards)
+    tagHeavy: 'Heavy Cargo',
+    tagPallet: 'Pallet Freight',
+    tagGuaranteed: 'On-time Guarantee or Refund',
+    tagInstall: 'Delivery & Installation',
+    tagLowCost: 'Budget Pick',
+    tagInternational: 'International · Quote via Support',
+    tagSelf: 'Self Delivery · per merchant commitment',
+    intlQuoteHint: 'International · Quote via Support',
+    intlGroupLabel: 'International (Quote on Request)',
+    intlBlocked: 'International shipping is quote-only. Please contact support',
+    freeShippingOver: 'Free shipping over ¥{x}',
+    heavyHintLabel: 'Weight & Volume',
+    heavyHintText: 'For heavy cargo (>50kg, >0.3m³ or single piece >2.5m), fill in real weight/volume and tick oversize — the engine will match heavy-cargo lines with forklift/upstairs services.'
+  },
+  supportVoice: {
+    transcript: 'Voice transcript',
+    transcriptOf: 'Transcript of "{name}"',
+    transcriptPending: 'Transcribing',
+    transcriptEmpty: 'No speech recognized',
+    transcriptReady: 'Transcribed'
+  },
+  supportMedia: {
+    // P2 image/file understanding: image insight / document preview / partial warning
+    insightTitle: 'Image insight',
+    insightPending: 'Analyzing',
+    docPreviewTitle: 'Document parsed',
+    partialTitle: 'Attachment partially parsed'
+  },
+  supportHuman: {
+    // P1-20 transfer-to-human: duty roster pending decision ⑦-11, hours/queue copy is an honest placeholder
+    transfer: 'Transfer to Human Agent',
+    backToAi: 'Back to AI Assistant',
+    transferred: 'Transferred to a human agent',
+    hoursNote: 'Human agents are online on weekdays from 9:00 to 18:00.',
+    queueNote: 'Outside on-duty hours, requests enter the message queue; replies will appear here once sent.',
+    markerMessage: 'Transfer request: human agent assistance needed'
   }
 }
 
@@ -647,7 +727,7 @@ export function setLocale(l) {
 
 // ===== 全站双语层（无需第三方运行时依赖） =====
 const UI_ZH_EN = {
-  '首页':'Home','商城':'Mall','账期':'Credit Terms','我的订单':'My Orders','商户管理':'Merchant Management','商户入驻':'Become a Merchant','流量管理':'Traffic Management','我的商品':'My Products','关于我们':'About Us',
+  '首页':'Home','商城':'Mall','账期':'Credit Terms','我的订单':'My Orders','商户管理':'Merchants','商户入驻':'Become a Merchant','流量管理':'Traffic Management','我的商品':'My Products','关于我们':'About Us',
   '消息':'Messages','购物车':'Cart','登录 / 注册':'Login / Register','退出登录':'Log out','退出':'Log out','返回前台':'Back to Storefront',
   '当前身份':'Current Identity','我的钱包':'My Wallet','企业账期':'Business Credit','活动中心':'Activity Center','会员中心':'Membership Center','个人资料':'Profile','消息中心':'Messages','收货地址':'Shipping Addresses','登录安全':'Login Security','账户设置':'Account Settings',
   '让每一次连接，都产生价值。':'Make every connection create value.','隐私与 Cookie':'Privacy & Cookies','知识产权声明':'Intellectual Property',
@@ -673,7 +753,7 @@ const UI_ZH_EN = {
   '会员等级':'Membership Level','会员权益':'Membership Benefits','积分':'Points','积分明细':'Points History','积分详情':'Point Details','成长值':'Growth Value','当前等级':'Current Level','升级':'Upgrade',
   '活动详情':'Campaign Details','活动规则':'Campaign Rules','我的活动':'My Campaigns','立即参加':'Join Now','参与结果':'Participation Result','活动时间':'Campaign Time','活动状态':'Campaign Status',
   '商户中心':'Merchant Center','商户申请':'Merchant Application','商品管理':'Product Management','发布商品':'Publish Product','流量分析':'Traffic Analytics','访客数':'Visitors','转化率':'Conversion Rate','来源':'Source','经营数据':'Business Data',
-  '数据概览':'Dashboard','交易管理':'Transaction Management','账期审核':'Credit Review','审计日志':'Audit Log','商户审核':'Merchant Review','系统管理':'System Management',
+  '数据概览':'Dashboard','交易管理':'Transactions','账期审核':'Credit Review','审计日志':'Audit Log','商户审核':'Merchant Review','系统管理':'System Management',
   '个人信息':'Profile','个人简介':'Bio','手机号码':'Phone Number','手机号':'Phone Number','邮箱':'Email','姓名':'Name','昵称':'Nickname','性别':'Gender','出生日期':'Birthday','男':'Male','女':'Female','保密':'Private','未设置':'Not set','更换头像':'Change Avatar',
   '系统设置':'Settings','界面个性化':'Appearance','主题模式':'Theme','亮色':'Light','暗色':'Dark','跟随系统':'System','语言':'Language','字体大小':'Font Size','标准':'Standard','放大 120%':'Large 120%','缩小 80%':'Small 80%',
   '账户安全':'Account Security','修改密码':'Change Password','原密码':'Current Password','新密码':'New Password','确认新密码':'Confirm Password','密码强度':'Password Strength','两步验证（TOTP）':'Two-Factor Authentication (TOTP)','已启用':'Enabled','未启用':'Disabled','启用两步验证':'Enable 2FA','关闭两步验证':'Disable 2FA',
@@ -746,6 +826,17 @@ const UI_ZH_EN = {
   '未配置':'Not configured',
   '社交登录已取消或授权失败':'Social sign-in was cancelled or failed',
   '无法确定授权渠道，请重新发起社交登录':'Could not determine the provider; please start social sign-in again',
+  // 承运商扩展（out/carrier-expansion-design.md §5.2）：推荐卡片/发货弹窗静态文案
+  // （动态金额如「立省 ¥x」「满 ¥x 包邮」走 t() 参数化或 ZH_EN_PATTERNS，不进整句词典）
+  '全网最低运费':'Lowest Fare Network','极速履约':'Fastest Fulfillment','SLA 99%+ 准时达':'SLA 99%+ On-time','原厂增值服务就位':'Full VAS Ready',
+  'AI 运力多目标智能比价推荐':'AI Multi-Goal Carrier Comparison',
+  '极致性价比 · 零担首选':'Best Value · LTL First','极速时效 · 工业特快':'Fastest · Industrial Express','原厂品质 · 特种重货专线':'Premium · Heavy Cargo Line',
+  '预估运费':'Est. Freight','已选用该方案':'Selected','一键应用该方案':'Apply This Plan',
+  '填写重量体积与目的地后，AI 将自动并行试算全网最优承运方案。':'Fill in weight, volume and destination, and AI will compare carriers across the network in parallel.',
+  '物流服务商':'Logistics Provider','运费模板（选填）':'Freight Template (optional)','选择服务商':'Select a provider','留空不计运费':'Leave empty for no freight',
+  '国际线路暂不支持线上发货，请联系客服询价':'International shipping is quote-only. Please contact support',
+  '重量体积提示':'Weight & Volume',
+  '偏远区域（加收附加费，按模板配置）':'Remote area (surcharge per template)',
   ...UI_ZH_EN_EXTRA
 }
 
@@ -885,7 +976,9 @@ function applyDomLocale(){
   _domApplying=true
   if(locale.value==='en-US') _walkAndTranslate(document.body)
   else _restoreChinese(document.body)
-  document.title=locale.value==='en-US' ? 'LANLinkshopping · Connected Commerce' : 'LANLinkshopping · 聚合型B2B电商平台'
+  // 标题所有权收口到 utils/seo.js：路由级 TDK 生效期间保持路由标题，
+  // 否则回落到语言级兜底标题（原先直接改写 document.title 会覆盖路由级注入）
+  applyLocaleTitle(locale.value==='en-US' ? 'LANLinkshopping · Connected Commerce' : 'LANLinkshopping · 聚合型B2B电商平台')
   _domApplying=false
   _observeDom()
 }
@@ -1010,6 +1103,22 @@ export async function applyAutoLocale() {
   if (result && dicts[result.locale]) locale.value = result.locale
   applyDomLocale()
   return result
+}
+
+/**
+ * 同步取「已有语言选择」，不发任何网络请求。
+ *
+ * <p>用途：首屏挂载。老用户（localStorage 里已有语言）走这条路可以**零等待**渲染，
+ * 不再等 `/i18n/locale-hint` 的往返。返回 null 表示首次访客，需要异步识别。
+ */
+export function applySavedLocaleSync() {
+  if (typeof window === 'undefined') return null
+  let saved = null
+  try { saved = localStorage.getItem(LOCALE_STORAGE_KEY) } catch (e) { saved = null }
+  if (!saved || !dicts[saved]) return null
+  locale.value = saved
+  applyDomLocale()
+  return saved
 }
 
 export const switchLocale = setLocale

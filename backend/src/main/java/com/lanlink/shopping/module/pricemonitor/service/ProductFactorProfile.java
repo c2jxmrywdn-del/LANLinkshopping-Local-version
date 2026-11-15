@@ -51,6 +51,32 @@ public final class ProductFactorProfile {
      *  politics 建筑/石化/钢铁/能源 1.3~1.5；未收录 1.0）。 */
     private static final Map<String, Map<String, Double>> GROUP_WEIGHTS;
 
+    /**
+     * 过宽的行业大类词：出现在大量社会/股市/科技新闻里，但不代表该商品受影响。
+     *
+     * <p>「建筑」→ 农民工就业报道、「能源」→ 芯片算力稿、「电子」→ 手机评测，
+     * 这些命中只能算弱相关，不能作为「本商品直接证据」。
+     */
+    static final Set<String> BROAD_INDUSTRY_TERMS = Set.of(
+            "建筑", "建筑行业", "建材", "能源", "电力能源", "电力", "电子", "电子行业",
+            "机械", "机械装备", "化工", "石化", "纺织", "包装", "印刷", "新能源",
+            "钢铁", "钢铁冶金", "汽车", "汽车及零部件", "物流", "物流仓储",
+            "食品", "食品饮料", "医药", "医药医疗", "环保", "环保水务", "农业",
+            "家居", "家居家装", "工业", "制造业", "行业", "产业");
+
+    /**
+     * 允许作为「具体品类」参与强相关的两字词白名单。
+     *
+     * <p>两字词做子串匹配极易被更长词组劫持：「换电网络」含「电网」、
+     * 「充电桩」含「充电」，会把换电站、充电桩新闻误判成变压器商品的直接证据。
+     * 因此两字词只有在白名单内（真正的品类名）才参与判定，其余一律只当弱信号。
+     */
+    private static final Set<String> STRONG_TWO_CHAR = Set.of(
+            "水泥", "钢材", "螺纹", "生铁", "焦炭", "纯碱", "塑料", "树脂", "涤纶", "坯布",
+            "纱线", "面料", "织造", "玻璃", "纸浆", "瓦楞", "芯片", "面板", "晶圆", "封装",
+            "轴承", "齿轮", "液压", "机床", "电缆", "变压", "光伏", "电池", "储能", "逆变",
+            "钢", "铜", "铝", "锂", "锡", "镍", "锌", "煤", "油", "硅", "铁", "纸", "纱", "布");
+
     static {
         Map<Long, String> byId = new LinkedHashMap<>();
         byId.put(1L, "building");
@@ -147,9 +173,9 @@ public final class ProductFactorProfile {
             addTokens(out, p.getSpec());
         }
         addTokens(out, categoryName);
-        // 行业名核心词（"建筑行业" → "建筑"，"石化行业" → "石化"）：商品在行业内的通用叫法。
-        String core = industryCore(industryName);
-        if (!core.isEmpty()) out.add(core);
+        // 注意：行业名核心词（"建筑行业" → "建筑"）只进 industryKeywords，不进商品关键词。
+        // 历史缺陷：把「建筑」当成商品自身关键词后，任何提到"建筑"的社会新闻
+        // （如农民工就业报道）都会拿到 3.0 强相关，被当成该商品的直接证据。
         return new ArrayList<>(out);
     }
 
@@ -167,7 +193,9 @@ public final class ProductFactorProfile {
     private static String industryCore(String industryName) {
         if (industryName == null) return "";
         String core = INDUSTRY_SUFFIX.matcher(industryName.trim()).replaceAll("").trim();
-        return core.length() >= 2 ? core : "";
+        // 「建筑」这类行业大类名过宽：命中即判同行业会把大量社会新闻算成相关。
+        // 保留在行业词典里（仍可作为弱信号），但需要 >= 3 字才算独立核心词。
+        return core.length() >= 3 ? core : "";
     }
 
     /** 切词并把「完整词 + 中文连续片段」加入集合；过短或纯符号片段丢弃。 */
@@ -182,7 +210,9 @@ public final class ProductFactorProfile {
                 if (run.length() >= 2) out.add(run);
             }
             String cleaned = TRIM_PUNCT.matcher(token).replaceAll("").trim();
-            if (cleaned.length() >= 2) out.add(cleaned);
+            // 纯数字片段（"10"、"5000"）不是商品语义，命中率极高但零区分度：
+            // 会把「9 核 16 线程」之类的芯片新闻误判成变压器商品的强相关资讯。
+            if (cleaned.length() >= 2 && !cleaned.matches("[0-9.]+")) out.add(cleaned);
         }
     }
 
@@ -261,10 +291,50 @@ public final class ProductFactorProfile {
         String text = textOf(n);
         if (text.isEmpty()) return 1.0;
         String lower = text.toLowerCase(Locale.ROOT);
-        if (hitsAny(lower, productKeywordsLower)) return 3.0;
-        if (hitsAny(lower, industryKeywordsLower)) return 2.0;
+        // 商品自身关键词：必须命中「具体品类/型号」，不能只命中行业大类词
+        if (hitsAny(lower, specificProductKeywords())) return 3.0;
+        // 同行业：排除「建筑/能源/电子」等过宽词；且必须是标题命中，或正文命中 ≥2 个不同品类词。
+        // 只靠正文顺带提一句「钢材」的欧盟汽车排放稿，不算钢材/水泥商品的行业证据。
+        String titleLower = (n.getTitle() == null ? "" : n.getTitle()).toLowerCase(Locale.ROOT);
+        if (hitsAny(titleLower, specificIndustryKeywords())) return 2.0;
+        if (countHits(lower, specificIndustryKeywords()) >= 2) return 2.0;
         if (hitsOtherIndustry(lower)) return 0.4;
         return 1.0;
+    }
+
+    /** 商品关键词去掉行业大类词后的具体词（品类/型号/规格/品牌）。 */
+    private List<String> specificProductKeywords() {
+        List<String> out = new ArrayList<>();
+        for (String k : productKeywordsLower) {
+            if (isStrongTerm(k)) out.add(k);
+        }
+        return out;
+    }
+
+    /** 行业关键词去掉大类词后的具体词（水泥/螺纹钢/变压器/涤纶…）。 */
+    private List<String> specificIndustryKeywords() {
+        List<String> out = new ArrayList<>();
+        for (String k : industryKeywordsLower) {
+            if (isStrongTerm(k)) out.add(k);
+        }
+        return out;
+    }
+
+    /**
+     * 是否可作为「具体品类」参与强相关判定。
+     *
+     * <ul>
+     *   <li>行业大类词（建筑/能源/电力/电子…）→ 否，只能算弱信号；</li>
+     *   <li>≥3 字（硅酸盐水泥/油浸式变压器/螺纹钢）→ 是，语义足够具体；</li>
+     *   <li>2 字 → 仅白名单内的真实品类名算（避免「换电网络」命中「电网」）；</li>
+     *   <li>1 字 → 仅大宗品类单字算（钢/铜/铝/锂…）。</li>
+     * </ul>
+     */
+    private static boolean isStrongTerm(String term) {
+        if (term == null || term.isEmpty()) return false;
+        if (BROAD_INDUSTRY_TERMS.contains(term)) return false;
+        if (term.length() >= 3) return true;
+        return STRONG_TWO_CHAR.contains(term);
     }
 
     /** 标题 + 摘要 + 标签（不含 category 归类字段：归类是维度口径，不是内容）。 */
@@ -279,6 +349,15 @@ public final class ProductFactorProfile {
             if (k.length() >= 2 && lowerText.contains(k)) return true;
         }
         return false;
+    }
+
+    /** 命中的不同关键词个数（用于「正文顺带提及」与「真正的行业信号」区分）。 */
+    private static int countHits(String lowerText, List<String> keywords) {
+        int hits = 0;
+        for (String k : keywords) {
+            if (k.length() >= 2 && lowerText.contains(k)) hits++;
+        }
+        return hits;
     }
 
     /** 其他行业词典命中 >= 2 个关键词视为「强命中」（标签里通常同时出现品种与下游，2 个起步才可靠）。 */

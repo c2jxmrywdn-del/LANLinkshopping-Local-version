@@ -39,17 +39,34 @@
           </span>
         </div>
 
-        <!-- 运费价格大字与节省标注 -->
-        <div class="card-price-row">
+        <!-- 运费价格大字与节省标注（国际线路询价制：不渲染预估运费） -->
+        <div class="card-price-row" v-if="!isInternationalQuote(card.quote)">
           <span class="price-currency">¥</span>
           <span class="price-value">{{ Number(card.quote.totalFreight || 0).toFixed(2) }}</span>
           <span class="price-unit">预估运费</span>
+        </div>
+        <div class="card-price-row intl-quote-row" v-else>
+          <span class="intl-quote-text">{{ t('logistics.intlQuoteHint') }}</span>
+        </div>
+
+        <!-- 满额包邮角标（动态金额走 t() 参数化，不进整句 DOM 词典） -->
+        <div class="free-shipping-badge" v-if="!isInternationalQuote(card.quote) && Number(card.quote.freeThreshold) > 0">
+          {{ t('logistics.freeShippingOver', { x: Number(card.quote.freeThreshold).toFixed(0) }) }}
         </div>
 
         <!-- 承运商与模板信息 -->
         <div class="card-carrier-row">
           <strong class="carrier-name">{{ card.quote.providerName }}</strong>
           <span class="template-name" :title="card.quote.templateName">{{ card.quote.templateName }}</span>
+        </div>
+
+        <!-- 能力标签 pill（HEAVY/PALLET/GUARANTEED/INSTALL/LOW_COST/SELF/INTERNATIONAL） -->
+        <div class="card-capability-tags" v-if="(card.quote.capabilityTags || []).length">
+          <span v-for="(tagKey, tIdx) in card.quote.capabilityTags" :key="tIdx"
+                class="capability-tag" :class="'cap-' + String(tagKey).toLowerCase()">
+            <component :is="tagIcon(tagKey)" :size="10" class="inline mr-0.5 align-middle" />
+            {{ tagText(tagKey) }}
+          </span>
         </div>
 
         <!-- 时效与履约指标 -->
@@ -88,8 +105,11 @@
 <script setup>
 import { computed } from 'vue'
 import {
-  Sparkles, Zap, Truck, ShieldCheck, CheckCircle2, Clock, Award
+  Sparkles, Zap, Truck, ShieldCheck, CheckCircle2, Clock, Award,
+  Forklift, Weight, Globe, BadgeCheck, PiggyBank, Store, HandPlatter
 } from 'lucide-vue-next'
+import { t } from '../../i18n'
+import { TAG_I18N_KEYS, TAG_ICONS, isInternationalQuote } from './carrierTags'
 
 const props = defineProps({
   recommendResult: {
@@ -107,6 +127,18 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select'])
+
+const ICON_COMPONENTS = {
+  Weight, HandPlatter, BadgeCheck, Forklift, PiggyBank, Globe, Store
+}
+
+function tagText(tagKey) {
+  return t(TAG_I18N_KEYS[tagKey] || tagKey)
+}
+
+function tagIcon(tagKey) {
+  return ICON_COMPONENTS[TAG_ICONS[tagKey]] || Weight
+}
 
 const cards = computed(() => {
   const res = props.recommendResult
@@ -373,6 +405,85 @@ function selectCard(quote) {
   border-radius: 4px;
 }
 
+/* 能力标签 pill：新样式一律取 var(--ll-*) token，不新增裸 hex */
+.card-capability-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.capability-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  background: var(--ll-thumb-bg, #eef1f6);
+  color: var(--ll-slate-muted, #475569);
+  border: 1px solid rgba(71, 85, 105, 0.18);
+}
+
+.capability-tag.cap-heavy,
+.capability-tag.cap-install {
+  background: var(--ll-skyblue, #A9CADA);
+  color: var(--ll-ink, #0F172A);
+  border-color: var(--ll-skyblue-border, #5B8FB5);
+}
+
+.capability-tag.cap-guaranteed {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--ll-amber-strong, #B45309);
+  border-color: rgba(180, 83, 9, 0.35);
+}
+
+.capability-tag.cap-low_cost {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+  border-color: rgba(4, 120, 87, 0.35);
+}
+
+.capability-tag.cap-pallet {
+  background: rgba(79, 70, 229, 0.1);
+  color: var(--ll-indigo, #4F46E5);
+  border-color: rgba(79, 70, 229, 0.3);
+}
+
+.capability-tag.cap-international {
+  background: rgba(14, 165, 233, 0.12);
+  color: var(--ll-azure, #0EA5E9);
+  border-color: rgba(14, 165, 233, 0.35);
+}
+
+.capability-tag.cap-self {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--ll-muted, #64748B);
+  border-color: rgba(100, 116, 139, 0.3);
+}
+
+/* 国际询价制：无预估运费，展示报价提示行 */
+.intl-quote-row {
+  min-height: 26px;
+}
+
+.intl-quote-text {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ll-azure, #0EA5E9);
+}
+
+/* 满额包邮角标（动态金额参数化） */
+.free-shipping-badge {
+  font-size: 10px;
+  color: #047857;
+  background: rgba(5, 150, 105, 0.08);
+  border: 1px dashed rgba(4, 120, 87, 0.35);
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-bottom: 8px;
+  align-self: flex-start;
+}
+
 .apply-btn {
   width: 100%;
   height: 32px;
@@ -438,5 +549,14 @@ function selectCard(quote) {
     height: 44px;
     font-size: 14px;
   }
+  .capability-tag {
+    font-size: 11px;
+  }
+  .free-shipping-badge,
+  .intl-quote-text {
+    font-size: 11px;
+  }
 }
+
+/* 手机端 data-viewport 断点：规则集中 mobile.css（组件 scoped 内不写，项目既有惯例） */
 </style>

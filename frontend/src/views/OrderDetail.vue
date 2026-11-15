@@ -26,14 +26,7 @@
             <div v-for="(s, i) in stepsView" :key="s.title" class="op-step" :class="s.state">
               <span class="op-dot">
                 <svg v-if="s.state === 'done'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" /></svg>
-                <template v-else>{{ i + 1 }}
-    <ReviewDialog
-      v-model:open="reviewOpen"
-      :order-no="detail?.order?.orderNo || ''"
-      :item="reviewItem"
-      @submitted="onReviewed"
-    />
-</template>
+                <template v-else>{{ i + 1 }}</template>
               </span>
               <div class="op-body"><b>{{ s.title }}</b><small>{{ s.desc }}</small></div>
             </div>
@@ -45,8 +38,8 @@
             <div v-for="item in detail.items" :key="item.itemId" class="item">
               <div class="thumb"><img v-if="item.coverUrl" :src="resolveStorageUrl(item.coverUrl)" :alt="item.prodName" loading="lazy" decoding="async" /><span v-else>商品</span></div>
               <div class="item-main"><a @click="$router.push('/product/'+item.prodId)">{{item.prodName}}</a><small>¥{{money(item.price)}} × {{item.quantity}}</small></div>
-              <a-button v-if="canReview && !reviewedIds.has(item.itemId)" size="small" class="item-review" @click="openReview(item)">评价</a-button>
-              <a-tag v-else-if="reviewedIds.has(item.itemId)" color="green" class="item-reviewed">已评价</a-tag>
+              <a-button v-if="canReview && !reviewedIds.has(item.itemId)" size="small" class="item-review" @click="openReview(item)">{{ reviewBtnText }}</a-button>
+              <a-tag v-else-if="reviewedIds.has(item.itemId)" color="green" class="item-reviewed">{{ reviewedTagText }}</a-tag>
               <strong>¥{{money(item.subtotal)}}</strong>
             </div>
             <a-empty v-if="!detail.items?.length" description="暂无商品明细" />
@@ -77,7 +70,21 @@
             </a-descriptions>
           </a-card>
 
-          <a-card :bordered="false" class="card" title="支付与退款">
+          <!-- 发票需求快照（P1-5）：随单登记的开票信息，invoiceNeeded=1 才展示 -->
+          <a-card v-if="detail.order.invoiceNeeded === 1" :bordered="false" class="card" title="发票信息">
+            <a-descriptions :column="1" size="small">
+              <a-descriptions-item label="抬头类型">{{detail.order.invoiceTitleType === 'company' ? '单位' : '个人'}}</a-descriptions-item>
+              <a-descriptions-item label="发票抬头">{{detail.order.invoiceTitle || '—'}}</a-descriptions-item>
+              <a-descriptions-item v-if="detail.order.invoiceTitleType === 'company'" label="纳税人识别号">{{detail.order.invoiceTaxNo || '—'}}</a-descriptions-item>
+              <a-descriptions-item label="发票内容">
+                <template v-if="detail.order.invoiceContentType === 'category'">商品类别：{{detail.order.invoiceCategory || '—'}}</template>
+                <template v-else>开具明细：{{detail.order.invoiceDetail || '—'}}</template>
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-card>
+
+          <!-- id 供站内消息的「查看退款进度」深链定位（/orders/:orderNo?tab=refund） -->
+          <a-card id="order-refund" :bordered="false" class="card" title="支付与退款">
             <a-button v-if="detail.order.payType === 'term'" type="link" size="small" @click="$router.push('/credit-term/bills')">进入账期账单 →</a-button>
             <a-descriptions :column="1" size="small">
               <a-descriptions-item label="支付方式">{{payType[detail.order.payType] || detail.order.payType || '—'}}</a-descriptions-item>
@@ -105,7 +112,8 @@
           </a-card>
 
           <!-- 全景工业物流与在途 GIS 动态感知看板 -->
-          <a-card :bordered="false" class="card ai-logistics-card" title="工业在途感知与全景物流">
+          <!-- id 供站内消息的「查看物流轨迹」深链定位（/orders/:orderNo?tab=logistics） -->
+          <a-card id="order-logistics" :bordered="false" class="card ai-logistics-card" title="工业在途感知与全景物流">
             <!-- 多包裹选择 Tab (存在拆单多包裹时高亮切换) -->
             <div v-if="logisticsAgg?.waybills?.length > 1" class="package-tab-bar">
               <span class="tab-lead">分拆包裹 (共 {{ logisticsAgg.waybills.length }} 包)：</span>
@@ -289,6 +297,13 @@
         <template #extra><a-button type="primary" @click="$router.push('/orders')">返回订单</a-button></template>
       </a-result>
     </a-spin>
+    <ReviewDialog
+      v-model:open="reviewOpen"
+      :order-no="detail?.order?.orderNo || ''"
+      :item="reviewItem"
+      mode="order"
+      @submitted="onReviewed"
+    />
     <!-- 21st.dev 多渠道收银台弹窗 -->
     <a-modal
       v-model:open="payOpen"
@@ -318,25 +333,34 @@
             v-model="selectedPayMethod"
             :wallet-balance="walletBalance"
             :order-amount="Number(detail?.order?.totalAmount || 0)"
+            :wallet-ready="walletReady"
           />
         </div>
 
-        <!-- Stripe 虚拟卡槽 -->
-        <div v-if="selectedPayMethod === 'stripe'" class="extra-panel">
-          <StripeCardElement />
+        <!-- 钱包渠道：Stripe Express Checkout 原生按钮（设备不支持时给出改用银行卡的说明） -->
+        <div v-if="['apple_pay','google_pay'].includes(selectedPayMethod)" class="extra-panel">
+          <StripeExpressCheckout
+            v-if="stripeClientSecret"
+            :publishable-key="stripePublishableKey"
+            :client-secret="stripeClientSecret"
+            :channel="selectedPayMethod"
+            :disabled="payLoading"
+            @processing="payLoading = true"
+            @succeeded="onWalletSucceeded"
+            @failed="onWalletFailed"
+          />
+          <p v-else class="wallet-prepare-hint">点击下方「立即支付」后将唤起 {{ payMethodDisplayName(selectedPayMethod) }} 钱包。</p>
+        </div>
+
+        <!-- Stripe 卡槽（纯银行卡，含 3DS2） -->
+        <div v-else-if="selectedPayMethod === 'stripe'" class="extra-panel">
+          <StripeCardElement ref="stripeCardRef" :publishable-key="stripePublishableKey" :disabled="payLoading" />
         </div>
 
         <!-- 对公收款账号提示 -->
         <div v-else-if="selectedPayMethod === 'corporate'" class="extra-panel">
-          <MerchantCorporateBankCard
-            :bank-info="{
-              bankName: '中国工商银行股份有限公司深圳科技园支行',
-              bankAccountMasked: '6212 26****** 8899',
-              legalPersonMasked: '深圳市蓝链工业互联股份有限公司',
-              taxRegNo: '91440300MA5XXXXXX',
-              verified: true
-            }"
-          />
+          <!-- 账户信息只能来自后端配置；无配置时组件会明确提示，不展示任何示例账号 -->
+          <MerchantCorporateBankCard :bank-info="corporateBank" />
         </div>
 
         <!-- 支付宝/微信说明 -->
@@ -348,14 +372,11 @@
           </div>
         </div>
 
-        <!-- 苹果/谷歌支付说明 -->
-        <div v-else-if="selectedPayMethod === 'apple_pay' || selectedPayMethod === 'google_pay'" class="gateway-preview-panel">
-          <Smartphone :size="20" class="text-indigo-500 mr-2 flex-shrink-0" />
-          <div class="gateway-tip">
-            <strong>{{ selectedPayMethod === 'apple_pay' ? 'Apple Pay 极速支付' : 'Google Pay 极速支付' }}</strong>
-            <p>由 Stripe Express Checkout 引擎驱动，支持原生生物识别（Touch ID / Face ID）秒级完成扣款。</p>
-          </div>
-        </div>
+        <!--
+          与 MyOrders.vue 同源问题：Apple Pay / Google Pay 未接入原生钱包按钮，
+          选这两个方式实际走 Stripe 卡表单。原文案声称"Express Checkout 引擎 + 生物识别"
+          是不存在的功能承诺，且该分支被上面的 v-if 吃掉、永不渲染。
+        -->
 
         <!-- 确认支付大按钮 -->
         <div class="pay-submit-bar">
@@ -398,7 +419,7 @@
           </div>
         </a-form-item>
         <a-alert type="info" show-icon :message="t('商户初审与验货流程')"
-                 :description="t('仅退款在商户初审通过后立即原路出款；退货退款在商户初审通过后，请及时寄回包裹并填报运单，仓库验货合格后自动打款。')" />
+                 :description="t('商户初审通过后进入平台复核，平台复核通过后原路出款；退货退款需先寄回商品、仓库验货合格后再进入平台复核。')" />
       </a-form>
     </a-modal>
 
@@ -553,12 +574,13 @@
 import {ref,computed,onMounted,nextTick,watch,onBeforeUnmount} from 'vue'
 import {message,Modal} from 'ant-design-vue'
 import {useRoute,useRouter} from 'vue-router'
-import {orderApi,paymentApi,walletApi,trafficApi,logisticsApi,rmaApi} from '../api'
-import request from '../api/request'
-import { t } from '../i18n'
+import {orderApi,paymentApi,walletApi,trafficApi,logisticsApi,rmaApi,reviewApi,attachmentApi} from '../api'
+import { trackEvent } from '../utils/analytics'
+import { t, locale } from '../i18n'
 import {buildPayQrPayload,renderQrToCanvas} from '../utils/qrCode'
 import {resolveStorageUrl} from '../utils/storageUrl'
 import {serializeEvidences} from '../utils/refundEvidence'
+import {submitPayForm} from '../utils/payForm'
 import RefundEvidenceUpload from '../components/refund/RefundEvidenceUpload.vue'
 import ReviewDialog from '../components/review/ReviewDialog.vue'
 import {
@@ -570,11 +592,21 @@ import LogisticsDynamicMap from '../components/logistics/LogisticsDynamicMap.vue
 import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
 import MerchantCorporateBankCard from '../components/payment/MerchantCorporateBankCard.vue'
 import StripeCardElement from '../components/payment/StripeCardElement.vue'
+import { confirmStripeCardPayment, describeStripePaymentResult } from '../components/payment/stripeConfirm'
+import StripeExpressCheckout from '../components/payment/StripeExpressCheckout.vue'
+import { waitForOrderPaid } from '../utils/waitForOrderPaid'
 import SmoothMobileDrawer from '../components/ui/SmoothMobileDrawer.vue'
 import VipPromoEntry from '../components/membership/VipPromoEntry.vue'
 
 const route=useRoute(),router=useRouter(),detail=ref(null),loading=ref(false),payLoading=ref(false),walletBalance=ref(0),payOpen=ref(false)
 const selectedPayMethod = ref('stripe')
+// Stripe 真实卡支付：publishableKey 由 /payment/create 返回，卡控件在此页收银台内挂载
+const stripeCardRef = ref(null)
+const stripePublishableKey = ref('')
+// 钱包渠道需要 clientSecret 才能挂 Express Checkout 按钮
+const stripeClientSecret = ref('')
+// 钱包是否真的可用（后端探测 Stripe 账户与域名验证）
+const walletReady = ref(false)
 const mobileCargoDrawerOpen = ref(false)
 const refundOpen=ref(false),refunding=ref(false),refundReason=ref('')
 const refundEvidences=ref([])
@@ -609,6 +641,8 @@ const waybillStatusMap = {
 
 // 扫码支付状态
 const payQr=ref(''),payQrDemo=ref(false),payCanvasRef=ref(null)
+// 对公收款账户：只来自后端配置，未配置时组件提示"平台暂未配置"
+const corporateBank=ref({})
 let payPollTimer=0
 const statusMap={0:'待发货',1:'已发货',2:'已完成',3:'已取消',4:'部分发货'}
 const payType={corporate:'对公转账',balance:'企业钱包',term:'账期/尾款'}
@@ -618,12 +652,28 @@ const canCancel=computed(()=>{const o=detail.value?.order;return o&&o.orderStatu
 /** 可确认收货：已支付且（已发货或部分发货） */
 const canConfirm=computed(()=>{const o=detail.value?.order;return !!o&&Number(o.payStatus)===1&&(Number(o.orderStatus)===1||Number(o.orderStatus)===4)})
 /** 可申请退款：已支付、订单未结束，且无进行中/已完成退款（被驳回可再次申请；部分发货允许退款） */
-const canReview=computed(()=>!!detail.value?.order && Number(detail.value.order.orderStatus)===2)
+/** 可评价：已完成且在完成后 30 天窗口内（与后端 OrderReviewService 同口径，基准取 updateTime） */
+const REVIEW_WINDOW_MS=30*24*3600*1000
+const canReview=computed(()=>{
+  const o=detail.value?.order
+  if(!o||Number(o.orderStatus)!==2)return false
+  const doneAt=new Date(String(o.updateTime||o.createTime||'').replace(' ','T')).getTime()
+  return !Number.isFinite(doneAt)||Date.now()-doneAt<=REVIEW_WINDOW_MS
+})
+const reviewBtnText=computed(()=>locale.value==='en-US'?'Review':'评价')
+const reviewedTagText=computed(()=>locale.value==='en-US'?'Reviewed':'已评价')
 const reviewOpen=ref(false)
 const reviewItem=ref(null)
 const reviewedIds=ref(new Set())
 function openReview(item){ reviewItem.value=item; reviewOpen.value=true }
 function onReviewed(itemId){ reviewedIds.value=new Set([...reviewedIds.value, itemId]) }
+/** 已评状态从服务端取（订单维度 t_order_review 口径），刷新后不丢失；失败则退化为可点，由后端唯一键兜底 */
+async function loadReviewed(){
+  try{
+    const ids=await reviewApi.orderReviewedItems(route.params.orderNo)
+    reviewedIds.value=new Set((ids||[]).map(Number))
+  }catch(e){ /* 次要状态，拦截器已提示 */ }
+}
 
 const canRefund=computed(()=>{const o=detail.value?.order;return !!o&&Number(o.payStatus)===1&&![2,3,5].includes(Number(o.orderStatus))&&!['applied','merchant_approved','shipping_back','received','dispute','processing','success'].includes(o.refundStatus||'none')})
 const canShipBack=computed(()=>{const o=detail.value?.order;return !!o&&o.refundStatus==='merchant_approved'&&o.refundType==='return_goods'})
@@ -639,7 +689,7 @@ const refundText=o=>{
   if(st==='success') return '已退款'
   if(st==='partial') return `已部分退款 ¥${money(o.refundAmount)}，剩余可再次申请`
   if(st==='processing') return '退款处理中'
-  if(st==='merchant_approved') return o.refundType==='return_goods'?'初审通过 · 请寄回商品并填报运单':'初审通过 · 待平台出款'
+  if(st==='merchant_approved') return o.refundType==='return_goods'?'初审通过 · 请寄回商品并填报运单':'初审通过 · 待平台复核'
   if(st==='shipping_back') return '商品已寄回 · 待仓库收货验货'
   if(st==='received') return '仓库已收货 · 质检中'
   if(st==='dispute') return '验货异常协商中'
@@ -671,6 +721,7 @@ async function load(){
     detail.value=await orderApi.detail(route.params.orderNo)
     loadLogistics()
     loadPayStatus()
+    if(Number(detail.value?.order?.orderStatus)===2) loadReviewed()
   }catch(e){
     detail.value=null
   }finally{
@@ -724,9 +775,50 @@ async function openPay(){
   }
   selectedPayMethod.value = detail.value?.order?.payType && detail.value?.order?.payType !== 'term' ? detail.value.order.payType : 'stripe'
   payOpen.value = true
+  // 钱包能力探测：失败按不可用处理，并回落到银行卡，避免用户选了付不了
+  try{
+    const cap = await paymentApi.walletCapability()
+    walletReady.value = !!cap?.walletReady
+    if(!walletReady.value && ['apple_pay','google_pay'].includes(selectedPayMethod.value)){
+      selectedPayMethod.value = 'stripe'
+    }
+  }catch(e){ walletReady.value = false }
 }
 /** 支付成功埋点：订单详情无商户归属信息，PAY 作为平台级事件上报（后端以 0 兜底），失败静默 */
 function trackPay(){ trafficApi.trackPage({eventType:'PAY',sourceType:'order_detail'}).catch(()=>{}) }
+/** Amplitude 漏斗：收银台完成支付（含钱包与各模拟渠道即时确认分支） */
+function trackPaySuccess(channel){ trackEvent('payment_success', { order_no: route.params.orderNo, channel }) }
+
+/** 钱包支付成功：与卡支付同口径，先等服务端确认再提示成功 */
+async function onWalletSucceeded(status){
+  try{
+    const result = describeStripePaymentResult(status)
+    if(result.ok){
+      const confirmed = await waitForOrderPaid(route.params.orderNo, (no) => paymentApi.query(no))
+      if(confirmed){
+        trackPaySuccess('stripe')
+        message.success(result.message)
+        payOpen.value = false
+        load().catch(() => {})
+      } else {
+        message.warning('钱包已扣款，但平台尚未确认到账（状态同步中）。请稍后刷新，勿重复支付。')
+        setTimeout(() => { load().catch(() => {}) }, 1500)
+      }
+    } else if(result.processing){
+      message.info(result.message)
+    } else {
+      message.error(result.message)
+    }
+  } finally {
+    payLoading.value = false
+  }
+}
+
+/** 钱包支付失败/取消：空字符串表示用户主动取消，不打扰 */
+function onWalletFailed(msg){
+  payLoading.value = false
+  if(msg) message.error(msg)
+}
 
 async function payWith(channel){
   if(payLoading.value) return
@@ -743,24 +835,59 @@ async function payWith(channel){
       const vo = await paymentApi.create(route.params.orderNo, 'wallet')
       if(!vo?.payInfo?.paid) throw new Error('支付未确认')
       message.success('支付成功')
-    } else if(['stripe', 'apple_pay', 'google_pay'].includes(channel)){
+      trackPaySuccess('wallet')
+    } else if(['apple_pay', 'google_pay'].includes(channel)){
+      /*
+       * 钱包渠道：只做预下单并把 clientSecret 交给 Express Checkout 按钮，
+       * 真正的扣款由用户点钱包按钮触发（见 onWalletSucceeded）。
+       */
       const vo = await paymentApi.create(route.params.orderNo, 'stripe')
       if(vo?.mock){
         await paymentApi.mockConfirm(route.params.orderNo)
         message.success('Stripe 支付成功（模拟环境）')
+        trackPaySuccess('stripe')
       } else {
-        message.success('Stripe 支付预授权已建立')
+        stripePublishableKey.value = String(vo?.payInfo?.publishableKey || '')
+        stripeClientSecret.value = String(vo?.payInfo?.clientSecret || '')
+        if(!stripeClientSecret.value) throw new Error('Stripe 预下单未返回 clientSecret，无法唤起钱包')
+        message.info('已就绪，请点击上方钱包按钮完成支付')
+      }
+    } else if(channel === 'stripe'){
+      const vo = await paymentApi.create(route.params.orderNo, 'stripe')
+      if(vo?.mock){
+        // 开发/演示模式：仅当后端显式返回 mock 标记时才允许模拟确认（真实模式不会走到这里）
+        await paymentApi.mockConfirm(route.params.orderNo)
+        message.success('Stripe 支付成功（模拟环境）')
+        trackPaySuccess('stripe')
+      } else {
+        // 真实链路：clientSecret + Stripe Elements 卡控件 → confirmCardPayment（含 3DS）
+        // 任何失败/未完成状态都不提示成功；卡号只在 Stripe iframe 内，平台不接触
+        stripePublishableKey.value = String(vo?.payInfo?.publishableKey || '')
+        await nextTick()
+        const { status } = await confirmStripeCardPayment(stripeCardRef.value, vo?.payInfo, {
+          name: detail.value?.order?.receiver,
+          phone: detail.value?.order?.phone
+        })
+        const result = describeStripePaymentResult(status)
+        if (result.ok) {
+          trackPaySuccess('stripe')
+          message.success(result.message)
+          // 服务端以 webhook 落账，稍后自动刷新一次订单状态（未落账时用户可手动刷新）
+          setTimeout(() => { load().catch(() => {}) }, 1500)
+        } else if (result.processing) {
+          message.info(result.message)
+        } else {
+          throw new Error(result.message)
+        }
       }
     } else if(channel === 'alipay'){
       const vo = await paymentApi.create(route.params.orderNo, 'alipay')
       if(vo?.mock){
         await paymentApi.mockConfirm(route.params.orderNo)
         message.success('支付宝支付成功（模拟环境）')
+        trackPaySuccess('alipay')
       } else if(vo?.payInfo?.form){
-        const div = document.createElement('div')
-        div.innerHTML = vo.payInfo.form
-        document.body.appendChild(div)
-        document.forms[0]?.submit()
+        submitPayForm(vo.payInfo.form)
         return
       }
     } else if(channel === 'wechat'){
@@ -768,6 +895,7 @@ async function payWith(channel){
       if(vo?.mock){
         await paymentApi.mockConfirm(route.params.orderNo)
         message.success('微信支付成功（模拟环境）')
+        trackPaySuccess('wechat')
       } else {
         message.success('请使用微信扫码完成支付')
       }
@@ -777,17 +905,45 @@ async function payWith(channel){
       const vo = await paymentApi.create(route.params.orderNo, 'mock')
       if(vo?.mock) await paymentApi.mockConfirm(route.params.orderNo)
       message.success('支付成功')
+      trackPaySuccess('mock')
     }
     trackPay()
     payOpen.value = false
     await load()
   }catch(e){
-    /* 拦截器提示 */
+    // 仅本页 Stripe 链路/未完成状态抛出的错误需要再提示；后端业务错误已由 request.js 拦截器提示
+    if (e?.__llStripe || e?.message?.startsWith('支付未完成')) message.error(e.message)
   }finally{
     payLoading.value = false
   }
 }
-async function cancel(){try{await orderApi.cancel(route.params.orderNo);message.success('订单已取消');await load()}catch(e){}}
+// 取消不可逆：账期单还会释放授信额度，必须二次确认 + 防重复点击
+const cancelling = ref(false)
+function cancel(){
+  const o = detail.value?.order
+  const isTerm = String(o?.payType || '').toLowerCase() === 'term'
+  Modal.confirm({
+    title: '确认取消该订单？',
+    content: `订单 ${route.params.orderNo} 取消后不可恢复`
+      + (isTerm ? '；该订单为账期支付，取消将同步释放占用的授信额度。' : '。'),
+    okText: '确认取消',
+    okType: 'danger',
+    cancelText: '再想想',
+    onOk: async () => {
+      if (cancelling.value) return
+      cancelling.value = true
+      try {
+        await orderApi.cancel(route.params.orderNo)
+        message.success('订单已取消')
+        await load()
+      } catch (e) {
+        /* 拦截器已提示 */
+      } finally {
+        cancelling.value = false
+      }
+    }
+  })
+}
 function confirmReceipt(){
   Modal.confirm({
     title:'确认已收到货？',
@@ -834,6 +990,7 @@ async function doRefund() {
       applyAmount: remain > 0 ? remain : undefined,
       proofImages: serializeEvidences(refundEvidences.value)
     })
+    trackEvent('refund_apply', { order_no: route.params.orderNo, refund_type: rmaType.value })
     message.success(t('售后申请已提交，等待商户初审'))
     refundOpen.value = false
     await load()
@@ -915,10 +1072,9 @@ async function handleStampUpload(e) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await request.post('/attachment/upload?bizType=logistics-epod-receipt', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const docData = res?.data || res
+    const res = await attachmentApi.uploadEpodReceipt(fd)
+    // request.js 拦截器已剥壳：res 即 AttachmentView 本体（无 data 键，后端 AttachmentView 已核对）
+    const docData = res
     epodForm.value.stampPhoto = docData.fileUrl || docData.url || `/attachment/file/${docData.attachNo || docData.attachmentId}`
     message.success('公章签收单上传成功')
   } catch (err) {
@@ -940,10 +1096,8 @@ async function handleCargoUpload(e) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await request.post('/attachment/upload?bizType=logistics-epod-receipt', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const docData = res?.data || res
+    const res = await attachmentApi.uploadEpodReceipt(fd)
+    const docData = res
     const url = docData.fileUrl || docData.url || `/attachment/file/${docData.attachNo || docData.attachmentId}`
     epodForm.value.cargoPhotos.push(url)
     message.success('货物检验照片上传成功')
@@ -996,22 +1150,29 @@ async function drawPayQr(){
   await nextTick()
   if(payCanvasRef.value) await renderQrToCanvas(payCanvasRef.value,payQr.value,{width:200,errorCorrectionLevel:'Q'})
 }
-/** 生成扫码支付二维码：渠道有 codeUrl 用真实码并轮询到账；未配置则退化为可扫演示码 */
+/**
+ * 生成扫码支付二维码。
+ *
+ * 后端约定：微信 Native 的二维码串在 `payInfo.codeUrl`（见 PayCreateVO 注释），
+ * 不在顶层 `codeUrl`。历史实现读错字段，真实码永远取不到、只能退化成演示码。
+ * 渠道未配置时明确提示，不再生成可扫的假码误导用户。
+ */
 async function payWithScan(){
   if(payLoading.value)return
   payLoading.value=true
   try{
     const vo=await paymentApi.create(route.params.orderNo,'wechat')
-    const codeUrl=vo?.codeUrl
-    payQrDemo.value=!codeUrl
+    const codeUrl=vo?.payInfo?.codeUrl
+    if(!codeUrl){
+      message.warning('微信支付通道未配置，请选择其他支付方式')
+      return
+    }
+    payQrDemo.value=false
     payQr.value=buildPayQrPayload({codeUrl,orderNo:route.params.orderNo,amount:detail.value?.order?.totalAmount})
     await drawPayQr()
-    if(!payQrDemo.value) startPayPolling()
+    startPayPolling()
   }catch(e){
-    // 渠道未配置（本地 mock 模式）：退化为演示码，保证交互可验证
-    payQrDemo.value=true
-    payQr.value=buildPayQrPayload({orderNo:route.params.orderNo,amount:detail.value?.order?.totalAmount})
-    await drawPayQr()
+    // 拦截器已提示具体原因（渠道未配置/订单已支付等），不再伪造可扫二维码
   }finally{payLoading.value=false}
 }
 function closePayQr(){ stopPayPolling(); payQr.value=''; payQrDemo.value=false }
@@ -1030,7 +1191,33 @@ function stopPayPolling(){ if(payPollTimer){ clearInterval(payPollTimer); payPol
 watch(payOpen,(v)=>{ if(!v) closePayQr() })
 onBeforeUnmount(stopPayPolling)
 
-onMounted(load)
+onMounted(() => {
+  load()
+  // 收款账户为可选配置：失败时保持空对象，组件会提示"平台暂未配置"
+  paymentApi.corporateBank().then((vo) => { corporateBank.value = vo || {} }).catch(() => {})
+})
+
+/**
+ * 站内消息深链落点：`/orders/:orderNo?tab=refund|logistics`。
+ *
+ * <p>消息卡片上的「查看退款进度 / 查看物流轨迹」会带该 query 跳进来；
+ * 这里在数据渲染完成后滚到对应卡片，避免用户跳过来还要自己往下找。
+ * 用 scrollIntoView 而不是新增 tab，是为了不改动订单详情既有结构。
+ */
+watch(
+  () => [detail.value?.order?.orderNo, route.query.tab],
+  async ([orderNo, tab]) => {
+    if (!orderNo || !tab) return
+    const anchorId = tab === 'refund' ? 'order-refund' : tab === 'logistics' ? 'order-logistics' : ''
+    if (!anchorId) return
+    await nextTick()
+    const el = document.getElementById(anchorId)
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -1164,6 +1351,15 @@ onMounted(load)
 }
 .extra-panel {
   animation: fadeIn .25s ease-out;
+}
+.wallet-prepare-hint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  font-size: 12px;
+  color: #64748b;
 }
 .gateway-preview-panel {
   display: flex;

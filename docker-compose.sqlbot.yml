@@ -1,0 +1,55 @@
+# SQLBot 智能问数（dataease/SQLBot，LLM + RAG Text-to-SQL）
+#
+# 由 docker run 迁移为 compose 管理：镜像、数据挂载与原容器一致（数据零丢失），
+# 端口收敛到 127.0.0.1，并加入 shopping_default 网络，可用服务名直连
+# mysql（shopping-mysql-1）与 lanlink-ai-gateway。
+#
+# 启动（仓库根目录）：
+#   docker compose -f docker-compose.sqlbot.yml up -d
+# 访问：
+#   http://127.0.0.1:8000/  （UI + API，登录账号与平台运营管理员一致：13800000000，
+#                            密码同平台 demo 密码；不再使用 README 默认 admin 账号）
+#   http://127.0.0.1:8001/  （SQLBot 自带 MCP 服务）
+# 停止：
+#   docker compose -f docker-compose.sqlbot.yml down
+#
+# LLM 接入本地网关（OpenAI 兼容）：
+#   api_domain = http://lanlink-ai-gateway:8090/v1
+#   base_model = qwen2.5-7b
+#   模型高级参数需加 extra_body = {"use_kb": false}，
+#   否则网关默认 RAG 模板会重写 prompt，污染 Text-to-SQL。
+# 数据源：mysql:3306 / lanlink_shopping（专用只读账号，仅 SELECT 业务表）。
+#
+# 本地补丁（sqlbot-patches/，只读挂载）：SQLBot 原版把超管硬编码为
+# id==1 且 account=='admin'，导致管理员账号无法改为平台运营账号。
+# 补丁将判定放宽为仅 id==1（涉及 system/crud/user.py 与 mcp/mcp.py 两处）。
+# 升级镜像后需重新提取原文件并复核补丁是否仍适用。
+#
+# 独立 compose 项目名：与根项目（shopping）隔离，避免 --remove-orphans 误删。
+name: shopping-sqlbot
+
+services:
+  sqlbot:
+    image: dataease/sqlbot:latest
+    container_name: sqlbot
+    privileged: true
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8001"
+    volumes:
+      # 与原 docker run 完全一致的 WSL 数据目录（内置 PostgreSQL 数据也在其中）
+      - /root/data/sqlbot/excel:/opt/sqlbot/data/excel
+      - /root/data/sqlbot/file:/opt/sqlbot/data/file
+      - /root/data/sqlbot/images:/opt/sqlbot/images
+      - /root/data/sqlbot/logs:/opt/sqlbot/app/logs
+      - /root/data/postgresql:/var/lib/postgresql/data
+      # 超管判定补丁（见文件头说明），只读挂载，容器不会回写
+      - ./sqlbot-patches/user.py:/opt/sqlbot/app/apps/system/crud/user.py:ro
+      - ./sqlbot-patches/mcp.py:/opt/sqlbot/app/apps/mcp/mcp.py:ro
+    networks:
+      - shopping_default
+    restart: unless-stopped
+
+networks:
+  shopping_default:
+    external: true

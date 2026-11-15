@@ -25,7 +25,8 @@ class LicenseViewGateServiceTest {
     void watermarkTextNormalNames() {
         String[] lines = LicenseViewGateService.buildWatermarkLines("云链科技", "星空贸易");
         assertEquals(2, lines.length);
-        assertEquals("仅供云链科技对外展示时使用", lines[0]);
+        assertEquals("仅供云链科技在LANLINKShopping对外展示时使用", lines[0]);
+        // 权属主体固定为商户企业名，不得被查看方替换
         assertEquals("最终解释权归属星空贸易所有", lines[1]);
     }
 
@@ -33,16 +34,61 @@ class LicenseViewGateServiceTest {
     void watermarkTextFallsBackWhenViewerBlank() {
         // 查看方为空（无企业名且无昵称）→ 回退平台运营占位，模板不能出现空洞
         String[] lines = LicenseViewGateService.buildWatermarkLines("  ", "星空贸易");
-        assertEquals("仅供LANLink 平台运营对外展示时使用", lines[0]);
+        assertEquals("仅供平台运营在LANLINKShopping对外展示时使用", lines[0]);
+        // 查看方回退不影响权属主体
         assertEquals("最终解释权归属星空贸易所有", lines[1]);
         String[] nullLines = LicenseViewGateService.buildWatermarkLines(null, "星空贸易");
-        assertEquals("仅供LANLink 平台运营对外展示时使用", nullLines[0]);
+        assertEquals("仅供平台运营在LANLINKShopping对外展示时使用", nullLines[0]);
+        assertEquals("最终解释权归属星空贸易所有", nullLines[1]);
     }
 
+    /** 商户企业名是权属主体：缺失时必须拒绝出图，不得回退成任何占位名。 */
     @Test
-    void watermarkTextFallsBackWhenMerchantBlank() {
-        String[] lines = LicenseViewGateService.buildWatermarkLines("云链科技", "");
-        assertEquals("最终解释权归属对应商户所有", lines[1]);
+    void watermarkTextRejectsMissingMerchantName() {
+        BusinessException blank = assertThrows(BusinessException.class,
+                () -> LicenseViewGateService.buildWatermarkLines("云链科技", ""));
+        assertTrue(blank.getMessage().contains("商户企业名称缺失"), blank.getMessage());
+        BusinessException spaces = assertThrows(BusinessException.class,
+                () -> LicenseViewGateService.buildWatermarkLines("云链科技", "   "));
+        assertTrue(spaces.getMessage().contains("商户企业名称缺失"), spaces.getMessage());
+        BusinessException nullName = assertThrows(BusinessException.class,
+                () -> LicenseViewGateService.buildWatermarkLines("云链科技", null));
+        assertTrue(nullName.getMessage().contains("商户企业名称缺失"), nullName.getMessage());
+    }
+
+    /** 第二行必须逐字等于「最终解释权归属{商户企业名}所有」，不接受任何替换。 */
+    @Test
+    void ownershipLineIsExactlyMerchantCompanyName() {
+        String[] lines = LicenseViewGateService.buildWatermarkLines("平台运营", "华晨建材集团有限公司");
+        assertEquals("最终解释权归属华晨建材集团有限公司所有", lines[1]);
+        assertFalse(lines[1].contains("平台运营"), "权属行不得出现查看方: " + lines[1]);
+        assertFalse(lines[1].contains("商户#"), "权属行不得出现合成商户名: " + lines[1]);
+        assertTrue(lines[1].contains("华晨建材集团有限公司"), "权属行必须包含商户公司名: " + lines[1]);
+    }
+
+    /** 水印文案必须完整包含平台名与两句固定表述，任何一环缺失都算篡改。 */
+    @Test
+    void watermarkTemplateIsAlwaysComplete() {
+        String[][] cases = {
+                {"云链科技", "星空贸易"},
+                {"", "星空贸易"},
+                {null, "星空贸易"},
+                {"   ", "星空贸易"}
+        };
+        for (String[] c : cases) {
+            String[] lines = LicenseViewGateService.buildWatermarkLines(c[0], c[1]);
+            assertEquals(2, lines.length, "水印固定两行");
+            assertTrue(lines[0].startsWith("仅供"), "第一行必须以「仅供」开头: " + lines[0]);
+            assertTrue(lines[0].contains("在" + LicenseViewGateService.PLATFORM_NAME + "对外展示时使用"),
+                    "第一行必须含平台名与用途: " + lines[0]);
+            assertTrue(lines[0].endsWith("对外展示时使用"), "第一行结尾固定: " + lines[0]);
+            assertTrue(lines[1].startsWith("最终解释权归属"), "第二行必须以「最终解释权归属」开头: " + lines[1]);
+            assertTrue(lines[1].endsWith("所有"), "第二行必须以「所有」结尾: " + lines[1]);
+            assertTrue(lines[1].contains("星空贸易"), "第二行必须锚定商户公司名: " + lines[1]);
+            // 不得出现空洞（"仅供在…" 这种）
+            assertFalse(lines[0].contains("仅供在"), "查看方为空时必须回退占位名: " + lines[0]);
+            assertFalse(lines[1].contains("归属所有"), "归属方为空时必须回退占位名: " + lines[1]);
+        }
     }
 
     // ===== 验证码 =====

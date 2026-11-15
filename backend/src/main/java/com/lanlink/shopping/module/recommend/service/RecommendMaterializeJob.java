@@ -1,6 +1,7 @@
 package com.lanlink.shopping.module.recommend.service;
 
 import com.lanlink.shopping.module.recommend.mapper.RecommendStatMapper;
+import com.lanlink.shopping.support.DbJobLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -18,35 +19,42 @@ public class RecommendMaterializeJob {
     private static final Logger log = LoggerFactory.getLogger(RecommendMaterializeJob.class);
 
     private final RecommendStatMapper statMapper;
+    private final DbJobLock jobLock;
 
-    public RecommendMaterializeJob(RecommendStatMapper statMapper) {
+    public RecommendMaterializeJob(RecommendStatMapper statMapper, DbJobLock jobLock) {
         this.statMapper = statMapper;
+        this.jobLock = jobLock;
     }
 
     @Scheduled(cron = "0 15 * * * ?")
     public void rebuildCooccur() {
-        try {
-            long t0 = System.currentTimeMillis();
-            statMapper.clearCooccur();
-            int rows = statMapper.rebuildCooccurCounts();
-            statMapper.normalizeCooccurCosine();
-            log.info("[recommend] cooccur rebuilt: {} pairs, {}ms", rows, System.currentTimeMillis() - t0);
-        } catch (Exception e) {
-            log.warn("[recommend] cooccur rebuild failed: {}", e.getMessage());
-        }
+        // clear→rebuild 非幂等：多实例并发会让一个实例清掉另一个的半成品
+        jobLock.runExclusive("lanlink:job:recommend-cooccur", () -> {
+            try {
+                long t0 = System.currentTimeMillis();
+                statMapper.clearCooccur();
+                int rows = statMapper.rebuildCooccurCounts();
+                statMapper.normalizeCooccurCosine();
+                log.info("[recommend] cooccur rebuilt: {} pairs, {}ms", rows, System.currentTimeMillis() - t0);
+            } catch (Exception e) {
+                log.warn("[recommend] cooccur rebuild failed: {}", e.getMessage());
+            }
+        });
     }
 
     @Scheduled(cron = "0 30 3 * * ?")
     public void rebuildHotStat() {
-        try {
-            long t0 = System.currentTimeMillis();
-            statMapper.clearHotStat();
-            statMapper.loadHotCounters();
-            statMapper.computeHotWilson();
-            statMapper.applyHotTimeDecay();
-            log.info("[recommend] hot stat rebuilt: {}ms", System.currentTimeMillis() - t0);
-        } catch (Exception e) {
-            log.warn("[recommend] hot stat rebuild failed: {}", e.getMessage());
-        }
+        jobLock.runExclusive("lanlink:job:recommend-hot", () -> {
+            try {
+                long t0 = System.currentTimeMillis();
+                statMapper.clearHotStat();
+                statMapper.loadHotCounters();
+                statMapper.computeHotWilson();
+                statMapper.applyHotTimeDecay();
+                log.info("[recommend] hot stat rebuilt: {}ms", System.currentTimeMillis() - t0);
+            } catch (Exception e) {
+                log.warn("[recommend] hot stat rebuild failed: {}", e.getMessage());
+            }
+        });
     }
 }

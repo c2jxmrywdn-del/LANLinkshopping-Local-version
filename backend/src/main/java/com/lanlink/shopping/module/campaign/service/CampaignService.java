@@ -517,16 +517,35 @@ public class CampaignService {
             m.put("merName", SCOPE_PROD.equals(c.getScope()) && c.getMerId() != null
                     ? merNames.get(c.getMerId()) : null);
             m.put("endTime", c.getEndTime());
+            // 店铺券的门槛与优惠都按「该商户行金额」算，不能用整单总额（否则可用别家商品凑门槛）
+            BigDecimal base = couponBaseAmount(c, total, lines);
             boolean applicable = c.effectiveNow(LocalDateTime.now()) && couponApplicable(c, indId, lines)
-                    && total.compareTo(c.getThreshold() == null ? BigDecimal.ZERO : c.getThreshold()) >= 0;
+                    && base.compareTo(c.getThreshold() == null ? BigDecimal.ZERO : c.getThreshold()) >= 0;
             m.put("applicable", applicable);
-            m.put("benefit", applicable ? couponBenefit(c, total) : BigDecimal.ZERO);
+            m.put("benefit", applicable ? couponBenefit(c, base) : BigDecimal.ZERO);
             result.add(m);
         }
         return result;
     }
 
-    /** 券适用范围：all 全场 / ind 行业 / prod 店铺券（订单行包含该商户商品即可用，门槛仍按订单总额） */
+    /**
+     * 券计算基准金额。
+     *
+     * <p>全场券/行业券 = 订单总额；店铺券 = 该商户在订单内的行金额之和。
+     * 历史缺陷：店铺券只校验"订单含该商户任意一行"，但门槛与优惠都按整单总额算，
+     * 用户可用别家商品凑门槛、让整单（含别家商品）被打折。
+     */
+    private BigDecimal couponBaseAmount(Campaign c, BigDecimal total, List<Line> lines) {
+        if (!SCOPE_PROD.equals(c.getScope()) || c.getMerId() == null || lines == null) {
+            return total == null ? BigDecimal.ZERO : total;
+        }
+        return lines.stream()
+                .filter(l -> l != null && c.getMerId().equals(l.getMerId()))
+                .map(l -> l.getLineAmount() == null ? BigDecimal.ZERO : l.getLineAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** 券适用范围：all 全场 / ind 行业 / prod 店铺券（订单行必须包含该商户商品） */
     private boolean couponApplicable(Campaign c, Long indId, List<Line> lines) {
         if (SCOPE_PROD.equals(c.getScope())) {
             if (c.getMerId() == null || lines == null) return false;
@@ -567,10 +586,6 @@ public class CampaignService {
         if (c == null || !TYPE_COUPON.equals(c.getType()) || !c.effectiveNow(LocalDateTime.now())) {
             throw new BusinessException("优惠券所在活动已结束");
         }
-        BigDecimal threshold = c.getThreshold() == null ? BigDecimal.ZERO : c.getThreshold();
-        if (total.compareTo(threshold) < 0) {
-            throw new BusinessException("订单金额未满足券门槛（满 ¥" + threshold.stripTrailingZeros().toPlainString() + " 可用）");
-        }
         if (SCOPE_PROD.equals(c.getScope())) {
             // 店铺券：订单行必须包含该商户的商品
             if (c.getMerId() == null || lines == null
@@ -580,7 +595,13 @@ public class CampaignService {
         } else if (!c.applicable(orderIndId)) {
             throw new BusinessException("该优惠券不适用当前订单行业");
         }
-        BigDecimal benefit = couponBenefit(c, total);
+        // 门槛与优惠都按券的计算基准：店铺券用该商户行金额，其余用订单总额
+        BigDecimal base = couponBaseAmount(c, total, lines);
+        BigDecimal threshold = c.getThreshold() == null ? BigDecimal.ZERO : c.getThreshold();
+        if (base.compareTo(threshold) < 0) {
+            throw new BusinessException("订单金额未满足券门槛（满 ¥" + threshold.stripTrailingZeros().toPlainString() + " 可用）");
+        }
+        BigDecimal benefit = couponBenefit(c, base);
         if (benefit.compareTo(payableBeforeCoupon) > 0) benefit = payableBeforeCoupon;
         if (benefit.compareTo(BigDecimal.ZERO) < 0) benefit = BigDecimal.ZERO;
         // 原子核销（status 0→1 条件更新）：并发下单时只有一个请求能更新成功，
@@ -710,6 +731,7 @@ public class CampaignService {
     @Transactional
     public void merchantJoin(Long userId, Long campaignId) {
         Merchant m = mustMerchant(userId);
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(m);
         Campaign c = campaignMapper.selectById(campaignId);
         if (c == null || !c.effectiveNow(LocalDateTime.now())) throw new BusinessException("活动不存在或已结束");
         boolean joinable = TYPE_MERCHANT_INCENTIVE.equals(c.getType())
@@ -737,6 +759,7 @@ public class CampaignService {
     @Transactional
     public void merchantClaimReward(Long userId, Long campaignId) {
         Merchant m = mustMerchant(userId);
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(m);
         Campaign c = campaignMapper.selectById(campaignId);
         if (c == null || !TYPE_MERCHANT_INCENTIVE.equals(c.getType())) throw new BusinessException("商户激励活动不存在");
         CampaignMerchant cm = campaignMerchantMapper.selectOne(Wrappers.<CampaignMerchant>lambdaQuery()
@@ -781,6 +804,7 @@ public class CampaignService {
     @Transactional
     public Campaign merchantCreate(Long userId, MerchantPromoDTO dto) {
         Merchant m = mustMerchant(userId);
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(m);
         if (dto == null) throw new BusinessException("参数不能为空");
         if (!MERCHANT_PROMO_TYPES.contains(dto.getType())) {
             throw new BusinessException("促销类型仅支持满减/折扣/限时秒杀");
@@ -843,6 +867,9 @@ public class CampaignService {
             throw new BusinessException("无权操作该活动");
         }
         int target = (c.getStatus() != null && c.getStatus() == 1) ? 0 : 1;
+        if (target == 1) {
+            com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(m);
+        }
         if (target == 1 && (c.getReviewStatus() == null || c.getReviewStatus() != 1)) {
             throw new BusinessException("活动尚未通过平台审核，无法上架");
         }

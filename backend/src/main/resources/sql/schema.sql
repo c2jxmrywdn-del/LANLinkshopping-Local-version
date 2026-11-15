@@ -101,12 +101,21 @@ CREATE TABLE IF NOT EXISTS t_merchant (
   contact_email VARCHAR(255) COMMENT '负责人联系邮箱(AES密文)',
   business_address VARCHAR(255) COMMENT '经营场所/注册地址(AES密文)',
   join_code        VARCHAR(64) COMMENT '平台邀约码/特约加盟码',
+  platform_invited TINYINT NOT NULL DEFAULT 0 COMMENT '平台特邀商户 0否 1是（后台标记或运营邀约入驻）',
   has_special_permit TINYINT DEFAULT 0 COMMENT '是否有特殊经营许可证 0无 1有',
   special_permit_name VARCHAR(128) COMMENT '特殊经营许可证名称',
   special_permit_url VARCHAR(255) COMMENT '特殊经营许可证附件URL',
+  commission_rate DECIMAL(5,2) NULL COMMENT '平台佣金率(%)，NULL=用全局默认(app.settlement.default-commission-rate)',
+  exit_status VARCHAR(20) NULL COMMENT '退店状态 NULL=正常经营',
+  exit_request_time DATETIME NULL COMMENT '退店申请时间',
+  notice_end_time DATETIME NULL COMMENT '公示截止时间',
+  close_time DATETIME NULL COMMENT '正式关闭时间',
+  exit_reason VARCHAR(255) NULL COMMENT '退店原因',
+  exit_reject_reason VARCHAR(255) NULL COMMENT '退店驳回原因',
   create_time   DATETIME DEFAULT CURRENT_TIMESTAMP,
   update_time   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted       TINYINT DEFAULT 0
+  deleted       TINYINT DEFAULT 0,
+  KEY idx_merchant_user (user_id)
 ) ENGINE=InnoDB COMMENT='商户';
 
 -- 幂等升级：历史库 t_merchant 补齐营业执照/税务记录三列（列不存在时才 ADD）
@@ -159,6 +168,26 @@ PREPARE mc_stmt13 FROM @mc13; EXECUTE mc_stmt13; DEALLOCATE PREPARE mc_stmt13;
 SET @mc14 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN special_permit_url VARCHAR(255) COMMENT ''特殊经营许可证附件URL''', 'SELECT 1')
             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='special_permit_url');
 PREPARE mc_stmt14 FROM @mc14; EXECUTE mc_stmt14; DEALLOCATE PREPARE mc_stmt14;
+
+-- 幂等升级：t_merchant 补齐退店六列（列不存在时才 ADD；全新库由上方 CREATE 块负责）
+SET @mc15 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN exit_status VARCHAR(20) NULL COMMENT ''退店状态 NULL=正常经营''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='exit_status');
+PREPARE mc_stmt15 FROM @mc15; EXECUTE mc_stmt15; DEALLOCATE PREPARE mc_stmt15;
+SET @mc16 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN exit_request_time DATETIME NULL COMMENT ''退店申请时间''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='exit_request_time');
+PREPARE mc_stmt16 FROM @mc16; EXECUTE mc_stmt16; DEALLOCATE PREPARE mc_stmt16;
+SET @mc17 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN notice_end_time DATETIME NULL COMMENT ''公示截止时间''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='notice_end_time');
+PREPARE mc_stmt17 FROM @mc17; EXECUTE mc_stmt17; DEALLOCATE PREPARE mc_stmt17;
+SET @mc18 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN close_time DATETIME NULL COMMENT ''正式关闭时间''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='close_time');
+PREPARE mc_stmt18 FROM @mc18; EXECUTE mc_stmt18; DEALLOCATE PREPARE mc_stmt18;
+SET @mc19 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN exit_reason VARCHAR(255) NULL COMMENT ''退店原因''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='exit_reason');
+PREPARE mc_stmt19 FROM @mc19; EXECUTE mc_stmt19; DEALLOCATE PREPARE mc_stmt19;
+SET @mc20 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_merchant ADD COLUMN exit_reject_reason VARCHAR(255) NULL COMMENT ''退店驳回原因''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_merchant' AND COLUMN_NAME='exit_reject_reason');
+PREPARE mc_stmt20 FROM @mc20; EXECUTE mc_stmt20; DEALLOCATE PREPARE mc_stmt20;
 
 -- 资质表
 CREATE TABLE IF NOT EXISTS t_qualification (
@@ -278,7 +307,9 @@ CREATE TABLE IF NOT EXISTS t_cart (
   prod_id     BIGINT NOT NULL,
   quantity    INT DEFAULT 1,
   checked     TINYINT DEFAULT 1 COMMENT '是否勾选结算',
-  create_time DATETIME DEFAULT CURRENT_TIMESTAMP
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cart_user_prod (user_id, prod_id),
+  KEY idx_cart_user (user_id)
 ) ENGINE=InnoDB COMMENT='购物车';
 
 -- 订单表
@@ -286,7 +317,9 @@ CREATE TABLE IF NOT EXISTS t_order (
   order_no     VARCHAR(40) PRIMARY KEY COMMENT '订单号',
   user_id      BIGINT NOT NULL COMMENT '采购方用户ID',
   ent_id       BIGINT COMMENT '采购方企业ID',
-  total_amount DECIMAL(14,2) NOT NULL DEFAULT 0 COMMENT '订单总额',
+  total_amount DECIMAL(14,2) NOT NULL DEFAULT 0 COMMENT '订单总额(实付现金，已扣促销/券/积分，P1-6 起含运费)',
+  goods_amount DECIMAL(14,2) NULL COMMENT '货款(不含运费；P1-5 引入，存量回填=total_amount)',
+  freight_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT '运费(独立对账口径；P1-5)',
   pay_type     VARCHAR(16) COMMENT '支付方式 balance/corporate/term(账期)',
   pay_status   TINYINT DEFAULT 0 COMMENT '0未支付 1已支付',
   order_status TINYINT DEFAULT 0 COMMENT '0待发货 1已发货 2已完成 3已取消',
@@ -303,6 +336,15 @@ CREATE TABLE IF NOT EXISTS t_order (
   refund_id    VARCHAR(64) COMMENT '渠道退款单号',
   refund_amount DECIMAL(14,2) COMMENT '已退金额',
   refund_time  DATETIME COMMENT '退款完成时间',
+  -- 发票需求快照（P1-5）：与 OrderInvoiceSchemaInitializer 双写一致，历史库由该初始化器幂等补列
+  invoice_needed TINYINT DEFAULT 0 COMMENT '是否需要发票 0否 1是',
+  invoice_title_type VARCHAR(16) COMMENT '抬头类型 personal个人/company单位',
+  invoice_title VARCHAR(100) COMMENT '发票抬头名称',
+  invoice_tax_no VARCHAR(20) COMMENT '纳税人识别号(15-20位大写字母数字)',
+  invoice_content_type VARCHAR(16) COMMENT '发票内容 category商品类别/detail开具明细',
+  invoice_category VARCHAR(60) COMMENT '商品类别(内容=category)',
+  invoice_detail VARCHAR(255) COMMENT '开具明细(内容=detail)',
+  finish_time  DATETIME NULL COMMENT '订单完成时刻(order_status置2时原子写入;时间闸门唯一可靠口径)',
   update_time  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_order_user_time (user_id, create_time),
   KEY idx_order_pay_time (pay_status, create_time),
@@ -316,6 +358,11 @@ SET @ord1 = (SELECT IF(COUNT(*) = 1 AND MAX(COLUMN_DEFAULT) IS NULL,
     FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='total_amount');
 PREPARE ord_stmt FROM @ord1; EXECUTE ord_stmt; DEALLOCATE PREPARE ord_stmt;
 
+-- 幂等升级：t_order 补 finish_time（时间闸门唯一可靠口径；存量回填见 MerchantExitSchemaInitializer）
+SET @ord2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN finish_time DATETIME NULL COMMENT ''订单完成时刻(order_status置2时原子写入;时间闸门唯一可靠口径)''', 'SELECT 1')
+             FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_order' AND COLUMN_NAME='finish_time');
+PREPARE ord_stmt2 FROM @ord2; EXECUTE ord_stmt2; DEALLOCATE PREPARE ord_stmt2;
+
 -- 订单明细表
 CREATE TABLE IF NOT EXISTS t_order_item (
   item_id    BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -325,8 +372,101 @@ CREATE TABLE IF NOT EXISTS t_order_item (
   price      DECIMAL(12,2) COMMENT '下单时单价(冗余快照)',
   quantity   INT,
   subtotal   DECIMAL(14,2),
-  cover_url  VARCHAR(255)
+  allocated_discount DECIMAL(14,2) NULL COMMENT '行级分摊优惠(促销+券+积分；P1-6)',
+  paid_amount DECIMAL(14,2) NULL COMMENT '行实付=subtotal-allocated_discount；退款按此退(P1-6)',
+  freight_amount DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT '行运费分摊(P1-5)',
+  cover_url  VARCHAR(255),
+  KEY idx_oi_order (order_no)
 ) ENGINE=InnoDB COMMENT='订单明细';
+
+-- ==================== 库存变动流水（P1-3 幂等回补）====================
+-- 来源（双写，逐字对齐）：support/StockFlowSchemaInitializer#DDL
+-- 幂等键 uk_stock_flow 是「同一业务单同一订单行只回补一次」的最后一道闸；
+-- order_item_id 必须非空（MySQL 唯一索引对 NULL 不判重）。
+CREATE TABLE IF NOT EXISTS t_stock_flow (
+  flow_id       BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '流水主键',
+  biz_type      VARCHAR(24)  NOT NULL COMMENT '业务类型 ORDER_CANCEL/ORDER_CLOSE/FULL_REFUND/RMA_RESTOCK',
+  biz_no        VARCHAR(64)  NOT NULL COMMENT '业务单号：订单号/售后单号/退款单号',
+  prod_id       BIGINT       NOT NULL COMMENT '商品ID',
+  order_item_id BIGINT       NOT NULL COMMENT '订单行ID(t_order_item.item_id)，幂等键组成部分（禁止NULL）',
+  quantity      INT          NOT NULL COMMENT '变动数量：回补为正',
+  order_no      VARCHAR(40)  DEFAULT NULL COMMENT '冗余订单号（审计/对账）',
+  operator_id   BIGINT       DEFAULT NULL COMMENT '操作人（自动任务可空）',
+  remark        VARCHAR(255) DEFAULT NULL COMMENT '备注/触发来源',
+  create_time   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_stock_flow (biz_type, biz_no, prod_id, order_item_id),
+  KEY idx_stock_flow_order (order_no, prod_id),
+  KEY idx_stock_flow_prod (prod_id, create_time)
+) ENGINE=InnoDB COMMENT='库存变动流水（幂等键防重复回补）';
+
+-- ==================== 售后退货退款 RMA 主表 + 双人审批留痕（P0-C） ====================
+-- 来源（双写，逐字对齐）：
+--   t_order_rma        ← support/RefundSchemaInitializer#createRmaTableIfNotExists（基础列）
+--                        + support/RefundApprovalSchemaInitializer（platform_audit_* 四列，P0-C）
+--   t_refund_approval  ← support/RefundApprovalSchemaInitializer#createApprovalTable（P0-C）
+-- 说明：schema.sql 是首次安装源；存量库由上述 initializer 以 information_schema 守卫幂等补建/补列。
+CREATE TABLE IF NOT EXISTS t_order_rma (
+  rma_id               BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT 'RMA主键ID',
+  rma_no               VARCHAR(32) NOT NULL COMMENT 'RMA业务单号',
+  order_no             VARCHAR(40) NOT NULL COMMENT '关联主订单号',
+  user_id              BIGINT NOT NULL COMMENT '申请买家用户ID',
+  mer_id               BIGINT NOT NULL COMMENT '所属商户ID',
+  rma_type             VARCHAR(16) NOT NULL DEFAULT 'return_goods' COMMENT 'refund_only仅退款/return_goods退货退款',
+  status               VARCHAR(32) NOT NULL DEFAULT 'buyer_applied' COMMENT '状态',
+  apply_amount         DECIMAL(14,2) NOT NULL COMMENT '申请退款金额',
+  actual_refund_amount DECIMAL(14,2) DEFAULT 0.00 COMMENT '实际结算退款金额',
+  reason_category      VARCHAR(32) NOT NULL DEFAULT 'other' COMMENT '原因分类',
+  apply_reason         VARCHAR(500) NOT NULL COMMENT '详细原因',
+  proof_images         TEXT COMMENT '凭证图片URL列表(证据JSON,经RefundEvidenceValidator归一)',
+  merchant_audit_time  DATETIME COMMENT '商户初审时间',
+  merchant_audit_note  VARCHAR(255) COMMENT '商户初审备注',
+  return_receiver_name VARCHAR(64) COMMENT '退货收件人姓名',
+  return_receiver_phone VARCHAR(32) COMMENT '退货收件人电话',
+  return_warehouse_addr VARCHAR(255) COMMENT '退货仓库地址',
+  return_provider_id   BIGINT COMMENT '逆向物流承运商ID',
+  return_carrier_name  VARCHAR(64) COMMENT '承运商名称',
+  return_waybill_no    VARCHAR(64) COMMENT '退货物流运单号',
+  return_waybill_id    BIGINT COMMENT '系统逆向运单ID',
+  return_ship_time     DATETIME COMMENT '买家寄出时间',
+  return_ship_remark   VARCHAR(255) COMMENT '买家寄出物流备注',
+  inspect_time         DATETIME COMMENT '验货时间',
+  inspector_id         BIGINT COMMENT '验货操作员ID',
+  inspection_status    VARCHAR(16) COMMENT 'passed合格/damaged破损',
+  inspection_result    VARCHAR(500) COMMENT '质检结论',
+  inspection_photos    TEXT COMMENT '质检拍照凭证',
+  is_restocked         TINYINT DEFAULT 0 COMMENT '是否已恢复入库: 0否 1是',
+  out_refund_no        VARCHAR(64) COMMENT '商户退款请求单号',
+  channel_refund_id    VARCHAR(64) COMMENT '渠道官方退款流水号',
+  refund_time          DATETIME COMMENT '退款到账时间',
+  platform_audit_time   DATETIME NULL COMMENT '平台退款复核时间',
+  platform_auditor_id   BIGINT NULL COMMENT '平台退款复核人用户ID',
+  platform_audit_note   VARCHAR(255) NULL COMMENT '平台退款复核意见/驳回原因',
+  platform_audit_status VARCHAR(16) NULL COMMENT '平台复核结论 APPROVED/REJECTED/REOPENED',
+  create_time          DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time          DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted              TINYINT DEFAULT 0,
+  UNIQUE KEY uk_rma_no (rma_no),
+  KEY idx_rma_order (order_no),
+  KEY idx_rma_user (user_id),
+  KEY idx_rma_mer (mer_id),
+  KEY idx_rma_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='RMA退货退款售后主表';
+
+CREATE TABLE IF NOT EXISTS t_refund_approval (
+  id            BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '审批动作主键',
+  rma_no        VARCHAR(32)  NULL COMMENT '关联售后单号(链A为NULL)',
+  order_no      VARCHAR(40)  NOT NULL COMMENT '关联订单号',
+  stage         VARCHAR(16)  NOT NULL COMMENT '阶段 MERCHANT商户初审/PLATFORM平台复核',
+  action        VARCHAR(16)  NOT NULL COMMENT '动作 APPROVE通过/REJECT驳回/REOPEN申诉重开',
+  operator_id   BIGINT       NOT NULL COMMENT '操作人用户ID',
+  operator_role VARCHAR(16)  NOT NULL COMMENT '操作人角色 MERCHANT/ADMIN/SYSTEM',
+  amount        DECIMAL(14,2) NULL COMMENT '本次审批锁定的退款金额(元)',
+  remark        VARCHAR(255) NULL COMMENT '审批意见/驳回原因/重开理由',
+  consumed      TINYINT      NOT NULL DEFAULT 0 COMMENT '平台APPROVE是否已出款消费 0否1是',
+  create_time   DATETIME     DEFAULT CURRENT_TIMESTAMP COMMENT '动作时间',
+  KEY idx_ra_order (order_no, stage, id),
+  KEY idx_ra_rma (rma_no, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='退款审批留痕(append-only)';
 
 -- ==================== 营销中台：活动系统（统一促销/领券/激励） ====================
 -- 原 t_activity(注册/消费有礼) 与 t_promotion(满减/折扣) 已统一并入 t_campaign，
@@ -603,6 +743,292 @@ CREATE TABLE IF NOT EXISTS t_product_rating_stat (
   update_time  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB COMMENT='商品评分聚合';
 
+-- 订单维度评价（拍板：独立新表，评价挂订单、聚合到商品；一单多品按 t_order_item 拆行）
+-- 与 support/OrderReviewSchemaInitializer.java 双写一致；prod profile sql.init=never 时由 initializer 负责。
+CREATE TABLE IF NOT EXISTS t_order_review (
+  review_id     BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id      VARCHAR(40) NOT NULL COMMENT '订单号(t_order.order_no)',
+  order_item_id BIGINT NOT NULL COMMENT '订单行ID(t_order_item.item_id)，一单多品拆行',
+  prod_id       BIGINT NOT NULL COMMENT '商品ID(t_order_item.prod_id 冗余)',
+  buyer_user_id BIGINT NOT NULL COMMENT '评价买家',
+  mer_id        BIGINT COMMENT '商户ID(t_order_item 商品归属商户)',
+  rating        TINYINT NOT NULL COMMENT '1-5 星',
+  content       VARCHAR(500) COMMENT '评价内容',
+  attachments   JSON COMMENT '评价图片/附件 JSON 数组',
+  is_anonymous  TINYINT DEFAULT 0 COMMENT '1=匿名展示',
+  status        TINYINT DEFAULT 1 COMMENT '0待审 1通过 2驳回',
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_order_review_item (order_id, order_item_id),
+  KEY idx_or_prod (prod_id, status, created_at),
+  KEY idx_or_buyer (buyer_user_id),
+  KEY idx_or_mer (mer_id, status, created_at)
+) ENGINE=InnoDB COMMENT='订单维度评价';
+
+-- ==================== RFQ 询报价（发布→报价→接受→转订单） ====================
+-- 与 support/RfqSchemaInitializer.java 双写一致；prod profile sql.init=never 时由 initializer 负责。
+-- 报价锚定真实目录商品（prod_id NOT NULL）且属于报价商户，否则接受后订单商户侧 JOIN 不到。
+CREATE TABLE IF NOT EXISTS t_rfq (
+  rfq_id         BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rfq_no         VARCHAR(40) NOT NULL COMMENT '询价单号',
+  user_id        BIGINT NOT NULL COMMENT '买家ID',
+  title          VARCHAR(120) NOT NULL COMMENT '采购标题',
+  description    VARCHAR(1000) COMMENT '需求描述',
+  prod_id        BIGINT NULL COMMENT '意向目录商品(可空)',
+  quantity       DECIMAL(14,2) NOT NULL COMMENT '采购数量',
+  unit           VARCHAR(16) COMMENT '计量单位',
+  quote_deadline DATETIME NOT NULL COMMENT '报价截止',
+  max_quotes     INT NOT NULL DEFAULT 10 COMMENT '报价户数上限',
+  status         VARCHAR(16) NOT NULL DEFAULT 'PUBLISHED' COMMENT 'PUBLISHED/QUOTED/ACCEPTED/ORDERED/EXPIRED/CANCELLED',
+  create_time    DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_rfq_no (rfq_no),
+  KEY idx_rfq_user (user_id, status, create_time),
+  KEY idx_rfq_status_deadline (status, quote_deadline)
+) ENGINE=InnoDB COMMENT='买家询价单';
+
+CREATE TABLE IF NOT EXISTS t_rfq_quote (
+  quote_id     BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rfq_id       BIGINT NOT NULL COMMENT '询价单ID',
+  mer_id       BIGINT NOT NULL COMMENT '报价商户ID',
+  prod_id      BIGINT NOT NULL COMMENT '锚定目录商品(须属本商户)',
+  unit_price   DECIMAL(14,2) NOT NULL COMMENT '报价单价',
+  quantity     DECIMAL(14,2) NOT NULL COMMENT '报价数量',
+  total_amount DECIMAL(14,2) NOT NULL COMMENT 'unit_price*quantity(scale2)',
+  remark       VARCHAR(500) COMMENT '报价备注',
+  valid_until  DATETIME COMMENT '报价有效期',
+  status       VARCHAR(16) NOT NULL DEFAULT 'SUBMITTED' COMMENT 'SUBMITTED/ACCEPTED/REJECTED/WITHDRAWN/EXPIRED',
+  create_time  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_quote_rfq_mer (rfq_id, mer_id),
+  KEY idx_quote_rfq (rfq_id, status),
+  KEY idx_quote_mer (mer_id, create_time)
+) ENGINE=InnoDB COMMENT='商户报价(一户一报价)';
+
+CREATE TABLE IF NOT EXISTS t_rfq_event (
+  event_id   BIGINT PRIMARY KEY AUTO_INCREMENT,
+  rfq_id     BIGINT NOT NULL COMMENT '询价单ID',
+  quote_id   BIGINT NULL COMMENT '关联报价ID',
+  event_type VARCHAR(32) NOT NULL COMMENT '事件类型',
+  actor_id   BIGINT COMMENT '操作人ID',
+  actor_role VARCHAR(16) COMMENT '操作人角色',
+  detail     VARCHAR(1000) COMMENT '事件明细',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_event_rfq (rfq_id, event_id)
+) ENGINE=InnoDB COMMENT='RFQ追加式留痕';
+
+-- t_order 补 RFQ 来源字段（幂等补列，历史库可重复执行）
+-- 用 DATABASE() 而非硬编码库名：与 RfqSchemaInitializer 同一判据，改库名不会漂移
+SET @rfq1 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN rfq_no VARCHAR(40) NULL COMMENT ''来源询价单号(t_rfq.rfq_no)''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='t_order' AND COLUMN_NAME='rfq_no');
+PREPARE rfq_stmt1 FROM @rfq1; EXECUTE rfq_stmt1; DEALLOCATE PREPARE rfq_stmt1;
+
+SET @rfq2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN rfq_quote_id BIGINT NULL COMMENT ''来源报价ID(t_rfq_quote.quote_id)''', 'SELECT 1')
+  FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='t_order' AND COLUMN_NAME='rfq_quote_id');
+PREPARE rfq_stmt2 FROM @rfq2; EXECUTE rfq_stmt2; DEALLOCATE PREPARE rfq_stmt2;
+
+-- ==================== SKU 多规格（规格维度→规格值→SKU 组合） ====================
+-- 与 support/SkuSchemaInitializer.java(@Order(21)) 双写一致；prod profile sql.init=never 时由 initializer 负责。
+-- 三条均为 CREATE TABLE IF NOT EXISTS：重复执行只跳过，不改结构、不丢已产生的 SKU 数据。
+-- uk_sku_combo(prod_id, spec_value_ids) 保证同一规格组合只有一行；
+-- uk_sku_code(prod_id, sku_code) 保证同商品下商家编码不重复（sku_code 可空，唯一键允许多个 NULL）。
+CREATE TABLE IF NOT EXISTS t_product_spec (
+  spec_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  prod_id BIGINT NOT NULL,
+  spec_name VARCHAR(20) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_spec_prod (prod_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品规格维度';
+
+CREATE TABLE IF NOT EXISTS t_product_spec_value (
+  value_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  spec_id BIGINT NOT NULL,
+  prod_id BIGINT NOT NULL,
+  spec_value VARCHAR(40) NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_value_spec (spec_id), KEY idx_value_prod (prod_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品规格值';
+
+CREATE TABLE IF NOT EXISTS t_product_sku (
+  sku_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  prod_id BIGINT NOT NULL,
+  sku_code VARCHAR(64) NULL,
+  spec_value_ids VARCHAR(255) NOT NULL,
+  price DECIMAL(14,2) NOT NULL,
+  stock INT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_sku_combo (prod_id, spec_value_ids),
+  UNIQUE KEY uk_sku_code (prod_id, sku_code),
+  KEY idx_sku_prod (prod_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品SKU组合';
+
+-- ==================== 邀请链接 / 邀请关系（注册邀请） ====================
+-- 与 module/invite/support/InviteSchemaInitializer.java(@Order(22)) 双写一致，两处 DDL 必须逐字相同。
+-- uk_invite_code 保证邀请码全局唯一（客户端篡改任何字符都查不到，从而实现不可篡改）；
+-- uk_invite_invitee_type 保证同一被邀请人同类型只绑定一次（注册邀请与入驻邀约可共存），并发注册由唯一键兜底。
+CREATE TABLE IF NOT EXISTS t_invite_code (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  code        VARCHAR(32) NOT NULL COMMENT '邀请码(大写Base32,去易混字符)',
+  inviter_id  BIGINT NOT NULL COMMENT '邀请人用户ID',
+  invite_type VARCHAR(24) NOT NULL DEFAULT 'buyer' COMMENT 'buyer=注册为买家 merchant_apply=商家入驻邀请码',
+  scene       VARCHAR(24) NOT NULL DEFAULT 'frontend' COMMENT 'frontend前台/admin_console运营后台',
+  inviter_role_id BIGINT NULL COMMENT '邀请人发起时角色ID(审计)',
+  status      TINYINT NOT NULL DEFAULT 1 COMMENT '1有效 2已失效',
+  used_count  INT NOT NULL DEFAULT 0 COMMENT '已使用次数',
+  max_uses    INT NOT NULL DEFAULT 0 COMMENT '最大使用次数,0=不限',
+  expires_at  DATETIME NULL COMMENT '过期时间,NULL=永不过期',
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_invite_code (code),
+  KEY idx_invite_inviter_status (inviter_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邀请码';
+
+CREATE TABLE IF NOT EXISTS t_invite_relation (
+  id          BIGINT PRIMARY KEY AUTO_INCREMENT,
+  invite_code VARCHAR(32) NOT NULL COMMENT '注册时使用的邀请码',
+  inviter_id  BIGINT NOT NULL COMMENT '邀请人用户ID',
+  invitee_id  BIGINT NOT NULL COMMENT '被邀请人用户ID',
+  invite_type VARCHAR(24) NOT NULL DEFAULT 'buyer' COMMENT '邀请来源类型',
+  scene       VARCHAR(24) NOT NULL DEFAULT 'frontend' COMMENT '邀请场景',
+  granted_role_id BIGINT NULL COMMENT '被邀请人实际获得角色ID(审计)',
+  status      VARCHAR(16) NOT NULL DEFAULT 'bound' COMMENT 'bound/pending',
+  bound_at    DATETIME NULL COMMENT '绑定时间',
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+  -- 一个用户可能同时有「注册邀请」与「商家入驻邀约」两条关系，唯一性按 (invitee_id, invite_type) 收敛
+  UNIQUE KEY uk_invite_invitee_type (invitee_id, invite_type),
+  KEY idx_invite_relation_inviter (inviter_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='邀请关系';
+
+-- ==================== 商户结算账本（收益台账 / 结算批次 / 批次明细） ====================
+-- 与 support/SettlementSchemaInitializer.java(@Order 23) 双写一致，两处 DDL 必须逐字相同。
+-- t_merchant.commission_rate 由初始化器以 information_schema 守卫加列，此处不重复定义，
+-- 避免与并行改动在同一 CREATE 块内冲突（存量库由 SettlementSchemaInitializer 补齐）。
+-- uk_earning_line(order_no,item_id,type,refund_seq) 是记入/冲正幂等的唯一支点：
+--   EARN 固定 refund_seq=0，第 n 次退款冲正 REVERSE 用 refund_seq=n，重复同步只命中唯一键。
+CREATE TABLE IF NOT EXISTS t_merchant_earning (
+  earning_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mer_id BIGINT NOT NULL,
+  order_no VARCHAR(40) NOT NULL,
+  item_id BIGINT NOT NULL,
+  prod_id BIGINT NOT NULL,
+  type VARCHAR(8) NOT NULL COMMENT 'EARN正向 REVERSE冲正',
+  refund_seq INT NOT NULL DEFAULT 0 COMMENT 'EARN=0；REVERSE第n次退款=n',
+  gross_amount DECIMAL(14,2) NOT NULL,
+  commission_rate DECIMAL(5,2) NOT NULL,
+  commission_amount DECIMAL(14,2) NOT NULL,
+  net_amount DECIMAL(14,2) NOT NULL,
+  status VARCHAR(12) NOT NULL COMMENT 'PENDING/AVAILABLE/SETTLED/REVERSED',
+  available_at DATETIME NULL,
+  ref_earning_id BIGINT NULL,
+  order_subtotal DECIMAL(14,2) NOT NULL,
+  order_total DECIMAL(14,2) NOT NULL,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_earning_line (order_no, item_id, type, refund_seq),
+  KEY idx_earning_mer_status (mer_id, status),
+  KEY idx_earning_order (order_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户收益台账';
+
+CREATE TABLE IF NOT EXISTS t_merchant_settlement (
+  settle_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  settle_no VARCHAR(40) NOT NULL,
+  mer_id BIGINT NOT NULL,
+  period_start DATETIME,
+  period_end DATETIME,
+  total_net DECIMAL(14,2) NOT NULL,
+  commission_total DECIMAL(14,2) NOT NULL,
+  item_count INT NOT NULL,
+  status VARCHAR(12) NOT NULL COMMENT 'DRAFT/APPROVED/PAID',
+  pay_voucher VARCHAR(128) NULL,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_settle_no (settle_no),
+  KEY idx_settle_mer (mer_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户结算批次';
+
+CREATE TABLE IF NOT EXISTS t_merchant_settlement_item (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  settle_id BIGINT NOT NULL,
+  earning_id BIGINT NOT NULL,
+  order_no VARCHAR(40) NOT NULL,
+  item_id BIGINT NOT NULL,
+  type VARCHAR(8) NOT NULL,
+  net_amount DECIMAL(14,2) NOT NULL,
+  UNIQUE KEY uk_settle_item (settle_id, earning_id),
+  KEY idx_sitem_settle (settle_id),
+  KEY idx_sitem_earning (earning_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='结算批次明细';
+
+-- ==================== 商户退店（P2） ====================
+-- 与 MerchantExitSchemaInitializer(@Order(0)) 逐字一致；append-only 台账，无外键（全库风格）。
+CREATE TABLE IF NOT EXISTS t_merchant_deposit (
+  deposit_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mer_id BIGINT NOT NULL,
+  type VARCHAR(12) NOT NULL COMMENT 'PAY缴纳 REFUND退还 DEDUCT抵扣 FORFEIT罚没',
+  amount DECIMAL(14,2) NOT NULL COMMENT '正数；方向由type决定',
+  balance_after DECIMAL(14,2) NOT NULL COMMENT '该笔后余额快照',
+  remark VARCHAR(255) NULL,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_deposit_mer (mer_id, deposit_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户保证金台账(append-only)';
+
+CREATE TABLE IF NOT EXISTS t_merchant_exit_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mer_id BIGINT NOT NULL,
+  from_status VARCHAR(20) NULL,
+  to_status VARCHAR(20) NOT NULL,
+  actor_id BIGINT NULL,
+  actor_role VARCHAR(16) NULL,
+  detail VARCHAR(500) NULL,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_exitlog_mer (mer_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户退店流转轨迹';
+
+-- ==================== 商户提现与财务台账 ====================
+-- 与 support/FinanceSchemaInitializer.java(@Order 24) 双写一致，两处 DDL 必须逐字相同。
+-- 提现状态机：0待审 1已打款 2驳回 3已撤回；非 0 状态的流转一律条件更新抢占（WHERE status=0）。
+-- 可提余额口径见 WithdrawalService 类注释：已结算(t_merchant_earning SETTLED/REVERSED 净额汇总)
+--   - 累计已打款(status=1) - 在途冻结(status=0)，锁定读防并发双花。
+CREATE TABLE IF NOT EXISTS t_merchant_withdrawal (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mer_id BIGINT NOT NULL,
+  withdraw_no VARCHAR(40) NOT NULL,
+  amount DECIMAL(14,2) NOT NULL COMMENT '申请金额',
+  balance_snapshot DECIMAL(14,2) NOT NULL COMMENT '申请时点可提余额快照',
+  bank_account_name VARCHAR(64) NOT NULL COMMENT '收款账户户名（对公）',
+  bank_account_no_masked VARCHAR(64) NOT NULL COMMENT '银行账号掩码（仅前4后4，全号不入库）',
+  bank_name VARCHAR(100) NOT NULL COMMENT '开户银行全称（含支行）',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审 1已打款 2驳回 3已撤回',
+  apply_note VARCHAR(255) NULL,
+  reject_reason VARCHAR(255) NULL,
+  reviewed_by BIGINT NULL COMMENT '审核运营 userId',
+  reviewed_at DATETIME NULL,
+  voucher_url VARCHAR(255) NULL COMMENT '打款凭证（附件中转 URL）',
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_withdraw_no (withdraw_no),
+  KEY idx_wd_mer_status (mer_id, status),
+  KEY idx_wd_status (status, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户提现单';
+
+-- 财务台账（append-only）：每笔资金变动一行，amount 正入负出，balance_after 落行时计算。
+-- biz_no 记提现单号；ref_order_id 预留冲正指向（当前提现域固定 NULL）。
+CREATE TABLE IF NOT EXISTS t_finance_ledger (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mer_id BIGINT NOT NULL,
+  biz_type VARCHAR(32) NOT NULL COMMENT 'earn/settle/withdraw_freeze/withdraw_paid/withdraw_reject_unrefreeze',
+  biz_no VARCHAR(40) NOT NULL COMMENT '业务单号（提现单号）',
+  amount DECIMAL(14,2) NOT NULL COMMENT '正入负出',
+  balance_after DECIMAL(14,2) NOT NULL COMMENT '该笔后余额快照',
+  ref_order_id BIGINT NULL,
+  remark VARCHAR(255) NULL,
+  create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ledger_mer (mer_id, id),
+  KEY idx_ledger_biz (biz_type, biz_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商户财务台账(append-only)';
+
 -- ==================== 第 3 步 基础字典数据 ====================
 -- 显式主键加 INSERT IGNORE: 重复执行时主键冲突被忽略, 既不报错也不会插出重复行,
 -- 同时把 ID 钉死, 与后端 DataInitializer 里按 cat_id 与 ind_id 的硬编码映射保持一致。
@@ -830,6 +1256,43 @@ CREATE TABLE IF NOT EXISTS t_payment_log (
   KEY idx_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='支付流水日志';
 
+-- ==================== 支付收款冲突挂账（P0-B：关单/取消后渠道扣款） ====================
+-- 来源（双写，逐字对齐）：support/PaymentConflictSchemaInitializer#DDL（22 列，P0-B）
+-- 语义：DB 状态不变量成立（markPaidAtomic 与 closeUnpaidAtomic 互斥），但外部资金事件可能晚于本地关单：
+--       渠道扣款成功而回调到达时订单已关闭/已取消 → 记入本表并原路退回，避免“钱在渠道、单已关”。
+-- 唯一键 uk_conflict_channel_txn(channel, transaction_id) 是防重复挂账/重复退款的最后一道闸；
+-- transaction_id 必须 NOT NULL（渠道查单拿不到流水号时 Java 侧归一为 NA:<orderNo>），否则唯一键对 NULL 失效。
+CREATE TABLE IF NOT EXISTS t_payment_conflict (
+  conflict_id        BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '挂账主键ID',
+  order_no           VARCHAR(40) NOT NULL COMMENT '平台订单号',
+  conflict_type      VARCHAR(24) NOT NULL DEFAULT 'late_pay_after_close'
+                     COMMENT 'late_pay_after_close关单后收款/duplicate_txn同单第二笔渠道流水/data_invariant_unknown未知态冲突',
+  order_status_at_detect TINYINT COMMENT '挂账时订单状态快照(0待发货1已发货2已完成3已取消4部分发货5已退款)',
+  pay_status_at_detect   TINYINT COMMENT '挂账时支付状态快照(0未支付1已支付2已退款)',
+  channel            VARCHAR(16) NOT NULL COMMENT 'wechat/alipay/stripe/mock/wallet',
+  transaction_id     VARCHAR(64) NOT NULL COMMENT '渠道交易号(缺失时归一为 NA:<orderNo>)',
+  amount             DECIMAL(14,2) NOT NULL DEFAULT 0.00 COMMENT '渠道实收金额(元)',
+  payer_user_id      BIGINT DEFAULT NULL COMMENT '付款用户ID(取订单userId)',
+  detected_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '冲突被发现/挂账时间',
+  status             VARCHAR(16) NOT NULL DEFAULT 'OPEN'
+                     COMMENT 'OPEN待补偿/AUTO_REFUNDING自动退款中/REFUNDED已自动原路退回/FAILED退款失败待重试/MANUAL人工处置中/MANUAL_REFUNDED人工已退/MANUAL_CLOSED人工核销',
+  resolution         VARCHAR(32) DEFAULT NULL COMMENT '处置结论 AUTO_REFUND/MANUAL_REFUND/MANUAL_WRITE_OFF',
+  out_refund_no      VARCHAR(64) DEFAULT NULL COMMENT '补偿退款请求单号(渠道幂等键)',
+  refund_id          VARCHAR(64) DEFAULT NULL COMMENT '渠道退款流水号',
+  retry_count        INT NOT NULL DEFAULT 0 COMMENT '自动退款重试次数',
+  last_error         VARCHAR(500) DEFAULT NULL COMMENT '最近一次失败原因(脱敏)',
+  next_retry_at      DATETIME DEFAULT NULL COMMENT '下次重试时间(指数退避)',
+  resolved_by        BIGINT DEFAULT NULL COMMENT '人工处置人ID',
+  resolved_at        DATETIME DEFAULT NULL COMMENT '人工处置完成时间',
+  remark             VARCHAR(500) DEFAULT NULL COMMENT '备注/人工处置说明',
+  create_time        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  update_time        DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_conflict_channel_txn (channel, transaction_id),
+  KEY idx_conflict_status_retry (status, next_retry_at),
+  KEY idx_conflict_order (order_no),
+  KEY idx_conflict_detected (detected_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='支付收款冲突挂账(关单/取消后渠道扣款)';
+
 -- 幂等补列：历史库中已存在的 t_order 缺少支付渠道/退款字段时逐一补齐
 -- （CREATE TABLE IF NOT EXISTS 不会为已存在的表加列，与上方 total_amount 兜底同理）
 SET @paycol = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_order ADD COLUMN pay_channel VARCHAR(16) COMMENT ''支付渠道 wechat/alipay/mock/wallet''', 'SELECT 1')
@@ -896,7 +1359,7 @@ CREATE TABLE IF NOT EXISTS t_traffic_event (
   session_id VARCHAR(128) NOT NULL COMMENT '匿名会话标识',
   event_type VARCHAR(32) NOT NULL COMMENT 'VISIT/VIEW_PRODUCT/CLICK_PRODUCT/FAVORITE/ADD_CART/CHECKOUT/PAY',
   source_type VARCHAR(32) DEFAULT 'direct' COMMENT 'direct/search/category/activity/external/referral',
-  source_detail VARCHAR(255) COMMENT '来源细分，如搜索词/活动ID',
+  source_detail VARCHAR(2000) COMMENT '来源细分，如搜索词/活动ID；frontend_error 错误事件存 message+stack+userAgent（2000 截断）',
   page_url VARCHAR(500) COMMENT '发生页面',
   device_type VARCHAR(16) DEFAULT 'unknown' COMMENT 'pc/mobile/tablet/unknown',
   event_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1072,6 +1535,10 @@ CREATE TABLE IF NOT EXISTS t_logistics_provider (
   status TINYINT DEFAULT 1 COMMENT '0停用 1启用',
   settle_cycle VARCHAR(16) DEFAULT 'monthly' COMMENT '结算周期 monthly/weekly/realtime',
   sort INT DEFAULT 0,
+  -- Phase3A 热增列收口（LogisticsPhase3ASchemaInitializer 同源定义；列已存在时其 addColumnIfNotExists 自动跳过）
+  avg_eta_hours INT NOT NULL DEFAULT 48 COMMENT '干线平均运输时效(小时)',
+  service_score INT NOT NULL DEFAULT 92 COMMENT '服务质量与履约分(0-100)',
+  sla_rate DECIMAL(5,2) NOT NULL DEFAULT 98.00 COMMENT '历史准时交付率百分比',
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
   update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted TINYINT DEFAULT 0,
@@ -1093,6 +1560,11 @@ CREATE TABLE IF NOT EXISTS t_logistics_template (
   free_threshold DECIMAL(12,2) DEFAULT 0 COMMENT '满额包邮门槛(0不启用)',
   region_rule_json TEXT COMMENT '区域加价规则 JSON',
   remote_surcharge DECIMAL(10,2) DEFAULT 0 COMMENT '偏远地区附加费',
+  -- Phase2 热增列收口（LogisticsPhase2SchemaInitializer 同源定义；列已存在时其 addColumnIfNotExists 自动跳过）
+  tier_mode VARCHAR(16) DEFAULT 'linear' COMMENT 'linear线性 tiered阶梯 ton纯吨位',
+  tier_rule_json TEXT COMMENT '大宗阶梯区间JSON',
+  vas_rule_json TEXT COMMENT '增值服务费率JSON',
+  min_charge DECIMAL(10,2) DEFAULT 0 COMMENT '最低起运价',
   status TINYINT DEFAULT 1 COMMENT '0停用 1启用',
   create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
   update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -1265,6 +1737,81 @@ INSERT IGNORE INTO t_logistics_template (template_id, template_name, provider_id
   (3, '京东特快-全国', 3, 'weight', 1, 15, 1, 6, 6000, 299, 10, 1),
   (4, '中通经济-全国', 4, 'weight', 1, 8, 1, 3, 6000, 199, 8, 1),
   (5, '商家自送-固定', 5, 'fixed', 0, 0, 0, 0, 6000, 0, 0, 1);
+
+-- ============================================================
+-- 承运商目录扩展（out/carrier-expansion-design.md §1.3，业务键幂等）：
+--   管理端自建数据走自增主键，固定 id + INSERT IGNORE 会静默跳过撞号行，
+--   故全部改用 provider_code / template_name 业务键 + NOT EXISTS 判重。
+--   国内大件 3 家 status=1；国际 6 家 status=0（P1 防线上线后运维置 1，
+--   窗口期 /logistics/providers 下拉与推荐均按 status=1 过滤，零暴露）。
+--   模板一律 status=0 落库，tier/vas/min_charge 由 Phase2 初始化器回填
+--   （schema 阶段列不存在，不可直写），回填成功才置 1（fail-safe）。
+-- ============================================================
+
+-- 大件/工业承运商（status=1）
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '跨越速运','KYE','mock','{"scope":"domestic","heavyCargo":true,"oversize":true,"guaranteed":true,"costLevel":"mid"}',1,'monthly',6
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='KYE');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '安能物流','ANE','mock','{"scope":"domestic","heavyCargo":true,"costLevel":"low"}',1,'monthly',7
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='ANE');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '百世快运','BEST','mock','{"scope":"domestic","heavyCargo":true,"pallet":true,"costLevel":"mid"}',1,'monthly',8
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='BEST');
+
+-- 国际线路承运商（status=0：询价制，不参与线上计价与发货）
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT 'DHL Express','DHL','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；欧美 3-5 工作日；超重/超长附加费以承运商账单为准"}',0,'monthly',21
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='DHL');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT 'FedEx','FDX','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；东南亚 1-2 工作日；附加费以承运商账单为准"}',0,'monthly',22
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='FDX');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT 'UPS','UPS','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；重货 25kg+ 走 Freight 通道；附加费以承运商账单为准"}',0,'monthly',23
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='UPS');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '中远海运','COSCO','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；海运 FCL/LCL 与中欧班列；附加费以承运商账单为准"}',0,'monthly',24
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='COSCO');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '马士基','MAERSK','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；班轮端到端，拼箱按 W/M 择大计费"}',0,'monthly',25
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='MAERSK');
+INSERT INTO t_logistics_provider (provider_name, provider_code, api_type, capability_json, status, settle_cycle, sort)
+SELECT '菜鸟国际','CNAIO','mock','{"scope":"international","routeNotes":"国际线路 · 报价联系客服；大件电商与海外仓入仓，以客服报价为准"}',0,'monthly',26
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_provider WHERE provider_code='CNAIO');
+
+-- 既有承运商能力延伸（同码复用不建独立结算商；精确匹配种子原值才覆盖，管理端改过即跳过）
+UPDATE t_logistics_provider SET capability_json='{"scope":"domestic","insure":true,"signBack":true,"intlHeavy":true}'
+WHERE provider_code='SF' AND capability_json='{"insure":true,"signBack":true}';
+UPDATE t_logistics_provider SET capability_json='{"scope":"domestic","cod":true,"insure":true,"install":true}'
+WHERE provider_code='DB' AND capability_json='{"cod":true,"insure":true}';
+UPDATE t_logistics_provider SET capability_json='{"scope":"domestic","insure":false,"heavyCargo":true}'
+WHERE provider_code='ZT' AND capability_json='{"insure":false}';
+
+-- 大件模板（status=0，Phase2 回填阶梯/VAS/起价后启用；名称前缀带承运商名天然防歧义）
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '跨越特快-大件限时',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='KYE'),
+       'weight',50,45,1,1.2,6000,0,20,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='跨越特快-大件限时');
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '安能零担-大件经济',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='ANE'),
+       'weight',60,25,1,0.25,6000,0,15,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='安能零担-大件经济');
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '百世快运-托盘档',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='BEST'),
+       'weight',60,30,1,0.9,6000,0,15,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='百世快运-托盘档');
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '顺丰卡航-大件零担',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='SF'),
+       'weight',100,80,1,1.5,6000,0,30,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='顺丰卡航-大件零担');
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '德邦重货-送装一体',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='DB'),
+       'weight',60,55,1,1.1,6000,0,25,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='德邦重货-送装一体');
+INSERT INTO t_logistics_template (template_name, provider_id, pricing_type, first_weight, first_price, continued_weight, continued_price, volume_factor, free_threshold, remote_surcharge, status)
+SELECT '中通快运-电商大件',(SELECT provider_id FROM t_logistics_provider WHERE provider_code='ZT'),
+       'weight',30,20,1,0.6,6000,0,10,0
+WHERE NOT EXISTS (SELECT 1 FROM t_logistics_template WHERE template_name='中通快运-电商大件');
 
 -- ============================================================
 -- 自建物流跟踪（module/tracking，out/logistics-tracking-plan.md P1）：
@@ -2875,8 +3422,8 @@ INSERT IGNORE INTO t_product (prod_id, mer_id, cat_id, ind_id, title, brand, spe
 计量单位：单（现货 8618 起）
 源头厂商直供，出厂全检并随货附检测报告。
 支持对公转账与账期结算，可按需开票。', 1, 1, 2482, DATE_SUB(NOW(), INTERVAL 17 DAY), NOW(), 0),
-(1212, 2, 106, 12, 'B2B 分仓代发 华东仓', '顺捷仓储', '分仓代发 华东仓', 2.8, '[{"qty":100,"price":2.8}]', 4846, '', '品牌：顺捷仓储
-规格：分仓代发 华东仓
+(1212, 2, 106, 12, 'B2B 华东仓直发', '顺捷仓储', '华东仓直发', 2.8, '[{"qty":100,"price":2.8}]', 4846, '', '品牌：顺捷仓储
+规格：华东仓直发
 计量单位：单（现货 4846 起）
 源头厂商直供，出厂全检并随货附检测报告。
 支持对公转账与账期结算，可按需开票。', 1, 1, 157, DATE_SUB(NOW(), INTERVAL 24 DAY), NOW(), 0),
@@ -4020,3 +4567,92 @@ CREATE TABLE IF NOT EXISTS t_notify_outbox (
   UNIQUE KEY ux_notify_outbox_key (message_key),
   KEY idx_notify_outbox_due (status, next_retry_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='通知投递重试箱（提交后投递失败时暂存，worker 退避重投）';
+
+-- 客服多模态存储基座（P0）：媒体行 / 解析发件箱 / 分发决策日志 / 模型用量账本。
+-- 与 SupportMediaSchemaInitializer 的 DDL 必须一致。
+CREATE TABLE IF NOT EXISTS t_support_media (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  media_no VARCHAR(40) NOT NULL COMMENT '媒体单号（SM+时间戳+随机段），对外唯一标识',
+  conversation_id BIGINT NULL COMMENT '客服会话 ID，未绑定会话时为空',
+  message_id BIGINT NULL COMMENT '所属消息 ID，解析完成后回填',
+  visitor_token CHAR(36) NOT NULL COMMENT '访客令牌（归属校验唯一依据）',
+  kind VARCHAR(16) NOT NULL COMMENT 'IMAGE/AUDIO/VIDEO/DOCUMENT',
+  object_key VARCHAR(300) NOT NULL COMMENT 'support/{yyyyMM}/{hash16}/{mediaNo}.{ext}',
+  file_name VARCHAR(200) NOT NULL COMMENT '原始展示名（已去路径段与限长）',
+  content_type VARCHAR(80) NOT NULL,
+  file_size BIGINT NOT NULL DEFAULT 0,
+  sha256 CHAR(64) NULL COMMENT '确认时流式计算的全量摘要',
+  width INT NULL,
+  height INT NULL,
+  duration_ms INT NULL,
+  page_count INT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'INIT' COMMENT 'INIT/UPLOADED/PARSING/READY/FAILED/EXPIRED',
+  engine VARCHAR(40) NULL COMMENT '解析引擎标识（OCR/ASR 供应商）',
+  ocr_text MEDIUMTEXT NULL,
+  asr_text MEDIUMTEXT NULL,
+  summary TEXT NULL,
+  entities_json TEXT NULL,
+  confidence DECIMAL(4,3) NULL,
+  error_message VARCHAR(500) NULL,
+  retry_count INT NOT NULL DEFAULT 0,
+  expires_at DATETIME NULL COMMENT '软删时间点（创建时 + 保留天数）',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY ux_support_media_no (media_no),
+  UNIQUE KEY ux_support_media_object_key (object_key),
+  KEY idx_support_media_visitor (visitor_token, created_at),
+  KEY idx_support_media_conversation (conversation_id),
+  KEY idx_support_media_message (message_id),
+  KEY idx_support_media_status (status, updated_at),
+  KEY idx_support_media_expires (expires_at, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客服多模态媒体（库内只存 object key，读取一律经后端中转）';
+
+CREATE TABLE IF NOT EXISTS t_support_media_outbox (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  media_id BIGINT NOT NULL,
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0 待投递 / 1 已投递',
+  retry_count INT NOT NULL DEFAULT 0,
+  next_retry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  locked_at DATETIME NULL COMMENT 'CAS 锁定时间，5 分钟后可被重新认领',
+  last_error VARCHAR(500) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY ux_support_media_outbox_media (media_id),
+  KEY idx_support_media_outbox_due (status, next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客服媒体解析任务发件箱（先落库再投递）';
+
+CREATE TABLE IF NOT EXISTS t_support_dispatch_log (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  visitor_token CHAR(36) NOT NULL,
+  question_hash CHAR(64) NOT NULL COMMENT '提问内容 SHA-256，避免明文留存',
+  decision VARCHAR(24) NOT NULL COMMENT '路由决策（KB/RAG/LLM/MEDIA/...）',
+  intent_confidence DECIMAL(4,3) NULL,
+  rag_top_score DECIMAL(4,3) NULL,
+  media_kinds VARCHAR(64) NULL COMMENT '本条消息附带的媒体类型，逗号分隔',
+  external_called TINYINT NOT NULL DEFAULT 0,
+  latency_ms INT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_support_dispatch_visitor (visitor_token, created_at),
+  KEY idx_support_dispatch_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客服分发决策日志（只存哈希，用于效果回放与调参）';
+
+CREATE TABLE IF NOT EXISTS t_support_llm_usage (
+  id BIGINT NOT NULL AUTO_INCREMENT,
+  visitor_token CHAR(36) NULL,
+  channel VARCHAR(20) NULL COMMENT '调用通道（local/external/...）',
+  model VARCHAR(64) NULL,
+  capability VARCHAR(16) NULL COMMENT 'TEXT/AUDIO/VISION/DOC（P2：VISION 图像理解、DOC 文档解析）',
+  prompt_tokens INT NULL,
+  completion_tokens INT NULL,
+  audio_seconds DECIMAL(10,2) NULL,
+  cost_micros BIGINT NULL COMMENT '成本（微元），避免浮点累计误差',
+  media_id BIGINT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_support_llm_usage_visitor (visitor_token, created_at),
+  KEY idx_support_llm_usage_created (created_at),
+  KEY idx_support_llm_usage_media (media_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='客服模型用量账本（token/音频秒数/成本）';

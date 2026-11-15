@@ -19,11 +19,11 @@
       </div>
     </header>
 
-    <div v-if="news.length" class="pi-tape">
+    <div v-if="relevantNews.length" class="pi-tape">
       <span class="pi-tape-label"><i></i>{{ isEn ? 'LIVE' : '快讯' }}</span>
       <Marquee :repeat="2" gap="2.6rem" duration="38s" pause-on-hover>
         <span
-          v-for="n in news"
+          v-for="n in relevantNews"
           :key="'tp' + n.id"
           class="tape-item"
           role="button"
@@ -228,7 +228,7 @@
           <SegmentedControl :model-value="newsCategory" :options="newsSegOptions" :aria-label="isEn ? 'Category' : '资讯分类'" @update:model-value="setCategory" />
         </div>
         <div class="news-list">
-          <article v-for="n in news" :key="n.id" class="news-item" :class="{ top: n.importance === 3 }">
+          <article v-for="n in relevantNews" :key="n.id" class="news-item" :class="{ top: n.importance === 3 }">
             <div class="news-tag">
               <span class="cat">{{ categoryText(n.category) }}</span>
               <span v-if="n.importance === 3" class="hot">头条</span>
@@ -257,7 +257,7 @@
               <span>{{ timeAgo(n.publishedAt) }}</span>
             </div>
           </article>
-          <div v-if="!news.length" class="empty">暂无资讯</div>
+          <div v-if="!relevantNews.length" class="empty">暂无影响当前商品的外部资讯</div>
         </div>
       </aside>
     </div>
@@ -278,6 +278,7 @@ import {
   openNewsLink,
   safeHttpUrl
 } from '../utils/newsLink'
+import { storyAffectsProduct } from '../utils/productNews'
 import { analyzeStamp, buildAnalyzedMap } from '../utils/analyzeCoverage'
 import PriceTrendChart from '../components/pricemonitor/PriceTrendChart.vue'
 import FactorSnapshotPanel from '../components/pricemonitor/FactorSnapshotPanel.vue'
@@ -342,6 +343,9 @@ watch(days, () => { loadTrend() })
 const newsSegOptions = computed(() => newsCategories.map(c => ({ value: c.key, label: c.label })))
 
 const selected = computed(() => products.value.find(p => p.prodId === selectedId.value) || null)
+/** 快讯和侧栏只保留会影响当前监控商品的资讯。 */
+const relevantNews = computed(() => (news.value || []).filter((story) =>
+  storyAffectsProduct(story, selected.value, trend.value)))
 /** 快照覆盖计数（监控列表头部徽标）：已分析 N/监控商品总数 */
 const analyzedCount = computed(() => Object.keys(analyzedMap.value).length)
 const relativeLevel = computed(() => {
@@ -367,7 +371,7 @@ const stats = computed(() => {
     { label: '监控商品', value: products.value.length },
     { label: '近30日调价', value: changes },
     { label: '异常波动', value: anomalies },
-    { label: '市场资讯', value: news.value.length + ' 条' }
+    { label: '市场资讯', value: relevantNews.value.length + ' 条' }
   ]
 })
 

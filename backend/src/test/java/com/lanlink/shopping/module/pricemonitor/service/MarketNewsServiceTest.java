@@ -201,4 +201,152 @@ class MarketNewsServiceTest {
         assertSame(rows.get(0), latest.get(0));
         assertEquals("有色金属价格上行", service.list("price", 10).get(0).getTitle());
     }
+
+    // ==================== 首页每日资讯：与商品解耦、永不空 ====================
+
+    /** 8) 库内有数据时直接返回，且不需要任何商品上下文。 */
+    @Test
+    void dailyFeedReturnsStoredNewsWithoutProductContext() {
+        rows.add(news(10L, "钢材库存回落", "supply", "钢铁资讯", null));
+
+        List<Map<String, Object>> items = service.dailyFeed(null, 8);
+
+        assertFalse(items.isEmpty());
+        // 库内真实资讯必须排在最前；不足 8 条时由平台观察条目补齐
+        assertEquals("钢材库存回落", items.get(0).get("title"));
+    }
+
+    /** 9) 指定分类无数据时放宽到全量，而不是返回空。 */
+    @Test
+    void dailyFeedFallsBackToAllCategoriesWhenCategoryEmpty() {
+        rows.add(news(11L, "化工品供给偏紧", "supply", "行业观察", null));
+
+        List<Map<String, Object>> items = service.dailyFeed("policy", 8);
+
+        assertFalse(items.isEmpty(), "分类为空时应放宽到全量，避免整块空白");
+        assertEquals("化工品供给偏紧", items.get(0).get("title"),
+                "真实资讯应排在平台观察兜底之前");
+    }
+
+    /** 10) 库内完全为空时返回静态兜底条目（全新库/RSS 尚未抓取）。 */
+    @Test
+    void dailyFeedNeverReturnsEmptyWhenDatabaseIsEmpty() {
+        List<Map<String, Object>> items = service.dailyFeed(null, 8);
+
+        assertFalse(items.isEmpty(), "每日资讯不允许为空，必须有兜底内容");
+        assertNotNull(items.get(0).get("title"));
+        assertNotNull(items.get(0).get("summary"));
+        assertNotNull(items.get(0).get("publishedAt"));
+    }
+
+    /** 11) 业务资讯优先：科技/国际综合不应挤掉价格/供给类资讯。 */
+    @Test
+    void dailyFeedPrefersBusinessCategories() {
+        rows.add(news(20L, "某旗舰手机发布", "tech", "科技媒体", null));
+        rows.add(news(21L, "国际综合要闻", "international", "国际媒体", null));
+        rows.add(news(22L, "钢材价格小幅上行", "price", "钢铁资讯", null));
+
+        List<Map<String, Object>> items = service.dailyFeed(null, 1);
+
+        assertEquals(1, items.size());
+        assertEquals("price", items.get(0).get("category"),
+                "首页应优先展示业务类资讯而非科技/国际综合");
+    }
+
+    // ==================== 按商品定向取资讯（五维因子候选集） ====================
+
+    /**
+     * 商品词必须下推 SQL：只取关键词命中的资讯，而不是全局最新 N 条。
+     *
+     * <p>回归缺陷：因子看板原先只取 latest(40)，宏观快讯占满候选集，
+     * 水泥/钢材类商品长期「0 条相关」。
+     */
+    @Test
+    void relatedToPushesProductKeywordsIntoQuery() {
+        rows.add(news(30L, "华东水泥价格上调 30 元/吨", "price", "中国水泥网", null));
+
+        List<MarketNews> items = service.relatedTo(List.of("水泥", "钢材"), 20);
+
+        assertEquals(1, items.size());
+        assertEquals("华东水泥价格上调 30 元/吨", items.get(0).getTitle());
+        assertNotNull(capturedWrapper, "必须真正查库");
+        String sql = capturedWrapper.getSqlSegment();
+        assertTrue(sql.toLowerCase().contains("title"), sql);
+        assertTrue(sql.toLowerCase().contains("summary"), sql);
+        assertTrue(sql.contains("LIMIT 20"), sql);
+        String params = String.valueOf(paramValues());
+        assertTrue(params.contains("水泥"), "关键词必须作为 SQL 参数下推: " + params);
+    }
+
+    /** 关键词为空 / 全为单字噪声时不下推 SQL，直接返回空，避免全表扫描。 */
+    @Test
+    void relatedToReturnsEmptyWithoutUsableKeywords() {
+        assertTrue(service.relatedTo(null, 10).isEmpty());
+        assertTrue(service.relatedTo(List.of(), 10).isEmpty());
+        assertTrue(service.relatedTo(List.of("钢"), 10).isEmpty(),
+                "单字关键词下推会命中过多无关稿，应交给内存相关性判定");
+        assertNull(capturedWrapper, "无可用关键词时不应发起查询");
+    }
+
+    /** 重复关键词只下推一次，且最多 12 个（防止 SQL 过长）。 */
+    @Test
+    void relatedToDeduplicatesAndCapsKeywords() {
+        List<String> many = new ArrayList<>();
+        many.add("水泥");
+        many.add("水泥");
+        for (int i = 0; i < 30; i++) many.add("品类" + i);
+
+        service.relatedTo(many, 10);
+
+        assertNotNull(capturedWrapper);
+        String sql = capturedWrapper.getSqlSegment();
+        assertTrue(sql.contains("LIMIT 10"), sql);
+        String params = String.valueOf(paramValues());
+        assertTrue(params.contains("水泥"), params);
+        // 12 个关键词 × (title + summary) = 24 个 LIKE 参数，加 1 个时间窗参数
+        assertEquals(25, paramValues().size(), "关键词必须去重并截断到 12 个: " + paramValues().size());
+    }
+
+    // ==================== 首页资讯噪声过滤 ====================
+
+    /** 家电促销稿含「设备/一体机」等工业词，也必须被拦在首页之外。 */
+    @Test
+    void dailyFeedRejectsRetailPromotions() {
+        rows.add(news(40L, "小户型一步到位：卡萨帝 10kg 热泵洗烘一体机 10498 → 6104 元破冰新低",
+                "policy", "IT之家", null));
+        rows.add(news(41L, "长城欧拉 7 更多信息公布：双电机布局 + 激光雷达，将于近期上市",
+                "policy", "IT之家", null));
+        rows.add(news(42L, "国机精工：航天特种轴承相关业务正逐步带来新的增量",
+                "market", "36氪", null));
+
+        List<Map<String, Object>> items = service.dailyFeed(null, 5);
+
+        List<String> titles = items.stream().map(i -> String.valueOf(i.get("title"))).toList();
+        assertTrue(titles.stream().anyMatch(t -> t.contains("轴承")), "真实工业资讯必须保留: " + titles);
+        assertTrue(titles.stream().noneMatch(t -> t.contains("洗烘")), "家电促销不得上首页: " + titles);
+        assertTrue(titles.stream().noneMatch(t -> t.contains("欧拉")), "乘用车上市稿不得上首页: " + titles);
+    }
+
+    /**
+     * 候选池必须一次按时间倒序跨分类取（SQL 下推），
+     * 不能"每个分类 LIMIT 30 再按分类顺序拼接"。
+     */
+    @Test
+    void dailyFeedPoolQueriesAcrossCategoriesOrderedByTime() {
+        rows.add(news(50L, "钢材库存回落", "supply", "钢铁资讯", null));
+
+        service.dailyFeed(null, 5);
+
+        assertNotNull(capturedWrapper);
+        String sql = capturedWrapper.getSqlSegment().toLowerCase();
+        assertTrue(sql.contains("category in"), "必须一次跨业务分类查询: " + sql);
+        assertTrue(sql.contains("order by published_at desc"), "必须按发布时间倒序: " + sql);
+        assertTrue(sql.contains("limit 200"), "候选池需足够大，避免被单分类占满: " + sql);
+    }
+
+    /** MyBatis-Plus 把 Lambda 条件参数放在 AbstractWrapper#paramNameValuePairs 里。 */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> paramValues() {
+        return ((AbstractWrapper<MarketNews, ?, ?>) capturedWrapper).getParamNameValuePairs();
+    }
 }

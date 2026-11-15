@@ -76,8 +76,18 @@
             <b>营业执照</b>
             <a-tag :color="store.licenseUrl ? 'green' : 'red'">{{ store.licenseUrl ? '已上传' : '未上传' }}</a-tag>
           </div>
+          <!--
+            营业执照必须经「人机验证 → 服务端水印」后才能查看。
+            历史实现直接 <a-image :src="store.licenseUrl"> 输出原件，
+            既绕过了人机验证，也把无水印原图暴露给了任何能打开本页的人。
+          -->
           <div v-if="store.licenseUrl" class="cert-preview">
-            <a-image :src="store.licenseUrl" alt="营业执照" fit="contain" :height="150" />
+            <LicenseGateImage
+              self-service
+              :mer-id="store.merId || 0"
+              :has-license="true"
+              alt="营业执照（含溯源水印）"
+            />
           </div>
           <p v-else class="cert-missing">尚未上传营业执照，请尽快补充以免影响店铺权益。</p>
           <a-upload :show-upload-list="false" accept="image/jpeg,image/png" :before-upload="beforeLicense">
@@ -209,6 +219,7 @@ import { MERCHANT_REVIEW, fmtMoney } from '../../utils/merchantStatus'
 import { useUserStore } from '../../store/user'
 import UserAvatar from '../../components/ui/UserAvatar.vue'
 import AttachmentPanel from '../../components/AttachmentPanel.vue'
+import LicenseGateImage from '../../components/admin/LicenseGateImage.vue'
 import MerchantCorporateBankCard from '../../components/payment/MerchantCorporateBankCard.vue'
 import { orgInitialsOf } from '../../utils/avatarIdentity'
 

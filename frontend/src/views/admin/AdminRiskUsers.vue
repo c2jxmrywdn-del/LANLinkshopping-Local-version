@@ -63,7 +63,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
-import request from '../../api/request'
+import { riskApi } from '../../api'
 
 const rows = ref([])
 const total = ref(0)
@@ -83,7 +83,7 @@ async function load() {
     const params = { page: page.value, size }
     if (level.value) params.level = level.value
     if (minScore.value != null) params.minScore = minScore.value
-    const r = await request.get('/admin/risk/users', { params, silent: true })
+    const r = await riskApi.users(params)
     // request.js 拦截器已剥壳返回 data（此处为 Page 本体），不再读 r.data
     rows.value = r?.records || []
     total.value = Number(r?.total || 0)
@@ -95,15 +95,15 @@ async function openDetail(record) {
   drawer.value = true
   eventsLoading.value = true
   try {
-    const r = await request.get(`/admin/risk/users/${record.userId}/events`, { silent: true })
+    const r = await riskApi.userEvents(record.userId)
     events.value = Array.isArray(r) ? r : []
   } finally { eventsLoading.value = false }
 }
 
 async function review(event, status) {
   try {
-    const r = await request.post(`/admin/risk/users/${currentUserId.value}/review`,
-      { eventId: event.id, reviewedStatus: status }, { silent: true })
+    const r = await riskApi.review(currentUserId.value,
+      { eventId: event.id, reviewedStatus: status })
     message.success(`已复核，该用户风险分 ${r?.totalScore ?? '?'}（${r?.level ?? '?'}）`)
     openDetail({ userId: currentUserId.value })
     load()

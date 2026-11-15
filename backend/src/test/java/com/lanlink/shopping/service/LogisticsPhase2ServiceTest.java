@@ -13,6 +13,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
@@ -180,6 +182,9 @@ class LogisticsPhase2ServiceTest {
 
         // 2. 验签通过
         when(podRecordMapper.selectList(any())).thenReturn(List.of(pod));
+        // 审核结论走 CAS（WHERE pod_audit_status='pending'），桩需返回 1 表示抢到
+        when(waybillMapper.auditPodAtomic(anyLong(), anyString(), any(), anyLong(), any(),
+                anyString(), any(), any(), any(), any())).thenReturn(1);
         var auditReq = new LogisticsWaybillService.PodAuditRequest("approve", "公章清晰完整，核实通过");
         LogisticsWaybill approvedWb = service.auditPod(999L, auditReq, 88L, null);
 
@@ -200,6 +205,8 @@ class LogisticsPhase2ServiceTest {
 
         when(waybillMapper.selectById(888L)).thenReturn(wb);
         when(orderMapper.selectById("ORD-PHASE2-001")).thenReturn(testOrder());
+        when(waybillMapper.auditPodAtomic(anyLong(), anyString(), any(), anyLong(), any(),
+                anyString(), any(), any(), any(), any())).thenReturn(1);
 
         var auditReq = new LogisticsWaybillService.PodAuditRequest("reject", "印章模糊无法辨认收货单位");
         LogisticsWaybill rejectedWb = service.auditPod(888L, auditReq, 88L, null);

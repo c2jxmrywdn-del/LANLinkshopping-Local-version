@@ -19,9 +19,13 @@
 
     <properties>
         <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <lombok.version>1.18.48</lombok.version>
         <thumbnailator.version>0.4.20</thumbnailator.version>
+        <!-- JWE 字段加密协议栈；10.0.2 起 Nimbus 要求 Java 8+ 且去掉 javax 依赖，与 Boot 3.5 兼容 -->
+        <nimbus-jose-jwt.version>10.0.2</nimbus-jose-jwt.version>
     </properties>
 
     <dependencyManagement>
@@ -72,6 +76,20 @@
             <version>8.4.0</version>
         </dependency>
 
+        <!-- 数据库版本化迁移（out/market-readiness-plan.md P0-5）：Flyway。
+             版本不写死，交由 spring-boot-dependencies 3.5.3 BOM 管理（flyway.version=11.7.2）。
+             flyway-mysql 必须显式引入：Flyway 10 起数据库支持拆分模块，
+             缺它时 Flyway 11.7.2 对 MySQL 8.4 报 Unsupported Database。
+             迁移脚本位置 classpath:db-migrations（见 application.yml spring.flyway）。 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <!-- Redis（服务端热点数据缓存后端，配合 spring.cache.type=redis 使用） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -102,6 +120,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
+        <!-- 智能客服实时全双工语音流式传输 (Phase 2: WebSocket 通道) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
 
         <!-- 附件缩略图（异步消费侧）：纯 Java、无 native 依赖，Docker 镜像里不装 ImageMagick 也能跑。
              尺寸固定 0.4.20：0.4.x 是维护分支，0.5.x 改用了 java.awt.headless 之外的新 API，暂不跟随。 -->
@@ -109,6 +132,28 @@
             <groupId>net.coobird</groupId>
             <artifactId>thumbnailator</artifactId>
             <version>${thumbnailator.version}</version>
+        </dependency>
+
+        <!-- 客服媒体文档解析（support/media 消费端）：PDF 文本/渲染 + Office/OpenXML 文本抽取。
+             只引 PDFBox 与 poi-ooxml，不引 tika：tika 会带来几十个解析器与 servlet 依赖，
+             而这里只需要 pdf/docx/xlsx/pptx 四类，体积与攻击面都可控。 -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.5</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.4.1</version>
+        </dependency>
+
+        <!-- JWE/JWK 字段加密（RSA-OAEP-256 + A256GCM）：只引 JOSE 令牌库，
+             不引入 Spring Security OAuth（那会顺带激活整套 Security 过滤链，与现有 Cookie 会话冲突） -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>${nimbus-jose-jwt.version}</version>
         </dependency>
 
         <!-- BCrypt 密码加密（仅用 crypto，不引入整套 Security） -->
@@ -202,6 +247,12 @@
                             <version>${lombok.version}</version>
                         </path>
                     </annotationProcessorPaths>
+                    <!-- 本机 ms-openjdk 17.0.20.1（2026-08 LTS）已 backport JDK-8306819：
+                         javac 默认 -proc 从 full 改为 none，仅配 processorpath 不足以启用
+                         注解处理，需显式 -proc:full 恢复 Lombok 编译期增强 -->
+                    <compilerArgs>
+                        <arg>-proc:full</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
         </plugins>

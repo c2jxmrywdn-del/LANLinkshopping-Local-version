@@ -25,6 +25,17 @@ public class TechHostingService {
     private static final Set<String> HOSTING_TYPES = Set.of("PATENT", "AGENCY", "SAAS");
     private static final Set<String> HOSTING_STATUSES = Set.of(
             "APPLIED", "ACTIVE", "SUSPENDED", "COMPLETED", "CANCELLED");
+
+    /**
+     * 托管状态迁移白名单：APPLIED → ACTIVE ⇄ SUSPENDED → COMPLETED/CANCELLED。
+     * COMPLETED 与 CANCELLED 为终态，不可回退（历史缺陷允许 COMPLETED→APPLIED、CANCELLED→ACTIVE）。
+     */
+    private static final java.util.Map<String, Set<String>> HOSTING_TRANSITIONS = java.util.Map.of(
+            "APPLIED", Set.of("ACTIVE", "CANCELLED"),
+            "ACTIVE", Set.of("SUSPENDED", "COMPLETED", "CANCELLED"),
+            "SUSPENDED", Set.of("ACTIVE", "CANCELLED"),
+            "COMPLETED", Set.of(),
+            "CANCELLED", Set.of());
     /** 计费方式白名单，与 t_tech_hosting.fee_mode 注释同一口径；不校验会把任意字符串写进台账 */
     private static final Set<String> FEE_MODES = Set.of("ANNUAL", "COMMISSION", "SUBSCRIPTION");
 
@@ -119,6 +130,8 @@ public class TechHostingService {
         if (hosting == null) {
             throw new BusinessException(404, "托管申请不存在");
         }
+        com.lanlink.shopping.module.techservice.support.TechStatusGuard
+                .require(HOSTING_TRANSITIONS, hosting.getStatus(), status, "托管");
         hosting.setStatus(status);
         hostingMapper.updateById(hosting);
         return hosting;

@@ -24,7 +24,7 @@ scrape_configs:
       type: Bearer
       credentials_file: /etc/prometheus/metrics_token
     static_configs:
-      - targets: ["lanlink-ai-gateway:8090"]
+      - targets: ["ai-gateway:8090"]
         labels:
           env: "production"
           service: "ai-gateway"
@@ -33,7 +33,7 @@ scrape_configs:
     # Spring Boot context-path=/api，actuator 路径随 context-path 前缀
     metrics_path: "/api/actuator/prometheus"
     static_configs:
-      - targets: ["shopping-backend-1:8080"]
+      - targets: ["backend:8080"]
         labels:
           env: "production"
           service: "mall-backend"

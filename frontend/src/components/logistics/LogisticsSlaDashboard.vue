@@ -153,7 +153,8 @@ async function fetchData() {
   refreshing.value = true
   try {
     const res = await logisticsApi.slaOverview()
-    data.value = res?.data || res
+    // request.js 拦截器已剥壳：res 即 SlaDashboardOverview 本体（无 data 键，后端字段已核对）
+    data.value = res
   } catch (e) {
     // 拦截器处理
   } finally {
@@ -165,7 +166,7 @@ async function triggerInspection() {
   inspecting.value = true
   try {
     const res = await logisticsApi.runWatchdog()
-    const r = res?.data || res
+    const r = res
     message.success(`看门狗巡检完成：扫描 ${r?.scannedWaybills || 0} 单，新触发告警 ${r?.newAlertsTriggered || 0} 起`)
     await fetchData()
   } catch (e) {

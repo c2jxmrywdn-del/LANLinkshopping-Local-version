@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -288,6 +289,103 @@ class PriceMonitorAiServiceTest {
         assertEquals(new BigDecimal("0.00"), systematic.get("priceChange30dPct"));
     }
 
+    /**
+     * 商品相关资讯必须优先占位，不能被「全局最新 40 条」按时间截断掉。
+     *
+     * <p>回归缺陷：11-12 的油价/美元/股市宏观稿占满候选集后，11-05 的水泥行情被挤出，
+     * 水泥商品的五维因子长期 0 条相关、前端显示「没有该商品的直接信号」。
+     */
+    @Test
+    void productScopedNewsIsNotEvictedByGlobalLatest() {
+        when(productMapper.selectById(2L)).thenReturn(product(2L, 1L, 2L, "硅酸盐水泥 P.O42.5 袋装", "420.00"));
+        stubCatalog(1L, "建筑行业", 2L, "水泥混凝土");
+
+        MarketNews cementNews = news("华东水泥价格连续三周上涨，熟料库存回落",
+                "错峰生产叠加基建赶工，袋装水泥报价上调 20 元/吨",
+                "price", "中国水泥网", "水泥,价格", 3, 96);
+        cementNews.setId(9001L);
+        // 全局最新：全是与水泥无关的宏观稿，且时间都更近
+        List<MarketNews> macroOnly = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            MarketNews n = news("纽约油价上涨 " + i, "国际油价小幅波动", "price", "新华网", "原油", 1, i);
+            n.setId(8000L + i);
+            macroOnly.add(n);
+        }
+        when(newsService.relatedTo(any(), anyInt())).thenReturn(List.of(cementNews));
+        when(newsService.latest(40)).thenReturn(macroOnly);
+
+        Map<String, Object> out = service.factors(2L);
+
+        List<Map<String, Object>> refs = allNewsRefs(out);
+        assertTrue(refs.stream().anyMatch(r -> String.valueOf(r.get("title")).contains("水泥")),
+                "水泥资讯必须进入证据链，不能被宏观稿挤掉: " + refs);
+        assertTrue((int) factor(out, "material").get("productNewsCount") >= 1);
+    }
+
+    /**
+     * 行业大类词不得当作「本商品直接证据」。
+     *
+     * <p>回归缺陷：变压器商品的行业词含「电力/能源」，导致英伟达芯片稿、
+     * 农民工就业报道这类稿件拿到 3.0 强相关，被当成该商品的行情依据。
+     */
+    @Test
+    void broadIndustryWordsDoNotCountAsDirectProductEvidence() {
+        when(productMapper.selectById(5L)).thenReturn(
+                product(5L, 8L, 5L, "油浸式变压器 S13-400/10 全铜", "12000.00"));
+        stubCatalog(8L, "电力能源", 5L, "变压器");
+        MarketNews chipNews = news("英伟达发布新一代 AI 芯片，9 核 16 线程",
+                "算力平台同步升级，数据中心能源效率提升", "tech", "IT之家", "芯片,算力", 2, 3);
+        chipNews.setId(9101L);
+        when(newsService.relatedTo(any(), anyInt())).thenReturn(List.of(chipNews));
+        when(newsService.latest(40)).thenReturn(List.of(chipNews));
+
+        ProductFactorProfile profile = ProductFactorProfile.of(
+                product(5L, 8L, 5L, "油浸式变压器 S13-400/10 全铜", "12000.00"), "电力能源", "变压器");
+
+        assertTrue(profile.relevanceOf(chipNews) < 2.0,
+                "芯片稿只能算泛市场资讯，不能算本商品/本行业直接相关: " + profile.relevanceOf(chipNews));
+        MarketNews cementNews = news("华东水泥价格上调", "错峰生产推动袋装水泥涨价",
+                "price", "中国水泥网", "水泥", 2, 3);
+        assertTrue(profile.relevanceOf(cementNews) < 2.0, "跨行业资讯必须降权");
+    }
+
+    /**
+     * 两字行业词不得被子串劫持：「换电网络」不能命中「电网」，「充电桩」不能命中「充电」。
+     */
+    @Test
+    void twoCharIndustryWordsAreNotHijackedByLongerPhrases() {
+        ProductFactorProfile profile = ProductFactorProfile.of(
+                product(5L, 8L, 5L, "油浸式变压器 S13-400/10 全铜", "12000.00"), "电力能源", "变压器");
+
+        MarketNews swapBattery = news("宁德时代押注换电网络，年底建成 3000 座换电站",
+                "钠电池换电模式加速推广", "tech", "36氪", "电池", 2, 3);
+        assertTrue(profile.relevanceOf(swapBattery) < 2.0,
+                "换电网络不等于电网设备需求: " + profile.relevanceOf(swapBattery));
+
+        MarketNews realGrid = news("国家电网启动新一轮变压器集中招标",
+                "油浸式变压器采购规模同比增长", "supply", "中国电力报", "变压器,电网", 3, 3);
+        assertTrue(profile.relevanceOf(realGrid) >= 2.0, "真正相关的变压器招标必须保留");
+    }
+
+    /**
+     * 正文顺带提及不算行业证据：欧盟汽车排放稿提到「钢材」不能抬高钢材/水泥商品的相关度。
+     */
+    @Test
+    void passingMentionInBodyIsNotIndustryEvidence() {
+        ProductFactorProfile steel = ProductFactorProfile.of(
+                product(1L, 1L, 1L, "建筑钢材 HRB400 螺纹钢 Φ20", "3850.00"), "建筑行业", "建筑钢材");
+
+        MarketNews carPolicy = news("欧盟拟放宽 2035 年汽车减排目标，燃油车禁售政策松动",
+                "欧洲议会环境委员会表决通过提案，车企可通过使用低碳钢材抵扣部分减排指标",
+                "international", "IT之家", "汽车,政策", 2, 5);
+        assertTrue(steel.relevanceOf(carPolicy) < 2.0,
+                "汽车政策稿只顺带提到钢材，不能算钢材商品的行业证据: " + steel.relevanceOf(carPolicy));
+
+        MarketNews realSteel = news("欧盟碳关税落地，钢材出口成本上升",
+                "螺纹钢与热轧卷板报价承压，贸易商采购放缓", "international", "钢铁资讯", "钢材,关税", 3, 5);
+        assertTrue(steel.relevanceOf(realSteel) >= 2.0, "真正的钢材行业资讯必须保留");
+    }
+
     /** newsRefs 增补来源链接：钢铁资讯 → 官网首页；平台公告 → 站内价格情报台。 */
     @Test
     void newsRefsCarrySourceLinks() {
@@ -297,9 +395,9 @@ class PriceMonitorAiServiceTest {
                 news("钢材市场库存回落，螺纹钢现货报价小幅走强",
                         "主要城市建材库存连续两周下降，螺纹钢现货报价上调 20-40 元/吨",
                         "supply", "钢铁资讯", "螺纹钢,库存,钢材", 3, 2),
-                news("平台公告：价格监控上线，支持行业基准与波动预警",
-                        "价格情报台现已支持商品价格走势、行业基准对比与 AI 因果分析",
-                        "market", "平台公告", "价格监控,上线", 3, 3)));
+                news("平台公告：螺纹钢价格监控上线，支持行业基准与波动预警",
+                        "价格情报台现已支持螺纹钢价格走势、行业基准对比与 AI 因果分析",
+                        "market", "平台公告", "螺纹钢,价格监控", 3, 3)));
 
         Map<String, Object> out = service.factors(1L);
         List<Map<String, Object>> refs = allNewsRefs(out);

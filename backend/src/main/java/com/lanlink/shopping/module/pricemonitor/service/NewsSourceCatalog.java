@@ -79,6 +79,14 @@ public final class NewsSourceCatalog {
         home.put("能源参考", "http://www.nea.gov.cn/");
         home.put("国家能源局", "http://www.nea.gov.cn/");
         home.put("中国物流与采购联合会", "http://www.chinawuliu.com.cn/");
+        home.put("新华网", "http://www.news.cn/");
+        home.put("中国新闻网", "https://www.chinanews.com.cn/");
+        home.put("人民网", "http://www.people.com.cn/");
+        home.put("BBC", "https://www.bbc.com/news/business");
+        home.put("IT之家", "https://www.ithome.com/");
+        home.put("36氪", "https://www.36kr.com/");
+        home.put("虎嗅", "https://www.huxiu.com/");
+        home.put("华尔街日报", "https://www.wsj.com/");
         SOURCE_HOME = Map.copyOf(home);
 
         Map<String, String> internal = new LinkedHashMap<>();

@@ -5,6 +5,7 @@ import com.lanlink.shopping.entity.Product;
 import com.lanlink.shopping.mapper.CategoryMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.module.aikb.EmbeddingService;
+import com.lanlink.shopping.support.DbJobLock;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,21 +28,25 @@ public class ProductIndexJob {
     private final CategoryMapper categoryMapper;
     private final EmbeddingService embeddingService;
     private final ProductVectorStore vectorStore;
+    private final DbJobLock jobLock;
 
     @Value("${lanlink.search.vector.enabled:true}")
     private boolean enabled;
 
     public ProductIndexJob(ProductMapper productMapper, CategoryMapper categoryMapper,
-                           EmbeddingService embeddingService, ProductVectorStore vectorStore) {
+                           EmbeddingService embeddingService, ProductVectorStore vectorStore,
+                           DbJobLock jobLock) {
         this.productMapper = productMapper;
         this.categoryMapper = categoryMapper;
         this.embeddingService = embeddingService;
         this.vectorStore = vectorStore;
+        this.jobLock = jobLock;
     }
 
     @Scheduled(cron = "0 45 * * * ?")
     public void hourly() {
-        reindex();
+        // 全量灌库是多实例会互相覆盖的重建型任务：只允许一个实例执行
+        jobLock.runExclusive("lanlink:job:product-index", this::reindex);
     }
 
     /** 全量灌库（同步；商品量千级内秒级完成），返回 {indexed, skipped} */

@@ -34,6 +34,11 @@ spring:
   sql:
     init:
       mode: never
+  # Flyway 迁移（P0-5）：prod 在拍板⑦-14 完成生产库对账（V2026_10/V2026_11 是否已手工执行、
+  # baseline-version 是否需上调）之前强制关闭，防止迁移重复执行或 Below Baseline 漏执行。
+  # 对账结论落地后再启用（预计与 schema.sql/Initializer 收编同批切换），切换前不改这里。
+  flyway:
+    enabled: false
 
   # 生产邮件：不继承 application.yml 的 localhost Mailpit 默认值，强制显式配置真实 SMTP。
   # 未设 MAIL_HOST 时发送会失败（而非静默发到本地占位），避免生产验证码/通知石沉大海。

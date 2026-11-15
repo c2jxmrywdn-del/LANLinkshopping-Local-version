@@ -25,6 +25,8 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 # nginx -s reload，防止全 /api 长时间 502。必须显式 COPY——上一行的 COPY . . 只在
 # build 阶段生效，运行阶段不会带上任何构建上下文文件。
 COPY docker-entrypoint.d/ /docker-entrypoint.d/
+# Windows 检出的 CRLF 会让 shebang 变成 /bin/sh\r 导致 entrypoint "not found" 崩溃循环
+RUN sed -i 's/\r$//' /docker-entrypoint.d/*.sh && chmod +x /docker-entrypoint.d/*.sh
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

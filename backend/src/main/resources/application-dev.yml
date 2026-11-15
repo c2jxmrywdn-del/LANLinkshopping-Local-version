@@ -20,6 +20,10 @@ spring:
       mode: always
       encoding: UTF-8
       schema-locations: classpath:sql/schema.sql,classpath:sql/account.sql
+  # Flyway 迁移（P0-5，共享配置见 application.yml）：dev 默认开启，SPRING_FLYWAY_ENABLED=false 可整体关闭。
+  # 已有库走 baseline（不重放 V2026_10/V2026_11）；全新空库首次启动的已知限制见 application.yml flyway 注释。
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
 
   # 本地邮件：指向 Mailpit 容器（docker-compose.local.yml 提供，SMTP :1025，收件箱 UI :8081）。
   # Mailpit 免认证收信，用户名/密码任意非空即可（后端要求非空才算 smtpConfigured）。
@@ -83,3 +87,7 @@ support:
 app:
   cors:
     allowed-origin-patterns: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*,http://192.168.*:*,http://10.*:*,http://172.16.*:*}
+  # 本地演示需要社交登录沙箱（无真实 OAuth 秘钥时可走通 Google/Apple 登录流程）；
+  # application-social.yml 默认关闭，生产 profile 由 ProdConfigGuard 强制拦截。
+  social:
+    sandbox-enabled: ${SOCIAL_SANDBOX_ENABLED:true}

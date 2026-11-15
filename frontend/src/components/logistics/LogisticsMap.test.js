@@ -2,18 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // AMap 与凭据服务全部 mock：组件在 jsdom 内真实编译挂载，验证双态路由与降级链路。
 // 组件内 mapConfig 有模块级缓存，先 resetModules 再动态 import 以隔离各用例。
-vi.mock('../../api/request', () => ({ default: { get: vi.fn() } }))
+// 凭据请求已收口到封装层 logisticsApi.mapConfig（原直连 api/request）
+vi.mock('../../api', () => ({ logisticsApi: { mapConfig: vi.fn() } }))
 vi.mock('@amap/amap-jsapi-loader', () => ({ default: { load: vi.fn(), reset: vi.fn() } }))
 
 import { h, reactive, createApp, nextTick } from 'vue'
 
-let request
+let logisticsApi
 let AMapLoader
 let LogisticsMap
 
 async function freshModules() {
   vi.resetModules()
-  ;({ default: request } = await import('../../api/request'))
+  ;({ logisticsApi } = await import('../../api'))
   ;({ default: AMapLoader } = await import('@amap/amap-jsapi-loader'))
   ;({ default: LogisticsMap } = await import('./LogisticsMap.vue'))
 }
@@ -69,10 +70,10 @@ describe('LogisticsMap', () => {
   })
 
   it('无经纬度坐标：直接降级城市级占位，不请求地图凭据，按时间正序串联城市节点', async () => {
-    request.get.mockResolvedValue({ key: 'k', securityJsCode: 's' })
+    logisticsApi.mapConfig.mockResolvedValue({ key: 'k', securityJsCode: 's' })
     const t = mountMap({ traces: CITY_TRACES })
     await nextTick()
-    expect(request.get).not.toHaveBeenCalled()
+    expect(logisticsApi.mapConfig).not.toHaveBeenCalled()
     expect(t.root.querySelector('.rm-mode').textContent).toContain('城市级示意')
     const chips = [...t.root.querySelectorAll('.rm-city-name')]
     expect(chips.map(c => c.textContent)).toEqual(['深圳', '南昌'])
@@ -83,7 +84,7 @@ describe('LogisticsMap', () => {
 
   it('有坐标且 AMap 可用：画 Polyline + 逐节点 Marker，模式徽标为高德图源', async () => {
     installFakeAMap()
-    request.get.mockResolvedValue({ key: 'k', securityJsCode: 's' })
+    logisticsApi.mapConfig.mockResolvedValue({ key: 'k', securityJsCode: 's' })
     AMapLoader.load.mockResolvedValue(window.AMap)
     const t = mountMap({ traces: GEO_TRACES })
     await vi.waitFor(() => expect(lastFakeMap?.overlays.length).toBeGreaterThan(0))
@@ -100,7 +101,7 @@ describe('LogisticsMap', () => {
 
   it('有坐标但 AMap 加载失败：降级城市级占位并给出原因，不白屏', async () => {
     installFakeAMap()
-    request.get.mockResolvedValue({ key: 'k', securityJsCode: 's' })
+    logisticsApi.mapConfig.mockResolvedValue({ key: 'k', securityJsCode: 's' })
     AMapLoader.load.mockRejectedValue(new Error('amap down'))
     const t = mountMap({ traces: GEO_TRACES })
     await vi.waitFor(() => expect(t.root.querySelector('.rm-degrade')).toBeTruthy())
@@ -111,7 +112,7 @@ describe('LogisticsMap', () => {
   })
 
   it('未配置地图凭据（key 为空）：降级城市级占位，不触发 loader', async () => {
-    request.get.mockResolvedValue({ key: '', securityJsCode: '' })
+    logisticsApi.mapConfig.mockResolvedValue({ key: '', securityJsCode: '' })
     const t = mountMap({ traces: GEO_TRACES })
     await vi.waitFor(() => expect(t.root.querySelector('.rm-degrade')).toBeTruthy())
     expect(t.root.querySelector('.rm-degrade').textContent).toContain('地图凭据未配置')

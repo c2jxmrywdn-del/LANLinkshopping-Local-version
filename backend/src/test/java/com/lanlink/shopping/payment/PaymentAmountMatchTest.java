@@ -3,6 +3,7 @@ package com.lanlink.shopping.payment;
 import com.lanlink.shopping.entity.Order;
 import com.lanlink.shopping.mapper.OrderMapper;
 import com.lanlink.shopping.payment.alipay.AlipayPayClient;
+import com.lanlink.shopping.payment.conflict.dto.SettlePaidResult;
 import com.lanlink.shopping.payment.service.PaymentLogService;
 import com.lanlink.shopping.payment.service.PaymentService;
 import com.lanlink.shopping.payment.stripe.StripePayClient;
@@ -65,7 +66,12 @@ class PaymentAmountMatchTest {
 
     private void assertMatched(String yuan, String fen) {
         stub(yuan, fen);
-        when(orderService.settlePaid("ORD1", "wechat", "TXN1")).thenReturn(true);
+        Order settledOrder = new Order();
+        settledOrder.setOrderNo("ORD1");
+        settledOrder.setUserId(1L);
+        settledOrder.setTotalAmount(new BigDecimal(yuan));
+        when(orderService.settlePaid("ORD1", "wechat", "TXN1"))
+                .thenReturn(new SettlePaidResult(SettlePaidResult.Outcome.SETTLED, settledOrder, "TXN1", false));
         String reply = svc.handleWechatNotify("<xml/>");
         assertTrue(reply.contains("SUCCESS"), "金额应匹配: 订单" + yuan + "元 vs total_fee=" + fen + "分");
         verify(orderService).settlePaid("ORD1", "wechat", "TXN1");

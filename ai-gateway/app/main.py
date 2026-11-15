@@ -38,6 +38,7 @@ from .kb_tools import DATA_NOTE as LOCAL_TOOL_DATA_NOTE, KB_TOOL_DEF, make_kb_se
 from .rate_limiter import RATE_LIMITER, client_fingerprint
 from .metrics import REGISTRY
 from .semantic_cache import SemanticCache
+from .perception import router as perception_router
 
 logger = logging.getLogger("lanlink.ai-gateway")
 
@@ -164,6 +165,9 @@ app = FastAPI(
     description="OpenAI API 兼容的电商 AI 网关：本地双模型（Qwen2.5-7B / VL）+ 共享 Redis 向量知识库 RAG",
     dependencies=[Depends(require_gateway_key), Depends(rate_limit_guard)],
 )
+
+# 多模态感知路由（MiMo 视觉/ASR/TTS + 本地 ASR/OCR 兜底）：鉴权与限流沿用上面的 app 级依赖。
+app.include_router(perception_router)
 
 
 @app.middleware("http")
@@ -326,7 +330,9 @@ async def training_trace_middleware(request: Request, call_next):
 KB = HybridKB(default_kb_path())
 LLM = LLMClient()
 EMBEDDER = OllamaEmbedder()
-CACHE = SemanticCache(embedder=EMBEDDER)
+# auto_start_pubsub=True：只有这个进程级单例需要订阅失效广播；临时/测试实例默认不订阅，
+# 避免每个实例各起一条重连线程。
+CACHE = SemanticCache(embedder=EMBEDDER, auto_start_pubsub=True)
 GATEWAY_START = time.time()
 
 # MCP 只读知识库工具：客服/Agent 通过 /mcp 直接读同一个向量索引，不必绕 Java。
@@ -739,6 +745,10 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
             result = _completion_shell(req.model, hit.content, "stop", usage, hit.latency_ms / 1000.0, backend="semantic_cache")
             result["lanlink"].update(_route_summary())
             result["lanlink"].update({
+                # 语义缓存命中的内容同样由本地模型生成过：仍标注 local:，供客服侧来源校验。
+                "answer_generator": "local:semantic_cache",
+                "tool_trace": [],
+                "agent_role": agent_role,
                 "cached": True,
                 "cache_type": hit.hit_type,
                 "cache_similarity": hit.similarity,
@@ -765,7 +775,12 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
                 raise HTTPException(status_code=400, detail={"error": {
                     "message": 'tools 仅支持 "auto"（内置工具集）或 OpenAI tools 定义数组',
                     "type": "invalid_request_error"}})
-            tools_defs = TOOLBOX.TOOL_DEFS + TOOLBOX.local_tool_defs()
+            # 客服角色使用只读最小权限集：客服链路不允许建草稿/财务审批/改履约状态，
+            # 也不允许联网检索（外部网页不能作为平台事实的答案来源）。
+            if agent_role == "support":
+                tools_defs = TOOLBOX.get_tools_by_role("support")
+            else:
+                tools_defs = TOOLBOX.TOOL_DEFS + TOOLBOX.local_tool_defs()
         else:
             tools_defs = req.tools
         tc = req.tool_choice if isinstance(req.tool_choice, str) else "required"
@@ -846,6 +861,11 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
         route["reasoning_chars"] = len(reasoning)
         route["tools"] = {"enabled": tools_mode, "choice": tool_choice_eff,
                           "count": len(tool_trace), "trace": tool_trace}
+        # 答案来源审计：客服链路（Java SupportAnswerPolicy）只接受 local: 前缀，
+        # 因此无论是否 tools 模式都必须显式回报实际推理后端与工具轨迹。
+        route["answer_generator"] = f"local:{backend}"
+        route["tool_trace"] = tool_trace
+        route["agent_role"] = agent_role
 
         # 降级检测与指标埋点
         fallback_active = (route.get("fallback") == "heuristic" or backend.startswith("mock"))

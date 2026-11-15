@@ -308,6 +308,30 @@ public class AttachmentService {
         return new Content(row.getFileName(), row.getContentType(), storage.getObject(row.getObjectKey()));
     }
 
+    /**
+     * 凭证类委托读取：给已在上游完成业务归属校验的模块用（如提现单 merId 校验）。
+     * 材料归属人通常是上传的运营而非查看的商户，owner 校验会误杀合法查看；
+     * 归属链由调用方负责——本方法只保留失效态判断，不开放给任意 no 调用。
+     */
+    public Content loadContentForAdmin(String attachmentNo, boolean thumbnail) {
+        Attachment row = requireRow(attachmentNo);
+        if (STATUS_EXPIRED.equals(row.getStatus())) {
+            throw new BusinessException(404, "材料不存在");
+        }
+        if (thumbnail) {
+            if (!AttachmentThumbStatus.READY.equals(row.getThumbStatus())
+                    || row.getThumbKey() == null || row.getThumbKey().isBlank()) {
+                throw new BusinessException(404, "预览尚未生成");
+            }
+            return new Content(thumbFileName(row.getFileName()), "image/jpeg",
+                    storage.getObject(row.getThumbKey()));
+        }
+        if (!storage.exists(row.getObjectKey())) {
+            throw new BusinessException(404, "材料内容已失效");
+        }
+        return new Content(row.getFileName(), row.getContentType(), storage.getObject(row.getObjectKey()));
+    }
+
     /** 预览文件名：换掉扩展名，避免前端按 .pdf 后缀去渲染一张 jpg */
     private static String thumbFileName(String fileName) {
         int dot = fileName == null ? -1 : fileName.lastIndexOf('.');

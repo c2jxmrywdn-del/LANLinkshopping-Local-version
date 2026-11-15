@@ -6,17 +6,26 @@
 # 需在各平台开放平台申请应用后，通过环境变量注入凭证即自动启用对应入口。
 #
 # 各平台后台需登记的回调地址（redirect_uri）：
-#   {app.social.redirect-base}  → 例如 http://localhost:5173/login
-#   平台侧还需允许 /auth/social/callback/{provider} 作为服务端回调
+#   微信 / 支付宝 / Google：{app.social.redirect-base}
+#     例如 http://localhost:5173/login
+#   Apple Sign in with Apple：{app.social.apple-redirect-uri}
+#     例如 http://localhost:8080/api/auth/social/apple/return
+#     带 name、email 时 Apple 只接受 form_post，浏览器页面收不到这个 POST，
+#     所以 Return URL 必须登记后端地址。后端校验后再 302 到 redirect-base。
+#     本地 http://localhost 可以被 Apple 接受；公网环境必须是 https。
 #
 # 安全约束：密钥一律走环境变量，禁止写入仓库（见 .gitignore / SECURITY.md）。
 # ============================================================
 app:
   social:
-    # 沙箱模拟登录开关：开发/演示环境默认开启，便于在无真实海外公网秘钥时测试谷歌/苹果登录
-    sandbox-enabled: ${SOCIAL_SANDBOX_ENABLED:true}
-    # 前端授权完成后回跳的地址（前端页面），需与平台后台登记的 redirect_uri 一致
+    # 沙箱模拟登录开关：默认关闭（fail-secure）。
+    # 开启后任何人可 POST /auth/social/sandbox-login 直接登录固定演示账号，无需任何凭证，
+    # 因此只在本地演示环境显式设 SOCIAL_SANDBOX_ENABLED=true；生产 profile 另有启动期强制校验。
+    sandbox-enabled: ${SOCIAL_SANDBOX_ENABLED:false}
+    # 前端授权完成后回跳的地址（前端页面）。Apple 的最终落地页也是这里，但不是 Apple 的 Return URL。
     redirect-base: ${SOCIAL_REDIRECT_BASE:http://localhost:5173/login}
+    # Apple form_post 接收地址。Services ID → Return URLs 必须与此逐字一致。
+    apple-redirect-uri: ${SOCIAL_APPLE_REDIRECT_URI:http://localhost:8080/api/auth/social/apple/return}
 
     providers:
       # 微信开放平台（网站应用扫码登录）：encoder = appid
@@ -33,11 +42,18 @@ app:
         app-id: ${SOCIAL_ALIPAY_APP_ID:}
         app-secret: ${SOCIAL_ALIPAY_APP_SECRET:}
         alipay-private-key: ${SOCIAL_ALIPAY_PRIVATE_KEY:}
-      # Apple Sign In：encoder = client_id；client_secret 为预生成的 JWT（ES256 签名）
+      # Apple Sign In：client-id 是 Services ID（不是 App ID）。
+      # client-secret 与下面三件套二选一：
+      #   - client-secret：已经签好的 ES256 JWT
+      #   - team-id + key-id + private-key：.p8 私钥，服务运行时签名，约 150 天轮换
+      # private-key 用 PKCS#8 PEM。环境变量里把换行写成 \n 即可。
       apple:
         enabled: ${SOCIAL_APPLE_ENABLED:false}
         client-id: ${SOCIAL_APPLE_CLIENT_ID:}
         client-secret: ${SOCIAL_APPLE_CLIENT_SECRET:}
+        team-id: ${SOCIAL_APPLE_TEAM_ID:}
+        key-id: ${SOCIAL_APPLE_KEY_ID:}
+        private-key: ${SOCIAL_APPLE_PRIVATE_KEY:}
       # Google Identity：encoder = client_id
       google:
         enabled: ${SOCIAL_GOOGLE_ENABLED:false}

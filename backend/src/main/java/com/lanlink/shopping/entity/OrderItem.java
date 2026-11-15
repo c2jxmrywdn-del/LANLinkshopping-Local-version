@@ -16,7 +16,17 @@ public class OrderItem {
     private String prodName;
     private BigDecimal price;
     private Integer quantity;
+    /** 行小计（成交单价 × 数量；已含阶梯价/会员取优后的行价，未分摊订单级优惠） */
     private BigDecimal subtotal;
+    /**
+     * 本行分摊的订单级优惠（促销/会员/券/积分合计）= subtotal − paidAmount。
+     * 下单时一次固化（OrderAmounts.allocate），读时不再重算，保证退款/对账可审计。
+     */
+    private BigDecimal allocatedDiscount;
+    /** 本行实付货款 = subtotal − allocatedDiscount；Σpaid_amount 必须等于 t_order.goods_amount。 */
+    private BigDecimal paidAmount;
+    /** 本行分摊运费；Σfreight_amount 必须等于 t_order.freight_amount。 */
+    private BigDecimal freightAmount;
     private String coverUrl;
     /** 已发货数量（多包裹分批拆单发货累计） */
     private Integer shippedQuantity;

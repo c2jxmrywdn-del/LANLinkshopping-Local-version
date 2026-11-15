@@ -34,9 +34,15 @@
             :payable-total="payableTotal"
           />
 
-          <!-- 国际信用卡/借记卡 Stripe 联动卡片 -->
+          <!-- 国际信用卡/借记卡（Stripe）：卡号在「立即支付」后由 Stripe Elements 采集，
+               下单前不渲染任何卡输入框（publishableKey 由 /payment/create 返回，页面提前无 key） -->
           <div v-if="form.payType === 'stripe'" class="stripe-embed-box mt-3">
-            <StripeCardElement />
+            <a-alert
+              type="info"
+              show-icon
+              message="银行卡信息在点击「立即支付」后录入"
+              description="卡号 / 有效期 / 安全码由 Stripe Elements 在加密 iframe 内采集，平台服务器不接触原始卡数据。"
+            />
           </div>
 
           <!-- 对公转账银行电汇提示 -->
@@ -71,6 +77,8 @@
           </div>
         </a-form-item>
         <a-form-item label="备注"><a-input v-model:value="form.remark" /></a-form-item>
+        <!-- 发票需求（P1-5）：随单登记抬头/税号/内容，快照落订单表，规则前后端同契约 -->
+        <InvoiceRequestForm v-model="invoiceRequest" class="invoice-form" />
         <a-button type="primary" html-type="submit" size="large" block :loading="loading" :disabled="quoting">提交订单</a-button>
       </a-form>
     </a-card>
@@ -178,16 +186,45 @@
         :initial-term="creditAccount?.termDays || 7"
       />
     </SmoothMobileDrawer>
+
+    <!-- Stripe 安全支付弹窗：下单成功后创建 PaymentIntent 才拿到 clientSecret/publishableKey，
+         卡控件在此弹窗内挂载（Elements iframe），确认时调 stripe.confirmCardPayment（含 3DS）。 -->
+    <a-modal
+      v-model:open="stripePayOpen"
+      title="Stripe 安全支付"
+      :width="480"
+      :mask-closable="false"
+      :confirm-loading="stripePaying"
+      :ok-button-props="{ disabled: !stripeCardComplete }"
+      ok-text="确认支付"
+      cancel-text="稍后支付"
+      destroy-on-close
+      @ok="confirmStripePay"
+      @cancel="cancelStripePay"
+    >
+      <div class="stripe-pay-body">
+        <p class="stripe-pay-amount">本单应付 <b>¥{{ stripePayAmount }}</b></p>
+        <StripeCardElement
+          ref="stripeCardRef"
+          :publishable-key="stripePublishableKey"
+          :disabled="stripePaying"
+          @change="onStripeCardChange"
+        />
+      </div>
+    </a-modal>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted, watch } from 'vue'
+import { reactive, ref, computed, onMounted, watch, h, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { ArrowRight, Calculator, ShieldCheck, Ticket } from 'lucide-vue-next'
 import { orderApi, paymentApi, userApi, membershipApi, walletApi, creditTermApi, campaignApi } from '../api'
-import { validateCheckoutForm } from '../utils/validationRules'
+import { validateCheckoutForm, validateInvoiceRequest } from '../utils/validationRules'
+import { trackEvent } from '../utils/analytics'
+import { submitPayForm } from '../utils/payForm'
+import { buildPayQrPayload, renderQrToDataUrl } from '../utils/qrCode'
 import { useCartStore } from '../store/cart'
 import { useUserStore } from '../store/user'
 import SmoothMobileDrawer from '../components/ui/SmoothMobileDrawer.vue'
@@ -196,14 +233,140 @@ import CreditInterestCalculator from '../components/credit/CreditInterestCalcula
 import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
 import MerchantCorporateBankCard from '../components/payment/MerchantCorporateBankCard.vue'
 import StripeCardElement from '../components/payment/StripeCardElement.vue'
+import { loadStripeOnce } from '../utils/stripeLoader'
+import { waitForOrderPaid } from '../utils/waitForOrderPaid'
+import InvoiceRequestForm from '../components/order/InvoiceRequestForm.vue'
 
 const router = useRouter()
 const cart = useCartStore()
 const user = useUserStore()
 const loading = ref(false)
 const form = reactive({ receiver: '', phone: '', address: '', remark: '', payType: 'corporate' })
+// 发票需求（P1-5）：勾选「需要开发票」后填写，submit 时随 checkout 请求携带
+const invoiceRequest = ref(null)
 // 幂等键（防重复下单）：submit 首次生成、成功后重置、失败重试保留同一 key
 const idempotentKey = ref('')
+
+/**
+ * 微信扫码支付：用后端返回的 codeUrl 渲染二维码。
+ * 只展示真实码；渠道未配置时调用方已给出提示，这里不做假码兜底。
+ */
+async function showWechatQr(codeUrl, orderNo) {
+  const src = await renderQrToDataUrl(buildPayQrPayload({ codeUrl, orderNo }))
+  Modal.info({
+    title: '请使用微信扫码支付',
+    width: 320,
+    content: h('div', { style: 'text-align:center' }, [
+      h('img', { src, alt: '微信支付二维码', style: 'width:220px;height:220px' }),
+      h('p', { style: 'margin-top:8px;color:#64748b;font-size:12px' }, `订单号 ${orderNo}`)
+    ])
+  })
+}
+
+// ===== Stripe 银行卡支付（Elements + PaymentIntent 真实确认链） =====
+// 链路：下单 → POST /payment/create(channel=stripe) 拿 clientSecret/publishableKey
+// → loadStripe(单例) → stripe.confirmCardPayment(clientSecret, {payment_method:{card}})
+// → 成功后才提示成功；3DS/银行拒绝/未配置均给出可行动错误，不再把"预授权已创建"当成功。
+const stripePayOpen = ref(false)
+const stripePaying = ref(false)
+const stripeCardComplete = ref(false)
+const stripeCardRef = ref(null)
+const stripePublishableKey = ref('')
+const stripeClientSecret = ref('')
+const stripePayOrderNo = ref('')
+const stripePayAmount = ref(0)
+
+function onStripeCardChange(state) {
+  stripeCardComplete.value = !!state?.complete
+}
+
+/**
+ * 创建 PaymentIntent 后打开卡支付弹窗：只做"校验 + 打开"，不在这里扣款。
+ * @param {string} orderNo
+ * @param {number|string} totalAmount 展示用金额（真实金额以服务端 PaymentIntent 为准）
+ * @param {{clientSecret?:string, publishableKey?:string}} payInfo 后端 payInfo
+ */
+async function openStripePay(orderNo, totalAmount, payInfo) {
+  const clientSecret = String(payInfo?.clientSecret || '').trim()
+  const publishableKey = String(payInfo?.publishableKey || '').trim()
+  // 后端已配置但前端拿不到这两个值：属于配置/契约问题，直接给可行动指引，绝不"假装成功"
+  if (!clientSecret) {
+    throw new Error('Stripe 预下单未返回 clientSecret：请确认后端已配置 STRIPE_SECRET_KEY，且 LANLINK_PAYMENT_MOCK=false')
+  }
+  if (!publishableKey) {
+    throw new Error('Stripe 支付公钥未配置：请在后端 .env 填写 VITE_STRIPE_PUBLISHABLE_KEY（或 STRIPE_PUBLISHABLE_KEY），重启后端后重试')
+  }
+  stripePayOrderNo.value = orderNo
+  stripePayAmount.value = Number(totalAmount || 0).toFixed(2)
+  stripeClientSecret.value = clientSecret
+  stripePublishableKey.value = publishableKey
+  stripeCardComplete.value = false
+  stripePayOpen.value = true
+  await nextTick()
+  // 预热卡控件（失败时错误在组件内展示，确认按钮保持禁用）
+  try {
+    await stripeCardRef.value?.ensureCardElement()
+  } catch (e) {
+    /* 组件内已展示 loadError；此处不重复弹错 */
+  }
+}
+
+// 轮询逻辑已收口到 utils/waitForOrderPaid.js，与 MyOrders / OrderDetail 共用同一语义
+
+async function confirmStripePay() {
+  if (stripePaying.value) return
+  stripePaying.value = true
+  try {
+    const cardRef = stripeCardRef.value
+    if (!cardRef) throw new Error('Stripe 卡控件未就绪，请关闭后重试')
+    // 与卡控件共用同一 Stripe 单例（loader 缓存），避免重复注入 Stripe.js
+    const stripe = await loadStripeOnce(stripePublishableKey.value)
+    const card = await cardRef.ensureCardElement()
+    const { error, paymentIntent } = await stripe.confirmCardPayment(stripeClientSecret.value, {
+      payment_method: {
+        card,
+        billing_details: {
+          name: form.receiver || undefined,
+          phone: form.phone || undefined
+        }
+      }
+    })
+    // 卡被拒 / 3DS 失败 / 参数错误：Stripe 返回结构化 error，原样展示可行动信息
+    if (error) throw new Error(error.message || '银行卡支付失败，请更换卡或稍后重试')
+    const status = paymentIntent?.status
+    if (status === 'processing') {
+      stripePayOpen.value = false
+      message.info('银行正在处理支付，请稍后在「我的订单」查看结果')
+      router.push('/orders')
+      return
+    }
+    if (status !== 'succeeded') {
+      // confirmCardPayment 默认已自动处理 next_action（3DS 弹窗/跳转）；
+      // 仍停留在 requires_action 说明该动作无法在弹窗内完成，按未完成处理，不提示成功
+      throw new Error(`支付未完成（状态：${status || 'unknown'}），请稍后在我的订单确认或重新支付`)
+    }
+    trackEvent('payment_success', { order_no: stripePayOrderNo.value, channel: 'stripe' })
+    const paid = await waitForOrderPaid(stripePayOrderNo.value, (no) => paymentApi.query(no))
+    stripePayOpen.value = false
+    if (paid) {
+      message.success('Stripe 支付成功')
+    } else {
+      // 扣款成功但平台未结算：最常见原因是后端 STRIPE_WEBHOOK_SECRET 未配置或 webhook 未送达
+      message.warning('银行已扣款，但订单状态同步有延迟，请稍后在「我的订单」查看；长时间未更新请联系客服')
+    }
+    router.push('/orders')
+  } catch (e) {
+    message.error(e?.message || 'Stripe 支付失败，请重试')
+  } finally {
+    stripePaying.value = false
+  }
+}
+
+function cancelStripePay() {
+  // 订单已创建，取消支付只是离开当前弹窗；后续可在「我的订单」继续支付
+  stripePayOpen.value = false
+  router.push('/orders')
+}
 
 // ===== 个人中心地址联动：默认地址自动带入，点击卡片一键填充 =====
 const addrList = ref([])
@@ -283,7 +446,8 @@ function useAllPoints() {
 }
 
 // 输入/选券变化后 400ms 防抖试算，避免频繁请求（券抵扣计入试算口径，故 couponBenefit 一并监听）
-watch([pointsInput, usePoints, couponBenefit], () => {
+// settleBase 来自促销预览：预览晚到时必须重算，否则试算基数仍是旧值
+watch([pointsInput, usePoints, couponBenefit, settleBase], () => {
   clearTimeout(quoteTimer)
   if (!usePoints.value || !pointsInput.value || pointsInput.value <= 0) {
     quotePoints.value = 0
@@ -303,12 +467,14 @@ function quoteWithTimeout(promise, ms) {
 }
 
 async function runQuote() {
-  if (!cart.total || !pointsInput.value) return
+  if (!settleBase.value || !pointsInput.value) return
   quoting.value = true
   try {
-    // 与后端口径对齐：试算基准 = 券后金额（cart.total - 当前选中券面），无券为原额
+    // 与后端口径对齐：后端以「促销/会员取优后的应付」为基数再扣券
+    // （OrderService → MembershipService.redeemPoints 的 orderAmount）。
+    // 历史实现用 cart.total - 券，漏掉促销/会员折扣，导致页面抵扣与实付和后端不一致。
     const q = await quoteWithTimeout(
-      membershipApi.redeemQuote(pointsInput.value, Math.max(0, cart.total - couponBenefit.value)),
+      membershipApi.redeemQuote(pointsInput.value, Math.max(0, settleBase.value - couponBenefit.value)),
       QUOTE_TIMEOUT
     )
     quotePoints.value = q?.points || 0
@@ -401,10 +567,15 @@ async function submit() {
   // L3 形式校验：规则与后端 CheckoutDTO 注解同契约（validationRules.js），金额/价格由后端权威重算
   const check = validateCheckoutForm(form)
   if (!check.ok) { message.warning(check.msg); return }
+  // 发票需求校验（P1-5）：与后端 applyInvoiceSnapshot 同规则，非法形状不发起请求
+  const inv = invoiceRequest.value
+  const invCheck = validateInvoiceRequest(inv)
+  if (!invCheck.ok) { message.warning(invCheck.msg); return }
   loading.value = true
   try {
     // 幂等键：同一结算动作（含失败重试）复用同一 key，服务端据此拦截重复下单
     if (!idempotentKey.value) idempotentKey.value = window.crypto?.randomUUID?.() || ('ck-' + Date.now() + '-' + Math.random().toString(36).slice(2))
+    trackEvent('checkout_start', { item_count: cart.checkedItems.length, pay_type: form.payType })
     const order = await orderApi.checkout({
       cartIds: cart.checkedItems.map(i => i.cartId),
       receiver: form.receiver, phone: form.phone, address: form.address,
@@ -415,9 +586,20 @@ async function submit() {
       couponId: selectedCouponId.value || null,
       // 直播归因：从直播间讲解卡进入并下单时携带直播间 ID（供直播复盘统计成交），异常安全
       liveRoomId: (() => { try { const a = JSON.parse(sessionStorage.getItem('ll_live_attr') || 'null'); return (a && a.liveId) || null } catch (e) { return null } })(),
+      // 发票需求（P1-5）：不勾选时传 null，后端落 invoice_needed=0
+      invoice: inv && inv.needed ? {
+        needed: true,
+        titleType: inv.titleType,
+        title: (inv.title || '').trim(),
+        taxNo: inv.titleType === 'company' ? (inv.taxNo || '').trim() : null,
+        contentType: inv.contentType,
+        category: inv.contentType === 'category' ? (inv.category || '').trim() : null,
+        detail: inv.contentType === 'detail' ? (inv.detail || '').trim() : null
+      } : null,
       idempotentKey: idempotentKey.value
     })
     idempotentKey.value = '' // 下单成功，重置幂等键，允许下一次新结算
+    invoiceRequest.value = null // 下单成功，发票表单复位
     sessionStorage.removeItem('ll_live_attr') // 本单已归因，清除直播来源标记
     selectedCouponId.value = null
     coupons.value = []
@@ -439,40 +621,49 @@ async function submit() {
             if (form.payType === 'balance') {
               const vo = await paymentApi.create(order.orderNo, 'wallet')
               if (!vo?.payInfo?.paid) throw new Error('钱包支付未确认')
+              trackEvent('payment_success', { order_no: order.orderNo, channel: 'wallet' })
               message.success('钱包支付成功')
             } else if (['stripe', 'apple_pay', 'google_pay'].includes(form.payType)) {
               const vo = await paymentApi.create(order.orderNo, 'stripe')
               if (vo?.mock) {
+                // 后端显式返回 mock 标记（LANLINK_PAYMENT_MOCK=true / 未配密钥的开发环境）才允许模拟确认；
+                // 真实模式下不会走到这里，绝不再出现"预授权已创建"被当成支付成功
                 await paymentApi.mockConfirm(order.orderNo)
+                trackEvent('payment_success', { order_no: order.orderNo, channel: 'stripe' })
                 message.success('Stripe 支付成功（模拟环境）')
               } else {
-                message.success('Stripe 支付预授权已创建')
+                // 真实链路：弹窗内用 Stripe Elements 采集卡信息 → confirmCardPayment（含 3DS）
+                await openStripePay(order.orderNo, order.totalAmount, vo?.payInfo)
+                return // 支付结果由弹窗处理，成功后自行跳转「我的订单」
               }
             } else if (form.payType === 'alipay') {
               const vo = await paymentApi.create(order.orderNo, 'alipay')
               if (vo?.mock) {
                 await paymentApi.mockConfirm(order.orderNo)
+                trackEvent('payment_success', { order_no: order.orderNo, channel: 'alipay' })
                 message.success('支付宝支付成功（模拟环境）')
               } else if (vo?.payInfo?.form) {
-                const div = document.createElement('div')
-                div.innerHTML = vo.payInfo.form
-                document.body.appendChild(div)
-                document.forms[0]?.submit()
+                submitPayForm(vo.payInfo.form)
                 return
               }
             } else if (form.payType === 'wechat') {
               const vo = await paymentApi.create(order.orderNo, 'wechat')
               if (vo?.mock) {
                 await paymentApi.mockConfirm(order.orderNo)
+                trackEvent('payment_success', { order_no: order.orderNo, channel: 'wechat' })
                 message.success('微信支付成功（模拟环境）')
+              } else if (vo?.payInfo?.codeUrl) {
+                // 二维码串在 payInfo.codeUrl（后端 PayCreateVO 契约）；渲染后由用户扫码
+                await showWechatQr(vo.payInfo.codeUrl, order.orderNo)
               } else {
-                message.success('请使用微信扫码完成支付')
+                message.warning('微信支付通道未配置，请选择其他支付方式')
               }
             } else if (form.payType === 'corporate') {
               message.info(`对公订单已创建，请汇款并备注订单号 ${order.orderNo}`)
             } else {
               const vo = await paymentApi.create(order.orderNo, 'mock')
               if (vo?.mock) await paymentApi.mockConfirm(order.orderNo)
+              trackEvent('payment_success', { order_no: order.orderNo, channel: 'mock' })
               message.success('支付成功')
             }
             router.push('/orders')
@@ -616,6 +807,16 @@ async function submit() {
     justify-content: center;
   }
 }
+/* Stripe 卡支付弹窗（元素由 StripeCardElement 自带样式） */
+.stripe-pay-body { display: flex; flex-direction: column; gap: 12px; }
+.stripe-pay-amount {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ll-muted, #64748b);
+  text-align: right;
+}
+.stripe-pay-amount b { font-size: 17px; color: var(--ll-price, #e4393c); letter-spacing: -0.02em; }
+
 /* 响应式：平板/手机改为单列，订单商品卡自适应宽度 */
 @media (max-width: 900px) {
   .wrap { flex-direction: column; }

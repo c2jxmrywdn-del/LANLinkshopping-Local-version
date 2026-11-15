@@ -1,12 +1,21 @@
 <template>
   <div class="wrap">
     <a-card class="box" title="注册账号">
+      <a-alert
+        v-if="inviteCode"
+        class="invite-alert"
+        type="info"
+        show-icon
+        :message="`已通过邀请链接注册，注册后自动绑定邀请人（邀请码 ${inviteCode}）。`"
+      />
       <a-form :model="form" layout="vertical" @finish="submit">
         <a-form-item label="注册身份">
-          <a-radio-group v-model:value="form.roleCode" button-style="solid">
-            <a-radio-button value="buyer">采购方</a-radio-button>
-            <a-radio-button value="merchant">商户/供应商</a-radio-button>
-          </a-radio-group>
+          <div class="role-note">
+            <div>注册后获得普通用户（采购方）身份。</div>
+            <div>
+              如需成为商户，请提交<a href="/merchant" @click.prevent="router.push('/merchant')">商户入驻申请</a>。
+            </div>
+          </div>
         </a-form-item>
         <a-form-item label="手机号" :rules="[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]">
           <a-input v-model:value="form.phone" size="large" />
@@ -32,16 +41,21 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useUserStore } from '../store/user'
 
+const route = useRoute()
 const router = useRouter()
 const user = useUserStore()
 const loading = ref(false)
 const agree = ref(false)
-const form = reactive({ roleCode: 'buyer', phone: '', nickname: '', password: '' })
+const form = reactive({ phone: '', nickname: '', password: '' })
+const inviteCode = computed(() => {
+  const raw = Array.isArray(route.query.invite) ? route.query.invite[0] : route.query.invite
+  return typeof raw === 'string' ? raw.trim() : ''
+})
 
 function validateAgree() {
   if (!agree.value) return Promise.reject('请先阅读并同意用户服务协议与隐私政策')
@@ -51,16 +65,23 @@ function validateAgree() {
 async function submit() {
   loading.value = true
   try {
-    await user.register(form)
+    const payload = { ...form }
+    if (inviteCode.value) payload.inviteCode = inviteCode.value
+    await user.register(payload)
     message.success('注册成功，请登录')
     router.push('/login')
   } finally { loading.value = false }
 }
+
+defineExpose({ submit })
 </script>
 
 <style scoped>
 .wrap { display: flex; justify-content: center; align-items: center; min-height: 70vh; }
 .box { width: 400px; }
+.invite-alert { margin-bottom: 16px; }
+.role-note { color: #555; line-height: 1.8; }
+.role-note a { color: #1E6EB8; }
 .tip { text-align: center; margin-top: 12px; color: #888; }
 .agree-links { font-size: 13px; }
 .agree-links a { color: #1E6EB8; cursor: pointer; }

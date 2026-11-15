@@ -1,0 +1,32 @@
+{
+  "page": "买家评价 MVP（ProductDetail / OrderDetail / ReviewDialog / ProductReviews）",
+  "strings": [
+    "评分需为 1-5 星",
+    "订单完成后才能评价",
+    "订单行不存在",
+    "该商品已评价过",
+    "订单不存在",
+    "已超过评价期限（完成后 30 天内可评）",
+    "请先登录",
+    "Review this product",
+    "Submit review",
+    "Cancel",
+    "Rating",
+    "5 stars",
+    "1 star",
+    "How were the product quality, service and delivery? (up to 500 characters)",
+    "Post anonymously (hide buyer identity)",
+    "Review submitted",
+    "Please select a star rating first",
+    "No reviews yet — be the first to share your experience",
+    "Merchant reply",
+    "Anonymous buyer",
+    "Reviews could not be loaded",
+    "Retry",
+    "12 reviews · 92.5% positive",
+    "5 stars",
+    "Customer reviews",
+    "Review",
+    "Reviewed"
+  ]
+}

@@ -113,7 +113,7 @@ function go(s) {
 <style scoped>
 .banner-wrap { margin-bottom: 24px; border-radius: 18px; overflow: hidden; border: 1px solid rgba(19,35,58,.05); box-shadow: 0 12px 34px rgba(15,23,42,.14); }
 .banner-swiper { width: 100%; }
-.slide { position: relative; height: 320px; cursor: pointer; }
+.slide { position: relative; height: 400px; cursor: pointer; }
 .slide img { width: 100%; height: 100%; object-fit: cover; object-position: center center; display: block; }
 .slide-p img { object-position: center 100%; }
 .mask { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(15,23,42,.86) 0%, rgba(15,23,42,.80) 50%, rgba(15,23,42,.72) 62%, rgba(15,23,42,.28) 82%, rgba(15,23,42,0) 100%); }
@@ -125,7 +125,7 @@ function go(s) {
 /* 手机竖屏：轮播整体按比例缩小，图片高度、标题与内边距同步收紧 */
 @media (max-width: 767px) {
   .banner-wrap { margin-bottom: 18px; border-radius: 14px; }
-  .slide { height: 190px; }
+  .slide { height: 250px; }
   .content { max-width: 90%; padding: 0 18px; }
   /* 移动端文案占宽变大（90%），遮罩随之加强收窄过渡，保住白字可读性 */
   .mask { background: linear-gradient(90deg, rgba(15,23,42,.86) 0%, rgba(15,23,42,.78) 55%, rgba(15,23,42,.5) 80%, rgba(15,23,42,.2) 100%); }

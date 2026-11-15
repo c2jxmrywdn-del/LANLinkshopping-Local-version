@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.common.UserIdentity;
 import com.lanlink.shopping.config.UserContext;
+import com.lanlink.shopping.entity.LogisticsProvider;
 import com.lanlink.shopping.entity.LogisticsTrace;
 import com.lanlink.shopping.entity.LogisticsWaybill;
 import com.lanlink.shopping.integration.security.RequirePerm;
@@ -174,8 +175,34 @@ public class LogisticsController {
 
     // ===== 商户端发货资料：可用服务商与运费模板（仅启用项；精简 VO 不含接口地址/联系人/结算等平台配置） =====
 
-    /** 发货选项：服务商（仅发货选择所需字段） */
-    public record ProviderOption(Long providerId, String providerName, String providerCode, String apiType) {}
+    /** 发货选项：服务商（仅发货选择所需字段；scope/routeNotes 供前端国际分组与询价提示） */
+    public record ProviderOption(Long providerId, String providerName, String providerCode, String apiType,
+                                 String scope, String routeNotes) {}
+
+    /** 从 capability_json 提取 scope（解析失败视为 domestic，防线由运单创建兜底） */
+    private String capScope(LogisticsProvider p) {
+        String json = p.getCapabilityJson();
+        if (json == null || json.isBlank()) return "domestic";
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+            String scope = node.path("scope").asText(null);
+            return scope == null || scope.isBlank() ? "domestic" : scope;
+        } catch (Exception e) {
+            return "domestic";
+        }
+    }
+
+    /** 从 capability_json 提取 routeNotes（国际线路询价提示文案） */
+    private String capRouteNotes(LogisticsProvider p) {
+        String json = p.getCapabilityJson();
+        if (json == null || json.isBlank()) return null;
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+            return node.path("routeNotes").asText(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /** 发货选项：运费模板（仅发货选择所需字段） */
     public record TemplateOption(Long templateId, String templateName, Long providerId) {}
@@ -185,7 +212,8 @@ public class LogisticsController {
     @RequirePerm("merchant:manage")
     public R<List<ProviderOption>> providers() {
         return R.ok(waybillService.enabledProviders().stream()
-                .map(p -> new ProviderOption(p.getProviderId(), p.getProviderName(), p.getProviderCode(), p.getApiType()))
+                .map(p -> new ProviderOption(p.getProviderId(), p.getProviderName(), p.getProviderCode(), p.getApiType(),
+                        capScope(p), capRouteNotes(p)))
                 .toList());
     }
 

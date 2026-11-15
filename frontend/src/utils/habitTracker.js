@@ -64,8 +64,8 @@ async function syncFromServer() {
   if (!hasCookieConsent('analytics') || !loggedInUser()) return
   serverSynced = true
   try {
-    const { default: request } = await import('../api/request')
-    const data = await request.get('/user/habits', { silent: true })
+    const { userApi } = await import('../api')
+    const data = await userApi.habitGet()
     const remote = data && data.payload ? data.payload : data
     if (!remote || remote.v !== 1) return
     const local = readProfile() || emptyProfile()
@@ -104,8 +104,8 @@ function scheduleReport() {
     const profile = readProfile()
     if (!profile) return
     try {
-      const { default: request } = await import('../api/request')
-      await request.post('/user/habits/report', { payload: profile }, { silent: true })
+      const { userApi } = await import('../api')
+      await userApi.habitReport(profile)
     } catch (e) { /* 同步失败静默：本机 Cookie 仍是权威副本 */ }
   }, wait)
 }
@@ -187,8 +187,8 @@ export async function clearHabits() {
   }
   if (loggedInUser()) {
     try {
-      const { default: request } = await import('../api/request')
-      await request.delete('/user/habits', { silent: true })
+      const { userApi } = await import('../api')
+      await userApi.habitRemove()
     } catch (e) { /* 服务端清除失败不阻塞本机清除 */ }
   }
 }

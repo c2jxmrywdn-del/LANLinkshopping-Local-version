@@ -191,3 +191,307 @@ def test_gateway_chat_completions_cache_e2e(clean_cache):
         assert resp3.headers.get("X-Lanlink-Cache") == "MISS"
     finally:
         LLM.backend_pref = orig_pref
+
+
+# --------------------- 回归：__init__ 初始化块必须可达 ---------------------
+# 历史缺陷：`_redis_available/_redisearch_ready/_last_index_check/_pubsub_listener`
+# 四行初始化与 start_pubsub_listener() 被误放在 `_is_invalidated_since` 的 return 之后，
+# 成为死代码，实例缺少这四个属性。后果：
+#   1) 注入 Redis client 后 `get()` → `_ensure_index()` → AttributeError → chat 500；
+#   2) `/cache/stats`、`is_pubsub_listener_running()`、shutdown 的 `stop_pubsub_listener()` 恒抛。
+# 修复前以下用例全部失败，修复后必须通过。
+
+_CACHE_INIT_ATTRS = (
+    "_redis_available",
+    "_redisearch_ready",
+    "_last_index_check",
+    "_pubsub_listener",
+)
+
+
+class _FakeRedis:
+    """仅实现 SemanticCache 读路径用到的最小 Redis 接口，避免测试依赖真实 Redis。"""
+
+    def __init__(self, hashes=None):
+        # 角色级失效要逐键回读判定归属：doc 键用 hget("role") 判定
+        self._hashes = hashes or {}
+        self.deleted = []
+
+    def get(self, key):
+        return None
+
+    def hget(self, key, field):
+        return self._hashes.get(key, {}).get(field)
+
+    def execute_command(self, *args, **kwargs):
+        # FT._LIST 返回空 → _ensure_index 走 FT.CREATE 分支后视为就绪；
+        # FT.SEARCH 返回空 → 无命中，继续走内存兜底。
+        return []
+
+    def scan_iter(self, match=None, count=None):
+        return iter([k for k in self._hashes if k.startswith(match.rstrip("*"))])
+
+    def delete(self, key):
+        self.deleted.append(key)
+        return 1
+
+
+class _FixedDimEmbedder:
+    """返回固定维度的确定性向量，用于把 dim 对齐后触发 Tier-2 路径。"""
+
+    def __init__(self, dim: int):
+        self.dim = dim
+
+    def embed_one(self, text: str):
+        return [0.01] * self.dim
+
+    def embed(self, texts):
+        return [[0.01] * self.dim for _ in texts]
+
+
+@pytest.fixture
+def no_pubsub(monkeypatch):
+    """显式关闭 Pub/Sub，避免用例在无 Redis 环境里起后台重连线程。"""
+    monkeypatch.setenv("GATEWAY_ENABLE_PUBSUB_INVALIDATION", "false")
+
+
+def test_init_defines_redis_and_listener_attributes(no_pubsub):
+    """构造后四个探针/监听器属性必须存在（修复前它们落在死代码区，实例没有这些属性）。"""
+    cache = SemanticCache()
+    missing = [name for name in _CACHE_INIT_ATTRS if not hasattr(cache, name)]
+    assert missing == [], f"__init__ 未初始化这些属性（死代码回归）: {missing}"
+    assert cache._redis_available is True
+    assert cache._redisearch_ready is False
+    assert cache._last_index_check == 0.0
+    assert cache._pubsub_listener is None
+
+
+def test_default_instances_do_not_spawn_listener_threads():
+    """默认构造不得起后台线程：实例数增长不应线性增加重连线程。"""
+    import threading
+
+    baseline = threading.active_count()
+    caches = [SemanticCache() for _ in range(3)]
+    assert threading.active_count() == baseline, "默认实例不应启动 Pub/Sub 线程"
+    assert all(c.is_pubsub_listener_running() is False for c in caches)
+    for cache in caches:
+        cache.stop_pubsub_listener()
+
+
+def test_role_invalidate_only_deletes_that_role_in_redis(no_pubsub):
+    """角色级失效只能删该角色的 Redis 键，不能清空其它角色（广播路径会走这里）。"""
+    buyer_key = "aigateway:scache:doc:buyer-doc"
+    merchant_key = "aigateway:scache:doc:merchant-doc"
+    redis = _FakeRedis(hashes={
+        buyer_key: {"role": "buyer"},
+        merchant_key: {"role": "merchant"},
+    })
+    cache = SemanticCache(redis_client=redis)
+    cache.invalidate(role="buyer")
+    assert redis.deleted == [buyer_key], f"误删了其它角色的键: {redis.deleted}"
+
+    # 全量失效仍然清空所有角色
+    redis.deleted.clear()
+    cache.invalidate()
+    assert set(redis.deleted) == {buyer_key, merchant_key}
+
+
+def test_get_with_injected_redis_client_does_not_raise(no_pubsub):
+    """注入 Redis client 且维度匹配时，get() 必须正常返回 None，而不是 AttributeError。
+
+    这是 chat 链路的真实崩溃点：`/v1/chat/completions` → CACHE.get() → _ensure_index()。
+    修复前此处抛 `AttributeError: '_redisearch_ready'`。
+    """
+    cache = SemanticCache(redis_client=_FakeRedis(), embedder=_FixedDimEmbedder(768), dim=768)
+    assert cache.get("请问如何开具增值税专用发票？") is None
+
+    # 写入后精确命中仍然可用，确认修复没有破坏 Tier-1
+    assert cache.set("请问如何开具增值税专用发票？", "需提供开票资料。", role="buyer") is True
+    hit = cache.get("请问如何开具增值税专用发票？", role="buyer")
+    assert hit is not None and hit.hit_type == "exact"
+
+
+def test_ensure_index_is_reachable_and_caches_result(no_pubsub):
+    """_ensure_index 可正常调用，并在成功后置位 _redisearch_ready。"""
+    cache = SemanticCache(redis_client=_FakeRedis(), embedder=_FixedDimEmbedder(768), dim=768)
+    assert cache._ensure_index(_FakeRedis()) is True
+    assert cache._redisearch_ready is True
+    # 第二次调用命中就绪缓存，不再访问 Redis
+    assert cache._ensure_index(None) is True
+
+
+def test_listener_lifecycle_and_stats_fields_are_safe(no_pubsub):
+    """`/cache/stats` 与 shutdown 依赖的属性/方法必须可直接调用。"""
+    cache = SemanticCache()
+    assert cache.is_pubsub_listener_running() is False
+    # shutdown 钩子调用点：修复前此处抛 AttributeError
+    cache.stop_pubsub_listener()
+    # /cache/stats 读取的三个字段
+    assert cache._redis_available is True
+    assert cache._redisearch_ready is False
+    assert cache.is_pubsub_listener_running() is False
+
+
+def test_cache_stats_endpoint_returns_200(no_pubsub):
+    """`GET /cache/stats` 必须返回 200（修复前恒 500）。"""
+    from app.main import app as gateway_app, PRIMARY_GATEWAY_KEY
+
+    client = TestClient(gateway_app)
+    resp = client.get(
+        "/cache/stats",
+        headers={"Authorization": f"Bearer {PRIMARY_GATEWAY_KEY}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert "redis_available" in body
+    assert "redisearch_ready" in body
+    assert "pubsub_listener_running" in body
+
+
+# --------------------- 回归：维度必须跟随嵌入模型实际输出 ---------------------
+# 历史缺陷：`dim` 默认硬编码 768，而部署注入 `AI_EMBED_MODEL=bge-m3`（1024 维），
+# `len(vector) != self.dim` 会静默丢弃全部 Tier-2 写入与命中，语义缓存退化为仅精确匹配。
+
+
+class _RecordingRedis:
+    """记录命令序列的 Redis 替身，用于验证索引维度不一致时会 DROP 后重建。"""
+
+    def __init__(self, index_dim: int):
+        self.commands: list[str] = []
+        self._index_dim = index_dim
+
+    def execute_command(self, *args):
+        name = args[0]
+        self.commands.append(name)
+        if name == "FT._LIST":
+            return [b"aigateway:scache:idx"]
+        if name == "FT.INFO":
+            return [b"attributes",
+                    [[b"identifier", b"qvec", b"type", b"VECTOR",
+                      b"DIM", str(self._index_dim).encode()]]]
+        if name == "FT.DROPINDEX":
+            self._index_dim = 1024
+            return b"OK"
+        return b"OK"
+
+    def get(self, key):
+        return None
+
+    def hget(self, key, field):
+        return None
+
+
+def test_dim_follows_embedder_output_when_unset(no_pubsub, monkeypatch):
+    """未配置 AI_EMBED_DIM 时，维度应由嵌入模型首次实际输出锁定（而非硬编码 768）。"""
+    monkeypatch.delenv("AI_EMBED_DIM", raising=False)
+    cache = SemanticCache(embedder=_FixedDimEmbedder(1024))
+    assert cache.dim is None, "未配置时应保持未定，等首次 embed 校准"
+
+    assert cache._resolve_dim([0.1] * 1024) == 1024
+    assert cache.dim == 1024
+
+
+def test_dim_honours_env_override(no_pubsub, monkeypatch):
+    """AI_EMBED_DIM 显式配置时优先采用，且非法值不应让构造失败。"""
+    monkeypatch.setenv("AI_EMBED_DIM", "1024")
+    assert SemanticCache().dim == 1024
+
+    monkeypatch.setenv("AI_EMBED_DIM", "not-a-number")
+    assert SemanticCache().dim is None
+
+    monkeypatch.setenv("AI_EMBED_DIM", "0")
+    assert SemanticCache().dim is None
+
+
+def test_dim_mismatch_is_corrected_and_reported(no_pubsub, monkeypatch):
+    """配置维度与模型输出不一致时以实际为准，并重置索引就绪标记。"""
+    monkeypatch.setenv("AI_EMBED_DIM", "768")
+    cache = SemanticCache(embedder=_FixedDimEmbedder(1024))
+    assert cache.dim == 768
+    cache._redisearch_ready = True
+
+    assert cache._resolve_dim([0.1] * 1024) == 1024
+    assert cache.dim == 1024
+    assert cache._redisearch_ready is False, "维度变更后必须重建索引"
+
+
+def test_tier2_write_and_hit_work_with_1024_dim(no_pubsub, monkeypatch):
+    """1024 维模型下 Tier-2 写入与命中必须生效（修复前被 `len != 768` 静默丢弃）。"""
+    monkeypatch.delenv("AI_EMBED_DIM", raising=False)
+    cache = SemanticCache(embedder=_FixedDimEmbedder(1024))
+    assert cache.set("七天无理由退货运费谁承担", "买家原因由买家承担。", role="buyer") is True
+    # _mem_vectors 只有维度对齐才会写入，这是 Tier-2 生效的直接证据
+    assert len(cache._mem_vectors) == 1, "Tier-2 向量未写入（维度仍被过滤）"
+    assert cache._mem_vectors[0]["vec"] and len(cache._mem_vectors[0]["vec"]) == 1024
+
+
+def test_existing_index_with_wrong_dim_is_rebuilt(no_pubsub):
+    """已有索引维度与当前模型不一致时必须 DROP 后重建，否则每次 KNN 都报向量长度错误。"""
+    redis = _RecordingRedis(index_dim=768)
+    cache = SemanticCache(redis_client=redis)
+    cache.dim = 1024
+
+    assert cache._ensure_index(redis) is True
+    assert "FT.DROPINDEX" in redis.commands, f"未重建索引: {redis.commands}"
+    assert redis.commands.index("FT.DROPINDEX") < redis.commands.index("FT.CREATE")
+
+
+def test_existing_index_with_matching_dim_is_reused(no_pubsub):
+    """维度一致时不得重建索引（避免每次启动清空缓存）。"""
+    redis = _RecordingRedis(index_dim=1024)
+    cache = SemanticCache(redis_client=redis)
+    cache.dim = 1024
+
+    assert cache._ensure_index(redis) is True
+    assert "FT.DROPINDEX" not in redis.commands
+    assert "FT.CREATE" not in redis.commands
+
+
+def test_index_dim_parser_handles_resp2_and_resp3(no_pubsub):
+    """FT.INFO 解析要同时兼容 RESP2 扁平/嵌套列表与 RESP3 dict。"""
+    class _Resp:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def execute_command(self, *args):
+            return self.payload
+
+    resp2_nested = [b"attributes",
+                    [[b"identifier", b"qvec", b"DIM", b"768"]]]
+    resp3_dict = {b"attributes": [{b"identifier": b"qvec", b"DIM": b"1024"}]}
+    flat = [b"attributes", [b"identifier", b"qvec", b"DIM", b"1536"]]
+    no_dim = [b"attributes", [[b"identifier", b"role"]]]
+
+    assert SemanticCache._index_dim(_Resp(resp2_nested)) == 768
+    assert SemanticCache._index_dim(_Resp(resp3_dict)) == 1024
+    assert SemanticCache._index_dim(_Resp(flat)) == 1536
+    assert SemanticCache._index_dim(_Resp(no_dim)) is None
+
+
+def test_no_index_created_while_dim_unknown(no_pubsub, monkeypatch):
+    """维度未校准时不得凭猜测建索引（猜错就要整库重建），应先退回内存 VSS。"""
+    monkeypatch.delenv("AI_EMBED_DIM", raising=False)
+
+    class _EmptyIndex:
+        def __init__(self):
+            self.commands = []
+
+        def execute_command(self, *args):
+            self.commands.append(args[0])
+            if args[0] == "FT._LIST":
+                return []          # 索引不存在
+            return b"OK"
+
+    redis = _EmptyIndex()
+    cache = SemanticCache(redis_client=redis)
+    assert cache.dim is None
+    assert cache._ensure_index(redis) is False
+    assert "FT.CREATE" not in redis.commands, f"维度未知却创建了索引: {redis.commands}"
+    assert cache._redisearch_ready is False
+
+    # 锁定真实维度后即可正常建索引
+    cache._resolve_dim([0.1] * 1024)
+    cache._last_index_check = 0.0
+    assert cache._ensure_index(redis) is True
+    assert "FT.CREATE" in redis.commands

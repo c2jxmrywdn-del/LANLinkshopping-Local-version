@@ -2,6 +2,7 @@ package com.lanlink.shopping.integration.pricing;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lanlink.shopping.common.BusinessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -109,6 +110,83 @@ public final class TierPricing {
         }
         return null;
     }
+
+    /**
+     * 起订量（MOQ）：阶梯配置里最小档的 minQty；无阶梯配置返回 0（不限）。
+     * 写侧（购物车/下单）用它做前置拦截，读侧解析失败一律回落 0，不阻断交易。
+     */
+    public static int minOrderQty(String tierJson) {
+        List<Tier> tiers = parse(tierJson);
+        return tiers.isEmpty() ? 0 : tiers.get(0).minQty();
+    }
+
+    /**
+     * 对外契约（P1-17）：详情/商户编辑回显出站形态，统一键名 minQty/price，
+     * 按 minQty 升序返回（买家侧展示时自行倒序渲染）。解析走 {@link #parse} 的容错口径。
+     */
+    public static List<com.lanlink.shopping.entity.Product.TierPrice> toContract(String tierJson) {
+        return parse(tierJson).stream()
+                .map(t -> new com.lanlink.shopping.entity.Product.TierPrice(t.minQty(), t.unitPrice()))
+                .toList();
+    }
+
+    /**
+     * 写侧契约校验 + 归一化落库（商户发布/编辑）：
+     * ≥1 条、minQty 为正整数且（归一后）严格递增、price 递减或相等且 ≤ 基准价，
+     * 返回规范 JSON（minQty 升序、两位小数）；无档位返回 null（清空阶梯）。
+     * 任何非法输入抛 {@link BusinessException}，文案直接面向商户。
+     */
+    public static String encodeContract(List<com.lanlink.shopping.entity.Product.TierPrice> tiers,
+                                        BigDecimal basePrice) {
+        if (tiers == null || tiers.isEmpty()) {
+            return null;
+        }
+        for (com.lanlink.shopping.entity.Product.TierPrice t : tiers) {
+            if (t == null || t.minQty() < 1) {
+                throw new BusinessException("阶梯价数量需为正整数（起订数量 ≥1）");
+            }
+            if (t.price() == null || t.price().signum() <= 0) {
+                throw new BusinessException("阶梯价单价需为大于 0 的数值（第 " + t.minQty() + " 件档）");
+            }
+        }
+        List<com.lanlink.shopping.entity.Product.TierPrice> sorted = tiers.stream()
+                .sorted(Comparator.comparingInt(com.lanlink.shopping.entity.Product.TierPrice::minQty))
+                .toList();
+        for (int i = 1; i < sorted.size(); i++) {
+            int prevQty = sorted.get(i - 1).minQty();
+            int curQty = sorted.get(i).minQty();
+            if (curQty == prevQty) {
+                throw new BusinessException("阶梯档位数量重复：" + curQty + " 件出现了多次");
+            }
+            if (sorted.get(i).price().compareTo(sorted.get(i - 1).price()) > 0) {
+                throw new BusinessException("阶梯价单价需随数量递减或持平：" + curQty + " 件档（"
+                        + sorted.get(i).price().setScale(2, RoundingMode.HALF_UP) + "）不能高于 "
+                        + prevQty + " 件档（" + sorted.get(i - 1).price().setScale(2, RoundingMode.HALF_UP) + "）");
+            }
+        }
+        if (basePrice != null && basePrice.signum() > 0) {
+            BigDecimal top = sorted.get(sorted.size() - 1).price();
+            if (top.compareTo(basePrice) > 0) {
+                throw new BusinessException("阶梯价单价（" + top.setScale(2, RoundingMode.HALF_UP)
+                        + "）不能高于商品单价（" + basePrice.setScale(2, RoundingMode.HALF_UP) + "）");
+            }
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < sorted.size(); i++) {
+            com.lanlink.shopping.entity.Product.TierPrice t = sorted.get(i);
+            if (i > 0) sb.append(',');
+            sb.append("{\"minQty\":").append(t.minQty())
+              .append(",\"price\":").append(t.price().setScale(2, RoundingMode.HALF_UP).toPlainString()).append('}');
+        }
+        sb.append(']');
+        if (sb.length() > MAX_JSON_LEN) {
+            throw new BusinessException("阶梯价档位过多（存储上限 " + MAX_JSON_LEN + " 字符），请减少档位");
+        }
+        return sb.toString();
+    }
+
+    /** t_product.tier_price_json VARCHAR(500)（schema.sql:205），写侧同口径封顶 */
+    private static final int MAX_JSON_LEN = 500;
 
     private static int readInt(JsonNode node, String... keys) {
         for (String k : keys) {

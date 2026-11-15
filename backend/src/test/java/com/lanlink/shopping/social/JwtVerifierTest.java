@@ -87,6 +87,18 @@ class JwtVerifierTest {
         assertNull(verifier.kidOf("not-a-jwt"));
     }
 
+    @Test
+    void rejectsWeakRsa1024PublicKey() throws Exception {
+        java.security.KeyPairGenerator gen = java.security.KeyPairGenerator.getInstance("RSA");
+        gen.initialize(1024);
+        KeyPair weakKp = gen.generateKeyPair();
+        String jwt = signJwt(weakKp, "weak-kid", payload(Instant.now().getEpochSecond() + 600, ISS, AUD, "s", null));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> verifier.verifyRs256(jwt, nB64(weakKp), eB64(weakKp), ISS, AUD));
+        assertTrue(ex.getMessage().contains("公钥强度不足") || ex.getMessage().contains("2048"));
+    }
+
     /* ---------------- helpers ---------------- */
 
     static String payload(long exp, String iss, String aud, String sub, String email) {

@@ -190,17 +190,41 @@ public class LicenseViewGateService {
         ticketStore.values().removeIf(box -> box.exp < now);
     }
 
+    /** 平台名（写死常量，避免被环境变量/商户名污染导致水印文案被篡改） */
+    public static final String PLATFORM_NAME = "LANLINKShopping";
+
     /**
-     * 水印文字模板：「仅供{查看方}对外展示时使用，最终解释权归属{商户企业名}所有」。
-     * 查看方为空回退占位名，商户名为空回退占位名——模板必须始终完整，不能出现空洞。
+     * 水印文字模板：
+     * <pre>
+     * 仅供{查看方}在LANLINKShopping对外展示时使用
+     * 最终解释权归属{商户企业名}所有
+     * </pre>
+     *
+     * <p>说明：
+     * <ul>
+     *   <li>第一行锚定<b>查看方</b>：截图外流可直接定位到查看账号，这是溯源价值所在；</li>
+     *   <li>第二行锚定<b>商户企业名</b>：这是"最终解释权"的唯一合法主体，
+     *       必须与营业执照上的公司名称一致，任何情况下都不得被查看方、平台名或占位词替换；</li>
+     *   <li>商户企业名缺失时<b>不做任何回退</b>：宁可拒绝出图，也不能生成
+     *       「最终解释权归属商户#1所有」这类伪造主体，否则等于篡改权属声明；</li>
+     *   <li>查看方为空回退「平台运营」，避免第一行出现"仅供在…"这类空洞。</li>
+     *   <li>平台名用常量拼接，不接受外部输入。</li>
+     * </ul>
+     *
+     * @param viewerDisplayName   查看方显示名（运营账号企业名/昵称，或商户自己的企业名）
+     * @param merchantDisplayName 商户企业名（营业执照上的公司名）；不得为空
+     * @throws BusinessException 商户企业名为空时抛出（fail closed，不生成水印）
      */
     public static String[] buildWatermarkLines(String viewerDisplayName, String merchantDisplayName) {
         String viewer = (viewerDisplayName == null || viewerDisplayName.isBlank())
-                ? "LANLink 平台运营" : viewerDisplayName.trim();
-        String merchant = (merchantDisplayName == null || merchantDisplayName.isBlank())
-                ? "对应商户" : merchantDisplayName.trim();
+                ? "平台运营" : viewerDisplayName.trim();
+        if (merchantDisplayName == null || merchantDisplayName.isBlank()) {
+            // 权属主体不可伪造：缺失即拒绝，绝不回退成「商户#id」「对应商户」之类
+            throw new BusinessException(422, "商户企业名称缺失，无法生成水印");
+        }
+        String merchant = merchantDisplayName.trim();
         return new String[]{
-                "仅供" + viewer + "对外展示时使用",
+                "仅供" + viewer + "在" + PLATFORM_NAME + "对外展示时使用",
                 "最终解释权归属" + merchant + "所有"
         };
     }

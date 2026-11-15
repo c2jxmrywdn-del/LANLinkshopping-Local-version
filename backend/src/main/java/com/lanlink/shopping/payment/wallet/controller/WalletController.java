@@ -5,6 +5,7 @@ import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.payment.wallet.entity.WalletLog;
 import com.lanlink.shopping.payment.wallet.service.WalletService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
@@ -56,7 +57,7 @@ public class WalletController {
     }
 
     @PostMapping("/recharge")
-    public R<Map<String, Object>> recharge(@RequestBody RechargeDTO dto, HttpServletRequest request) {
+    public R<Map<String, Object>> recharge(@Valid @RequestBody RechargeDTO dto, HttpServletRequest request) {
         if (!mockPayment) {
             throw new com.lanlink.shopping.common.BusinessException(403,
                     "钱包充值需经支付渠道入账；当前环境未开启模拟支付，请通过 /payment/create 下单支付");

@@ -120,6 +120,7 @@
             @click="goAd(p)"
           >
             <template #footer>
+              <PlatformInvitedBadge :show="!!p.platformInvited" />
               <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
               <a-button v-if="user.hasPerm('cart:manage')" class="ll-add-cart" type="primary" size="small" block @click.stop="addCart(p)">加入购物车</a-button>
               <a-button v-else size="small" block type="default" @click.stop="goLogin">登录后购买</a-button>
@@ -139,6 +140,7 @@
             @click="goDetail(p)"
           >
             <template #footer>
+              <PlatformInvitedBadge :show="!!p.platformInvited" />
               <div class="product-card-meta">销量 {{ p.sales }} · 现货 {{ p.stock }}</div>
               <!-- 入口 7（P0 口径修复）：角标只展示真实等级折扣（rate<1 才显示），删除写死 0.95 的假折扣 -->
               <div v-if="membership.hasDiscount" class="product-card-vip">会员价 ¥{{ (p.price * membership.discountRate).toFixed(2) }}</div>
@@ -157,6 +159,7 @@
           <a-empty description="商品加载失败，请稍后重试">
             <template #image><span class="empty-icon"><AlertCircle :size="38" :stroke-width="1.8" /></span></template>
             <a-button type="primary" :loading="loading" @click="reload">重新加载</a-button>
+            <a-button type="link" @click="$router.push('/')">返回</a-button>
           </a-empty>
         </div>
       </a-col>
@@ -192,6 +195,7 @@ import { useUserStore } from '../store/user'
 import { useMembershipStore } from '../store/membership'
 import * as habitTracker from '../utils/habitTracker'
 import InteractiveProductCard from '../components/ui/InteractiveProductCard.vue'
+import PlatformInvitedBadge from '../components/merchant/PlatformInvitedBadge.vue'
 
 const route = useRoute()
 const router = useRouter()

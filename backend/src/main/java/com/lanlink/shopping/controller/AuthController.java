@@ -3,11 +3,13 @@ package com.lanlink.shopping.controller;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.DesensitizeUtil;
 import com.lanlink.shopping.common.R;
-import com.lanlink.shopping.common.UserIdentity;
+import com.lanlink.shopping.common.UserRoles;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.dto.Login2FADTO;
 import com.lanlink.shopping.dto.LoginDTO;
+import com.lanlink.shopping.dto.PasswordResetDTO;
 import com.lanlink.shopping.dto.ProfileUpdateDTO;
+import com.lanlink.shopping.dto.RegisterCodeDTO;
 import com.lanlink.shopping.dto.RegisterDTO;
 import com.lanlink.shopping.entity.Role;
 import com.lanlink.shopping.entity.User;
@@ -20,6 +22,8 @@ import com.lanlink.shopping.service.MessageService;
 import com.lanlink.shopping.service.TotpService;
 import com.lanlink.shopping.service.UserProfileService;
 import com.lanlink.shopping.service.UserService;
+import com.lanlink.shopping.service.VerifyCodeService;
+import com.lanlink.shopping.module.invite.service.InviteService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -42,11 +46,15 @@ public class AuthController {
     private final IdentityService identityService;
     private final AuditService auditService;
     private final AuthLockoutService authLockoutService;
+    private final VerifyCodeService verifyCodeService;
+    private final InviteService inviteService;
 
     public AuthController(UserService userService, UserProfileService profileService, TotpService totpService,
                           LoginLogService loginLogService, MessageService messageService,
                           IdentityService identityService, AuditService auditService,
-                          AuthLockoutService authLockoutService) {
+                          AuthLockoutService authLockoutService,
+                          VerifyCodeService verifyCodeService,
+                          InviteService inviteService) {
         this.userService = userService;
         this.profileService = profileService;
         this.totpService = totpService;
@@ -55,13 +63,67 @@ public class AuthController {
         this.identityService = identityService;
         this.auditService = auditService;
         this.authLockoutService = authLockoutService;
+        this.verifyCodeService = verifyCodeService;
+        this.inviteService = inviteService;
     }
 
     @PostMapping("/register")
     public R<Map<String, Object>> register(@Valid @RequestBody RegisterDTO dto, HttpServletRequest request) {
-        User u = userService.register(dto);
-        auditService.record(u.getUserId(), "IDENTITY_RECOGNIZE", "注册，身份: " + UserIdentity.BUYER.getCode(), request);
+        // 前端传了验证码就必须校验通过；未传保持旧行为（兼容存量客户端）
+        if (dto.getCode() != null && !dto.getCode().isBlank()) {
+            verifyCodeService.verifyForRegistration(dto.getPhone(), dto.getCode());
+        }
+        // 注册恒为买家；merchant_apply 只用于入驻（审核通过后由 MerchantService 升级角色）。
+        // 邀请码无效/过期/用尽一律回退 buyer，不阻断注册。
+        Long invitedRoleId = inviteService.roleIdForRegister(dto.getInviteCode());
+        User u = userService.register(dto, invitedRoleId);
+        // 邀请绑定：失败（码无效/过期/用尽/自邀）不阻断注册，仅跳过
+        inviteService.bindOnRegister(dto.getInviteCode(), u.getUserId(), u.getRoleId());
+        auditService.record(u.getUserId(), "IDENTITY_RECOGNIZE",
+                "注册，身份: " + UserRoles.codeOf(u.getRoleId())
+                        + (dto.getInviteCode() == null || dto.getInviteCode().isBlank()
+                        ? "" : "，邀请码: " + dto.getInviteCode()),
+                request);
         return R.ok("注册成功", toView(u, request));
+    }
+
+    /**
+     * 注册前发送短信验证码（匿名可调用）。
+     *
+     * <p>安全约束：
+     * <ul>
+     *   <li>响应不区分"手机号是否已注册"，避免账号枚举；</li>
+     *   <li>限流由 {@code /auth/register-code} 的 AuthRateLimitInterceptor 策略兜底；</li>
+     *   <li>仅演示模式回显 devCode，生产通道真实下发时返回空对象。</li>
+     * </ul>
+     */
+    @PostMapping("/register-code")
+    public R<Map<String, String>> registerCode(@Valid @RequestBody RegisterCodeDTO dto) {
+        String code = verifyCodeService.sendForRegistration(dto.getPhone());
+        Map<String, String> out = new HashMap<>();
+        if (code != null) out.put("devCode", code);
+        return R.ok(out);
+    }
+
+    /**
+     * 忘记密码：校验短信验证码后重置密码（匿名可调用）。
+     *
+     * <p>安全约束：
+     * <ul>
+     *   <li>验证码与注册链路同一作用域，5 次错误即作废（见 VerifyCodeService.verify）；</li>
+     *   <li>账号不存在与验证码错误分别提示——但验证码校验先于账号查询，
+     *       未通过验证码无法探测手机号是否注册；</li>
+     *   <li>重置成功后记录审计日志，便于事后追溯异常重置。</li>
+     * </ul>
+     */
+    @PostMapping("/password-reset")
+    public R<Void> resetPassword(@Valid @RequestBody PasswordResetDTO dto, HttpServletRequest request) {
+        verifyCodeService.verifyForRegistration(dto.getPhone(), dto.getCode());
+        userService.resetPasswordByPhone(dto.getPhone(), dto.getPassword());
+        User u = userService.findByPhone(dto.getPhone());
+        auditService.record(u == null ? null : u.getUserId(), "PASSWORD_RESET",
+                "通过短信验证码重置密码", request);
+        return R.ok("密码已重置，请用新密码登录", null);
     }
 
     /**
@@ -86,7 +148,7 @@ public class AuthController {
                 loginLogService.record(u.getUserId(), dto.getPhone(), true, "密码校验通过（待两步验证）", request);
                 return R.ok(out);
             }
-            request.getSession().setAttribute(UserContext.SESSION_KEY, u);
+            establishSession(request, u);
             loginLogService.record(u.getUserId(), dto.getPhone(), true, "登录成功", request);
             auditService.record(u.getUserId(), "IDENTITY_RECOGNIZE",
                     "登录，身份: " + identityService.identify(u.getUserId(), u.getRoleId()).getCode(), request);
@@ -113,7 +175,7 @@ public class AuthController {
         }
         User u = userService.findById(userId);
         if (u == null) throw new BusinessException("用户不存在");
-        request.getSession().setAttribute(UserContext.SESSION_KEY, u);
+        establishSession(request, u);
         loginLogService.record(userId, u.getPhone(), true, "登录成功（两步验证）", request);
         auditService.record(userId, "IDENTITY_RECOGNIZE",
                 "登录，身份: " + identityService.identify(userId, u.getRoleId()).getCode(), request);
@@ -143,11 +205,24 @@ public class AuthController {
      * 统一出口避免各入口各写一套视图/日志逻辑。
      */
     public Map<String, Object> establishSessionAndView(User u, String channel, HttpServletRequest request) {
-        request.getSession().setAttribute(UserContext.SESSION_KEY, u);
+        establishSession(request, u);
         loginLogService.record(u.getUserId(), u.getPhone(), true, "登录成功（" + channel + "）", request);
         auditService.record(u.getUserId(), "IDENTITY_RECOGNIZE",
                 "登录，身份: " + identityService.identify(u.getUserId(), u.getRoleId()).getCode(), request);
         return toView(u, request);
+    }
+
+    /**
+     * 建立已认证会话，并轮换 Session ID（防会话固定）。
+     *
+     * <p>攻击者可预先让受害者浏览器持有一个已知 JSESSIONID，受害者登录后该 ID 直接
+     * 升级为已认证会话。这里先创建/复用会话再 {@code changeSessionId()}：
+     * Servlet 容器会保留属性但换发新 ID，旧 ID 立即失效。
+     */
+    private void establishSession(HttpServletRequest request, User u) {
+        jakarta.servlet.http.HttpSession session = request.getSession(true);
+        request.changeSessionId();
+        session.setAttribute(UserContext.SESSION_KEY, u);
     }
 
     private Map<String, Object> toView(User u, HttpServletRequest request) {

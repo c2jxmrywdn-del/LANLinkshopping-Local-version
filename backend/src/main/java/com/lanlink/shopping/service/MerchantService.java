@@ -3,6 +3,7 @@ package com.lanlink.shopping.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.DesensitizeUtil;
+import com.lanlink.shopping.common.PlatformInvitedBadge;
 import com.lanlink.shopping.dto.MerchantApplyDTO;
 import com.lanlink.shopping.entity.AuditLog;
 import com.lanlink.shopping.entity.Enterprise;
@@ -14,6 +15,8 @@ import com.lanlink.shopping.mapper.EnterpriseMapper;
 import com.lanlink.shopping.mapper.MerchantMapper;
 import com.lanlink.shopping.mapper.QualificationMapper;
 import com.lanlink.shopping.mapper.UserMapper;
+import com.lanlink.shopping.module.merchantexit.service.MerchantDepositService;
+import com.lanlink.shopping.module.invite.service.InviteService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -49,6 +52,17 @@ public class MerchantService {
     /** 站内消息（可选注入，缺省时审核结果通知静默跳过，参照 OrderService 可选依赖模式） */
     @Autowired(required = false)
     private MessageService messageService;
+
+    /** 保证金台账（可选注入：历史单测构造器不带此依赖时跳过首缴） */
+    @Autowired(required = false)
+    private MerchantDepositService depositService;
+
+    /**
+     * 邀请链路（可选注入）：入驻时校验运营发放的「商家入驻邀约码」，
+     * 审核通过后把邀请关系置为 bound。缺省（历史单测）时跳过，不影响入驻主流程。
+     */
+    @Autowired(required = false)
+    private InviteService inviteService;
 
     @Autowired
     public MerchantService(MerchantMapper merchantMapper, EnterpriseMapper enterpriseMapper,
@@ -92,6 +106,13 @@ public class MerchantService {
             if (joinCode.length() < 4) {
                 throw new BusinessException("平台邀约码格式不正确（至少4位字符）");
             }
+            // 平台发放的入驻邀约码（运营后台生成）必须真实有效：过期/用尽/非运营签发一律拒绝，
+            // 避免"随便填 4 位字符就能以邀约方式入驻"。非 INV 前缀的自定义邀约码保持历史行为。
+            if (joinCode.toUpperCase(java.util.Locale.ROOT).startsWith("INV") && inviteService != null) {
+                if (inviteService.verifyMerchantApplyCode(joinCode) == null) {
+                    throw new BusinessException("商家入驻邀请码无效、已过期或已用尽，请联系平台运营重新获取");
+                }
+            }
         } else if ("加盟".equals(dto.getJoinType())) {
             if (!StringUtils.hasText(joinCode)) {
                 throw new BusinessException("特约加盟入驻必须填写特约加盟码");
@@ -129,6 +150,12 @@ public class MerchantService {
         m.setTaxStatus(dto.getTaxStatus());
         m.setJoinType(dto.getJoinType());
         m.setJoinCode(joinCode);
+        // 只有平台发放的 INV 前缀邀约码才走邀请校验；商户自定义邀约码（如 PARTNER2026）
+        // 不参与校验，避免把历史/线下邀约方式误判为无效。
+        boolean invitedByAdmin = inviteService != null && StringUtils.hasText(joinCode)
+                && joinCode.toUpperCase(java.util.Locale.ROOT).startsWith("INV")
+                && inviteService.verifyMerchantApplyCode(joinCode) != null;
+        m.setPlatformInvited(invitedByAdmin ? 1 : 0);
         m.setLicenseUrl(dto.getLicenseUrl());
         m.setHasSpecialPermit(Boolean.TRUE.equals(dto.getHasSpecialPermit()) ? 1 : 0);
         m.setSpecialPermitName(dto.getSpecialPermitName() != null ? dto.getSpecialPermitName().trim() : null);
@@ -156,6 +183,23 @@ public class MerchantService {
         m.setCreateTime(LocalDateTime.now());
         m.setUpdateTime(LocalDateTime.now());
         merchantMapper.insert(m);
+
+        // 入驻邀约码：记录邀请关系（pending），审核通过后再置为 bound。
+        // 校验与扣次之间仍可能发生过期/用尽/并发绑定；写入失败必须拒绝入驻并回滚，
+        // 否则 platform_invited=1 会与 t_invite_relation 不一致。
+        if (inviteService != null && StringUtils.hasText(joinCode)
+                && joinCode.toUpperCase(java.util.Locale.ROOT).startsWith("INV")) {
+            if (!inviteService.bindMerchantApply(joinCode, userId)) {
+                throw new BusinessException(
+                        "商家入驻邀请码无效、已过期、已用尽或绑定失败，请联系平台运营");
+            }
+        }
+
+        // 自动过审同样要落首缴：否则门禁5（保证金无欠款）对这类商户形同虚设，
+        // 关闭时也无余额可退。ensureInitialDeposit 自身幂等（已有 PAY 行即跳过）。
+        if (m.getReviewStatus() != null && m.getReviewStatus() == 1 && depositService != null) {
+            depositService.ensureInitialDeposit(m.getMerId());
+        }
 
         // 记录已具备资质(可选)
         if (StringUtils.hasText(dto.getQNames())) {
@@ -191,6 +235,10 @@ public class MerchantService {
                 userMapper.updateById(u);
             }
             auditService.record(userId, "IDENTITY_CHANGE", "身份升级: buyer -> merchant（商户初筛通过）", null);
+            // 邀请链路：初筛直接通过时同样要把入驻邀约关系置为 bound
+            if (inviteService != null) {
+                inviteService.markMerchantBound(userId);
+            }
         }
 
         // 自动初筛结果站内通知（通过/驳回口径与人工 review() 一致，避免申请人无感知）
@@ -258,14 +306,17 @@ public class MerchantService {
 
     /**
      * 水印「商户企业名」：t_merchant 无名称列，经 entId 取 t_enterprise.name；
-     * 企业档案缺失时回退「商户#{merId}」，保证水印文字始终可溯源。
+     *
+     * <p>企业档案缺失时<b>返回 null，不做任何回退</b>。
+     * 「最终解释权归属」的权属主体必须是营业执照上的公司名，
+     * 用「商户#12」这类合成名填充等于伪造权属声明——调用方据此拒绝出图。
      */
     public String merchantDisplayName(Merchant m) {
         if (m != null && m.getEntId() != null) {
             Enterprise ent = enterpriseMapper.selectById(m.getEntId());
             if (ent != null && StringUtils.hasText(ent.getName())) return ent.getName().trim();
         }
-        return m == null ? null : "商户#" + m.getMerId();
+        return null;
     }
 
     /** 商户档案必须存在（证照管理仅限已入驻商户） */
@@ -544,6 +595,9 @@ public class MerchantService {
         m.setRejectReason(reviewStatus == 2 ? reason.trim() : null);
         m.setUpdateTime(LocalDateTime.now());
         merchantMapper.updateById(m);
+        if (reviewStatus == 1 && depositService != null) {
+            depositService.ensureInitialDeposit(m.getMerId());
+        }
         // 审核通过 → 商户身份生效（角色置为 2L，关联企业）
         if (reviewStatus == 1 && m.getUserId() != null) {
             if (userMapper != null) {
@@ -558,6 +612,10 @@ public class MerchantService {
                 }
             }
             auditService.record(m.getUserId(), "IDENTITY_CHANGE", "身份升级: buyer -> merchant（商户审核通过）", null);
+            // 邀请链路：把入驻邀约关系置为 bound，并记录最终商户角色（审计）
+            if (inviteService != null) {
+                inviteService.markMerchantBound(m.getUserId());
+            }
         } else if (reviewStatus == 2 && m.getUserId() != null) {
             // 审核驳回 → 若之前为商户角色则重置为普通买家(1L)
             if (userMapper != null) {
@@ -582,5 +640,72 @@ public class MerchantService {
             }
         }
         return m;
+    }
+
+    /** 运营手动标记或取消「平台特邀商户」。公开展示还要等审核通过且店铺未关闭。 */
+    public Merchant markPlatformInvited(Long merId, boolean enabled) {
+        Merchant m = requireMerchant(merId);
+        m.setPlatformInvited(enabled ? 1 : 0);
+        m.setUpdateTime(LocalDateTime.now());
+        merchantMapper.updateById(m);
+        return m;
+    }
+
+    /** 给商品列表回填公开展示用的特邀标识。不满足展示条件时写 null，前端不渲染。 */
+    public void attachPlatformInvitedBadge(java.util.Collection<com.lanlink.shopping.entity.Product> products) {
+        if (products == null || products.isEmpty() || merchantMapper == null) return;
+        java.util.Set<Long> ids = new java.util.LinkedHashSet<>();
+        for (com.lanlink.shopping.entity.Product product : products) {
+            if (product != null && product.getMerId() != null) ids.add(product.getMerId());
+        }
+        if (ids.isEmpty()) return;
+        java.util.Map<Long, Merchant> merchants = new java.util.HashMap<>();
+        for (Merchant merchant : merchantMapper.selectBatchIds(ids)) {
+            if (merchant != null && merchant.getMerId() != null) merchants.put(merchant.getMerId(), merchant);
+        }
+        for (com.lanlink.shopping.entity.Product product : products) {
+            if (product == null) continue;
+            Merchant merchant = merchants.get(product.getMerId());
+            boolean show = merchant != null && PlatformInvitedBadge.visible(
+                    merchant.getReviewStatus(), merchant.getPlatformInvited(), merchant.getExitStatus());
+            product.setPlatformInvited(show ? Boolean.TRUE : null);
+        }
+    }
+
+    /**
+     * 店铺维度的公开展示信息（店铺卡片 / 搜索结果里的店铺条目）。
+     *
+     * <p>只暴露公开字段：店铺名、企业名、是否特邀。绝不返回法人/银行/联系方式等敏感数据。
+     *
+     * @param merIds 商户 ID 集合（为空返回空 Map）
+     * @return merId → {merId, shopName, entName, platformInvited}
+     */
+    public java.util.Map<Long, java.util.Map<String, Object>> publicShopCards(java.util.Collection<Long> merIds) {
+        java.util.Map<Long, java.util.Map<String, Object>> out = new java.util.LinkedHashMap<>();
+        if (merIds == null || merIds.isEmpty() || merchantMapper == null) return out;
+        java.util.Set<Long> ids = new java.util.LinkedHashSet<>();
+        for (Long id : merIds) if (id != null) ids.add(id);
+        if (ids.isEmpty()) return out;
+
+        java.util.Map<Long, Enterprise> ents = new java.util.HashMap<>();
+        if (enterpriseMapper != null) {
+            for (Enterprise e : enterpriseMapper.selectBatchIds(ids)) {
+                if (e != null && e.getEntId() != null) ents.put(e.getEntId(), e);
+            }
+        }
+        for (Merchant m : merchantMapper.selectBatchIds(ids)) {
+            if (m == null || m.getMerId() == null) continue;
+            Enterprise ent = m.getEntId() == null ? null : ents.get(m.getEntId());
+            String entName = ent == null ? null : ent.getName();
+            java.util.Map<String, Object> card = new java.util.LinkedHashMap<>();
+            card.put("merId", m.getMerId());
+            // 店铺名：优先企业名，缺省时用「商户#ID」兜底，避免前端出现空白标题
+            card.put("shopName", entName == null || entName.isBlank() ? ("商户#" + m.getMerId()) : entName);
+            card.put("entName", entName);
+            card.put("platformInvited", PlatformInvitedBadge.visible(
+                    m.getReviewStatus(), m.getPlatformInvited(), m.getExitStatus()) ? Boolean.TRUE : null);
+            out.put(m.getMerId(), card);
+        }
+        return out;
     }
 }

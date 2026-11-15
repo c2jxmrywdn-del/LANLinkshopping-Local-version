@@ -168,4 +168,12 @@ class ProductReviewServiceTest {
         assertEquals(0.0, s.get("average"));
         assertEquals(0.0, s.get("goodRate"));
     }
+
+    @Test
+    void reviewedItemIdsAlwaysNarrowByRequestingUser() {
+        when(reviewMapper.reviewedItemIds(7L, "ON-1")).thenReturn(List.of(11L, 12L));
+        assertEquals(List.of(11L, 12L), service.reviewedItemIds(7L, "ON-1"));
+        // 归属收窄必须落在查询条件上：查别人的单只会得到空列表，而不是泄漏其评价行
+        verify(reviewMapper).reviewedItemIds(eq(7L), eq("ON-1"));
+    }
 }

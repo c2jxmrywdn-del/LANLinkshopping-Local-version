@@ -1,6 +1,7 @@
 package com.lanlink.shopping.module.membership.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.UserIdentity;
 import com.lanlink.shopping.entity.Product;
@@ -103,6 +104,26 @@ public class MembershipService {
         return card;
     }
 
+    /**
+     * 按当前成长值 + 订阅状态重算并回写会员卡等级。
+     *
+     * <p>订阅开通/过期后调用：等级是派生值，必须在订阅状态变化时立即刷新，
+     * 否则「开通后不升级、过期后不降级」两头都会错。
+     */
+    @Transactional
+    public void recomputeLevel(Long userId) {
+        if (userId == null) return;
+        MemberCard card = getOrCreateCard(userId);
+        int growth = card.getGrowth() == null ? 0 : card.getGrowth();
+        Long newLevelId = levelForGrowth(growth, userId);
+        if (newLevelId != null && !newLevelId.equals(card.getLevelId())) {
+            cardMapper.update(null, Wrappers.<MemberCard>lambdaUpdate()
+                    .eq(MemberCard::getUserId, userId)
+                    .set(MemberCard::getLevelId, newLevelId)
+                    .set(MemberCard::getUpdateTime, LocalDateTime.now()));
+        }
+    }
+
     /** 累计成长值 + 积分（订单支付后调用）。按 orderNo 幂等，重复事件不会重复计分。multiplier 为积分倍数（VIP=2，普通=1）。 */
     @Transactional
     public void earnGrowth(Long userId, BigDecimal orderAmount, String orderNo, int multiplier) {
@@ -192,10 +213,8 @@ public class MembershipService {
         BigDecimal amount = (BigDecimal) q.get("amount");
         // 归整后不足 1 元（或余额/上限内无可用积分）：不做抵扣、不扣积分
         if (actual <= 0 || amount.signum() <= 0) return BigDecimal.ZERO;
-        MemberCard card = getOrCreateCard(userId);
-        card.setPoints(Math.max(0, (card.getPoints() == null ? 0 : card.getPoints()) - actual));
-        card.setUpdateTime(LocalDateTime.now());
-        cardMapper.updateById(card);
+        // 条件更新：余额已被并发请求扣走时返回 0 行，本单不抵扣也不写流水（与"积分不足"同语义）
+        if (cardMapper.deductPointsAtomic(userId, actual) == 0) return BigDecimal.ZERO;
 
         MemberPointLog log = new MemberPointLog();
         log.setUserId(userId);
@@ -227,10 +246,9 @@ public class MembershipService {
         if (refunded != null && refunded > 0) return 0;
 
         int points = redeems.stream().mapToInt(l -> Math.abs(l.getChangeVal() == null ? 0 : l.getChangeVal())).sum();
-        MemberCard card = getOrCreateCard(userId);
-        card.setPoints((card.getPoints() == null ? 0 : card.getPoints()) + points);
-        card.setUpdateTime(LocalDateTime.now());
-        cardMapper.updateById(card);
+        getOrCreateCard(userId);
+        // 原子累加：读-改-写会与并发扣减互相覆盖（返还读到扣减前余额会把扣减"写回去"）
+        addPointsAtomic(userId, points);
 
         MemberPointLog log = new MemberPointLog();
         log.setUserId(userId);
@@ -263,14 +281,9 @@ public class MembershipService {
         if (reversed != null && reversed > 0) return 0;
 
         int points = earns.stream().mapToInt(l -> Math.abs(l.getChangeVal() == null ? 0 : l.getChangeVal())).sum();
-        MemberCard card = getOrCreateCard(userId);
-        // 扣回所得积分，不扣成负数（积分可能已被消费）
-        int deducted = Math.min(points, card.getPoints() == null ? 0 : card.getPoints());
-        if (deducted > 0) {
-            card.setPoints(card.getPoints() - deducted);
-            card.setUpdateTime(LocalDateTime.now());
-            cardMapper.updateById(card);
-        }
+        getOrCreateCard(userId);
+        // 扣回所得积分，不扣成负数（积分可能已被消费）：GREATEST 保证下界，且是原子更新
+        addPointsAtomic(userId, -points);
 
         MemberPointLog log = new MemberPointLog();
         log.setUserId(userId);
@@ -299,8 +312,19 @@ public class MembershipService {
         return levels.isEmpty() ? 1L : levels.get(levels.size() - 1).getLevelId();
     }
 
-    /** 当前等级折扣率（默认 1.0 = 无折扣） */
+    /**
+     * 当前等级折扣率（默认 1.0 = 无折扣）。
+     *
+     * <p>等级解锁是「有效订阅 + 成长值」双条件（见 {@link #levelForGrowth}），
+     * 因此折扣也必须校验订阅：否则订阅过期后卡上仍保留旧 level_id，
+     * 折扣会一直生效到下一笔已支付订单才被重算（等于每到期一次多让利一单）。
+     * 这里是下单与促销预览的唯一收口点，在此判定可同时覆盖两条路径。
+     */
     public BigDecimal levelDiscountRate(Long userId) {
+        if (userId == null || subscriptionService == null
+                || !subscriptionService.hasActiveSubscription(userId)) {
+            return BigDecimal.ONE;
+        }
         MemberCard card = getOrCreateCard(userId);
         MemberLevel level = levelMapper.selectById(card.getLevelId());
         return level == null || level.getDiscountRate() == null ? BigDecimal.ONE : level.getDiscountRate();
@@ -397,8 +421,7 @@ public class MembershipService {
                     .eq(MemberPointLog::getRefOrderNo, refNo));
             if (exists != null && exists > 0) return 0;
         }
-        MemberCard card = getOrCreateCard(userId);
-        int before = card.getPoints() == null ? 0 : card.getPoints();
+        getOrCreateCard(userId);
 
         MemberPointLog pointLog = new MemberPointLog();
         pointLog.setUserId(userId);
@@ -415,10 +438,31 @@ public class MembershipService {
             log.debug("激励重复发放已拦截：userId={}, refNo={}", userId, refNo);
             return 0;
         }
-        card.setPoints(before + points);
-        card.setUpdateTime(LocalDateTime.now());
-        cardMapper.updateById(card);
+        // 原子累加：并发发奖（签到/活动/首单）下 updateById 整实体写回会丢更新
+        addPointsAtomic(userId, points);
         return points;
+    }
+
+    /**
+     * 原子增减积分余额（正数加、负数减，减法不会越过 0）。
+     *
+     * <p>用字符串列名的 UpdateWrapper 而非 lambdaUpdate：
+     * <ul>
+     *   <li>语义上走单条 `UPDATE ... SET points = GREATEST(0, points + ?)`，并发安全；</li>
+     *   <li>不依赖 MyBatis-Plus 的 lambda 元数据缓存，便于纯 Mockito 单测直接验证。</li>
+     * </ul>
+     */
+    private void addPointsAtomic(Long userId, int delta) {
+        if (userId == null || delta == 0) return;
+        UpdateWrapper<MemberCard> uw = new UpdateWrapper<>();
+        uw.eq("user_id", userId);
+        if (delta > 0) {
+            uw.setSql("points = COALESCE(points, 0) + " + delta);
+        } else {
+            uw.setSql("points = GREATEST(0, COALESCE(points, 0) - " + (-delta) + ")");
+        }
+        uw.set("update_time", LocalDateTime.now());
+        cardMapper.update(null, uw);
     }
 
     // ==================== 每日签到 ====================

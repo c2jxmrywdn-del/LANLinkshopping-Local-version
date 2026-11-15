@@ -200,6 +200,58 @@ public class PriceMonitorService {
      */
     public static final BigDecimal DEVIATION_NOTIFY_PCT = new BigDecimal("20");
 
+    /**
+     * 品类基准的最小样本量：低于此值说明该品类商品太少，中位数不具代表性，回退行业基准。
+     * 取 3 是因为真实数据里绝大多数品类只有 3-4 个在售商品（实测最大 4），门槛设更高会让品类口径永不生效。
+     */
+    static final int MIN_CATEGORY_SAMPLE = 3;
+
+    /**
+     * 取某商品的基准序列（品类优先、样本不足回退行业）。
+     *
+     * <p>品类基准是「用同品类在售商品均价算出的当日基准」，不落 t_market_benchmark
+     * （那张表是 (ind_id, day) 维度），而是在读的时候实时算一条等价的当日基准点，
+     * 这样不需要改表结构、也不影响历史基准序列。
+     */
+    private List<MarketBenchmark> resolveBenchmarkSeries(Product p, LocalDate sinceDay) {
+        if (p.getCatId() != null) {
+            int sample = benchmarkMapper.countOnSaleByCategory(p.getCatId());
+            if (sample >= MIN_CATEGORY_SAMPLE) {
+                // 用中位数而非均值：同品类内价差仍可达数十倍，均值会被高价商品拉偏
+                BigDecimal catMedian = benchmarkMapper.medianPriceByCategory(p.getCatId());
+                if (catMedian != null && catMedian.signum() > 0) {
+                    // 用品类均价作为当日基准点；历史序列仍取行业序列做波动率（同品类历史不可得）
+                    List<MarketBenchmark> series = new ArrayList<>(benchmarkMapper.selectList(
+                            Wrappers.<MarketBenchmark>lambdaQuery()
+                                    .eq(MarketBenchmark::getIndId, p.getIndId())
+                                    .ge(MarketBenchmark::getDay, sinceDay)
+                                    .orderByAsc(MarketBenchmark::getDay)));
+                    MarketBenchmark today = new MarketBenchmark();
+                    today.setIndId(p.getIndId());
+                    today.setDay(LocalDate.now());
+                    today.setBenchmark(catMedian.setScale(2, RoundingMode.HALF_UP));
+                    series.add(today);
+                    return series;
+                }
+            }
+        }
+        // 回退行业：同样用中位数（行业价差实测跨 4-6 个数量级，均值完全失真）
+        List<MarketBenchmark> series = new ArrayList<>(benchmarkMapper.selectList(
+                Wrappers.<MarketBenchmark>lambdaQuery()
+                        .eq(MarketBenchmark::getIndId, p.getIndId())
+                        .ge(MarketBenchmark::getDay, sinceDay)
+                        .orderByAsc(MarketBenchmark::getDay)));
+        BigDecimal indMedian = benchmarkMapper.medianPriceByIndustry(p.getIndId());
+        if (indMedian != null && indMedian.signum() > 0) {
+            MarketBenchmark today = new MarketBenchmark();
+            today.setIndId(p.getIndId());
+            today.setDay(LocalDate.now());
+            today.setBenchmark(indMedian.setScale(2, RoundingMode.HALF_UP));
+            series.add(today);
+        }
+        return series;
+    }
+
     public void notifyBenchmarkDeviations(List<Long> newIndIds) {
         if (newIndIds == null || newIndIds.isEmpty()) return;
         LocalDate today = LocalDate.now();
@@ -397,10 +449,17 @@ public class PriceMonitorService {
         if (p == null) throw new BusinessException("商品不存在");
         BigDecimal price = p.getPrice() == null ? BigDecimal.ZERO : p.getPrice();
         LocalDateTime since = LocalDateTime.now().minusDays(30);
-        List<MarketBenchmark> bench = benchmarkMapper.selectList(Wrappers.<MarketBenchmark>lambdaQuery()
-                .eq(MarketBenchmark::getIndId, p.getIndId())
-                .ge(MarketBenchmark::getDay, since.toLocalDate())
-                .orderByAsc(MarketBenchmark::getDay));
+        /*
+         * 基准口径：品类优先，样本不足再回退行业。
+         *
+         * 只按 ind_id 求平均会把同行业里量级完全不同的商品混在一起
+         * （实测「建筑行业」¥26.5 的管材与 ¥3980 的钢材同池平均），
+         * 结果是 94% 的商品被判为「显著偏离」URGENT，建议完全不可用。
+         *
+         * 品类（cat_id）才是价格可比的最小粒度；当品类在售样本 < MIN_CATEGORY_SAMPLE 时
+         * 说明该品类商品太少、均价不具代表性，才回退到行业基准。
+         */
+        List<MarketBenchmark> bench = resolveBenchmarkSeries(p, since.toLocalDate());
         List<PriceHistory> histories = historyMapper.selectList(Wrappers.<PriceHistory>lambdaQuery()
                 .eq(PriceHistory::getProdId, prodId)
                 .ge(PriceHistory::getCreateTime, since));

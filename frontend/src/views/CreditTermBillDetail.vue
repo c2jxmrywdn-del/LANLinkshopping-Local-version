@@ -184,7 +184,10 @@
     </template>
 
     <a-empty v-else description="未找到该账单">
-      <a-button type="primary" @click="$router.push('/credit-term/bills')">返回账单中心</a-button>
+      <a-space direction="vertical" :size="8">
+        <a-button type="primary" @click="$router.push('/credit-term/bills')">返回账单中心</a-button>
+        <a-button type="link" @click="$router.push('/credit-term')">返回账期中心</a-button>
+      </a-space>
     </a-empty>
   </div>
 </template>

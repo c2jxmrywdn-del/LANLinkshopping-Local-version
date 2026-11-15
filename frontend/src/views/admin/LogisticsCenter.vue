@@ -121,7 +121,7 @@
     <a-modal v-model:open="providerVisible" title="物流服务商" @ok="saveProvider">
       <a-form layout="vertical">
         <a-form-item label="服务商名称" required><a-input v-model:value="providerForm.providerName" /></a-form-item>
-        <a-form-item label="编码（SF/DB/JD/ZT/SELF）" required><a-input v-model:value="providerForm.providerCode" /></a-form-item>
+        <a-form-item label="编码（SF/DB/JD/ZT/SELF/KYE/ANE/BEST…）" required><a-input v-model:value="providerForm.providerCode" /></a-form-item>
         <a-form-item label="接口类型">
           <a-select v-model:value="providerForm.apiType">
             <a-select-option value="mock">沙箱模拟</a-select-option>
@@ -135,6 +135,37 @@
             <a-select-option :value="0">停用</a-select-option>
           </a-select>
         </a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="8"><a-form-item label="干线时效(h)"><a-input-number v-model:value="providerForm.avgEtaHours" :min="1" :max="999" style="width:100%" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="服务分(0-100)"><a-input-number v-model:value="providerForm.serviceScore" :min="0" :max="100" style="width:100%" /></a-form-item></a-col>
+          <a-col :span="8"><a-form-item label="准时率(%)"><a-input-number v-model:value="providerForm.slaRate" :min="0" :max="100" :precision="2" style="width:100%" /></a-form-item></a-col>
+        </a-row>
+        <a-form-item label="能力标记（scope/heavyCargo/pallet/install/guaranteed/costLevel/routeNotes）">
+          <div class="cap-editor">
+            <a-row :gutter="8">
+              <a-col :span="10">
+                <a-select v-model:value="capForm.scope" style="width:100%">
+                  <a-select-option value="domestic">国内</a-select-option>
+                  <a-select-option value="international">国际（询价制）</a-select-option>
+                </a-select>
+              </a-col>
+              <a-col :span="14">
+                <a-select v-model:value="capForm.costLevel" allow-clear placeholder="成本档" style="width:100%">
+                  <a-select-option value="low">low（成本优选）</a-select-option>
+                  <a-select-option value="mid">mid（标准）</a-select-option>
+                  <a-select-option value="high">high（高质高价）</a-select-option>
+                </a-select>
+              </a-col>
+            </a-row>
+            <a-row :gutter="8" style="margin-top:6px">
+              <a-col :span="6"><a-checkbox v-model:checked="capForm.heavyCargo">大件</a-checkbox></a-col>
+              <a-col :span="6"><a-checkbox v-model:checked="capForm.pallet">托盘</a-checkbox></a-col>
+              <a-col :span="6"><a-checkbox v-model:checked="capForm.install">送装</a-checkbox></a-col>
+              <a-col :span="6"><a-checkbox v-model:checked="capForm.guaranteed">限时赔付</a-checkbox></a-col>
+            </a-row>
+            <a-input v-model:value="capForm.routeNotes" style="margin-top:6px" placeholder="线路说明，如：国际线路 · 报价联系客服；附加费以承运商账单为准" />
+          </div>
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -147,13 +178,26 @@
             <a-select-option v-for="p in providers" :key="p.providerId" :value="p.providerId">{{ p.providerName }}</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="计费方式">
-          <a-select v-model:value="templateForm.pricingType">
-            <a-select-option value="weight">按重量</a-select-option>
-            <a-select-option value="piece">按件</a-select-option>
-            <a-select-option value="fixed">固定运费</a-select-option>
-          </a-select>
-        </a-form-item>
+        <a-row :gutter="12">
+          <a-col :span="12">
+            <a-form-item label="计费方式">
+              <a-select v-model:value="templateForm.pricingType">
+                <a-select-option value="weight">按重量</a-select-option>
+                <a-select-option value="piece">按件</a-select-option>
+                <a-select-option value="fixed">固定运费</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item label="阶梯模式">
+              <a-select v-model:value="templateForm.tierMode">
+                <a-select-option value="linear">线性（首续重）</a-select-option>
+                <a-select-option value="tiered">阶梯（大宗分段）</a-select-option>
+                <a-select-option value="ton">纯吨位</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+        </a-row>
         <a-row :gutter="12">
           <a-col :span="12"><a-form-item label="首重(kg)"><a-input-number v-model:value="templateForm.firstWeight" :min="0" style="width:100%" /></a-form-item></a-col>
           <a-col :span="12"><a-form-item label="首重费(元)"><a-input-number v-model:value="templateForm.firstPrice" :min="0" style="width:100%" /></a-form-item></a-col>
@@ -164,8 +208,17 @@
         </a-row>
         <a-row :gutter="12">
           <a-col :span="12"><a-form-item label="满额包邮(元)"><a-input-number v-model:value="templateForm.freeThreshold" :min="0" style="width:100%" /></a-form-item></a-col>
-          <a-col :span="12"><a-form-item label="偏远附加(元)"><a-input-number v-model:value="templateForm.remoteSurcharge" :min="0" style="width:100%" /></a-form-item></a-col>
+          <a-col :span="12"><a-form-item label="最低起运价(元)"><a-input-number v-model:value="templateForm.minCharge" :min="0" style="width:100%" /></a-form-item></a-col>
         </a-row>
+        <a-form-item label="偏远附加(元)"><a-input-number v-model:value="templateForm.remoteSurcharge" :min="0" style="width:100%" /></a-form-item>
+        <a-form-item v-if="templateForm.tierMode === 'tiered'" label='阶梯区间 JSON（[{"minWeight":0,"maxWeight":300,"unitPrice":0.3,"basePrice":30},…]）'
+                     :validate-status="tierJsonError ? 'error' : ''" :help="tierJsonError">
+          <a-textarea v-model:value="templateForm.tierRuleJson" :rows="4" placeholder='[{"minWeight":0,"maxWeight":300,"unitPrice":0.3,"basePrice":30}]' />
+        </a-form-item>
+        <a-form-item label="增值服务费率 JSON（forklift/upstairs/woodenCrate/oversizeOverweight）"
+                     :validate-status="vasJsonError ? 'error' : ''" :help="vasJsonError">
+          <a-textarea v-model:value="templateForm.vasRuleJson" :rows="3" placeholder='{"forklift":{"basePrice":80,"freeTons":1,"perTonPrice":50}}' />
+        </a-form-item>
       </a-form>
     </a-modal>
 
@@ -392,6 +445,70 @@ const templateVisible = ref(false)
 const traceVisible = ref(false)
 const providerForm = ref({})
 const templateForm = ref({})
+// capability 结构化编辑态（保存时序列化回 capabilityJson 字符串）
+const capForm = ref({ scope: 'domestic', costLevel: null, heavyCargo: false, pallet: false, install: false, guaranteed: false, routeNotes: '' })
+
+const tierJsonError = computed(() => {
+  const raw = templateForm.value.tierRuleJson
+  if (templateForm.value.tierMode !== 'tiered' || !raw) return ''
+  try {
+    const rules = JSON.parse(raw)
+    if (!Array.isArray(rules) || !rules.length) return '必须是费率区间对象数组'
+    let cursor = 0
+    for (const r of rules) {
+      const min = Number(r.minWeight), max = Number(r.maxWeight)
+      if (Number.isNaN(min) || Number.isNaN(max) || min < cursor) return '区间需从 0 起无缝衔接（minWeight 单调不减）'
+      cursor = max
+    }
+    if (cursor <= 0) return '末档 maxWeight 需大于 0'
+    return ''
+  } catch (e) {
+    return 'JSON 解析失败：' + e.message
+  }
+})
+
+const vasJsonError = computed(() => {
+  const raw = templateForm.value.vasRuleJson
+  if (!raw) return ''
+  try {
+    const obj = JSON.parse(raw)
+    if (typeof obj !== 'object' || Array.isArray(obj)) return '必须是费率对象（键: forklift/upstairs/woodenCrate/oversizeOverweight）'
+    return ''
+  } catch (e) {
+    return 'JSON 解析失败：' + e.message
+  }
+})
+
+function parseCapabilityJson(json) {
+  const cap = { scope: 'domestic', costLevel: null, heavyCargo: false, pallet: false, install: false, guaranteed: false, routeNotes: '' }
+  if (!json) return cap
+  try {
+    const o = JSON.parse(json)
+    return {
+      scope: o.scope || 'domestic',
+      costLevel: o.costLevel || null,
+      heavyCargo: Boolean(o.heavyCargo),
+      pallet: Boolean(o.pallet),
+      install: Boolean(o.install),
+      guaranteed: Boolean(o.guaranteed),
+      routeNotes: o.routeNotes || ''
+    }
+  } catch (e) {
+    return cap
+  }
+}
+
+function serializeCapabilityJson() {
+  const c = capForm.value
+  const o = { scope: c.scope }
+  if (c.heavyCargo) o.heavyCargo = true
+  if (c.pallet) o.pallet = true
+  if (c.install) o.install = true
+  if (c.guaranteed) o.guaranteed = true
+  if (c.costLevel) o.costLevel = c.costLevel
+  if (c.routeNotes) o.routeNotes = c.routeNotes
+  return JSON.stringify(o)
+}
 
 // 生成对账单 / 新建售后 / 结算明细 / 轨迹同步
 const generateVisible = ref(false)
@@ -535,16 +652,25 @@ async function loadSettlements(page = 1) {
   settlePage.value.total = Number(r?.total || 0)
 }
 
-function openProvider(record) { providerForm.value = record ? { ...record } : { status: 1, apiType: 'mock' }; providerVisible.value = true }
-function openTemplate(record) { templateForm.value = record ? { ...record } : { pricingType: 'weight', status: 1, firstWeight: 1, continuedWeight: 1 }; templateVisible.value = true }
+function openProvider(record) {
+  providerForm.value = record ? { ...record } : { status: 1, apiType: 'mock' }
+  capForm.value = parseCapabilityJson(providerForm.value.capabilityJson)
+  providerVisible.value = true
+}
+function openTemplate(record) {
+  templateForm.value = record ? { ...record } : { pricingType: 'weight', tierMode: 'linear', status: 1, firstWeight: 1, continuedWeight: 1 }
+  templateVisible.value = true
+}
 
 async function saveProvider() {
-  await logisticsApi.saveProvider(providerForm.value)
+  await logisticsApi.saveProvider({ ...providerForm.value, capabilityJson: serializeCapabilityJson() })
   message.success('保存成功')
   providerVisible.value = false
   loadProviders()
 }
 async function saveTemplate() {
+  if (tierJsonError.value) { message.error('阶梯区间 JSON 有误：' + tierJsonError.value); return }
+  if (vasJsonError.value) { message.error('增值服务费率 JSON 有误：' + vasJsonError.value); return }
   await logisticsApi.saveTemplate(templateForm.value)
   message.success('保存成功')
   templateVisible.value = false
@@ -818,6 +944,13 @@ onMounted(() => {
 
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.cap-editor {
+  background: var(--ll-page, #f5f6f8);
+  border: 1px solid rgba(71, 85, 105, 0.15);
+  border-radius: 6px;
+  padding: 8px;
 }
 
 @media (max-width: 768px) {

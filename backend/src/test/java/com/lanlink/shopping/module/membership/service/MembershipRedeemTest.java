@@ -152,12 +152,24 @@ class MembershipRedeemTest {
     void redeemDeductsPointsAndWritesLog() {
         MemberCard c = card(5000);
         when(cardMapper.selectOne(any())).thenReturn(c);
+        when(cardMapper.deductPointsAtomic(2L, 2000)).thenReturn(1);
         BigDecimal amount = service.redeemPoints(2L, 2000, new BigDecimal("1000"), "ORD-1");
         assertEquals(0, new BigDecimal("2").compareTo(amount), "2000 积分抵 2 元");
-        assertEquals(3000, c.getPoints(), "积分应从 5000 扣至 3000");
-        verify(cardMapper).updateById(c);
+        verify(cardMapper).deductPointsAtomic(2L, 2000);
+        verify(cardMapper, never()).updateById(any(MemberCard.class));
         verify(logMapper).insert(argThat((MemberPointLog l) -> MemberRule.CHANGE_REDEEM.equals(l.getChangeType())
                 && l.getChangeVal() == -2000 && "ORD-1".equals(l.getRefOrderNo())));
+    }
+
+    @Test
+    void redeemLostBalanceRaceReturnsZeroWithoutLog() {
+        // 试算读到 5000，但条件更新命中 0 行（并发请求已先扣走）：本单不抵扣、不写流水，余额不会被写成负数
+        when(cardMapper.selectOne(any())).thenReturn(card(5000));
+        when(cardMapper.deductPointsAtomic(2L, 2000)).thenReturn(0);
+        BigDecimal amount = service.redeemPoints(2L, 2000, new BigDecimal("1000"), "ORD-RACE");
+        assertEquals(0, amount.signum(), "扣减未命中即视为余额不足");
+        verify(cardMapper, never()).updateById(any(MemberCard.class));
+        verify(logMapper, never()).insert(any(MemberPointLog.class));
     }
 
     @Test
@@ -168,6 +180,7 @@ class MembershipRedeemTest {
         BigDecimal amount = service.redeemPoints(2L, 500, new BigDecimal("1000"), "ORD-2");
         assertEquals(0, amount.signum(), "不足 1 元零头不参与抵扣");
         assertEquals(500, c.getPoints(), "积分不应变化");
+        verify(cardMapper, never()).deductPointsAtomic(anyLong(), anyInt());
         verify(cardMapper, never()).updateById(any(MemberCard.class));
         verify(logMapper, never()).insert(any(MemberPointLog.class));
     }
@@ -177,9 +190,10 @@ class MembershipRedeemTest {
         // 1500 积分：零头 500 不抵，仅扣 1000 积分抵 1 元
         MemberCard c = card(1500);
         when(cardMapper.selectOne(any())).thenReturn(c);
+        when(cardMapper.deductPointsAtomic(2L, 1000)).thenReturn(1);
         BigDecimal amount = service.redeemPoints(2L, 1500, new BigDecimal("1000"), "ORD-3");
         assertEquals(0, BigDecimal.ONE.compareTo(amount));
-        assertEquals(500, c.getPoints(), "仅扣 1000 积分，500 零头保留");
+        verify(cardMapper).deductPointsAtomic(2L, 1000);
         verify(logMapper).insert(argThat((MemberPointLog l) -> l.getChangeVal() == -1000));
     }
 
@@ -188,9 +202,10 @@ class MembershipRedeemTest {
         // 超额请求按余额截断：余额 3000，请求 999999 → 扣 3000 抵 3 元
         MemberCard c = card(3000);
         when(cardMapper.selectOne(any())).thenReturn(c);
+        when(cardMapper.deductPointsAtomic(2L, 3000)).thenReturn(1);
         BigDecimal amount = service.redeemPoints(2L, 999999, new BigDecimal("1000"), "ORD-4");
         assertEquals(0, new BigDecimal("3").compareTo(amount));
-        assertEquals(0, c.getPoints());
+        verify(cardMapper).deductPointsAtomic(2L, 3000);
     }
 
     // ===== 返还 refundPoints =====
@@ -239,7 +254,9 @@ class MembershipRedeemTest {
 
         int back = service.reverseEarn(2L, "ORD-1");
         assertEquals(100, back);
-        verify(cardMapper).updateById(argThat((MemberCard c) -> c.getPoints() == 400));
+        // 余额扣减走原子 UPDATE（GREATEST 保底），不再是 updateById 整实体写回
+        verify(cardMapper).update(isNull(), argThat(w ->
+                w != null && w.getSqlSet() != null && w.getSqlSet().contains("- 100")));
         verify(logMapper).insert(argThat((MemberPointLog l) ->
                 MemberRule.CHANGE_EARN_REVERSAL.equals(l.getChangeType()) && l.getChangeVal() == -100));
     }
@@ -268,7 +285,9 @@ class MembershipRedeemTest {
         when(logMapper.selectCount(any())).thenReturn(0L);
 
         assertEquals(100, service.reverseEarn(2L, "ORD-1"));
-        verify(cardMapper).updateById(argThat((MemberCard c) -> c.getPoints() == 0));
+        // 下限由 SQL 的 GREATEST(0, ...) 保证，不再依赖 Java 侧 Math.min
+        verify(cardMapper).update(isNull(), argThat(w ->
+                w != null && w.getSqlSet() != null && w.getSqlSet().contains("GREATEST(0")));
     }
 
     /** 供 argThat 类型推断使用的辅助（MemberLevel） */

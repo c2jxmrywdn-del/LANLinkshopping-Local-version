@@ -33,6 +33,10 @@ class OrderRmaServiceTest {
     private LogisticsTraceMapper traceMapper;
     private PaymentService paymentService;
     private MessageService messageService;
+    private RefundApprovalMapper refundApprovalMapper;
+    private AuditService auditService;
+    private SupportTicketMapper supportTicketMapper;
+    private StockService stockService;
     private OrderRmaService rmaService;
 
     @BeforeEach
@@ -46,10 +50,20 @@ class OrderRmaServiceTest {
         traceMapper = mock(LogisticsTraceMapper.class);
         paymentService = mock(PaymentService.class);
         messageService = mock(MessageService.class);
+        refundApprovalMapper = mock(RefundApprovalMapper.class);
+        auditService = mock(AuditService.class);
+        supportTicketMapper = mock(SupportTicketMapper.class);
+        stockService = mock(StockService.class);
 
         rmaService = new OrderRmaService(
                 rmaMapper, orderMapper, orderItemMapper, productMapper,
                 merchantMapper, waybillMapper, traceMapper, paymentService, messageService);
+        // P0-C：审批留痕/申诉凭据为必要依赖（生产由 Spring 注入，单测手工注入 mock）
+        rmaService.setRefundApprovalMapper(refundApprovalMapper);
+        rmaService.setAuditService(auditService);
+        rmaService.setSupportTicketMapper(supportTicketMapper);
+        // P1-3：库存回补统一走 StockService（幂等），单测注入 mock 以断言委托参数
+        rmaService.setStockService(stockService);
     }
 
     private Order mockPaidOrder() {
@@ -168,7 +182,7 @@ class OrderRmaServiceTest {
     }
 
     @Test
-    void merchantApproveRmaForRefundOnlyDirectlyTriggersRefund() {
+    void merchantApproveRmaForRefundOnlyMovesToPlatformPendingWithoutPayout() {
         when(merchantMapper.selectOne(any())).thenReturn(mockMerchant());
 
         OrderRma rma = new OrderRma();
@@ -182,12 +196,19 @@ class OrderRmaServiceTest {
         rma.setStatus("buyer_applied");
         when(rmaMapper.selectOne(any())).thenReturn(rma);
         when(rmaMapper.merchantApproveAtomic(anyString(), anyString(), anyString(), anyString(), anyString())).thenReturn(1);
+        when(rmaMapper.update(any(), any())).thenReturn(1); // merchant_approved → platform_pending 状态流转
         when(orderMapper.selectById("ORD100")).thenReturn(mockPaidOrder());
 
         rmaService.merchantApproveRma(88L, "RMA002", null);
 
-        verify(paymentService).refund(any(RefundRequest.class), eq(88L));
-        verify(rmaMapper).settleSuccessAtomic(eq("RMA002"), eq(new BigDecimal("1200.00")), any(), any());
+        // P0-C：商户同意后不再直接出款，只推进到待平台复核
+        verify(paymentService, never()).refund(any(), any());
+        verify(rmaMapper, never()).settleSuccessAtomic(anyString(), any(), any(), any());
+        verify(rmaMapper).update(any(), any()); // platform_pending 状态流转
+        // 双人留痕第 1 段：商户初审 APPROVE 落审批表
+        verify(refundApprovalMapper).insert(argThat((RefundApproval a) ->
+                "RMA002".equals(a.getRmaNo()) && "MERCHANT".equals(a.getStage())
+                        && "APPROVE".equals(a.getAction())));
     }
 
     @Test
@@ -218,7 +239,7 @@ class OrderRmaServiceTest {
     }
 
     @Test
-    void merchantInspectPassedRestoresStockAndSettlesRefund() {
+    void merchantInspectPassedRestoresStockAndMovesToPlatformPending() {
         when(merchantMapper.selectOne(any())).thenReturn(mockMerchant());
 
         OrderRma rma = new OrderRma();
@@ -235,6 +256,7 @@ class OrderRmaServiceTest {
         it.setQuantity(5);
         when(orderItemMapper.selectList(any())).thenReturn(List.of(it));
         when(orderMapper.selectById("ORD100")).thenReturn(mockPaidOrder());
+        when(rmaMapper.update(any(), any())).thenReturn(1); // inspected → platform_pending
 
         MerchantInspectDTO dto = new MerchantInspectDTO();
         dto.setInspectStatus("passed");
@@ -244,8 +266,14 @@ class OrderRmaServiceTest {
 
         verify(rmaMapper).inspectAtomic(eq("RMA001"), eq("inspected"), eq(88L), eq("passed"), eq("开箱查验完好，符合退货标准"), eq(1));
         verify(orderMapper).updateInspectResult(eq("ORD100"), eq("passed"), eq("开箱查验完好，符合退货标准"));
-        verify(productMapper).restoreStockAtomic(200L, 5); // 原子回滚恢复库存
-        verify(paymentService).refund(any(RefundRequest.class), eq(88L)); // 自动出账退款
+        // P1-3：库存回补委托 StockService（幂等），bizType=RMA_RESTOCK / bizNo=售后单号 / 操作人=验货人
+        verify(stockService).restoreByOrder(
+                eq(StockService.BIZ_RMA_RESTOCK), eq("RMA001"), eq("ORD100"), eq(88L), any());
+        verify(productMapper, never()).restoreStockAtomic(anyLong(), anyInt());
+        // P0-C：验货通过后不再自动出款（改前此处会直接 paymentService.refund）
+        verify(paymentService, never()).refund(any(), any());
+        verify(rmaMapper, never()).settleSuccessAtomic(anyString(), any(), any(), any());
+        verify(messageService).send(eq(99L), eq("order"), contains("待平台复核"), contains("验货合格"), eq("ORD100"));
     }
 
     @Test
@@ -268,6 +296,7 @@ class OrderRmaServiceTest {
 
         verify(rmaMapper).inspectAtomic(eq("RMA001"), eq("dispute"), eq(88L), eq("damaged"), eq("内部线圈烧毁货损"), eq(0));
         verify(productMapper, never()).restoreStockAtomic(anyLong(), anyInt()); // 不入库
+        verify(stockService, never()).restoreByOrder(any(), any(), any(), any(), any()); // 破损不回补
         verify(paymentService, never()).refund(any(), any()); // 不放款
         verify(messageService).send(eq(99L), eq("order"), contains("异常"), contains("内部线圈烧毁货损"), eq("ORD100"));
     }

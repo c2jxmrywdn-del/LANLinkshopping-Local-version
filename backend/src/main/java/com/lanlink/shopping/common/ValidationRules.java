@@ -71,4 +71,23 @@ public final class ValidationRules {
 
     // ===== 幂等键 =====
     public static final int IDEMPOTENT_KEY_MAX = 64;
+
+    // ===== 订单开票（P1-5，前后端同口径；前端镜像 frontend/src/utils/validationRules.js） =====
+    /** 发票需求开关：true=随单开票（需填写完整抬头），false/null=不开票 */
+    public static final String INVOICE_TYPE_PERSONAL = "personal";
+    public static final String INVOICE_TYPE_COMPANY = "company";
+    public static final Set<String> ALLOWED_INVOICE_TITLE_TYPES = Set.of(INVOICE_TYPE_PERSONAL, INVOICE_TYPE_COMPANY);
+    /** 发票内容类型：category=商品类别 / detail=开具明细 */
+    public static final String INVOICE_CONTENT_CATEGORY = "category";
+    public static final String INVOICE_CONTENT_DETAIL = "detail";
+    public static final Set<String> ALLOWED_INVOICE_CONTENT_TYPES = Set.of(INVOICE_CONTENT_CATEGORY, INVOICE_CONTENT_DETAIL);
+    /** 发票抬头名称长度上限 */
+    public static final int INVOICE_TITLE_MAX = 100;
+    /** 纳税人识别号：15-20 位大写字母数字（国标统一社会信用代码 18 位 + 兼容历史 15 位税号） */
+    public static final int INVOICE_TAX_NO_MIN = 15;
+    public static final int INVOICE_TAX_NO_MAX = 20;
+    /** 商品类别（发票内容=category 时）长度上限 */
+    public static final int INVOICE_CATEGORY_MAX = 60;
+    /** 开具明细（发票内容=detail 时）长度上限 */
+    public static final int INVOICE_DETAIL_MAX = 255;
 }

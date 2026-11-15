@@ -270,7 +270,7 @@ const refundBanner = computed(() => {
   if (!o || !o.refundStatus || o.refundStatus === 'none') return null
   const map = {
     applied: { type: 'warning', text: `买家申请退款：${o.refundReason || '未填写原因'}`, desc: '请商户及时初审：确认无误可点击上方「同意初审」，若情况不符可点击「驳回退款」并注明原因。' },
-    merchant_approved: { type: 'info', text: o.refundType === 'return_goods' ? '初审已同意退货 · 待买家寄回' : '商户初审已通过 · 待平台出款', desc: o.refundType === 'return_goods' ? '已向买家下发退货收件人与仓库地址，等待买家寄回包裹并回填单号。' : '您已同意买家的退款申请，当前正在等待平台财务进行退款出账。' },
+    merchant_approved: { type: 'info', text: o.refundType === 'return_goods' ? '初审已同意退货 · 待买家寄回' : '商户初审已通过 · 待平台复核', desc: o.refundType === 'return_goods' ? '已向买家下发退货收件人与仓库地址，等待买家寄回包裹并回填单号。' : '您已同意买家的退款申请，已进入平台复核，复核通过后才会原路退款。' },
     shipping_back: { type: 'info', text: `买家已寄回退货包裹：${o.returnCarrierName || '快递'} ${o.returnWaybillNo || ''}`, desc: '请在仓库收到货物后，点击上方「扫码验货质检入库」录入质检结论。合格后系统自动打款。' },
     received: { type: 'info', text: '退货包裹仓库已签收 · 质检中', desc: '请尽快完成开箱验货并录入质检结论。' },
     dispute: { type: 'error', text: `退货验货异常：${o.inspectResult || '货物破损'}`, desc: '商品质检未通过，已进入争议协商流程，当前未恢复库存且未触发打款。' },
@@ -290,13 +290,13 @@ const rejectLoading = ref(false)
 function openApproveModal() {
   Modal.confirm({
     title: '同意退款初审',
-    content: '同意退款初审后，系统将提交至平台财务出款通道，是否确认同意？',
+    content: '同意后售后单进入「待平台复核」，平台复核通过后才会原路出款（商户初审不直接打款）。是否确认同意？',
     okText: '确认同意',
     cancelText: '取消',
     onOk: async () => {
       try {
         await merchantCenterApi.approveRefund(orderNo)
-        message.success('初审通过，已提交平台出款')
+        message.success('初审通过，已提交平台复核')
         await load()
       } catch (e) { /* 拦截器已提示 */ }
     }

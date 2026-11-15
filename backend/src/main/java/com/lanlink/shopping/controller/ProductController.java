@@ -77,6 +77,7 @@ public class ProductController {
                 ? productService.searchPage(current, size, keyword, catId, indId, sort,
                         UserContext.currentUserId(request), analyticsCookie(cookie))
                 : productService.page(current, size, keyword, catId, indId, sort);
+        merchantService.attachPlatformInvitedBadge(page.getRecords());
         // 仅综合态（无搜索/筛选/显式排序）走个性化推流
         boolean eligible = personalization
                 && !hasText(keyword) && catId == null && indId == null && !hasText(sort);
@@ -85,6 +86,7 @@ public class ProductController {
                         keyword, catId, indId, sort)
                 : null;
         if (personalized != null) {
+            merchantService.attachPlatformInvitedBadge(personalized.getRecords());
             Map<String, Object> out = new java.util.LinkedHashMap<>();
             out.put("records", personalized.getRecords());
             out.put("total", personalized.getTotal());
@@ -118,7 +120,9 @@ public class ProductController {
     /** 前台详情：仅可售(审核通过)商品可见 */
     @GetMapping("/detail/{id}")
     public R<Product> detail(@PathVariable Long id) {
-        return R.ok(productService.detailForPublic(id));
+        Product product = productService.detailForPublic(id);
+        merchantService.attachPlatformInvitedBadge(java.util.List.of(product));
+        return R.ok(product);
     }
 
     /** 商户发布商品：发布后自动进入「待审核」，审核通过才可售（需 product:publish 权限） */
@@ -131,6 +135,7 @@ public class ProductController {
         if (merchant.getReviewStatus() == null || merchant.getReviewStatus() != 1) {
             return R.fail("商户审核未通过，暂不能上架商品");
         }
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(merchant);
         return R.ok("已提交，系统正在自动审核", productService.publish(merchant.getMerId(), product));
     }
 
@@ -166,6 +171,7 @@ public class ProductController {
     public R<Product> myUpdate(@PathVariable Long prodId, @RequestBody Product patch,
                                HttpServletRequest request) {
         var merchant = mustApprovedMerchant(UserContext.currentUserId(request));
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(merchant);
         return R.ok("保存成功", productService.myUpdate(merchant.getMerId(), prodId, patch));
     }
 
@@ -175,6 +181,9 @@ public class ProductController {
     public R<Product> myStatus(@PathVariable Long prodId, @RequestParam Integer status,
                                HttpServletRequest request) {
         var merchant = mustApprovedMerchant(UserContext.currentUserId(request));
+        if (status != null && status == 1) {
+            com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(merchant);
+        }
         return R.ok(status == 1 ? "商品已上架" : "商品已下架",
                 productService.mySetStatus(merchant.getMerId(), prodId, status));
     }
@@ -207,7 +216,7 @@ public class ProductController {
     public R<Map<String, String>> uploadImage(@RequestParam("file") MultipartFile file,
                                               HttpServletRequest request) throws IOException {
         Long userId = UserContext.currentUserId(request); // 需登录（PermInterceptor 另行校验权限）
-        mustApprovedMerchant(userId); // 未入驻/未过审商户直接拒绝（与 /my/* 兄弟端点同前置）
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(mustApprovedMerchant(userId)); // 未入驻/未过审商户直接拒绝（与 /my/* 兄弟端点同前置）
         if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择图片文件");
         if (file.getSize() > MAX_IMG_SIZE) throw new IllegalArgumentException("图片大小不能超过 5MB");
         String kind;
@@ -263,7 +272,7 @@ public class ProductController {
     public R<Map<String, Object>> polishTitle(@RequestBody com.lanlink.shopping.service.ProductTitleAiService.PolishRequest body,
                                               HttpServletRequest request) {
         Long userId = UserContext.currentUserId(request);
-        mustApprovedMerchant(userId);
+        com.lanlink.shopping.module.merchantexit.service.MerchantExitGuard.requireWritable(mustApprovedMerchant(userId));
         String title = body == null || body.title() == null ? "" : body.title().trim();
         if (title.length() < 2 || title.length() > 100) {
             throw new BusinessException("商品名称需 2-100 个字符");

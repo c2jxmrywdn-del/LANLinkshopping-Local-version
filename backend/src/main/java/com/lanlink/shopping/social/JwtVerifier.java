@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.interfaces.RSAPublicKey;
 import java.security.spec.RSAPublicKeySpec;
 import java.time.Instant;
 import java.util.Base64;
@@ -22,6 +23,9 @@ import java.util.Base64;
  */
 @Component
 public class JwtVerifier {
+
+    /** 平台 JWKS 公钥的最低强度（位） */
+    private static final int MIN_RSA_BITS = 2048;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -39,6 +43,8 @@ public class JwtVerifier {
         if (jwt == null || jwt.isBlank()) throw new BusinessException("身份令牌缺失");
         String[] parts = jwt.split("\\.");
         if (parts.length != 3) throw new BusinessException("身份令牌格式非法");
+        // 先看 header 再验签：alg=none / HS256 是经典降级伪造手法（把公钥当 HMAC 密钥），必须显式拒绝
+        requireRs256(parts[0]);
 
         byte[] signature;
         try {
@@ -114,7 +120,28 @@ public class JwtVerifier {
     private PublicKey publicKey(String nB64, String eB64) throws Exception {
         BigInteger n = new BigInteger(1, Base64.getUrlDecoder().decode(nB64));
         BigInteger e = new BigInteger(1, Base64.getUrlDecoder().decode(eB64));
-        return KeyFactory.getInstance("RSA").generatePublic(new RSAPublicKeySpec(n, e));
+        RSAPublicKey key = (RSAPublicKey) KeyFactory.getInstance("RSA")
+                .generatePublic(new RSAPublicKeySpec(n, e));
+        // RSA<2048 的签名可被现实算力分解，属于"验签通过但安全无效"，直接拒绝
+        if (key.getModulus().bitLength() < MIN_RSA_BITS) {
+            throw new BusinessException("身份令牌公钥强度不足（RSA<" + MIN_RSA_BITS + "位），拒绝校验");
+        }
+        return key;
+    }
+
+    /** 校验 JWT header 的 alg 必须为 RS256 */
+    private void requireRs256(String headerBase64Url) {
+        JsonNode header;
+        try {
+            header = mapper.readTree(
+                    new String(Base64.getUrlDecoder().decode(headerBase64Url), StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            throw new BusinessException("身份令牌头部无法解析");
+        }
+        String alg = text(header, "alg");
+        if (!"RS256".equals(alg)) {
+            throw new BusinessException("身份令牌签名算法不受支持：" + (alg == null ? "缺失" : alg));
+        }
     }
 
     private boolean audienceContains(JsonNode payload, String expectedAud) {

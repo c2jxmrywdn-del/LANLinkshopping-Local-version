@@ -6,11 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -42,41 +44,56 @@ class ExternalInfoFetchServiceTest {
               <item>
                 <title>仅有标题的条目</title>
                 <link>javascript:alert(1)</link>
+                <pubDate>2026-10-27 09:00:00 +0800</pubDate>
               </item>
             </channel></rss>
             """;
 
-    /** 相关性过滤用例：娱乐/消费电子/会员促销 vs 工业/商业资讯（含 block+business 的产业新闻） */
-    private static final String RELEVANCE_RSS = """
+    /**
+     * 相关性过滤用例：娱乐/消费电子/会员促销 vs 工业/商业资讯（含 block+business 的产业新闻）。
+     *
+     * <p>发布时间必须落在时效窗内（默认 7 天），否则会被 {@code isFresh} 先行过滤，
+     * 测不到相关性分支——因此这里按「昨天」动态生成，避免用例随日历过期。
+     */
+    private static String relevanceRss() {
+        String pubDate = LocalDateTime.now().minusDays(1)
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + " +0800";
+        return """
             <?xml version="1.0" encoding="UTF-8"?>
             <rss version="2.0"><channel><title>测试源</title>
               <item>
                 <title>《刺客信条》新作正式公布，玩法细节曝光</title>
                 <link>https://example.com/1</link>
+                <pubDate>%1$s</pubDate>
                 <description>育碧公布新款游戏，玩家反响热烈。</description>
               </item>
               <item>
                 <title>百度网盘会员限时促销，京东 PLUS 年卡五折</title>
                 <link>https://example.com/2</link>
+                <pubDate>%1$s</pubDate>
                 <description>网盘会员与办公软件联合促销活动。</description>
               </item>
               <item>
                 <title>某品牌旗舰手机新品发布会定档</title>
                 <link>https://example.com/3</link>
+                <pubDate>%1$s</pubDate>
                 <description>消费数码新品发布会，手机耳机平板齐发。</description>
               </item>
               <item>
                 <title>钢材社会库存连续下降，现货价格小幅上行</title>
                 <link>https://example.com/4</link>
+                <pubDate>%1$s</pubDate>
                 <description>螺纹钢报价上调，贸易商采购节奏加快。</description>
               </item>
               <item>
                 <title>华为云发布算力方案，上半年营收增长</title>
                 <link>https://example.com/5</link>
+                <pubDate>%1$s</pubDate>
                 <description>企业业务营收与净利均实现增长。</description>
               </item>
             </channel></rss>
-            """;
+            """.formatted(pubDate);
+    }
 
     private static ExternalInfoFetchService newService(MarketNewsService newsService,
                                                        KnowledgeIngestService ingestService,
@@ -381,7 +398,7 @@ class ExternalInfoFetchServiceTest {
         when(newsService.saveExternal(any(MarketNews.class))).thenReturn(true);
         ExternalInfoFetchService service = newService(newsService, mock(KnowledgeIngestService.class),
                 mock(EmbeddingService.class), false, true);
-        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(RELEVANCE_RSS,
+        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(relevanceRss(),
                 "https://www.ithome.com/rss/");
 
         Map<String, Object> result = service.storeParsedItems(parsed, 30);
@@ -406,7 +423,7 @@ class ExternalInfoFetchServiceTest {
         when(newsService.existsByTitle(anyString())).thenReturn(false);
         when(newsService.saveExternal(any(MarketNews.class))).thenReturn(true);
         when(ingestService.ingestNews()).thenReturn(2);
-        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(RELEVANCE_RSS,
+        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(relevanceRss(),
                 "https://www.ithome.com/rss/");
         ExternalInfoFetchService service = new ExternalInfoFetchService(newsService, ingestService,
                 mock(EmbeddingService.class), true, "https://www.ithome.com/rss/", 30, false, true) {
@@ -434,7 +451,7 @@ class ExternalInfoFetchServiceTest {
         when(newsService.saveExternal(any(MarketNews.class))).thenReturn(true);
         ExternalInfoFetchService service = newService(newsService, mock(KnowledgeIngestService.class),
                 mock(EmbeddingService.class), false, false);
-        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(RELEVANCE_RSS,
+        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(relevanceRss(),
                 "https://www.ithome.com/rss/");
 
         Map<String, Object> result = service.storeParsedItems(parsed, 30);
@@ -442,5 +459,222 @@ class ExternalInfoFetchServiceTest {
         assertEquals(5, result.get("inserted"));
         assertEquals(0, result.get("skipped"));
         assertEquals(0, result.get("filtered"));
+    }
+
+    @Test
+    void nearDuplicateTitlesAndModelDropDoNotPublish() {
+        assertEquals("水泥价格连续三周上行华东地区领涨",
+                ExternalInfoFetchService.normalizeTitle("水泥价格连续三周上行，华东地区领涨"));
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(ExternalInfoFetchService.normalizeTitle("水泥价格连续三周上行，华东地区领涨"));
+        assertTrue(ExternalInfoFetchService.isNearDuplicate(
+                ExternalInfoFetchService.normalizeTitle("水泥价格连续三周上行，华东地区领涨！"), seen));
+        assertTrue(ExternalInfoFetchService.isModelDrop("DROP"));
+        assertTrue(ExternalInfoFetchService.isModelDrop("{\"keep\": false}"));
+        assertFalse(ExternalInfoFetchService.isModelDrop("钢材库存下降，贸易商采购放缓，价格随之下调。"));
+
+        MarketNewsService newsService = mock(MarketNewsService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        when(newsService.existsByTitle(anyString())).thenReturn(false);
+        when(newsService.recentTitles(anyInt())).thenReturn(List.of("水泥价格连续三周上行，华东地区领涨"));
+        when(newsService.saveExternal(any(MarketNews.class))).thenReturn(true);
+        when(embeddingService.chatText(anyString(), anyString())).thenReturn("DROP");
+        ExternalInfoFetchService service = newService(newsService, mock(KnowledgeIngestService.class),
+                embeddingService, true);
+        List<Map<String, String>> parsed = ExternalInfoFetchService.parseRss(RSS, "https://www.ithome.com/rss/");
+
+        Map<String, Object> result = service.storeParsedItems(parsed, 30);
+
+        assertEquals(0, result.get("inserted"), "近重复与模型降噪都不应上架");
+        verify(newsService, never()).saveExternal(any());
+    }
+
+    @Test
+    void authoritativeFeedsUseInstitutionNames() {
+        assertEquals("新华网", ExternalInfoFetchService.authoritativeSource(
+                "http://www.news.cn/fortune/news_fortune.xml", "RSS"));
+        assertEquals("中国新闻网", ExternalInfoFetchService.authoritativeSource(
+                "https://www.chinanews.com.cn/rss/finance.xml", "RSS"));
+        assertEquals("人民网", ExternalInfoFetchService.authoritativeSource(
+                "http://www.people.com.cn/rss/finance.xml", "RSS"));
+        assertEquals("BBC", ExternalInfoFetchService.authoritativeSource(
+                "https://feeds.bbci.co.uk/news/business/rss.xml", "RSS"));
+        assertTrue(ExternalInfoFetchService.DEFAULT_FEEDS.contains("news.cn"));
+        assertTrue(ExternalInfoFetchService.DEFAULT_FEEDS.contains("chinanews.com.cn"),
+                "内置源必须覆盖央媒财经（中新网）");
+        assertTrue(ExternalInfoFetchService.DEFAULT_FEEDS.contains("wsj.com")
+                        || ExternalInfoFetchService.DEFAULT_FEEDS.contains("dj.com"),
+                "内置源必须覆盖国际大宗（WSJ Markets）");
+    }
+
+    @Test
+    void catalogGateKeepsNewsThatCanAffectMallGoods() {
+        assertTrue(ExternalInfoFetchService.affectsCatalog(
+                "华东水泥价格上调", "错峰生产后熟料库存下降", List.of("水泥", "钢材")));
+        assertFalse(ExternalInfoFetchService.affectsCatalog(
+                "旗舰手机新品发布会定档", "消费数码耳机同步开售", List.of("水泥", "钢材", "纺织")));
+        assertFalse(ExternalInfoFetchService.affectsCatalog(
+                "任何标题", "词表为空时不拦截", List.of()),
+                "空词表必须返回 false，由调用方走业务词兜底，不能静默放行");
+    }
+
+    // ==================== 时效窗 / 商品闸门（写入侧） ====================
+
+    @Test
+    void staleNewsIsRejectedBeforeRelevanceAndDedup() {
+        MarketNews stale = new MarketNews();
+        stale.setTitle("2019 年钢材市场回顾");
+        stale.setPublishedAt(LocalDateTime.now().minusDays(30));
+        assertFalse(ExternalInfoFetchService.isFresh(stale, 7), "超过 7 天的旧闻不得上架");
+        assertTrue(ExternalInfoFetchService.isFresh(stale, 0), "maxAgeDays=0 表示不限时效");
+        MarketNews fresh = new MarketNews();
+        fresh.setPublishedAt(LocalDateTime.now().minusHours(2));
+        assertTrue(ExternalInfoFetchService.isFresh(fresh, 7));
+    }
+
+    @Test
+    void toNewsDropsItemsWithoutPublishTime() {
+        Map<String, String> row = new java.util.LinkedHashMap<>();
+        row.put("title", "无发布时间的历史稿件");
+        row.put("summary", "钢材价格");
+        assertNull(ExternalInfoFetchService.toNews(row),
+                "解析不到发布时间必须丢弃，不能用 now() 伪装成新稿");
+    }
+
+    /** URL 内嵌日期必须能修正错误的 pubDate（新华社历史频道把 2022 稿件放进当前 RSS）。 */
+    @Test
+    void urlDateOverridesMisleadingPublishTime() {
+        Map<String, String> row = new java.util.LinkedHashMap<>();
+        row.put("title", "多省份基金项目开工率达100%");
+        row.put("summary", "基础设施项目建设加快落地");
+        row.put("url", "http://www.news.cn/fortune/2022-12/14/c_1129206393.htm");
+        // RSS 声称是最近发布，实际是 2022 年稿件
+        row.put("publishedAt", LocalDateTime.now().minusHours(1)
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")));
+
+        MarketNews news = ExternalInfoFetchService.toNews(row);
+
+        assertNotNull(news);
+        assertEquals(2022, news.getPublishedAt().getYear(), "URL 日期必须覆盖错误的 pubDate");
+        assertEquals(12, news.getPublishedAt().getMonthValue());
+        assertEquals(14, news.getPublishedAt().getDayOfMonth());
+        assertFalse(ExternalInfoFetchService.isFresh(news, 7), "2022 年稿件不得进入 7 天时效窗");
+    }
+
+    @Test
+    void urlDateParsingSupportsCommonLayouts() {
+        assertEquals(LocalDateTime.of(2026, 11, 12, 0, 0),
+                ExternalInfoFetchService.dateFromUrl("https://example.com/2026-11/12/c_1.htm"));
+        assertEquals(LocalDateTime.of(2026, 11, 1, 0, 0),
+                ExternalInfoFetchService.dateFromUrl("https://example.com/news/2026-11/index.html"),
+                "只有年月时日默认 1 号");
+        assertEquals(LocalDateTime.of(2026, 11, 12, 0, 0),
+                ExternalInfoFetchService.dateFromUrl("https://example.com/2026/11/12/post.html"));
+        assertNull(ExternalInfoFetchService.dateFromUrl("https://example.com/article/123"));
+        assertNull(ExternalInfoFetchService.dateFromUrl(null));
+        assertNull(ExternalInfoFetchService.dateFromUrl("https://example.com/2099-01/01/x.htm"),
+                "未来日期不采信");
+    }
+
+    /** 模型把客服话术/商品卡片当摘要写回时必须丢弃，否则会污染商品相关性判定。 */
+    @Test
+    void modelNoiseIsRejectedSoItCannotPolluteRelevance() {
+        assertTrue(ExternalInfoFetchService.isModelNoise(
+                "该问题超出知识库范围，可转人工客服（工作日 9:00-18:00）。查询的商品信息如下："
+                        + "商品名称：硅酸盐水泥 P.O42.5 袋装 品牌：华新 单价：¥420.00"));
+        assertTrue(ExternalInfoFetchService.isModelNoise("抱歉，我无法回答这个问题。"));
+        assertTrue(ExternalInfoFetchService.isModelNoise(""));
+        assertFalse(ExternalInfoFetchService.isModelNoise(
+                "华东水泥价格连续三周上行，错峰生产叠加基建赶工推动袋装水泥报价上调 20 元/吨，"
+                        + "预计短期仍将维持强势。"));
+
+        // 端到端：模型返回客服话术时，摘要保持原文而不是被污染
+        MarketNewsService newsService = mock(MarketNewsService.class);
+        EmbeddingService embeddingService = mock(EmbeddingService.class);
+        when(newsService.existsByTitle(anyString())).thenReturn(false);
+        when(newsService.saveExternal(any(MarketNews.class))).thenReturn(true);
+        when(embeddingService.chatText(anyString(), anyString())).thenReturn(
+                "该问题超出知识库范围，可转人工客服。查询的商品信息如下：商品名称：硅酸盐水泥 单价：¥420.00");
+        ExternalInfoFetchService service = newService(newsService, mock(KnowledgeIngestService.class),
+                embeddingService, true);
+
+        service.storeParsedItems(ExternalInfoFetchService.parseRss(RSS, "https://www.ithome.com/rss/"), 30);
+
+        ArgumentCaptor<MarketNews> captor = ArgumentCaptor.forClass(MarketNews.class);
+        verify(newsService, atLeastOnce()).saveExternal(captor.capture());
+        for (MarketNews saved : captor.getAllValues()) {
+            assertFalse(saved.getSummary().contains("商品名称"),
+                    "客服话术不得写入摘要: " + saved.getSummary());
+            assertFalse(saved.getSummary().contains("超出知识库范围"), saved.getSummary());
+        }
+    }
+
+    @Test
+    void normalizeTitleStripsTagsMediaSuffixAndWidth() {
+        assertEquals("水泥价格连续三周上行华东地区领涨",
+                ExternalInfoFetchService.normalizeTitle("【图】水泥价格连续三周上行，华东地区领涨 - 36氪"));
+        assertEquals("po425散装水泥", ExternalInfoFetchService.normalizeTitle("Ｐ.Ｏ42.5 散装水泥"),
+                "NFKC 全角转半角后去标点");
+    }
+
+    @Test
+    void nearDuplicateDetectsSameEventWithDifferentWording() {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        seen.add(ExternalInfoFetchService.normalizeTitle("水泥价格连续三周上涨，华东地区领涨"));
+        assertTrue(ExternalInfoFetchService.isNearDuplicate(
+                        ExternalInfoFetchService.normalizeTitle("水泥价格连续三周上涨 华东地区涨幅居前"),
+                        seen),
+                "同事件不同措辞（换尾句）必须判重（2-gram Jaccard ≥ 0.62）");
+        assertFalse(ExternalInfoFetchService.isNearDuplicate(
+                        ExternalInfoFetchService.normalizeTitle("螺纹钢期货小幅回落"),
+                        seen),
+                "不同品种不得误判为重复");
+    }
+
+    // ==================== 多源配额公平（轮询交错） ====================
+
+    @Test
+    void interleaveSharesQuotaAcrossFeeds() {
+        List<List<Map<String, String>>> feeds = List.of(
+                List.of(row("新华网1"), row("新华网2"), row("新华网3")),
+                List.of(row("中新网1")),
+                List.of(row("36氪1"), row("36氪2")));
+
+        List<Map<String, String>> merged = ExternalInfoFetchService.interleave(feeds, 6);
+
+        assertEquals(6, merged.size());
+        // 第一轮必须每个源各取一条，保证小源不被大源挤掉
+        assertEquals("新华网1", merged.get(0).get("title"));
+        assertEquals("中新网1", merged.get(1).get("title"));
+        assertEquals("36氪1", merged.get(2).get("title"));
+        assertEquals("新华网2", merged.get(3).get("title"));
+        assertEquals("36氪2", merged.get(4).get("title"));
+        assertEquals("新华网3", merged.get(5).get("title"));
+    }
+
+    @Test
+    void interleaveCapsPerFeedAndHandlesEmptyFeeds() {
+        List<Map<String, String>> huge = new ArrayList<>();
+        for (int i = 0; i < 100; i++) huge.add(row("大源" + i));
+        List<List<Map<String, String>>> feeds = new ArrayList<>();
+        feeds.add(huge);
+        feeds.add(null);
+        feeds.add(List.of());
+        feeds.add(List.of(row("小源1")));
+
+        List<Map<String, String>> merged = ExternalInfoFetchService.interleave(feeds, 200);
+
+        long bigCount = merged.stream().filter(m -> m.get("title").startsWith("大源")).count();
+        assertEquals(ExternalInfoFetchService.MAX_PER_FEED, bigCount,
+                "单源必须被 MAX_PER_FEED 截断，避免一个源吃满整轮");
+        assertTrue(merged.stream().anyMatch(m -> "小源1".equals(m.get("title"))));
+        assertTrue(ExternalInfoFetchService.interleave(null, 10).isEmpty());
+        assertTrue(ExternalInfoFetchService.interleave(List.of(), 10).isEmpty());
+    }
+
+    private static Map<String, String> row(String title) {
+        Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("title", title);
+        return m;
     }
 }

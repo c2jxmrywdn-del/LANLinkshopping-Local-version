@@ -36,6 +36,16 @@ public class TechPilotService {
     private static final Set<String> PRICE_MODES = Set.of("QUOTE", "FIXED", "NEGOTIABLE", "FREE");
     private static final Set<String> BOOKING_STATUSES = Set.of("APPLIED", "ACCEPTED", "COMPLETED", "REJECTED");
 
+    /**
+     * 中试预约状态迁移白名单：APPLIED → ACCEPTED/REJECTED → COMPLETED。
+     * COMPLETED 与 REJECTED 为终态（历史缺陷允许 COMPLETED→APPLIED、REJECTED→ACCEPTED）。
+     */
+    private static final java.util.Map<String, Set<String>> BOOKING_TRANSITIONS = java.util.Map.of(
+            "APPLIED", Set.of("ACCEPTED", "REJECTED"),
+            "ACCEPTED", Set.of("COMPLETED", "REJECTED"),
+            "COMPLETED", Set.of(),
+            "REJECTED", Set.of());
+
     private final TechPilotResourceMapper resourceMapper;
     private final TechPilotBookingMapper bookingMapper;
     private final TechProjectMapper projectMapper;
@@ -210,6 +220,8 @@ public class TechPilotService {
         if (note != null && note.length() > 500) {
             throw new BusinessException(400, "处理意见不能超过 500 字");
         }
+        com.lanlink.shopping.module.techservice.support.TechStatusGuard
+                .require(BOOKING_TRANSITIONS, booking.getStatus(), status, "中试预约");
         booking.setStatus(status);
         booking.setAdminNote(note);
         bookingMapper.updateById(booking);

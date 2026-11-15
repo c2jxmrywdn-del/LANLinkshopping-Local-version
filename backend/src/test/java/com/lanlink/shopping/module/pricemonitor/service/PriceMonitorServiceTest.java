@@ -227,4 +227,52 @@ class PriceMonitorServiceTest {
         b.setBenchmark(new BigDecimal(v));
         return b;
     }
+
+    // ===== 基准口径：品类优先、样本不足回退行业（R18）=====
+
+    private Product productWithCategory() {
+        Product p = product();
+        p.setCatId(77L);
+        return p;
+    }
+
+    /**
+     * 缺陷形态：基准只按 ind_id 求平均，同行业里 ¥26.5 的管材与 ¥3980 的钢材同池，
+     * 导致大量商品被判 URGENT（实测 94.2%）。
+     *
+     * <p>修复后：品类在售样本足够时用品类均价做基准，不再被同行业的其他量级商品拉偏。
+     */
+    @Test
+    void analyzeUsesCategoryBenchmarkWhenSampleIsEnough() {
+        when(productMapper.selectById(1L)).thenReturn(productWithCategory());
+        when(benchmarkMapper.countOnSaleByCategory(77L)).thenReturn(4);
+        // 品类中位数 3860（与本品 3850 接近），行业序列却是 3000
+        when(benchmarkMapper.medianPriceByCategory(77L)).thenReturn(new BigDecimal("3860.00"));
+        when(benchmarkMapper.selectList(any())).thenReturn(List.of(
+                bench(LocalDate.now().minusDays(1), "3000"),
+                bench(LocalDate.now(), "3000")));
+
+        Map<String, Object> m = service.analyze(1L);
+
+        assertEquals(0, new BigDecimal("3860.00").compareTo((BigDecimal) m.get("benchmarkPrice")),
+                "样本足够时必须用品类中位数，而不是行业基准");
+        assertEquals("HOLD", m.get("level"), "接近品类中位数应判 HOLD，而不是 URGENT");
+    }
+
+    /** 品类样本太少时回退行业基准，避免用 1-2 个商品算出的均价误导判断。 */
+    @Test
+    void analyzeFallsBackToIndustryWhenCategorySampleTooSmall() {
+        when(productMapper.selectById(1L)).thenReturn(productWithCategory());
+        when(benchmarkMapper.countOnSaleByCategory(77L)).thenReturn(2);
+        when(benchmarkMapper.selectList(any())).thenReturn(List.of(
+                bench(LocalDate.now().minusDays(1), "3000"),
+                bench(LocalDate.now(), "3000")));
+        when(benchmarkMapper.medianPriceByIndustry(1L)).thenReturn(new BigDecimal("3000.00"));
+
+        Map<String, Object> m = service.analyze(1L);
+
+        assertEquals(0, new BigDecimal("3000").compareTo((BigDecimal) m.get("benchmarkPrice")),
+                "样本不足时应回退行业基准");
+        verify(benchmarkMapper, never()).medianPriceByCategory(any());
+    }
 }

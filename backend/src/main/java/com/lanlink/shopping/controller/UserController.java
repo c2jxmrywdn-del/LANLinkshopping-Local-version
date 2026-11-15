@@ -243,7 +243,14 @@ public class UserController {
 
     @PostMapping("/audit")
     public R<Void> audit(@Valid @RequestBody AuditDTO dto, HttpServletRequest request) {
-        auditService.record(UserContext.currentUserId(request), dto.getAction(), dto.getDetail(), request);
+        // 客户端只能上报"客户端事件"：强制 CLIENT_ 前缀，防止伪造 MERCHANT_SENSITIVE_VIEW
+        // 等管理端动作污染审计日志、干扰事后追责与导出取证。
+        String action = dto.getAction() == null ? "" : dto.getAction().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!action.matches("^[A-Z0-9_]{1,40}$")) {
+            throw new com.lanlink.shopping.common.BusinessException("非法的操作类型");
+        }
+        auditService.record(UserContext.currentUserId(request), "CLIENT_" + action,
+                dto.getDetail(), request);
         return R.ok();
     }
 

@@ -232,6 +232,8 @@ class LogisticsSplitShipTest {
 
         when(waybillMapper.selectById(501L)).thenReturn(wb1);
         when(waybillMapper.selectById(502L)).thenReturn(wb2);
+        // 状态流转走 CAS（WHERE status = 期望值），桩需返回 1 表示抢到
+        when(waybillMapper.transitStatusAtomic(anyLong(), anyString(), anyString())).thenReturn(1);
 
         // 第一次：仅 wb1 签收，wb2 仍为 in_transit
         when(waybillMapper.selectList(any())).thenReturn(List.of(wb1, wb2));

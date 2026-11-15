@@ -1,0 +1,11 @@
+# 国内网络环境使用阿里云 PyPI 镜像加速构建；如需官方源删除首行即可。
+--index-url https://mirrors.aliyun.com/pypi/simple/
+fastapi==0.115.14
+uvicorn[standard]==0.34.3
+pydantic==2.11.7
+# RapidOCR 3.x：wheel 内置 PP-OCRv6 中英文检测/识别/方向分类模型，默认后端即 onnxruntime。
+# 注意：rapidocr 不声明 onnxruntime，必须显式安装；不得引入 torch/tensorflow。
+rapidocr==3.10.0
+onnxruntime==1.24.4
+numpy==1.26.4
+pillow==13.0.0

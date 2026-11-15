@@ -2,10 +2,15 @@ package com.lanlink.shopping.module.pricemonitor.controller;
 
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
+import com.lanlink.shopping.entity.Industry;
 import com.lanlink.shopping.entity.Merchant;
+import com.lanlink.shopping.entity.Product;
 import com.lanlink.shopping.integration.security.RequirePerm;
+import com.lanlink.shopping.mapper.IndustryMapper;
+import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.module.pricemonitor.dto.PriceAlertView;
 import com.lanlink.shopping.module.pricemonitor.service.MarketNewsService;
+import com.lanlink.shopping.module.pricemonitor.service.MarketWebSearchService;
 import com.lanlink.shopping.module.pricemonitor.service.PriceMonitorAiService;
 import com.lanlink.shopping.module.pricemonitor.service.PriceMonitorService;
 import com.lanlink.shopping.service.MerchantService;
@@ -40,15 +45,24 @@ public class PriceMonitorController {
     private final MarketNewsService newsService;
     private final MerchantService merchantService;
     private final com.lanlink.shopping.module.pricemonitor.service.ProductFactorAutoService factorAutoService;
+    private final MarketWebSearchService webSearch;
+    private final ProductMapper productMapper;
+    private final IndustryMapper industryMapper;
 
     public PriceMonitorController(PriceMonitorService service, PriceMonitorAiService aiService,
                                   MarketNewsService newsService, MerchantService merchantService,
-                                  com.lanlink.shopping.module.pricemonitor.service.ProductFactorAutoService factorAutoService) {
+                                  com.lanlink.shopping.module.pricemonitor.service.ProductFactorAutoService factorAutoService,
+                                  MarketWebSearchService webSearch,
+                                  ProductMapper productMapper,
+                                  IndustryMapper industryMapper) {
         this.service = service;
         this.aiService = aiService;
         this.newsService = newsService;
         this.merchantService = merchantService;
         this.factorAutoService = factorAutoService;
+        this.webSearch = webSearch;
+        this.productMapper = productMapper;
+        this.industryMapper = industryMapper;
     }
 
     @GetMapping("/trend/{prodId}")
@@ -108,6 +122,65 @@ public class PriceMonitorController {
     public R<List<Map<String, Object>>> news(@RequestParam(required = false) String category,
                                              @RequestParam(defaultValue = "20") int limit) {
         return R.ok(newsService.feed(category, limit));
+    }
+
+    /**
+     * 首页「每日资讯」：与商品完全解耦，永不返回空。
+     *
+     * <p>数据来自库内 RSS 抓取结果（独立定时任务写入），不读商品表、不按商品检索；
+     * 库内为空时依次放宽分类过滤并回落静态观察条目。前端不应再传 prodId。
+     */
+    @GetMapping("/news/daily")
+    public R<List<Map<String, Object>>> dailyNews(@RequestParam(required = false) String category,
+                                                  @RequestParam(defaultValue = "8") int limit) {
+        return R.ok(newsService.dailyFeed(category, limit));
+    }
+
+    /**
+     * 每日资讯的实时新闻：按当前商品标题检索必应资讯，只保留标题或摘要命中商品词的条目。
+     */
+    @GetMapping("/news/live")
+    public R<List<Map<String, Object>>> liveNews(@RequestParam Long prodId,
+                                                 @RequestParam(required = false) String category,
+                                                 @RequestParam(defaultValue = "8") int limit) {
+        Product product = productMapper.selectById(prodId);
+        if (product == null) return R.ok(List.of());
+        String industry = "";
+        if (product.getIndId() != null && industryMapper != null) {
+            Industry row = industryMapper.selectById(product.getIndId());
+            if (row != null && row.getName() != null) industry = row.getName();
+        }
+        List<String> terms = MarketWebSearchService.productTerms(product.getTitle(), industry);
+        if (terms.isEmpty()) return R.ok(List.of());
+        String focus = terms.stream()
+                .sorted((a, b) -> Integer.compare(b.length(), a.length()))
+                .limit(2)
+                .reduce((a, b) -> a + " " + b)
+                .orElse(terms.get(0));
+        String extra = switch (category == null ? "" : category) {
+            case "price" -> " 价格";
+            case "supply" -> " 供应";
+            case "policy" -> " 政策";
+            case "international" -> " 国际";
+            default -> " 行情";
+        };
+        var items = webSearch.searchLiveNews(focus + extra, terms, limit);
+        List<Map<String, Object>> out = new ArrayList<>();
+        int i = 0;
+        for (MarketWebSearchService.LiveNewsItem item : items) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", "live-" + prodId + "-" + (i++));
+            row.put("title", item.title());
+            row.put("summary", item.snippet());
+            row.put("source", item.source());
+            row.put("url", item.url());
+            row.put("sourceUrl", item.url());
+            row.put("linkType", "article");
+            row.put("category", category == null || category.isBlank() ? "market" : category);
+            row.put("publishedAt", item.publishedAt());
+            out.add(row);
+        }
+        return R.ok(out);
     }
 
     /** 五维价格因子看板（公开：首页每日行情、商品详情页均可展示；lang 支持 zh/en）。 */

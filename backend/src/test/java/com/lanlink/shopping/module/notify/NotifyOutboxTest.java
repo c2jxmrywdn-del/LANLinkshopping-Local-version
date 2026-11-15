@@ -64,6 +64,8 @@ class NotifyOutboxTest {
     void workerRepublishesPendingRowAndMarksItSent() {
         NotifyOutbox row = pendingRow(0);
         when(outbox.claimDue(any(LocalDateTime.class), anyInt())).thenReturn(java.util.List.of(row));
+        // 认领成功（status 0→3 影响 1 行），才会进入投递分支
+        when(outbox.claimOne(row.getId())).thenReturn(1);
 
         int sent = new NotifyOutboxWorker(rabbit, outbox).drain(LocalDateTime.now());
 
@@ -77,6 +79,7 @@ class NotifyOutboxTest {
     void workerBumpsRetryAndSchedulesBackoffOnFailure() {
         NotifyOutbox row = pendingRow(2);
         when(outbox.claimDue(any(LocalDateTime.class), anyInt())).thenReturn(java.util.List.of(row));
+        when(outbox.claimOne(row.getId())).thenReturn(1);
         org.mockito.Mockito.doThrow(new AmqpException("还是不通"))
                 .when(rabbit).convertAndSend(anyString(), anyString(), any(Object.class));
 
@@ -90,6 +93,7 @@ class NotifyOutboxTest {
     void workerDeadLettersAfterMaxRetries() {
         NotifyOutbox row = pendingRow(NotifyOutboxPolicy.MAX_RETRY - 1);
         when(outbox.claimDue(any(LocalDateTime.class), anyInt())).thenReturn(java.util.List.of(row));
+        when(outbox.claimOne(row.getId())).thenReturn(1);
         org.mockito.Mockito.doThrow(new AmqpException("还是不通"))
                 .when(rabbit).convertAndSend(anyString(), anyString(), any(Object.class));
 

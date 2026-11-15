@@ -1,0 +1,11 @@
+# 只装核心包，不装任何重型 parser。
+#
+# 关键：不要在此处加 `docling` / `paddleocr` / `mineru`——它们都会拉入
+# torch + CUDA（实测 site-packages 6.3GB），而本机 GPU 仅剩 ~536MiB 显存。
+# 文档解析由 Java 侧 SupportDocumentTextExtractor 或调用方完成，
+# 本服务通过 /ingest 接收已解析的 content_list。
+raganything==1.4.4
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+pydantic>=2.7

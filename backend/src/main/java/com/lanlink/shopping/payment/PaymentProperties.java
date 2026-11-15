@@ -18,9 +18,31 @@ public class PaymentProperties {
     /** 回调/跳转的公网基础地址（真实联调需部署到 HTTPS 域名，例：https://shop.example.com/api） */
     private String notifyBaseUrl = "http://localhost:8080/api";
 
+    /**
+     * 平台对公收款账户（线下电汇用）。
+     *
+     * <p>历史缺陷：前端硬编码示例账号并标注"已企业认证"，用户可能按错误账户汇款。
+     * 账户必须由部署配置下发；未配置时前端明确提示"平台暂未配置"。
+     */
+    private CorporateBank corporateBank = new CorporateBank();
+
     private Wechat wechat = new Wechat();
     private Alipay alipay = new Alipay();
     private Stripe stripe = new Stripe();
+
+    @Data
+    public static class CorporateBank {
+        /** 开户行全称，如"中国工商银行股份有限公司深圳科技园支行" */
+        private String bankName = "";
+        /** 对公账号（明文或掩码均可，前端原样展示） */
+        private String bankAccount = "";
+        /** 收款户名 */
+        private String accountName = "";
+        /** 纳税人识别号（可选） */
+        private String taxRegNo = "";
+        /** 是否已完成企业认证（决定前端是否展示"已认证"徽标） */
+        private boolean verified = false;
+    }
 
     @Data
     public static class Stripe {
@@ -32,6 +54,15 @@ public class PaymentProperties {
         private String webhookSecret = "";
         /** 默认结算货币代码（小写 ISO 代码，如 cny, usd, eur） */
         private String currency = "cny";
+        /**
+         * 显式启用的支付方式（逗号分隔）。留空 = 使用 automatic_payment_methods，
+         * 由 Stripe Dashboard 的开关决定可用方式（最安全，默认值）。
+         *
+         * <p>需要前端 Express Checkout 稳定出现钱包按钮时才配置为
+         * {@code card,apple_pay,google_pay}。**前提**：Dashboard 已激活对应方式
+         * 并完成 Apple Pay 域名验证，否则 Stripe 会拒绝整笔预下单。
+         */
+        private java.util.List<String> walletPaymentMethods = new java.util.ArrayList<>();
     }
 
     @Data

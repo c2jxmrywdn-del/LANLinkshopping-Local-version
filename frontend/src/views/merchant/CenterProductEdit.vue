@@ -67,6 +67,11 @@
             <a-input v-model:value="form.brand" placeholder="如：华晨" maxlength="64" />
           </a-form-item>
 
+          <!-- 阶梯批发价（P1-17）：走 myUpdate 链路落 tierPriceJson，变更随内容重新送审 -->
+          <a-form-item>
+            <TierPriceEditor v-model="tierRows" :base-price="form.price" />
+          </a-form-item>
+
           <!-- 规格参数 -->
           <a-form-item label="规格参数（选填）">
             <div v-for="(row, idx) in specRows" :key="idx" class="spec-row">
@@ -111,6 +116,7 @@ import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { homeApi, productApi } from '../../api'
 import AiTitlePolish from '../../components/merchant/AiTitlePolish.vue'
+import TierPriceEditor from '../../components/merchant/TierPriceEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -136,6 +142,8 @@ const form = reactive({
   reviewStatus: null, rejectReason: ''
 })
 const specRows = ref([{ k: '', v: '' }])
+const tierRows = ref([])      // 阶梯批发价动态行（P1-17）：回显 [{minQty,price}]，提交归一化
+const originalTiers = ref([]) // 原始阶梯（用于脏检查：未编辑不提交，避免误触发重审）
 
 const rules = {
   title: [
@@ -206,6 +214,10 @@ async function load() {
       reviewStatus: p.reviewStatus, rejectReason: p.rejectReason
     })
     specRows.value = parseSpec(p.spec)
+    // 阶梯价回显（P1-17）：详情接口返回契约数组 [{minQty,price}]；空=未配置
+    const tiers = Array.isArray(p.tierPrices) ? p.tierPrices : []
+    tierRows.value = tiers.map(t => ({ minQty: t.minQty, price: Number(t.price) }))
+    originalTiers.value = tiers.map(t => ({ minQty: t.minQty, price: Number(t.price) }))
     if (form.coverUrl) {
       imgFiles.value = [{ uid: '-1', name: 'cover', status: 'done', url: form.coverUrl }]
     }
@@ -228,11 +240,47 @@ const contentDirty = computed(() => {
     || form.catId !== o.catId
     || form.coverUrl !== (o.coverUrl || '')
     || (form.detail || '').trim() !== (o.detail || '')
+    || tiersDirty.value
 })
+
+/** 阶梯价是否被修改（P1-17）：行完全填齐才参与比对，未编辑不提交避免误触发重审 */
+const tiersDirty = computed(() => JSON.stringify(normalizedTiers()) !== JSON.stringify(originalTiers.value))
+
+function normalizedTiers() {
+  return tierRows.value
+    .filter(r => r.minQty != null && r.price != null)
+    .map(r => ({ minQty: r.minQty, price: Number(r.price) }))
+    .sort((a, b) => a.minQty - b.minQty)
+}
+
+function buildTierPrices() {
+  const rows = normalizedTiers()
+  if (!rows.length) return []   // 空数组=清除阶梯（显式语义，后端 encodeContract 返回 null）
+  const price = Number(form.price)
+  for (const r of rows) {
+    if (!Number.isInteger(r.minQty) || r.minQty < 1) {
+      throw new Error('阶梯价数量需为正整数（如 100）')
+    }
+    if (!(r.price > 0)) {
+      throw new Error('阶梯价单价需大于 0')
+    }
+    if (price > 0 && r.price > price) {
+      throw new Error('阶梯价单价不能高于商品单价 ' + price.toFixed(2) + ' 元')
+    }
+  }
+  return rows
+}
 
 async function submit() {
   if (!form.coverUrl) { message.error('请上传商品主图'); return }
   try { await formRef.value?.validateFields?.() } catch (e) { return }
+  let tierPrices
+  try {
+    tierPrices = buildTierPrices()
+  } catch (e) {
+    message.error(e.message)
+    return
+  }
   // 在售商品修改内容 → 重新送审期间会临时下架，保存前明确告知（避免"改个标题商品突然消失"）
   const o = original.value
   if (contentDirty.value && o.reviewStatus === 1 && o.status === 1) {
@@ -255,6 +303,8 @@ async function submit() {
       price: form.price, stock: form.stock,
       brand: (form.brand || '').trim(),
       spec: buildSpec(),
+      // 仅阶梯被编辑时才提交（tierPrices=null 表示本次未改动，后端不清空存量阶梯）
+      tierPrices: tiersDirty.value ? tierPrices : null,
       coverUrl: form.coverUrl,
       detail: (form.detail || '').trim()
     })
@@ -272,8 +322,11 @@ onMounted(load)
 .crumb-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 4px; }
 .crumb { font-size: 12.5px; }
 .state-banner { border-radius: 14px; }
-.title-row { display: flex; align-items: flex-start; gap: 8px; }
-.title-row .title-input { flex: 1; min-width: 0; }
+.title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.title-row .title-input { flex: 1 1 220px; min-width: 0; }
+/* 候选面板另起一行占满：ai-polish 根在 row 内时面板随按钮同行会溢出 */
+.title-row :deep(.ai-polish) { flex: 0 0 auto; }
+.title-row :deep(.ai-polish-panel) { flex: 1 1 100%; }
 .edit-form { background: var(--mc-card, #fff); border: 1px solid var(--mc-border, #e8e6e1); border-radius: 16px; padding: 22px 24px 18px; box-shadow: 0 2px 14px rgba(20, 24, 34, .04); }
 .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--mc-border-soft, #f0eee9); }
 .section-head b { font-size: 15px; color: var(--mc-ink, #1d1d1f); letter-spacing: -.01em; }

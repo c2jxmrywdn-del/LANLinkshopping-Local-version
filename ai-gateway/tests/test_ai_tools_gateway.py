@@ -88,6 +88,20 @@ class TestAiToolsGateway(unittest.TestCase):
         self.assertIn("lanlink_monitor_delivery_sla", ful_names)
         self.assertNotIn("lanlink_create_cart_draft", ful_names)
 
+    def test_support_role_only_exposes_read_only_tools(self):
+        """客服角色：只读查数工具 + 本地只读知识库，写工具与联网检索一律不可见。"""
+        resp = self.client.get("/v1/ai/tools?role=support", headers=self.auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        names = {t["function"]["name"] for t in resp.json().get("data", [])}
+        for expected in ("lanlink_search_products", "lanlink_get_product_detail",
+                         "lanlink_calculate_quotation", "lanlink_query_knowledge",
+                         "lanlink_track_logistics", "lanlink_kb_search"):
+            self.assertIn(expected, names)
+        for forbidden in ("lanlink_create_cart_draft", "lanlink_audit_procurement_draft",
+                          "lanlink_approve_procurement_flow", "lanlink_monitor_delivery_sla",
+                          "web_search", "fetch_page", "context7_docs"):
+            self.assertNotIn(forbidden, names, f"客服角色不得看到 {forbidden}")
+
 
     def test_execute_builtin_tool_with_fence(self):
         """执行内置 think 工具并验证数据围栏包装。"""

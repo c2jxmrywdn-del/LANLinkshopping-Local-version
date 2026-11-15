@@ -73,7 +73,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import Hls from 'hls.js'
 import { liveApi } from '../../api'
 import { resolveStorageUrl } from '../../utils/storageUrl'
 import { useUserStore } from '../../store/user'
@@ -116,22 +115,40 @@ function startPlay() {
 function onPlay() { playing.value = true; started.value = true }
 function onPaused() { playing.value = false }
 
-function attachStream() {
+/**
+ * 挂载直播流。
+ *
+ * <p>hls.js（605 KB）改为**按需动态导入**：原来静态 import 会让每个进商品详情页的用户
+ * 都下载并解析整个 hls.js，即使该商品根本没有直播（`v-if="liveRoom"` 为假、组件压根没渲染）。
+ * 现在只有真正需要 MSE 播放且非 Safari 原生 HLS 时才加载它。
+ */
+async function attachStream() {
   const v = videoRef.value
   if (!v || !props.room?.streamUrl) return
   const url = props.room.streamUrl
   if (hls) { hls.destroy(); hls = null }
   if (v.canPlayType('application/vnd.apple.mpegurl')) {
-    v.src = url // Safari/iOS 原生 HLS
-  } else if (Hls.isSupported()) {
+    v.src = url // Safari/iOS 原生 HLS，不需要 hls.js
+    v.muted = true
+    return
+  }
+  try {
+    const { default: Hls } = await import('hls.js')
+    if (!Hls.isSupported()) {
+      v.src = url // 最终回落：直链 mp4
+      v.muted = true
+      return
+    }
+    // 异步等待期间组件可能已卸载：此时不能再挂实例
+    if (!videoRef.value) return
     hls = new Hls({ lowLatencyMode: true, liveSyncDurationCount: 3 })
     hls.loadSource(url)
     hls.attachMedia(v)
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (data.fatal) message.warning('直播流连接中断，正在尝试恢复…')
     })
-  } else {
-    v.src = url // 最终回落：直链 mp4
+  } catch (e) {
+    v.src = url // 加载 hls.js 失败也要能播（直链兜底）
   }
   // 直播流默认静音起播（自动播放策略），用户可在控制条取消静音
   v.muted = true
@@ -225,7 +242,9 @@ async function sendLike() {
 
 // ===== 生命周期 =====
 watch(() => props.room?.roomId, () => {
-  attachStream()
+  // attachStream 内部已自兜底（hls 加载失败回落直链），这里只需吞掉 Promise 拒绝，
+  // 避免未处理的 rejection 冒到全局错误上报里
+  attachStream().catch(() => {})
   viewerCount.value = Number(props.room?.viewerCount || 0)
   likeCount.value = Number(props.room?.likeCount || 0)
   joined = false
@@ -237,7 +256,7 @@ watch(() => props.room?.roomId, () => {
   }
 }, { immediate: true })
 
-onMounted(attachStream)
+onMounted(() => { attachStream().catch(() => {}) })
 onBeforeUnmount(() => {
   if (hls) { hls.destroy(); hls = null }
   if (heartbeatTimer) clearInterval(heartbeatTimer)

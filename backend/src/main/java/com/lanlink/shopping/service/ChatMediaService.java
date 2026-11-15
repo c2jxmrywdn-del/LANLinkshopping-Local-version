@@ -107,16 +107,40 @@ public class ChatMediaService {
     }
 
     /**
-     * file：pdf/docx/xlsx/pptx/zip/txt/csv。docx/xlsx/pptx/zip 同为 zip 容器（PK 头），
-     * 魔数无法细分，统一落为 bin；txt/csv 无魔数（sniffMagic 返回 unknown），
-     * 按原始扩展名放行且仅限 .txt/.csv（另限 2MB，见 upload 内 max 选择）。
+     * file：pdf/docx/xlsx/pptx/zip/txt/csv（P2-4 修正）。
+     * pdf 有独立魔数；docx/xlsx/pptx/zip 同为 zip 容器（PK 头），魔数无法细分——
+     * 改为「扩展名 + 魔数交叉验证」：PK 头 + 客户端扩展名 ∈ {docx,xlsx,pptx,zip} 才放行
+     * 并按扩展名落库（解析侧 SupportDocumentTextExtractor 据此分派 POI/zip 抽取器），
+     * 伪造扩展名（如 .exe 改名 .docx）仍被拒绝；.bin 保留放行（存量落库只读兼容不迁移）。
      */
     private static String fileExt(String detected, String originalName) {
-        if ("pdf".equals(detected) || "bin".equals(detected)) return detected;
+        if ("pdf".equals(detected) || "bin".equals(detected)) {
+            String ext = canonicalExtension(originalName);
+            if ("docx".equals(ext) || "xlsx".equals(ext) || "pptx".equals(ext) || "zip".equals(ext)) {
+                return ext;
+            }
+            // 存量 .bin 落库只读兼容不迁移；PK 头 + 其它未知扩展名按伪造拒绝，不静默归 bin
+            if ("bin".equals(ext)) return "bin";
+            if ("bin".equals(detected)) {
+                throw new IllegalArgumentException("文件仅支持 PDF/DOCX/XLSX/PPTX/ZIP/TXT/CSV 格式");
+            }
+            return detected;
+        }
         String lower = originalName.toLowerCase();
         if (lower.endsWith(".txt")) return "txt";
         if (lower.endsWith(".csv")) return "csv";
-        throw new IllegalArgumentException("文件仅支持 PDF/DOC/XLS/PPT/ZIP/TXT/CSV 格式");
+        throw new IllegalArgumentException("文件仅支持 PDF/DOCX/XLSX/PPTX/ZIP/TXT/CSV 格式");
+    }
+
+    /** 扩展名规范化：取最后一段、小写；与 SupportMediaValidator.canonicalExtension 同口径 */
+    private static String canonicalExtension(String originalName) {
+        String name = originalName == null ? "" : originalName.trim().replace('\\', '/');
+        int slash = name.lastIndexOf('/');
+        if (slash >= 0) name = name.substring(slash + 1);
+        int dot = name.lastIndexOf('.');
+        if (dot < 0 || dot >= name.length() - 1) return "";
+        String ext = name.substring(dot + 1).toLowerCase();
+        return "jpeg".equals(ext) ? "jpg" : ext;
     }
 
     /** voice：webm/wav/mp3/m4a/ogg */

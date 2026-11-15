@@ -32,6 +32,21 @@ public class TechAppraisalService {
     private static final Set<String> APPRAISAL_STATUSES = Set.of(
             "SUBMITTED", "MATERIAL_REVIEW", "EXPERT_REVIEW", "REPORT_ISSUED", "REJECTED");
 
+    /**
+     * 评价状态迁移白名单。
+     *
+     * <p>业务口径（数据字典 §状态机）：三个评审环节都是"后台可写"，允许正向跳过中间环节
+     * （例如材料齐全时直接出具报告 SUBMITTED → REPORT_ISSUED）；但**禁止回退**——
+     * 已出具报告或已驳回的记录不得再被拉回评审中（历史缺陷允许 REPORT_ISSUED→SUBMITTED、
+     * REJECTED→REPORT_ISSUED）。
+     */
+    private static final java.util.Map<String, Set<String>> APPRAISAL_TRANSITIONS = java.util.Map.of(
+            "SUBMITTED", Set.of("MATERIAL_REVIEW", "EXPERT_REVIEW", "REPORT_ISSUED", "REJECTED"),
+            "MATERIAL_REVIEW", Set.of("EXPERT_REVIEW", "REPORT_ISSUED", "REJECTED"),
+            "EXPERT_REVIEW", Set.of("REPORT_ISSUED", "REJECTED"),
+            "REPORT_ISSUED", Set.of(),
+            "REJECTED", Set.of());
+
     private final TechAppraisalMapper appraisalMapper;
     private final TechAchievementMapper achievementMapper;
     private final TechOrganizationMapper organizationMapper;
@@ -105,6 +120,8 @@ public class TechAppraisalService {
         if (appraisal == null) {
             throw new BusinessException(404, "评价申请不存在");
         }
+        com.lanlink.shopping.module.techservice.support.TechStatusGuard
+                .require(APPRAISAL_TRANSITIONS, appraisal.getStatus(), status, "评价");
         appraisal.setStatus(status);
         if (conclusionLevel != null && !conclusionLevel.isBlank()) {
             appraisal.setConclusionLevel(conclusionLevel.trim());

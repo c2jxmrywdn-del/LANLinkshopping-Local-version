@@ -23,6 +23,8 @@ public class Merchant {
     private Integer taxStatus;      // 0未知 1稳定
     private String joinType;        // 加盟/入驻/邀约
     private String joinCode;        // 平台邀约码 / 特约加盟码
+    /** 平台特邀商户：1=后台主动邀请或运营邀约入驻，0=普通入驻。公开展示还要审核通过且店铺未关闭。 */
+    private Integer platformInvited;
     private Integer reviewStatus;   // 0待审 1通过 2驳回
     private String rejectReason;
     private String licenseUrl;      // 营业执照图片URL(JPG/PNG)
@@ -31,6 +33,14 @@ public class Merchant {
     private Integer hasSpecialPermit; // 是否有特殊经营许可证 0无 1有
     private String specialPermitName; // 特殊经营许可证名称
     private String specialPermitUrl;  // 特殊经营许可证附件URL
+    private BigDecimal commissionRate; // 平台佣金率(%)，NULL=用全局默认(app.settlement.default-commission-rate)
+    // ===== 退店（P2）：NULL=正常经营；EXIT_REQUESTED/PUBLIC_NOTICE/FROZEN/CLOSED =====
+    private String exitStatus;
+    private LocalDateTime exitRequestTime;
+    private LocalDateTime noticeEndTime;
+    private LocalDateTime closeTime;
+    private String exitReason;
+    private String exitRejectReason;
 
     // ===== 商户重要敏感信息（AES-256-GCM 加密存储，展示层脱敏） =====
     @TableField(typeHandler = EncryptTypeHandler.class)

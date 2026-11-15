@@ -8,7 +8,7 @@
       </div>
       <div class="hero-actions">
         <a-button size="large" class="pill" @click="$router.push('/merchant/center/orders')"><FileText :size="15" class="inline-block mr-1 align-middle" /> 处理订单</a-button>
-        <a-button size="large" type="primary" class="pill" @click="publishOpen = true">＋ 发布商品</a-button>
+        <a-button size="large" type="primary" class="pill" @click="publishOpen = true"><Plus :size="15" class="inline-block mr-1 align-middle" /> 发布商品</a-button>
       </div>
     </section>
 
@@ -121,6 +121,27 @@
       </a-table>
     </a-card>
 
+    <!-- 收到的订单评价：t_order_review 新链路，merId 由登录态推导 -->
+    <a-card :bordered="false" class="panel">
+      <template #title>
+        <div class="panel-title"><div><strong>收到的订单评价</strong><small>买家对您店铺商品的订单评价</small></div></div>
+      </template>
+      <a-empty v-if="!reviewLoading && !merchantReviews.length" description="暂无订单评价" />
+      <div v-else class="mrv-list">
+        <div v-for="r in merchantReviews" :key="r.reviewId" class="mrv-item">
+          <div class="mrv-head">
+            <a-rate :value="r.rating" disabled />
+            <span class="mrv-name">{{ r.nickname || '匿名买家' }}</span>
+            <span class="mrv-time">{{ shortTime(r.createdAt) }}</span>
+          </div>
+          <p v-if="r.content" class="mrv-content" data-no-translate>{{ r.content }}</p>
+          <div v-if="r.attachments?.length" class="mrv-att">
+            <img v-for="(a, i) in r.attachments" :key="a + i" :src="a" alt="" loading="lazy" decoding="async" class="mrv-att-img" />
+          </div>
+        </div>
+      </div>
+    </a-card>
+
     <ProductPublishForm v-model:open="publishOpen" @published="load" />
   </div>
 </template>
@@ -130,6 +151,7 @@ import { computed, onMounted, ref, markRaw } from 'vue'
 import { Empty } from 'ant-design-vue'
 import {
   FileText,
+  Plus,
   Truck,
   Compass,
   RotateCcw,
@@ -140,7 +162,7 @@ import {
   Wallet,
   LayoutGrid
 } from 'lucide-vue-next'
-import { merchantCenterApi } from '../../api'
+import { merchantCenterApi, reviewApi } from '../../api'
 import { ORDER_STATUS, PAY_STATUS, fmtMoney } from '../../utils/merchantStatus'
 import { resolveStorageUrl } from '../../utils/storageUrl'
 import ProductPublishForm from '../../components/merchant/ProductPublishForm.vue'
@@ -149,6 +171,19 @@ const aEmpty = Empty
 const loading = ref(true)
 const publishOpen = ref(false)
 const summary = ref({})
+
+// 收到的订单评价：merId 由后端按登录态推导，前端只带分页
+const reviewLoading = ref(false)
+const merchantReviews = ref([])
+async function loadMerchantReviews() {
+  reviewLoading.value = true
+  try {
+    const page = await reviewApi.merchantOrderReviews({ page: 1, size: 5 })
+    merchantReviews.value = page?.records || []
+  } catch (e) { /* 工作台次要区块，失败静默 */ }
+  finally { reviewLoading.value = false }
+}
+function shortTime(v) { return String(v || '').replace('T', ' ').slice(0, 16) }
 
 const kpis = computed(() => summary.value.kpis || {})
 const trend = computed(() => summary.value.trend || [])
@@ -191,11 +226,21 @@ async function load() {
   try { summary.value = (await merchantCenterApi.summary()) || {} } catch (e) { /* 拦截器已提示 */ }
   loading.value = false
 }
-onMounted(load)
+onMounted(() => { load(); loadMerchantReviews() })
 </script>
 
 <style scoped>
 .dash-page { display: flex; flex-direction: column; gap: 16px; }
+
+/* 收到的订单评价 */
+.mrv-list { display: flex; flex-direction: column; gap: 12px; }
+.mrv-item { border-bottom: 1px solid var(--mc-border, #e8e6e1); padding-bottom: 10px; }
+.mrv-head { display: flex; align-items: center; gap: 10px; }
+.mrv-name { font-size: 13px; font-weight: 600; color: var(--mc-ink, #1d1d1f); }
+.mrv-time { margin-left: auto; font-size: 12px; color: var(--mc-muted, #6e6e73); }
+.mrv-content { margin: 6px 0 0; font-size: 13px; color: var(--mc-ink, #1d1d1f); white-space: pre-wrap; word-break: break-word; }
+.mrv-att { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.mrv-att-img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--mc-border, #e8e6e1); }
 
 /* 头部 */
 .hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 14px; padding: 6px 2px 2px; }

@@ -77,8 +77,10 @@ public class OutboundModelConfigService {
     private String allowedHostsCsv = "api.deepseek.com,dashscope.aliyuncs.com,api.xiaomimimo.com,open.bigmodel.cn,"
             + "api.openai.com,api.moonshot.cn,api.siliconflow.cn,localhost,127.0.0.1,host.docker.internal,lanlink-ai-gateway,ai-gateway,ollama,llama-cpp,dashscope-intl.aliyuncs.com";
 
-    /** AI 专用环境变量组：MIMO 渠道（兼容旧名 MIMO_API_KEY） */
-    @Value("${AI_MIMO_API_KEY:${support.fallback.mimo-api-key:${MIMO_API_KEY:}}}")
+    /** AI 专用环境变量组：MIMO 渠道。密钥走独立名 AI_OUTBOUND_MIMO_API_KEY——感知/ASR 的
+     * AI_MIMO_API_KEY、AI_ASR_API_KEY 属 ai-gateway 进程，后端零引用；配置感知 key 不得
+     * 激活出站文本渠道（配置即改变外呼策略面）。兼容旧名 MIMO_API_KEY。 */
+    @Value("${AI_OUTBOUND_MIMO_API_KEY:${support.fallback.mimo-api-key:${MIMO_API_KEY:}}}")
     private String envMimoApiKey;
 
     @Value("${AI_MIMO_BASE_URL:${MIMO_BASE_URL:https://api.xiaomimimo.com/v1}}")
@@ -142,7 +144,7 @@ public class OutboundModelConfigService {
             if (envMimoApiKey != null && !envMimoApiKey.isBlank()) {
                 if (storedChannel("mimo") == null) {
                     upsert("mimo", envMimoBaseUrl, envMimoApiKey, "mimo-v2.6-flash", true, 0L, null);
-                    log.info("[outbound-config] MIMO API Key auto-configured from AI_MIMO_API_KEY");
+                    log.info("[outbound-config] MIMO API Key auto-configured from AI_OUTBOUND_MIMO_API_KEY");
                 }
             }
             if (envQwenApiKey != null && !envQwenApiKey.isBlank()) {
@@ -923,6 +925,7 @@ public class OutboundModelConfigService {
 
     /** AES-GCM 加密：IV(12B) + 密文 Base64 编码 */
     String encrypt(String plain) {
+        if (plain == null || plain.isEmpty()) return null;
         try {
             byte[] iv = new byte[GCM_IV_BYTES];
             random.nextBytes(iv);
@@ -939,6 +942,7 @@ public class OutboundModelConfigService {
     }
 
     String decrypt(String cipherText) {
+        if (cipherText == null || cipherText.isEmpty()) return null;
         try {
             byte[] all = Base64.getDecoder().decode(cipherText);
             byte[] iv = new byte[GCM_IV_BYTES];

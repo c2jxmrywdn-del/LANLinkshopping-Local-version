@@ -354,6 +354,20 @@ public class AiToolExecutionService {
     // ==================== 4. 生成采购草稿与结算深链（人在回路） ====================
 
     public AiToolDto.CreateCartDraftResponse createCartDraft(AiToolDto.CreateCartDraftRequest req) {
+        return createCartDraft(req, null, null);
+    }
+
+    /**
+     * 生成采购意向草稿。
+     *
+     * <p>归属由服务端写入：{@code ownerMerId} 取自 API Key 的 {@code tenant:<merId>}，
+     * {@code ownerKeyPrefix} 取自认证主体，{@code ownerUserId} 只接受调用方显式传入且
+     * 与主体一致的用户；绝不把请求体里的 userId 直接当作草稿所有者（否则持 cart:write
+     * 的 Key 可为任意用户生成结算深链）。
+     */
+    public AiToolDto.CreateCartDraftResponse createCartDraft(AiToolDto.CreateCartDraftRequest req,
+                                                             Long tenantMerId,
+                                                             String callerKeyPrefix) {
         if (req == null || req.getProductId() == null || req.getQuantity() == null || req.getQuantity() <= 0) {
             throw new BusinessException("商品ID与订购数量必填");
         }
@@ -372,7 +386,10 @@ public class AiToolExecutionService {
         draftData.put("quantity", req.getQuantity());
         draftData.put("effectiveUnitPrice", quote.getEffectiveUnitPrice());
         draftData.put("finalTotalAmount", quote.getFinalTotalAmount());
-        draftData.put("userId", req.getUserId());
+        // 只记录可核验的归属，不记录客户端自称的 userId
+        draftData.put("ownerMerId", tenantMerId);
+        draftData.put("ownerKeyPrefix", callerKeyPrefix);
+        draftData.put("userId", null);
         draftData.put("remark", req.getRemark());
         draftData.put("createTime", LocalDateTime.now().toString());
 
@@ -621,6 +638,18 @@ public class AiToolExecutionService {
     // ==================== 6. 物流轨迹与订单跟踪（含 PII 掩码） ====================
 
     public AiToolDto.TrackLogisticsResponse trackLogistics(AiToolDto.TrackLogisticsRequest req) {
+        return trackLogistics(req, null);
+    }
+
+    /**
+     * 物流轨迹查询（含 PII 掩码）。
+     *
+     * <p>归属校验为 fail-closed：请求方必须能证明自己与该订单相关——
+     * 要么显式 userId 等于订单买家，要么 API Key 绑定的租户等于订单所属商户。
+     * 两者都缺失时拒绝，避免"不传 userId 即可读任意订单收件信息"。
+     */
+    public AiToolDto.TrackLogisticsResponse trackLogistics(AiToolDto.TrackLogisticsRequest req,
+                                                           Long tenantMerId) {
         if (req == null || !StringUtils.hasText(req.getOrderNo())) {
             throw new BusinessException("订单编号不能为空");
         }
@@ -634,8 +663,14 @@ public class AiToolExecutionService {
             throw new BusinessException("未找到对应的订单记录，请核对订单号是否正确");
         }
 
-        // 防 BOLA / IDOR 越权拦截：如果指定了 userId，必须严格归属于当前用户
-        if (req.getUserId() != null && !req.getUserId().equals(order.getUserId())) {
+        // 防 BOLA / IDOR（fail-closed）：必须显式提供 userId 且等于订单买家。
+        // 订单表没有 merId，无法在此安全地推断商户归属，因此不给"未提供身份"的调用放行——
+        // 否则任何持 orders:read 的 Key 只要不传 userId 就能读任意订单的收件人信息。
+        if (req.getUserId() == null) {
+            log.warn("[ai-tool] IDOR blocked: order {} queried without userId (tenant={})", orderNo, tenantMerId);
+            throw new BusinessException("FORBIDDEN: 查询物流需提供 userId 以核验订单归属");
+        }
+        if (!req.getUserId().equals(order.getUserId())) {
             log.warn("[ai-tool] IDOR blocked: requested order {} belonging to user {}, but requested by user {}",
                     orderNo, order.getUserId(), req.getUserId());
             throw new BusinessException("FORBIDDEN: 无权查询该订单的物流与收件信息");
@@ -722,6 +757,17 @@ public class AiToolExecutionService {
     // ==================== 7. 采购意向草稿单财务审核（财务审核 Agent） ====================
 
     public AiToolDto.AuditProcurementDraftResponse auditProcurementDraft(AiToolDto.AuditProcurementDraftRequest req) {
+        return auditProcurementDraft(req, null);
+    }
+
+    /**
+     * 财务审核草稿。
+     *
+     * <p>{@code tenantMerId} 来自 API Key 的租户绑定：非空时必须等于草稿所有者，
+     * 否则持有 procurement:audit 的 Key 能读任意租户的授信与草稿金额。
+     */
+    public AiToolDto.AuditProcurementDraftResponse auditProcurementDraft(
+            AiToolDto.AuditProcurementDraftRequest req, Long tenantMerId) {
         if (req == null || !StringUtils.hasText(req.getDraftId())) {
             throw new BusinessException("草稿单ID不能为空");
         }
@@ -730,6 +776,7 @@ public class AiToolExecutionService {
         if (draftData == null) {
             throw new BusinessException("草稿单不存在或已失效: " + draftId);
         }
+        requireDraftTenant(draftData, tenantMerId, draftId);
 
         Long prodId = parseLong(draftData.get("prodId"));
         Integer qty = parseInt(draftData.get("quantity"));
@@ -799,6 +846,14 @@ public class AiToolExecutionService {
             remark = "单价优惠偏离度超过40%，触发反舞弊超低价风控拦截，需人工复核。";
         }
 
+        // 审核结论必须回写草稿：否则 approveProcurementFlow 无从判断"是否已审核"，
+        // 审批链可被跳过（历史缺陷）。
+        draftData.put("auditStatus", auditStatus);
+        draftData.put("requiresHumanApproval", requiresHuman);
+        draftData.put("auditRemark", remark);
+        draftData.put("auditedAt", LocalDateTime.now().toString());
+        saveDraftData(draftId, draftData);
+
         return AiToolDto.AuditProcurementDraftResponse.builder()
                 .draftId(draftId)
                 .prodId(prodId)
@@ -822,6 +877,21 @@ public class AiToolExecutionService {
     // ==================== 8. 采购审批流放行/驳回（财务审核 Agent） ====================
 
     public AiToolDto.ApproveProcurementFlowResponse approveProcurementFlow(AiToolDto.ApproveProcurementFlowRequest req) {
+        return approveProcurementFlow(req, null);
+    }
+
+    /**
+     * 财务审批放行/驳回。
+     *
+     * <p>两条前置约束：
+     * <ol>
+     *   <li>租户归属：{@code tenantMerId} 非空时必须等于草稿所有者；</li>
+     *   <li>状态机：放行前草稿必须已完成财务审核（{@code auditStatus} 为 PASSED 或
+     *       REQUIRES_HUMAN_APPROVAL），避免跳过审核直接签发放行凭证。</li>
+     * </ol>
+     */
+    public AiToolDto.ApproveProcurementFlowResponse approveProcurementFlow(
+            AiToolDto.ApproveProcurementFlowRequest req, Long tenantMerId) {
         if (req == null || !StringUtils.hasText(req.getDraftId())) {
             throw new BusinessException("草稿单ID不能为空");
         }
@@ -832,6 +902,15 @@ public class AiToolExecutionService {
         Map<String, Object> draftData = getDraftData(draftId);
         if (draftData == null) {
             throw new BusinessException("草稿单不存在或已失效: " + draftId);
+        }
+        requireDraftTenant(draftData, tenantMerId, draftId);
+
+        if (Boolean.TRUE.equals(req.getApproved())) {
+            Object auditStatus = draftData.get("auditStatus");
+            String statusText = auditStatus == null ? "" : String.valueOf(auditStatus);
+            if (!"PASSED".equals(statusText) && !"REQUIRES_HUMAN_APPROVAL".equals(statusText)) {
+                throw new BusinessException("草稿尚未完成财务审核，不能直接放行: " + draftId);
+            }
         }
 
         String status = Boolean.TRUE.equals(req.getApproved()) ? "APPROVED" : "REJECTED";
@@ -877,8 +956,12 @@ public class AiToolExecutionService {
             } catch (Exception ignored) {}
         }
 
-        // 垂直越权检查（IDOR）
-        if (order != null && req.getUserId() != null && order.getUserId() != null) {
+        // 垂直越权检查（IDOR，fail-closed）：查到了订单就必须能证明归属。
+        if (order != null) {
+            if (req.getUserId() == null) {
+                log.warn("[ai-tool] IDOR blocked: SLA order {} queried without userId", req.getOrderNo());
+                throw new BusinessException("FORBIDDEN: 查询履约需提供 userId 以核验订单归属");
+            }
             if (!req.getUserId().equals(order.getUserId())) {
                 log.warn("[ai-tool] IDOR blocked: order {} belongs to user {}, requested by user {}",
                         req.getOrderNo(), order.getUserId(), req.getUserId());
@@ -1011,10 +1094,7 @@ public class AiToolExecutionService {
                 }
                 case "lanlink_create_cart_draft": {
                     AiToolDto.CreateCartDraftRequest crReq = objectMapper.convertValue(args, AiToolDto.CreateCartDraftRequest.class);
-                    if (crReq.getUserId() == null && req.getUserId() != null) {
-                        crReq.setUserId(req.getUserId());
-                    }
-                    result = createCartDraft(crReq);
+                    result = createCartDraft(crReq, tenantMerId, null);
                     break;
                 }
                 case "lanlink_query_knowledge": {
@@ -1032,7 +1112,7 @@ public class AiToolExecutionService {
                     if (tReq.getUserId() == null && req.getUserId() != null) {
                         tReq.setUserId(req.getUserId());
                     }
-                    result = trackLogistics(tReq);
+                    result = trackLogistics(tReq, tenantMerId);
                     break;
                 }
                 case "lanlink_audit_procurement_draft": {
@@ -1040,12 +1120,12 @@ public class AiToolExecutionService {
                     if (aReq.getUserId() == null && req.getUserId() != null) {
                         aReq.setUserId(req.getUserId());
                     }
-                    result = auditProcurementDraft(aReq);
+                    result = auditProcurementDraft(aReq, tenantMerId);
                     break;
                 }
                 case "lanlink_approve_procurement_flow": {
                     AiToolDto.ApproveProcurementFlowRequest apReq = objectMapper.convertValue(args, AiToolDto.ApproveProcurementFlowRequest.class);
-                    result = approveProcurementFlow(apReq);
+                    result = approveProcurementFlow(apReq, tenantMerId);
                     break;
                 }
                 case "lanlink_monitor_delivery_sla": {
@@ -1141,6 +1221,28 @@ public class AiToolExecutionService {
             return objectMapper.readValue(json, Map.class);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * 草稿租户归属校验。
+     *
+     * <p>规则：
+     * <ul>
+     *   <li>草稿记录了 ownerMerId 且调用方 Key 绑定了租户 → 必须一致；</li>
+     *   <li>草稿记录了 ownerMerId 但调用方 Key 未绑定租户 → 拒绝（不允许无租户 Key 跨租户读）；</li>
+     *   <li>草稿未记录 ownerMerId（历史草稿）→ 允许，保持向后兼容。</li>
+     * </ul>
+     */
+    private void requireDraftTenant(Map<String, Object> draftData, Long tenantMerId, String draftId) {
+        Long ownerMerId = parseLong(draftData.get("ownerMerId"));
+        if (ownerMerId == null) {
+            return;
+        }
+        if (tenantMerId == null || !tenantMerId.equals(ownerMerId)) {
+            log.warn("[ai-tool] tenant isolation blocked: draft {} owned by merId {}, requested by tenant {}",
+                    draftId, ownerMerId, tenantMerId);
+            throw new BusinessException("FORBIDDEN: 无权访问该商户的采购草稿");
         }
     }
 

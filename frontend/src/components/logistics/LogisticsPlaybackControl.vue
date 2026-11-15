@@ -247,7 +247,8 @@ onBeforeUnmount(() => {
   padding: 10px 16px;
   background: rgba(15, 23, 42, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   color: #f1f5f9;
   font-size: 12px;
   user-select: none;
@@ -274,36 +275,53 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.06);
   color: #e2e8f0;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.18s var(--ll-ease-out), box-shadow 0.2s ease;
   touch-action: manipulation;
 }
 .ctrl-btn:hover {
   background: rgba(56, 189, 248, 0.2);
   border-color: rgba(56, 189, 248, 0.5);
   color: #38bdf8;
+  transform: translateY(-1px);
+}
+.ctrl-btn:active {
+  transform: scale(0.97);
 }
 
 .play-btn {
-  background: #0284c7;
+  background: linear-gradient(135deg, #0369a1, #0284c7);
   border-color: #38bdf8;
   color: #ffffff;
+  box-shadow: 0 0 0 0 rgba(2, 132, 199, 0);
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, transform 0.18s var(--ll-ease-out);
 }
 .play-btn:hover {
-  background: #0369a1;
+  background: linear-gradient(135deg, #0369a1, #0284c7);
   color: #ffffff;
+  transform: translateY(-1px);
+}
+.play-btn:active {
+  transform: scale(0.97);
+}
+.play-btn svg {
+  transition: transform 0.2s ease-out;
+}
+.play-btn:hover svg {
+  transform: scale(1.2);
 }
 .play-btn.is-playing {
-  background: #d97706;
+  background: linear-gradient(135deg, #b45309, #d97706);
   border-color: #fbbf24;
+  box-shadow: 0 0 16px rgba(217, 119, 6, 0.35);
 }
 
 /* 速率选择器 */
 .speed-selector {
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 2px;
 }
 .speed-btn {
@@ -313,31 +331,33 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
   touch-action: manipulation;
 }
 .speed-btn:hover {
   color: #f1f5f9;
 }
 .speed-btn.is-active {
-  background: rgba(56, 189, 248, 0.25);
-  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* 时间轴滑轨 */
 .timeline-scrubber-wrap {
   flex: 1;
+  min-width: 0;
   position: relative;
   padding: 12px 6px;
 }
 .slider-rail {
   position: relative;
   width: 100%;
-  height: 6px;
+  height: 8px;
   background: rgba(255, 255, 255, 0.14);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
 }
 .slider-fill {
@@ -346,9 +366,9 @@ onBeforeUnmount(() => {
   top: 0;
   height: 100%;
   background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
-  border-radius: 3px;
+  border-radius: 4px;
   pointer-events: none;
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
 }
 
 /* 里程碑锚点 */
@@ -368,25 +388,31 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #64748b;
+  background: #475569;
   border: 1px solid #0f172a;
   transition: all 0.2s;
 }
 .milestone-dot.is-passed .milestone-inner {
   background: #38bdf8;
-  box-shadow: 0 0 6px #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.8);
 }
 .milestone-dot.is-active .milestone-inner {
-  transform: scale(1.4);
   background: #fbbf24;
-  box-shadow: 0 0 8px #fbbf24;
+  animation: milestone-breathe 2s ease-in-out infinite;
+}
+@keyframes milestone-breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 6px rgba(251, 191, 36, 0.5); }
+  50% { transform: scale(1.35); box-shadow: 0 0 12px rgba(251, 191, 36, 0.9); }
 }
 .milestone-label {
-  display: none;
+  display: block;
   position: absolute;
   bottom: 14px;
   left: 50%;
-  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(3px);
+  transition: opacity 0.18s ease, transform 0.18s var(--ll-ease-out), visibility 0.18s;
   background: rgba(15, 23, 42, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.15);
   padding: 2px 6px;
@@ -396,8 +422,11 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   pointer-events: none;
 }
-.milestone-dot:hover .milestone-label {
-  display: block;
+.milestone-dot:hover .milestone-label,
+.milestone-dot:focus-visible .milestone-label {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* 滑块柄 */
@@ -415,6 +444,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   transition: transform 0.1s ease;
   touch-action: none;
+}
+.slider-thumb:hover {
+  transform: translate(-50%, -50%) scale(1.15);
 }
 .slider-thumb:active {
   cursor: grabbing;
@@ -447,6 +479,7 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 700;
   color: #38bdf8;
@@ -458,14 +491,27 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-/* 移动端响应式（<= 640px） */
-@media (max-width: 640px) {
+/* 平板断点（≤991，对齐项目惯例）：收间距，布局不变 */
+@media (max-width: 991px) {
+  .playback-control-bar {
+    padding: 8px 12px;
+    gap: 10px;
+  }
+  .timeline-meta {
+    min-width: 96px;
+  }
+}
+
+/* 手机断点（≤700，沿用原 640 档折行方案） */
+@media (max-width: 700px) {
   .playback-control-bar {
     flex-wrap: wrap;
     gap: 8px;
     padding: 8px 12px;
+    backdrop-filter: blur(8px);
   }
   .timeline-scrubber-wrap {
     order: 1;
@@ -483,6 +529,27 @@ onBeforeUnmount(() => {
   .timeline-meta {
     order: 3;
     margin-left: auto;
+    min-width: 0;
+  }
+}
+
+/* 动效降级：覆盖播放键、里程碑呼吸、thumb 脉冲与 label 过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .play-btn,
+  .play-btn svg,
+  .ctrl-btn,
+  .speed-btn,
+  .milestone-dot.is-active .milestone-inner,
+  .milestone-label,
+  .thumb-glow,
+  .slider-thumb {
+    animation: none !important;
+    transition: none !important;
+  }
+  .milestone-label {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%);
   }
 }
 </style>

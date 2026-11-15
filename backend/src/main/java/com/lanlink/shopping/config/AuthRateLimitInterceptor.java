@@ -85,6 +85,10 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             Map.entry("/auth/login", new Policy(8, 120)),
             Map.entry("/auth/login/2fa", new Policy(8, 120)),
             Map.entry("/auth/register", new Policy(4, 30)),
+            // 注册验证码：匿名可调用且会触发短信/邮件发送，必须比注册本身更严
+            Map.entry("/auth/register-code", new Policy(3, 15)),
+            Map.entry("/auth/password-reset", new Policy(3, 15)),
+            Map.entry("/auth/social/apple/return", new Policy(20, 80)),
             Map.entry("/user/phone-code", new Policy(5, 30)),
             Map.entry("/user/email-code", new Policy(5, 30)),
             Map.entry("/order/checkout", new Policy(10, 60)),
@@ -98,6 +102,11 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             // ---- 技术服务写端点（需求/咨询/评价/托管/交易/发帖/专家申请/里程碑推进）：
             // 此前完全无限流，登录配方可脚本化刷写 t_tech_* 与陪跑项目；GET 缺省豁免，公开浏览不受影响
             Map.entry("/tech/*", new Policy(10, 60)),
+            // ---- RFQ 询价发布（登录态写端点；POST /rfq 无子路径，须精确条目 + 前缀条目各一条）----
+            Map.entry("/rfq", new Policy(10, 60)),
+            Map.entry("/rfq/*", new Policy(10, 60)),
+            // ---- 商户 RFQ 报价（前缀键覆盖 /merchant/rfq/{no}/quote；GET 缺省豁免）----
+            Map.entry("/merchant/rfq/*", new Policy(10, 60)),
             // ---- 材料上传/绑定/下线（字节解码 + 对象写入 + 状态变更）----
             // 下线是 DELETE：本策略是唯一打开 throttleDelete 的条目，其它端点语义不变
             Map.entry("/attachment/*", new Policy(10, 60, false, true)),
@@ -112,6 +121,17 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             Map.entry("/product/ai/*", new Policy(10, 120)),
             // ---- 技术服务运营台写操作（邀请/审核/状态变更/指派/推进），读不受限 ----
             Map.entry("/admin/tech-service/*", new Policy(30, 60)),
+            // ---- 商户结算运营台写操作（对账/生成批次/审核/打款登记/佣金率）：动资金账本口径，
+            // 对齐 /admin/tech-service/* 档位。须与 WebConfig 限流拦截器路径注册同步——
+            // 只加策略不注册路径等于无限流（本项目踩过）。GET 缺省豁免，批次列表/详情读不受限 ----
+            Map.entry("/admin/settlement/*", new Policy(20, 60)),
+            // ---- 商户提现（申请/撤回：动余额口径与冻结台账，对齐退店档位）与管理端提现审核
+            // （通过登记凭证/驳回解冻）：须与 WebConfig 限流拦截器路径注册同步。GET 缺省豁免 ----
+            Map.entry("/merchant/finance/*", new Policy(10, 60)),
+            Map.entry("/admin/finance/*", new Policy(20, 60)),
+            // ---- 商户退店（申请/撤回/审核/驳回/关闭/公示扫表）：状态机 + 保证金结算，对齐结算档位 ----
+            Map.entry("/merchant/exit/*", new Policy(10, 60)),
+            Map.entry("/admin/merchant-exit/*", new Policy(20, 60)),
             // ---- 商户流量事件上报（登录态逐请求 INSERT，需限流防表膨胀）----
             Map.entry("/merchant/traffic/events", new Policy(60, 240)),
         // 营业执照查看验证门：验证码校验端点按 IP 限流防爆破（验证码本身另有 5 次错码作废）
@@ -127,7 +147,75 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
             // 远低于阈值；防的是伪造洪水。policyFor 前缀匹配同时覆盖 /{provider}/{token} 深层路径 ----
             Map.entry("/logistics/callback/*", new Policy(120, 600)),
             Map.entry("/price-monitor/ai-analysis/*", new Policy(20, 120, true)),
-            Map.entry("/price-monitor/ask", new Policy(10, 120))
+            Map.entry("/price-monitor/ask", new Policy(10, 120)),
+            // ---- P1-11 限流长尾：此前完全无限流的登录态/匿名写端点。新增条目须与 WebConfig
+            // 限流拦截器路径注册同步——只加策略不注册路径等于无限流（本项目踩过）。
+            // 表内键是 startsWith 前缀语义；WebConfig 注册侧用 Ant ** 匹配到最深端点。----
+
+            // ---- 直播互动（匿名可写：点赞/弹幕/进出场/商品点击，昵称降级白名单），防刷库与弹幕洪水 ----
+            Map.entry("/live/room/*", new Policy(60, 240)),
+            // ---- 商户直播台（开播/置顶商品/状态流转，涉及直播间状态机与推流资源）----
+            Map.entry("/live/merchant/*", new Policy(10, 60)),
+            // ---- 买家 IM（发消息/5MB 媒体上传/建会话）；聊天高频语义，阈值取上报类口径 ----
+            Map.entry("/chat/*", new Policy(60, 240)),
+            // ---- 商户客服 IM（同买家 IM 口径）----
+            Map.entry("/merchant/center/chat/*", new Policy(60, 240)),
+            // ---- 营销图 AI 生成（单请求秒级图像模型推理 + 真实计费外呼，对齐 /product/ai/* 口径）----
+            Map.entry("/merchant/marketing-image/*", new Policy(10, 120)),
+            // ---- 头像上传（图片解码 + 对象写入，对齐 /product/image 口径）----
+            Map.entry("/user/avatar", new Policy(10, 60)),
+            // ---- e-POD 回单与物流写端点（照片上传解码/验签审核/发货/中转/轨迹同步/运力推荐/看门狗）----
+            Map.entry("/logistics/pod/*", new Policy(10, 60)),
+            Map.entry("/logistics/ship/*", new Policy(10, 60)),
+            Map.entry("/logistics/transit/*", new Policy(10, 60)),
+            Map.entry("/logistics/trace/*", new Policy(10, 60)),
+            Map.entry("/logistics/recommend-carriers", new Policy(10, 60)),
+            Map.entry("/logistics/watchdog/*", new Policy(10, 60)),
+            // ---- 任务中心奖励领取（积分发放，刷奖励直接污染账本）----
+            Map.entry("/task/claim", new Policy(10, 60)),
+            // ---- 会员签到（写积分流水）----
+            Map.entry("/membership/checkin", new Policy(10, 60)),
+            // ---- 活动域领券/参与/批量领券/商户促销（奖励发放类，防脚本化薅券）----
+            Map.entry("/campaign/*", new Policy(30, 120)),
+            Map.entry("/campaign/coupons/*", new Policy(30, 120)),
+            // ---- 广告推广（创建/钱包支付/暂停/恢复/终止，动钱包余额；POST /ad/campaigns 无子路径，
+            // 须精确条目 + 前缀条目各一条，同 /rfq 先例）----
+            Map.entry("/ad/campaigns", new Policy(10, 60)),
+            Map.entry("/ad/campaigns/*", new Policy(10, 60)),
+            // ---- 账期资金操作（申请/还款/调额/撤回/试算/结算支付/后台审核，动资金口径对齐 /order/checkout）----
+            Map.entry("/credit-term/*", new Policy(10, 60)),
+            // ---- 会员订阅购买/取消（建支付单）----
+            Map.entry("/subscription/*", new Policy(10, 60)),
+            // ---- 订单后续写操作（支付/确认/取消/退款申请与商户审批/RMA/买家评价）。
+            // 用单条前缀键覆盖 /order/ 全部 POST（精确键 /order/checkout 优先命中，前缀键间
+            // 不得重叠——policyFor 取最长前缀命中，重叠键须同策略值）----
+            Map.entry("/order/*", new Policy(10, 60)),
+            // ---- 商户发品与商品编辑（进入三审流程，防刷审核队列；编辑阈值放宽到编辑类口径）----
+            Map.entry("/product/publish", new Policy(10, 60)),
+            Map.entry("/product/my/*", new Policy(30, 60)),
+            // ---- 商户 SKU 多规格树保存（POST /product/my/sku/{prodId}/save）：整树 replace-all
+            // 写 t_product_spec/_spec_value/_sku 三表（先删后插 + 合规校验），比普通商品编辑更重；
+            // 前缀键比 /product/my/* 更长，policyFor 取最长前缀命中，故 SKU 路径走本策略(20/min) ----
+            Map.entry("/product/my/sku/*", new Policy(20, 60)),
+            // ---- 商户入驻申请与证照/税证上传（5MB 解码 + 对象写入 + 落审计）----
+            Map.entry("/merchant/apply", new Policy(10, 60)),
+            Map.entry("/merchant/apply-upload", new Policy(10, 60)),
+            Map.entry("/merchant/license", new Policy(10, 60)),
+            Map.entry("/merchant/tax-proof", new Policy(10, 60)),
+            // ---- 邀请链路：GET /invite/link 也会首次生成并写库，必须同时限制 GET，
+            // 否则匿名/登录脚本可反复刷码写表；rotate 与运营发码为登录态写端点。
+            // 须与 WebConfig 限流拦截器路径注册同步——只加策略不注册路径等于无限流。
+            Map.entry("/invite/link", new Policy(60, 240, true)),
+            Map.entry("/invite/link/rotate", new Policy(10, 60)),
+            Map.entry("/invite/admin/merchant-apply", new Policy(10, 60)),
+            // ---- 购物车写操作（加购/改数量/勾选/删除）：脚本化刷购物车表 ----
+            Map.entry("/cart/*", new Policy(60, 240)),
+            // ---- 加盟申请（写 t_join_application + 附件，防刷入驻漏斗）----
+            Map.entry("/join/*", new Policy(10, 60)),
+            // ---- 买家工单提交（落库 + VIP 优先级判定，防刷客服队列）----
+            Map.entry("/support-ticket/*", new Policy(10, 60)),
+            // ---- 客服意图分析（LLM 推理 + 第三方 API Key 直调通道，对齐 AI 端点口径）----
+            Map.entry("/support/intent/analyze", new Policy(20, 120))
     );
 
     private final LongSupplier clock;
@@ -151,6 +239,16 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
 
     public AuthRateLimitInterceptor(LongSupplier clock) {
         this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /**
+     * 策略表键（供 WebConfig 注册路径后做启动期一致性断言）。
+     *
+     * <p>历史缺陷：策略表加了新键但 WebConfig 的 addPathPatterns 没同步，
+     * 拦截器根本不执行，等于完全无限流。用断言把这类漂移在启动期暴露出来。
+     */
+    public static java.util.Set<String> policyKeys() {
+        return POLICIES.keySet();
     }
 
     @Autowired(required = false)
@@ -221,19 +319,26 @@ public class AuthRateLimitInterceptor implements HandlerInterceptor {
         return false;
     }
 
-    /** 精确匹配优先，其次前缀策略键（以 "/*" 结尾，如 /price-monitor/ai-analysis/*）。 */
+    /**
+     * 精确匹配优先，其次最长前缀策略键（以 "/*" 结尾，如 /price-monitor/ai-analysis/*）。
+     * 前缀键取最长命中：/campaign/coupons/batch-claim 须命中 /campaign/coupons/* 而非 /campaign/*；
+     * Map 遍历顺序不保证，重叠前缀键若任其命中首个匹配会产生策略漂移。
+     */
     private static Policy policyFor(String path) {
         Policy exact = POLICIES.get(path);
         if (exact != null) {
             return exact;
         }
+        Map.Entry<String, Policy> best = null;
         for (Map.Entry<String, Policy> entry : POLICIES.entrySet()) {
             String key = entry.getKey();
             if (key.endsWith("/*") && path.startsWith(key.substring(0, key.length() - 1))) {
-                return entry.getValue();
+                if (best == null || key.length() > best.getKey().length()) {
+                    best = entry;
+                }
             }
         }
-        return null;
+        return best == null ? null : best.getValue();
     }
 
     /**

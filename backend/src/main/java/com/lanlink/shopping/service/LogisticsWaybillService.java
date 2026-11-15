@@ -312,10 +312,12 @@ public class LogisticsWaybillService {
         if (provider == null || provider.getStatus() == null || provider.getStatus() != 1) {
             throw new BusinessException("物流服务商不存在或已停用");
         }
+        assertProviderShippable(provider);
         LogisticsTemplate template = req.templateId() == null ? null : templateMapper.selectById(req.templateId());
         if (template != null && (template.getStatus() == null || template.getStatus() != 1)) {
             throw new BusinessException("运费模板已停用");
         }
+        assertTemplateSelectedIfAvailable(templateMapper, provider, template);
 
         BigDecimal orderAmount = order.getTotalAmount();
         String province = LogisticsFreightCalculator.extractProvince(order.getAddress());
@@ -474,10 +476,12 @@ public class LogisticsWaybillService {
         if (provider == null || provider.getStatus() == null || provider.getStatus() != 1) {
             throw new BusinessException("物流服务商不存在或已停用");
         }
+        assertProviderShippable(provider);
         LogisticsTemplate template = req.templateId() == null ? null : templateMapper.selectById(req.templateId());
         if (template != null && (template.getStatus() == null || template.getStatus() != 1)) {
             throw new BusinessException("运费模板已停用");
         }
+        assertTemplateSelectedIfAvailable(templateMapper, provider, template);
 
         BigDecimal orderAmount = order.getTotalAmount();
         String province = LogisticsFreightCalculator.extractProvince(order.getAddress());
@@ -581,6 +585,7 @@ public class LogisticsWaybillService {
             throw new BusinessException("非法状态流转: " + wb.getStatus() + " -> " + toStatus);
         }
         if (wb.getStatus().equals(toStatus)) return wb; // 幂等
+        String fromStatus = wb.getStatus();
         wb.setStatus(toStatus);
         if (LogisticsStateMachine.DELIVERED.equals(toStatus)) {
             wb.setDeliveredTime(LocalDateTime.now());
@@ -589,10 +594,25 @@ public class LogisticsWaybillService {
                 wb.setCurrentLat(wb.getReceiverLat());
                 wb.setCurrentLocation("客户已签收");
             }
-            // 签收联动订单完成（仅全包裹送达时闭环）
+        }
+        /*
+         * 条件更新（CAS）：WHERE status = fromStatus。
+         *
+         * 内存状态机校验只能拦住"同一个快照内的非法流转"，拦不住两个并发事务
+         * 各自读到旧状态后双双通过校验、后提交者覆盖前者。这里让数据库做最终裁决：
+         * 影响行数为 0 说明状态已被别人改过，直接拒绝本次流转（而不是静默覆盖）。
+         */
+        int hit = waybillMapper.transitStatusAtomic(wb.getWaybillId(), fromStatus, toStatus);
+        if (hit == 0) {
+            throw new BusinessException(409,
+                    "运单状态已变化（当前非 " + fromStatus + "），请刷新后重试");
+        }
+        // 定位/签收时间属于同一行，CAS 成功后再补写（失败时不会污染终态时间）
+        if (LogisticsStateMachine.DELIVERED.equals(toStatus)) {
+            waybillMapper.updateById(wb);
+            // 签收联动订单完成（仅全包裹送达时闭环），必须在 CAS 成功之后
             completeOrderIfShipped(wb.getOrderNo());
         }
-        waybillMapper.updateById(wb);
         if (operatorNote != null && !operatorNote.isBlank()) {
             insertTrace(wb.getWaybillId(), LocalDateTime.now(), operatorNote, toStatus, false, "manual");
         }
@@ -616,6 +636,22 @@ public class LogisticsWaybillService {
         Order order = orderMapper.selectById(wb.getOrderNo());
         if (order == null) {
             throw new BusinessException("关联订单不存在");
+        }
+        // 归属校验（fail-closed）：只有买家本人 / 订单归属商户 / 平台运营可以提交 e-POD。
+        // 历史缺陷：仅校验运单存在，任意登录用户可覆盖他人签收人与公章照片，
+        // 商户验签后会把订单推进为已签收。
+        boolean admin = com.lanlink.shopping.config.UserContext.identity(httpReq)
+                == com.lanlink.shopping.common.UserIdentity.ADMIN;
+        assertOrderLogisticsVisible(order, operatorId, admin);
+        if (podRecordMapper != null) {
+            LogisticsPodRecord existing = podRecordMapper.selectOne(
+                    Wrappers.<LogisticsPodRecord>lambdaQuery()
+                            .eq(LogisticsPodRecord::getWaybillId, wb.getWaybillId())
+                            .orderByDesc(LogisticsPodRecord::getPodId)
+                            .last("LIMIT 1"));
+            if (existing != null && "approved".equalsIgnoreCase(existing.getAuditStatus())) {
+                throw new BusinessException("该运单签收回执已验签通过，不能重复上传");
+            }
         }
         if (req.signerName() == null || req.signerName().isBlank()) {
             throw new BusinessException("现场签收人姓名不能为空");
@@ -717,13 +753,30 @@ public class LogisticsWaybillService {
             }
             insertTrace(wb.getWaybillId(), now, "e-POD 验签合格（买方单位公章印鉴核实通过），货物确认完好签收",
                     LogisticsStateMachine.DELIVERED, false, "epod_approved", wb.getCurrentLng(), wb.getCurrentLat(), "客户现场", "client");
-            completeOrderIfShipped(wb.getOrderNo());
         } else {
             insertTrace(wb.getWaybillId(), now, "e-POD 验签未通过: " + (req.auditNote() != null ? req.auditNote() : "公章印鉴不清晰或缺少关键外观照") + "，请重新拍摄补传",
                     wb.getStatus(), true, "epod_rejected", wb.getCurrentLng(), wb.getCurrentLat(), "客户现场", "client");
         }
 
-        waybillMapper.updateById(wb);
+        /*
+         * 审核结论用 CAS 落库：WHERE pod_audit_status = 'pending'。
+         *
+         * 原来这里是 updateById（整行覆盖），两人同时验签/双击时第二个请求也会通过
+         * 「读出来是 pending」的内存校验，把第一个人的结论覆盖掉（驳回被改成通过）。
+         * 抢不到就说明已被处理，返回 409 让前端刷新。
+         */
+        int audited = waybillMapper.auditPodAtomic(
+                wb.getWaybillId(), newStatus, req.auditNote(), operatorId, now,
+                approved ? LogisticsStateMachine.DELIVERED : wb.getStatus(),
+                approved ? now : wb.getDeliveredTime(),
+                wb.getCurrentLng(), wb.getCurrentLat(), wb.getCurrentLocation());
+        if (audited == 0) {
+            throw new BusinessException(409, "该回执已被他人验签，请刷新后查看最新结论");
+        }
+        // 订单联动必须放在 CAS 成功之后：抢不到时不能把订单也标记完成
+        if (approved) {
+            completeOrderIfShipped(wb.getOrderNo());
+        }
         auditService.record(operatorId, "LOGISTICS_POD_AUDIT",
                 "审核e-POD回执 运单=" + wb.getWaybillNo() + " 结论=" + newStatus + " 批注=" + req.auditNote(), httpReq);
         return wb;
@@ -796,20 +849,36 @@ public class LogisticsWaybillService {
 
             if (LogisticsStateMachine.canTransit(wb.getStatus(), parsed.status())
                     && !wb.getStatus().equals(parsed.status())) {
+                String fromStatus = wb.getStatus();
                 wb.setStatus(parsed.status());
                 wb.setCurrentLng(pt.lngBd());
                 wb.setCurrentLat(pt.latBd());
                 wb.setCurrentLocation(pt.name());
+                LocalDateTime deliveredTime = null;
                 if (LogisticsStateMachine.DELIVERED.equals(parsed.status())) {
+                    deliveredTime = traceTime;
                     wb.setDeliveredTime(traceTime);
                     if (wb.getReceiverLng() != null) {
                         wb.setCurrentLng(wb.getReceiverLng());
                         wb.setCurrentLat(wb.getReceiverLat());
                         wb.setCurrentLocation("客户已签收");
                     }
+                }
+                /*
+                 * CAS 写入：轨迹回调是最典型的并发源（承运商重推、多节点同时回调）。
+                 * 原实现 updateById 无条件覆盖，迟到的「派送中」回调能把已签收的终态改回去；
+                 * 这里以 fromStatus 为条件，抢不到就跳过本条轨迹的状态迁移（轨迹本身仍已落库）。
+                 */
+                int hit = waybillMapper.transitStatusWithLocationAtomic(
+                        wb.getWaybillId(), fromStatus, parsed.status(),
+                        wb.getCurrentLng(), wb.getCurrentLat(), wb.getCurrentLocation(), deliveredTime);
+                if (hit == 0) {
+                    // 状态已被并发更新：本条轨迹只做留痕，不改状态、不联动订单
+                    continue;
+                }
+                if (LogisticsStateMachine.DELIVERED.equals(parsed.status())) {
                     completeOrderIfShipped(wb.getOrderNo());
                 }
-                waybillMapper.updateById(wb);
             }
 
             if (parsed.abnormal() && parsed.alertType() != null) {
@@ -1048,7 +1117,17 @@ public class LogisticsWaybillService {
         alert.setStatus("pending");
         alertMapper.insert(alert);
         wb.setExceptionFlag(1);
-        waybillMapper.updateById(wb);
+        /*
+         * 只写异常标记，不整行回写。
+         *
+         * 原来这里是 updateById(wb)，会把调用方持有的整行快照（含 status）一起写回，
+         * 等于在"抛告警"这个副作用里又覆盖了一次运单状态——与状态 CAS 冲突。
+         * 用一个窄更新只动 exception_flag，避免告警路径干扰状态机。
+         */
+        waybillMapper.update(null, com.baomidou.mybatisplus.core.toolkit.Wrappers
+                .<LogisticsWaybill>lambdaUpdate()
+                .eq(LogisticsWaybill::getWaybillId, wb.getWaybillId())
+                .set(LogisticsWaybill::getExceptionFlag, 1));
         Order order = orderMapper.selectById(wb.getOrderNo());
         if (order != null && order.getUserId() != null) {
             messageService.send(order.getUserId(), "logistics",
@@ -1193,6 +1272,44 @@ public class LogisticsWaybillService {
                 .eq(LogisticsProvider::getStatus, 1)
                 .orderByAsc(LogisticsProvider::getSort)
                 .orderByAsc(LogisticsProvider::getProviderId));
+    }
+
+    /**
+     * 发货防线一：国际线路（capability_json scope=international）拒绝线上发货——
+     * 询价制承运商无计价模型，放行会让商户以空模板产出 ¥0 国际运单进入在途/SLA/结算管线。
+     * SELF/selfPickup 商家自送不在拦截之列。
+     */
+    private void assertProviderShippable(LogisticsProvider provider) {
+        String code = provider.getProviderCode();
+        if ("SELF".equalsIgnoreCase(code)) return;
+        String capJson = provider.getCapabilityJson();
+        if (capJson == null || capJson.isBlank()) return;
+        try {
+            Map<String, Object> cap = JSON.readValue(capJson, new TypeReference<Map<String, Object>>() {});
+            if (Boolean.TRUE.equals(cap.get("selfPickup"))) return;
+            if ("international".equalsIgnoreCase(String.valueOf(cap.get("scope")))) {
+                throw new BusinessException("国际线路暂不支持线上发货，请联系客服询价");
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception ignored) {
+            // 坏 capability_json 不阻断发货（与管理端坏数据解耦），防线依赖 status=0 主闸
+        }
+    }
+
+    /**
+     * 发货防线二：所选服务商存在启用模板而未选模板时拒绝——封住"留空不计运费"
+     * 产出 ¥0 运单的口子（SELF 等无模板服务商不受影响）。
+     */
+    private void assertTemplateSelectedIfAvailable(LogisticsTemplateMapper tplMapper,
+                                                   LogisticsProvider provider, LogisticsTemplate selected) {
+        if (selected != null) return;
+        Long count = tplMapper.selectCount(new LambdaQueryWrapper<LogisticsTemplate>()
+                .eq(LogisticsTemplate::getProviderId, provider.getProviderId())
+                .eq(LogisticsTemplate::getStatus, 1));
+        if (count != null && count > 0) {
+            throw new BusinessException("该服务商存在可用运费模板，请选择运费模板后再发货");
+        }
     }
 
     public List<LogisticsTemplate> enabledTemplates(Long providerId) {

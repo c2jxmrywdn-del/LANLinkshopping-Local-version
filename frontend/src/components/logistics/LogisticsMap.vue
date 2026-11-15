@@ -50,7 +50,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AMapLoader from '@amap/amap-jsapi-loader'
-import request from '../../api/request'
+import { logisticsApi } from '../../api'
 import { Route as RouteIcon, MoveRight, MapPinned, Flag } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -121,7 +121,7 @@ let lastLoadFailed = false
 
 function fetchMapConfig() {
   if (!mapConfigPromise) {
-    mapConfigPromise = request.get('/logistics/map-config', { silent: true }).catch((e) => {
+    mapConfigPromise = logisticsApi.mapConfig().catch((e) => {
       mapConfigPromise = null
       throw e
     })

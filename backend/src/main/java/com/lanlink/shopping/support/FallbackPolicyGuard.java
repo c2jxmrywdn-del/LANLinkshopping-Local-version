@@ -25,7 +25,9 @@ public final class FallbackPolicyGuard {
         /** 超出范围的闲聊（礼貌提示，不调用任何外部模型） */
         OUT_OF_SCOPE,
         /** 违规请求：注入 / 反代 / 绕过本地知识库限制 —— 一律拦截 */
-        PROHIBITED
+        PROHIBITED,
+        /** 复杂多模态/深度售后维权嵌入式解答场景（经三层分流许可的受控外部生成） */
+        COMPLEX_EMBEDDED
     }
 
     // 违规信号：提示注入 / 反代 / 绕过本地知识库 / 索取外部模型或密钥
@@ -101,6 +103,23 @@ public final class FallbackPolicyGuard {
         if (intent == Intent.PROHIBITED) return "请求包含注入/反代/绕过知识库等违规信号，禁止调用外部模型";
         if (intent != Intent.KNOWLEDGE && intent != Intent.GREETING) {
             return "该意图不支持外部模型辅助分类";
+        }
+        return null;
+    }
+
+    /**
+     * 外部大模型嵌入式解答权限校验（复杂问题与多模态研判放行通道）。
+     *
+     * @param intent 识别意图
+     * @param complexDiverted 是否经三层漏斗分流认定为复杂问题
+     * @param externalAllowed 外部模型总开关是否开启
+     * @return null 表示允许；非 null 为拦截/拒绝原因
+     */
+    public static String authorizeExternalEmbeddedAnswer(Intent intent, boolean complexDiverted, boolean externalAllowed) {
+        if (!externalAllowed) return "外部大模型嵌入功能未启用，禁止调用外部模型";
+        if (intent == Intent.PROHIBITED) return "请求包含注入/反代/绕过知识库等违规信号，禁止调用外部模型";
+        if (!complexDiverted && intent != Intent.COMPLEX_EMBEDDED) {
+            return "仅经三层漏斗分流认定的复杂多模态/深度纠纷问题允许调用外部大模型，普通问答必须走本地知识库与本地模型";
         }
         return null;
     }

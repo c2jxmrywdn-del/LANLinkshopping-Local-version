@@ -45,16 +45,18 @@ public class OrderRmaController {
         return R.ok("退货物流单号已填报", null);
     }
 
-    /** 按订单号查询最新售后 RMA 详情 */
+    /** 按订单号查询自己订单的最新售后 RMA（服务层校验归属） */
     @GetMapping("/order/{orderNo}")
-    public R<OrderRma> getByOrderNo(@PathVariable String orderNo) {
-        return R.ok(rmaService.getByOrderNo(orderNo));
+    public R<OrderRma> getByOrderNo(@PathVariable String orderNo, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok(rmaService.getByOrderNoForBuyer(userId, orderNo));
     }
 
-    /** 查询 RMA 详情 */
+    /** 查询自己的 RMA 详情（服务层校验归属） */
     @GetMapping("/detail/{rmaNo}")
-    public R<OrderRma> getDetail(@PathVariable String rmaNo) {
-        return R.ok(rmaService.getRmaDetail(rmaNo));
+    public R<OrderRma> getDetail(@PathVariable String rmaNo, HttpServletRequest request) {
+        Long userId = UserContext.currentUserId(request);
+        return R.ok(rmaService.getRmaDetailForBuyer(userId, rmaNo));
     }
 
     /** 商户初审通过：下发退货收件人与仓库地址，或仅退款直接出款 */

@@ -16,6 +16,8 @@ import com.lanlink.shopping.payment.PaymentProperties;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -58,8 +60,28 @@ public class WechatPayClient {
         return svc;
     }
 
-    /** Native 下单，返回二维码 code_url */
+    /** 微信 time_expire 格式：yyyyMMddHHmmss（北京时间） */
+    private static final DateTimeFormatter TIME_EXPIRE_FMT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    /**
+     * Native 下单，返回二维码 code_url（无渠道过期时间）。
+     *
+     * <p>保留 4 参重载仅为兼容历史调用/单测；业务入口应使用带 {@code timeExpire} 的重载，
+     * 让渠道二维码与本地关单 deadline 对齐（P0-B：关单后二维码仍可付款是资损主窗口）。
+     */
     public String nativeOrder(String orderNo, BigDecimal amountYuan, String body, String notifyUrl) {
+        return nativeOrder(orderNo, amountYuan, body, notifyUrl, null);
+    }
+
+    /**
+     * Native 下单，返回二维码 code_url。
+     *
+     * @param timeExpire 交易结束时间（可为空=不限制）；非空时设置 APIv2 {@code time_expire}，
+     *                   由门面按 {@code app.order.auto-close-timeout-minutes} 计算并 clamp 到
+     *                   微信允许区间（最短 5 分钟、最长 2 小时）
+     */
+    public String nativeOrder(String orderNo, BigDecimal amountYuan, String body, String notifyUrl,
+                              LocalDateTime timeExpire) {
         try {
             WxPayUnifiedOrderRequest req = WxPayUnifiedOrderRequest.newBuilder()
                     .body(body)
@@ -70,6 +92,10 @@ public class WechatPayClient {
                     .tradeType(WxPayConstants.TradeType.NATIVE)
                     .productId(orderNo)
                     .build();
+            // P0-B：渠道单过期时间与本地关单同源；null 时不设置（兼容旧调用）
+            if (timeExpire != null) {
+                req.setTimeExpire(timeExpire.format(TIME_EXPIRE_FMT));
+            }
             WxPayUnifiedOrderResult r = newService().unifiedOrder(req);
             if (r.getCodeURL() == null || r.getCodeURL().isBlank()) {
                 throw new BusinessException("微信下单未返回 code_url: " + safe(r.getReturnCode(), r.getReturnMsg()));

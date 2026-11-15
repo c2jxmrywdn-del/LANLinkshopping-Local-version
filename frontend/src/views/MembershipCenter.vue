@@ -33,7 +33,8 @@
         <div><div class="pay-name">{{ payPlan?.planName }}</div><div class="pay-meta">{{ payPlan?.durationDays != null ? payPlan.durationDays + ' 天' : '' }}</div></div>
         <div class="pay-price">¥{{ formatPrice(payPlan?.priceCents) }}</div>
       </div>
-      <PaymentMethodSelector v-model="payChannel" :payable-total="payPlan?.priceCents || 0" />
+      <PaymentMethodSelector v-model="payChannel" :payable-total="payPlan?.priceCents || 0"
+                             :exclude-channels="SUBSCRIPTION_UNSUPPORTED_CHANNELS" />
       <p class="pay-hint">支付成功后订阅立即生效；连续包月方案到期将自动续费，可随时取消续费（权益保留至到期日）。</p>
       <a-button type="primary" size="large" block class="vip-cta" :loading="paying" @click="confirmPay">去支付</a-button>
     </div>
@@ -81,6 +82,7 @@ import VipPlanGrid from '../components/membership/VipPlanGrid.vue'
 import VipCompareTable from '../components/membership/VipCompareTable.vue'
 import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
 import {useMembershipStore} from '../store/membership'
+import {submitPayForm} from '../utils/payForm'
 const membership = useMembershipStore()
 const data=ref(null);const cards=[{num:'01',title:'等级权益',desc:'成长值门槛、等级折扣与体系说明',to:'/membership/levels'},{num:'02',title:'积分中心',desc:'积分余额、获取、抵现与流水',to:'/membership/points'},{num:'03',title:'会员权益',desc:'折扣、积分、成长值等权益说明',to:'/membership/benefits'}];const rate=computed(()=>{const r=Number(data.value?.level?.discountRate||1);return r>=1?'无折扣':(r*10).toFixed(1)+' 折'});const currentIndex=computed(()=>Math.max(0,(data.value?.levels||[]).findIndex(x=>x.levelId===data.value?.level?.levelId)));const growthPct=computed(()=>{const ls=data.value?.levels||[],cur=data.value?.level?.minGrowth||0,n=ls.find(x=>x.minGrowth>cur);if(!n)return '100%';const got=(data.value?.card?.growth||0)-cur;return Math.max(5,Math.min(100,got/(n.minGrowth-cur)*100))+'%'});const nextHint=computed(()=>{const ls=data.value?.levels||[],cur=data.value?.level?.minGrowth||0,n=ls.find(x=>x.minGrowth>cur);return n?'距离 '+n.levelName+' 还需成长值 '+Math.max(0,n.minGrowth-(data.value?.card?.growth||0)):'已达最高等级'});
 // ===== 勋章体系：等级维度（levelId→tier 映射）+ 成就维度（成长/积分里程碑阈值） =====
@@ -127,13 +129,17 @@ async function loadSub(){try{sub.value=await subscriptionApi.my()}catch(e){sub.v
 // 价格为整数元（price_cents 存整数元，只加千分位，禁止除以 100）
 function formatPrice(n){return n==null?'—':Number(n).toLocaleString('zh-CN')}
 // ===== P1 支付流：卡片选择 → 支付确认弹窗（PaymentMethodSelector）→ 两段式下单 → 渠道分发 → 轮询支付结果 =====
-const payOpen=ref(false);const payPlan=ref(null);const payChannel=ref('stripe');const paying=ref(false);let payTimer=null
-function buy(p){if(!p||purchasing.value)return;payPlan.value=p;payChannel.value='stripe';payOpen.value=true}
+// 会员订阅暂不支持 Stripe 卡支付（订阅单无卡控件挂载位，且未做 confirmCardPayment 确认链）：
+// 显式禁用卡渠道并给可行动提示，避免"预授权已创建"被误当支付成功；商品订单收银台已支持真实卡支付。
+const SUBSCRIPTION_UNSUPPORTED_CHANNELS = ['stripe', 'apple_pay', 'google_pay']
+const payOpen=ref(false);const payPlan=ref(null);const payChannel=ref('alipay');const paying=ref(false);let payTimer=null
+function buy(p){if(!p||purchasing.value)return;payPlan.value=p;payChannel.value='alipay';payOpen.value=true}
 function renew(){if(!sub.value)return;const p=plans.value.find(x=>String(x.planId)===String(sub.value.planId));buy(p||{planId:sub.value.planId,planName:sub.value.planName||'当前方案',durationDays:null,priceCents:null})}
 function closePay(){payOpen.value=false}
 // 渠道分发：wallet/mock 同步确认；alipay 表单跳转；wechat/stripe 拉起后轮询 /payment/query/{SUB单号}
 async function confirmPay(){
   if(paying.value||!payPlan.value)return
+  if(SUBSCRIPTION_UNSUPPORTED_CHANNELS.includes(payChannel.value)){message.warning('会员订阅暂不支持 Stripe 卡支付，请选择企业钱包 / 支付宝 / 微信');return}
   if(['term','corporate'].includes(payChannel.value)){message.warning('订阅暂不支持该支付方式，请选择外卡/支付宝/微信/钱包');return}
   paying.value=true
   try{
@@ -141,9 +147,9 @@ async function confirmPay(){
     if(!vo||!vo.orderNo)throw new Error('订阅单创建失败')
     if(vo.channel==='wallet'&&vo.payInfo?.paid){finishPay();return}
     if(vo.mock){await paymentApi.mockConfirm(vo.orderNo);finishPay();return}
-    if(vo.payInfo?.form){const div=document.createElement('div');div.innerHTML=vo.payInfo.form;document.body.appendChild(div);document.forms[0]?.submit();payOpen.value=false;message.info('已跳转支付，完成后订阅自动生效');return}
+    if(vo.payInfo?.form){submitPayForm(vo.payInfo.form);payOpen.value=false;message.info('已跳转支付，完成后订阅自动生效');return}
     if(vo.payInfo?.codeUrl){message.success('请使用微信扫码完成支付')}
-    else if(vo.payInfo?.clientSecret){message.info('支付预授权已创建，请完成支付')}
+    else {message.info('支付已发起，请在支付页面完成后返回；订阅将自动生效')}
     payOpen.value=false
     startPolling(vo.orderNo)
   }catch(e){/* 拦截器已提示业务错误（余额不足/渠道未配置等） */}finally{paying.value=false}

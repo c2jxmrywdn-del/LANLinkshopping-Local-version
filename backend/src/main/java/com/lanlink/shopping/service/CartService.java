@@ -12,7 +12,6 @@ import com.lanlink.shopping.vo.CartItemVO;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,20 +34,20 @@ public class CartService {
         if (p == null || p.getStatus() == null || p.getStatus() != 1) {
             throw new BusinessException("商品不存在或已下架");
         }
-        Cart exist = cartMapper.selectOne(Wrappers.<Cart>lambdaQuery()
-                .eq(Cart::getUserId, userId).eq(Cart::getProdId, prodId));
-        if (exist != null) {
-            exist.setQuantity(exist.getQuantity() + quantity);
-            cartMapper.updateById(exist);
-        } else {
-            Cart c = new Cart();
-            c.setUserId(userId);
-            c.setProdId(prodId);
-            c.setQuantity(quantity);
-            c.setChecked(1);
-            c.setCreateTime(LocalDateTime.now());
-            cartMapper.insert(c);
+        int qty = quantity == null ? 0 : quantity;
+        // 阶梯价起订量（P1-17）：非空阶梯的最小档 minQty 为 MOQ，不足给可读文案
+        int moq = TierPricing.minOrderQty(p.getTierPriceJson());
+        if (moq > 0 && qty < moq) {
+            throw new BusinessException("该商品起订量为 " + moq + " 件，请调整购买数量");
         }
+        /*
+         * 原子累加：并发加购同一商品时由数据库做 quantity = quantity + qty，
+         * 不再「读旧值 → 内存相加 → 写回」（那个模式会丢失更新）。
+         *
+         * MOQ 校验仍放在加购入口：单次加购数量已在上方按 moq 校验过，
+         * 累加后的总量只会更大，不会因为累加而低于起订量。
+         */
+        cartMapper.upsertAdd(userId, prodId, qty);
     }
 
     public List<CartItemVO> list(Long userId) {
@@ -90,6 +89,15 @@ public class CartService {
     public void updateQuantity(Long userId, Long cartId, Integer quantity) {
         Cart c = cartMapper.selectById(cartId);
         if (c == null || !c.getUserId().equals(userId)) throw new BusinessException("购物车项不存在");
+        if (quantity == null || quantity < 1) throw new BusinessException("购买数量需为正整数");
+        // 阶梯价起订量（P1-17）：改数量与加购同口径，不足 MOQ 在购物车侧即给可读提示（checkout 仍服务端兜底）
+        Product p = productMapper.selectById(c.getProdId());
+        if (p != null) {
+            int moq = TierPricing.minOrderQty(p.getTierPriceJson());
+            if (moq > 0 && quantity < moq) {
+                throw new BusinessException("「" + p.getTitle() + "」起订量为 " + moq + " 件，请调整购买数量");
+            }
+        }
         c.setQuantity(quantity);
         cartMapper.updateById(c);
     }

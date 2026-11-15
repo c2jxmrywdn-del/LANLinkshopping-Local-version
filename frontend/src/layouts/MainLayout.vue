@@ -14,16 +14,17 @@
             :ellipsis="false"
             @click="onNav"
           >
-            <a-menu-item key="home" class="nav-home" @mouseenter="openHomePanel">首页<i class="mall-caret" :class="{ 'is-open': homePanelOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
-            <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
-            <a-menu-item key="activity">活动</a-menu-item>
-            <a-menu-item key="tech">技术服务</a-menu-item>
+            <a-menu-item key="home" class="nav-home" @mouseenter="openHomePanel" v-prefetch="'home'">首页<i class="mall-caret" :class="{ 'is-open': homePanelOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
+            <a-menu-item key="mall" class="nav-mall" @mouseenter="openMallMenu" v-prefetch="'mall'">商城<i class="mall-caret" :class="{ 'is-open': mallMenuOpen }" aria-hidden="true"><AppleIcon name="chevrondown" :size="11" /></i></a-menu-item>
+            <a-menu-item key="activity" v-prefetch="'activity'">活动</a-menu-item>
+            <a-menu-item key="tech" v-prefetch="'tech'">技术服务</a-menu-item>
             <a-menu-item key="live">直播</a-menu-item>
+            <a-menu-item v-if="user.logged" key="rfq" v-prefetch="'rfq'">询价</a-menu-item>
             <a-menu-item v-if="user.hasPerm('credit:view')" key="credit-term">账期</a-menu-item>
             <a-menu-item v-if="user.hasPerm('order:view')" key="orders">我的订单</a-menu-item>
             <a-menu-item v-if="user.isAdmin" key="admin/merchants">商户管理</a-menu-item>
             <a-menu-item v-else-if="user.logged && !user.isMerchant" key="merchant">商户入驻</a-menu-item>
-            <a-menu-item v-else-if="user.hasPerm('merchant:manage') || user.hasPerm('product:publish')" key="merchant/center">商户中心</a-menu-item>
+            <a-menu-item v-else-if="user.hasPerm('merchant:manage') || user.hasPerm('product:publish')" key="merchant/center" v-prefetch="'merchant-center'">商户中心</a-menu-item>
             <a-menu-item key="about">关于我们</a-menu-item>
           </a-menu>
 
@@ -79,16 +80,16 @@
                     <div class="id-scope">当前身份：<b>{{ user.identityName }}</b><br/>{{ user.identityScope }}</div>
                   </a-menu-item>
                   <a-menu-divider />
-                  <a-menu-item @click="$router.push('/wallet')"><Wallet :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')">企业账期</a-menu-item>
-                  <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')">商户中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/wallet')"><Wallet :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 我的钱包</a-menu-item><a-menu-item v-if="user.hasPerm('credit:view')" @click="$router.push('/credit-term')"><CreditCard :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 企业账期</a-menu-item>
+                  <a-menu-item v-if="!user.isAdmin && (user.hasPerm('merchant:manage') || user.hasPerm('product:publish'))" @click="$router.push('/merchant/center')"><Store :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 商户中心</a-menu-item>
                   <a-menu-item @click="$router.push('/price-monitor')"><LineChart :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 价格情报台</a-menu-item>
                   <a-menu-item @click="$router.push('/activity')"><Target :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 活动中心</a-menu-item>
                   <a-menu-item @click="$router.push('/coupons')"><Ticket :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 领券中心</a-menu-item>
                   <a-menu-item @click="$router.push('/tasks')"><ListChecks :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 任务中心</a-menu-item>
                   <a-menu-item @click="$router.push('/venue')"><Flame :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 大促会场</a-menu-item>
-                  <a-menu-item @click="$router.push('/membership')"><MembershipIcon :size="18" class="membership-menu-icon" /> 会员中心</a-menu-item>
-                  <a-menu-item @click="$router.push('/me')">个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')">消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')">收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')">登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')">账户设置</a-menu-item>
-                  <a-menu-item @click="doLogout">退出登录</a-menu-item>
+                  <a-menu-item @click="$router.push('/membership')"><Crown :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 会员中心</a-menu-item>
+                  <a-menu-item @click="$router.push('/me')"><UserRound :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 个人资料</a-menu-item><a-menu-item @click="$router.push('/me/messages')"><MessageSquare :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 消息中心</a-menu-item><a-menu-item @click="$router.push('/me/address')"><MapPin :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 收货地址</a-menu-item><a-menu-item @click="$router.push('/me/login-log')"><ShieldCheck :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 登录安全</a-menu-item><a-menu-item @click="$router.push('/me/settings')"><Settings :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 账户设置</a-menu-item>
+                  <a-menu-item @click="doLogout"><LogOut :size="14" :stroke-width="2.2" style="vertical-align:-2px;margin-right:6px" /> 退出登录</a-menu-item>
                 </a-menu>
               </template>
             </a-dropdown>
@@ -125,6 +126,24 @@
         </div>
         <AuthorCard variant="compact" />
       </div>
+      <!-- 平台合规公示区（P0-1，《电子商务法》第 15 条营业执照公示 + ICP 备案号展示）：
+           三个展示位结构先行，真实证照号待用户提供/拍板后填入（当前渲染占位文案）。
+           语言切换由全局 DOM 翻译词典（i18n/zh-en-extra.js）覆盖。 -->
+      <div class="footer-compliance" aria-label="平台主体信息与资质公示">
+        <span class="footer-compliance-item" data-compliance="business-license">
+          <span class="footer-compliance-label">营业执照公示</span>
+          <span class="footer-compliance-value">统一社会信用代码：待公示</span>
+        </span>
+        <span class="footer-compliance-item" data-compliance="icp">
+          <span class="footer-compliance-label">ICP 备案</span>
+          <!-- 备案号渲染占位；主体归属（公司/个人）待拍板⑦-9 后回填真实号并链 beian.miit.gov.cn -->
+          <span class="footer-compliance-value">备案号：待公示</span>
+        </span>
+        <span class="footer-compliance-item" data-compliance="qualification">
+          <span class="footer-compliance-label">平台资质</span>
+          <span class="footer-compliance-value">增值电信业务经营许可：待公示</span>
+        </span>
+      </div>
     </a-layout-footer>
     <SupportChat />
     <BackToTop />
@@ -143,12 +162,11 @@ import HomeNavPanel from '../components/home/HomeNavPanel.vue'
 import AppleIcon from '../components/ui/AppleIcon.vue'
 import AuthorCard from '../components/AuthorCard.vue'
 import UserAvatar from '../components/ui/UserAvatar.vue'
-import MembershipIcon from '../components/ui/MembershipIcon.vue'
 import SupportChat from '../components/SupportChat.vue'
 import BackToTop from '../components/BackToTop.vue'
 import LanguageSwitcher from '../components/LanguageSwitcher.vue'
 import { recordVisit } from '../utils/habitTracker'
-import { Bell, ShoppingCart, Wallet, Target, LineChart, Ticket, ListChecks, Flame } from 'lucide-vue-next'
+import { Bell, ShoppingCart, Wallet, Target, LineChart, Ticket, ListChecks, Flame, Crown, CreditCard, Store, UserRound, MessageSquare, MapPin, ShieldCheck, Settings, LogOut } from 'lucide-vue-next'
 
 const router = useRouter()
 const route = useRoute()
@@ -424,7 +442,6 @@ function secretTap() {
 .nav-action-icon { display: block; flex-shrink: 0; }
 .user-trigger { display: inline-flex; align-items: center; gap: 7px; }
 .header-avatar { vertical-align: middle; }
-.membership-menu-icon { margin-right: 7px; }
 .header-user-name { white-space: nowrap; }
 /* 身份徽章 */
 .id-badge { display: inline-block; font-size: 11px; font-weight: 700; line-height: 1;
@@ -436,6 +453,11 @@ function secretTap() {
 .id-scope b { color: var(--ll-ink, #0f172a); }
 .content { max-width: 1200px; margin: 0 auto; width: 100%; padding: 24px 16px; }
 .footer{padding:0 16px!important;color:var(--ll-muted,#4b5563)!important;background:var(--ll-page);border-top:1px solid var(--ll-border,#D9D3C7)}.footer-inner{max-width:1200px;margin:0 auto;min-height:150px;padding:30px 0 24px;display:grid;grid-template-columns:1.4fr .7fr 1.4fr;gap:30px;align-items:center}.footer-brand{border-left:3px solid var(--ll-amber);padding-left:16px}.footer-wordmark{font-size:24px;line-height:1}.footer-wordmark .ll-lan{color:var(--ll-ink)}.footer-wordmark .ll-link{color:var(--ll-amber-strong)}.footer-wordmark .ll-shopping{color:var(--ll-ink)}.footer-brand p{margin:9px 0 4px;color:var(--ll-ink);font-size:13px;font-weight:700}.footer-brand small{color:var(--ll-muted,#7B8492);font-size:10.5px;letter-spacing:.13em}.footer-links{display:flex;justify-content:center;gap:8px;flex-wrap:wrap}.footer-links button{border:0;background:transparent;color:var(--ll-muted,#667085);cursor:pointer;font:inherit;font-size:12px;padding:7px 9px;border-radius:8px;transition:.2s ease}.footer-links button:hover{color:var(--ll-ink);background:rgba(200,164,92,.12)}.footer-meta{text-align:right;color:var(--ll-muted,#667085);font-size:11px;line-height:1.8}.footer-meta span{color:#98A2B3}
+/* 平台合规公示区（P0-1）：三展示位横排，窄屏换行；全部取令牌色，无新增硬编码色值 */
+.footer-compliance{max-width:1200px;margin:0 auto;padding:14px 0 6px;border-top:1px dashed var(--ll-border,#D9D3C7);display:flex;flex-wrap:wrap;gap:8px 26px;color:var(--ll-muted,#667085);font-size:11px;line-height:1.7}
+.footer-compliance-item{display:inline-flex;align-items:baseline;gap:6px;white-space:nowrap}
+.footer-compliance-label{color:var(--ll-ink,#0f172a);font-weight:600}
+.footer-compliance-value{color:var(--ll-muted,#7B8492)}
 
 /* 宽屏：顶栏不再跟随 1200px 内容区居中，改为贴近浏览器左右边缘，让品牌与导航整体左移 */
 @media (min-width: 1400px) {
@@ -464,5 +486,6 @@ function secretTap() {
   .id-badge { display: none; }
   .content { padding: 16px 10px 28px; }
   .footer-inner{grid-template-columns:1fr;gap:18px;padding:22px 0 18px}.footer-links{justify-content:flex-start}.footer-meta{text-align:left;grid-column:auto}
+  .footer-compliance{flex-direction:column;gap:4px}
 }
 </style>

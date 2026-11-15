@@ -2,6 +2,7 @@ package com.lanlink.shopping.controller;
 
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.service.HomeService;
+import com.lanlink.shopping.service.MerchantService;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -11,9 +12,11 @@ import org.springframework.web.bind.annotation.*;
 public class HomeController {
 
     private final HomeService homeService;
+    private final MerchantService merchantService;
 
-    public HomeController(HomeService homeService) {
+    public HomeController(HomeService homeService, MerchantService merchantService) {
         this.homeService = homeService;
+        this.merchantService = merchantService;
     }
 
     @GetMapping("/home/industries")
@@ -23,7 +26,9 @@ public class HomeController {
 
     @GetMapping("/home/hot")
     public R<?> hot(@RequestParam(defaultValue = "8") int limit) {
-        return R.ok(homeService.hot(limit));
+        var products = homeService.hot(limit);
+        merchantService.attachPlatformInvitedBadge(products);
+        return R.ok(products);
     }
 
     @GetMapping("/category/list")

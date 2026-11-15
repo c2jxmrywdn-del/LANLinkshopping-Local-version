@@ -329,7 +329,8 @@ async function fetchInvoices() {
   loading.value = true
   try {
     const res = await logisticsApi.invoicePool()
-    invoices.value = res?.data || res || []
+    // 拦截器已剥壳：res 即 LogisticsInvoice[] 本体（数组，无 data 键）
+    invoices.value = res || []
   } catch (e) {} finally {
     loading.value = false
   }

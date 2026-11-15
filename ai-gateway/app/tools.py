@@ -234,11 +234,21 @@ ROLE_TOOL_MAP = {
         "lanlink_query_knowledge",
         "think",
     },
+    # 客服角色只读：客服只负责查商品/报价/知识/物流并解释，任何写操作
+    # （建草稿、财务审批、SLA 干预）都必须留在后台人工流程；
+    # 也不开放 web_search/fetch_page——外部网页不是平台事实来源，客服答案必须可追溯。
+    "support": {
+        "lanlink_search_products",
+        "lanlink_get_product_detail",
+        "lanlink_calculate_quotation",
+        "lanlink_query_knowledge",
+        "lanlink_track_logistics",
+    },
 }
 
 
 def get_tools_by_role(role: str | None = None) -> list[dict]:
-    """根据多 Agent 角色筛选输出最小权限工具集（支持 buyer / finance / fulfillment / all）。"""
+    """根据多 Agent 角色筛选输出最小权限工具集（支持 buyer / finance / fulfillment / support / all）。"""
     # 网关本地只读工具（如向量库检索）对任何角色都可见：它不经后端、不改数据，
     # 且各角色本来就带 lanlink_query_knowledge，只是那条要绕 Java，这条直接读索引。
     if not role or role in ("all", "*"):

@@ -18,6 +18,15 @@
               <a-descriptions-item label="支付时间">{{fmt(order.payTime)}}</a-descriptions-item>
             </a-descriptions>
           </a-card>
+          <!-- 收货信息（P1-8 管理端补齐）：买家下单地址簿快照，运营核对发货与开票地址 -->
+          <a-card :bordered="false" class="card" title="收货信息">
+            <a-descriptions :column="1" size="small" bordered>
+              <a-descriptions-item label="收货人">{{order.receiver || '—'}}</a-descriptions-item>
+              <a-descriptions-item label="联系电话">{{order.phone || '—'}}</a-descriptions-item>
+              <a-descriptions-item label="收货地址">{{order.address || '—'}}</a-descriptions-item>
+              <a-descriptions-item v-if="order.remark" label="订单备注">{{order.remark}}</a-descriptions-item>
+            </a-descriptions>
+          </a-card>
           <a-card :bordered="false" class="card" title="支付核验">
             <a-result v-if="payment?.paid" status="success" title="支付已确认" sub-title="支付状态已由服务端返回" />
             <a-result v-else status="info" title="尚未完成支付" sub-title="当前交易没有已确认的支付结果" />
@@ -42,6 +51,18 @@
             <RefundEvidenceGallery v-if="hasRefundFlow" :evidences="evidenceJson" class="evidence-block" />
             <a-button v-if="order.payStatus === 1 && order.refundStatus !== 'success'" danger @click="$router.push('/admin/payments')">返回交易管理处理退款</a-button>
           </a-card>
+          <!-- 发票需求快照（P1-5）：买家随单登记的开票信息，运营核对开票用；未登记时不渲染 -->
+          <a-card v-if="order.invoiceNeeded === 1" :bordered="false" class="card" title="发票信息">
+            <a-descriptions :column="1" size="small">
+              <a-descriptions-item label="抬头类型">{{order.invoiceTitleType === 'company' ? '单位' : '个人'}}</a-descriptions-item>
+              <a-descriptions-item label="发票抬头">{{order.invoiceTitle || '—'}}</a-descriptions-item>
+              <a-descriptions-item v-if="order.invoiceTitleType === 'company'" label="纳税人识别号">{{order.invoiceTaxNo || '—'}}</a-descriptions-item>
+              <a-descriptions-item label="发票内容">
+                <template v-if="order.invoiceContentType === 'category'">商品类别：{{order.invoiceCategory || '—'}}</template>
+                <template v-else>开具明细：{{order.invoiceDetail || '—'}}</template>
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-card>
         </div>
       </template>
       <a-result v-else-if="!loading" status="404" title="交易不存在或无法访问">
@@ -54,6 +75,7 @@
 import {ref,computed,onMounted} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {orderApi,paymentApi,rmaApi} from '../../api'
+import { refundStatusText } from './refundReview'
 import RefundEvidenceGallery from '../../components/refund/RefundEvidenceGallery.vue'
 const route=useRoute(),router=useRouter(),loading=ref(false),order=ref(null),payment=ref(null)
 const items=computed(()=>order.value?.items||[])
@@ -61,7 +83,13 @@ const payText={0:'未支付',1:'已支付',2:'已退款'},payColor={0:'orange',1
 const orderText={0:'待发货',1:'已发货',2:'已完成',3:'已取消',4:'已退款'}
 const channelText={wallet:'钱包',mock:'模拟网关',wechat:'微信支付',alipay:'支付宝'}
 const money=v=>Number(v||0).toFixed(2),fmt=v=>v?String(v).replace('T',' ').slice(0,19):'—'
-const refundText=computed(()=>order.value?.refundStatus==='success'?'已退款':order.value?.refundStatus==='partial'?`已部分退款 ¥${money(order.value?.refundAmount)}`:order.value?.refundStatus==='processing'?'退款处理中':order.value?.refundStatus==='applied'?'退款申请中 · 待平台处理':order.value?.refundStatus==='rejected'?'退款申请被驳回':'无退款')
+const refundText=computed(()=>{
+  const s=order.value?.refundStatus
+  if(s==='success') return '已退款'
+  if(s==='partial') return `已部分退款 ¥${money(order.value?.refundAmount)}`
+  // 覆盖 P0-C 新增中间态（商户初审通过/已寄回/已收货/争议），避免详情误显"无退款"
+  return refundStatusText(s)
+})
 async function load(){
   loading.value=true;
   try{

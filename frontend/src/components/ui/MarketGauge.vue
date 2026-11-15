@@ -156,4 +156,8 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .mg-extra { width: 78px; text-align: right; font-size: 12.5px; color: var(--ll-muted, #64748B); font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) { .mg-tick { animation: none; opacity: 1; } }
+
+/* 深色模式补层：仅行情板块引用；刻度色来自 props（politics 源头色已在 HomeMarketPulse 修正） */
+[data-theme='dark'] .mg-value, [data-theme='dark'] .mg-name { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .mg-rows li { border-top-color: rgba(255, 255, 255, .10); }
 </style>

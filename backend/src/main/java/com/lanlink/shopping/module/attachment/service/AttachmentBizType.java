@@ -8,6 +8,7 @@ public enum AttachmentBizType {
     MERCHANT_LICENSE("merchant-license"),
     MERCHANT_TAX_PROOF("merchant-tax-proof"),
     MERCHANT_SPECIAL_PERMIT("merchant-special-permit"),
+    WITHDRAWAL_VOUCHER("withdrawal-voucher"),
     TECH_EXPERT_PROFILE("tech-expert-profile"),
     TECH_ORGANIZATION("tech-organization"),
     TECH_APPRAISAL_MATERIAL("tech-appraisal-material"),

@@ -100,7 +100,27 @@ public class ExternalFallbackService {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    /**
+     * 外呼线程池：有界队列 + CallerRunsPolicy。
+     *
+     * <p>历史实现用 {@code Executors.newFixedThreadPool(4)}（内部是无界 LinkedBlockingQueue），
+     * 高峰时任务只进不出会持续吃内存；有界队列在饱和时由调用线程自己执行，形成天然背压。
+     */
+    private final ExecutorService executor = new java.util.concurrent.ThreadPoolExecutor(
+            4, 4, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+            new java.util.concurrent.ArrayBlockingQueue<>(64),
+            new java.util.concurrent.ThreadFactory() {
+                private final java.util.concurrent.atomic.AtomicInteger seq =
+                        new java.util.concurrent.atomic.AtomicInteger();
+
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r, "ai-external-fallback-" + seq.incrementAndGet());
+                    t.setDaemon(true);
+                    return t;
+                }
+            },
+            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
     @PreDestroy

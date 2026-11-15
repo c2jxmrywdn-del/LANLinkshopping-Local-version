@@ -1,4 +1,6 @@
-# Alertmanager 本地告警投递：邮件发往 Mailpit（无认证 SMTP），UI 127.0.0.1:8081 可验证。
+# Alertmanager 本地告警投递：邮件发往 Mailpit（无认证 SMTP），UI 127.0.0.1:8081 可验证；
+# 同时经 ops-webhook → dingtalk-webhook-adapter 转发到钉钉/企微机器人，
+# 以及 ops-feishu → feishu-webhook-adapter 转发到飞书自建应用机器人（邮件 + IM 三通道并行送达）。
 # 生产替换为真实 SMTP 或 webhook（企业微信/钉钉/自建），不要把真实凭据写入仓库。
 global:
   smtp_smarthost: 'mailpit:1025'
@@ -11,9 +13,30 @@ route:
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    # 三条子路由都匹配全部告警：ops-email 先发并 continue，ops-webhook 随后 continue，ops-feishu 收尾
+    # → 邮件 + 钉钉/企微 + 飞书 三通道并行。
+    # 注意：子路由一旦命中，父路由 receiver 不再兜底，故邮件必须显式列为子路由。
+    - receiver: 'ops-email'
+      continue: true
+    - receiver: 'ops-webhook'
+      continue: true
+    - receiver: 'ops-feishu'
 
 receivers:
   - name: 'ops-email'
     email_configs:
       - to: 'ops@lanlink.local'
+        send_resolved: true
+  - name: 'ops-webhook'
+    webhook_configs:
+      # 适配器把 Prometheus webhook JSON 转成钉钉自定义机器人的 text 格式再外发；
+      # 换企业微信/钉钉机器人时填根 .env 的 DINGTALK_WEBHOOK_URL 即可，本文件不用动。
+      - url: 'http://dingtalk-webhook-adapter:8060/dingtalk/ops/send'
+        send_resolved: true
+  - name: 'ops-feishu'
+    webhook_configs:
+      # 适配器用飞书自建应用（tenant_access_token）把 webhook JSON 转成 text 消息发到告警群；
+      # 凭据与目标群 chat_id 只存根 .env（FEISHU_APP_ID/FEISHU_APP_SECRET/FEISHU_CHAT_ID）。
+      - url: 'http://feishu-webhook-adapter:8061/feishu/ops/send'
         send_resolved: true

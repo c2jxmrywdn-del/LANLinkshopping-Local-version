@@ -9,7 +9,8 @@
     <!-- 左：品牌叙事栏（21st.dev 分栏范式；窄屏隐藏，保证移动端表单优先） -->
     <section class="auth__brand">
       <div class="auth__brand-inner">
-        <span class="auth__logo"><b>LAN</b>Link<b>shopping</b></span>
+        <!-- 品牌字标与首页同一套：LAN / shopping 白，Link 琥珀。不要改成单色。 -->
+        <BrandWordmark class="auth__logo" size="clamp(28px, 3.2vw, 40px)" />
         <h1 class="auth__claim">聚合 · 连接 · 一体多元解决方案</h1>
         <p class="auth__desc">面向 B2B 采购与供给的一体化平台，覆盖商品、订单、钱包、账期、会员与物流全链路。</p>
         <ul class="auth__points">
@@ -88,13 +89,11 @@
 
           <!-- ===== 注册 ===== -->
           <a-tab-pane key="register" tab="注册">
+            <!-- 邀请落地提示：链接带 ?invite= 时自动切到注册 tab 并说明身份归属 -->
+            <a-alert v-if="inviteFromLink"
+                     type="info" show-icon class="invite-hint"
+                     :message="`你正在通过邀请链接注册，注册后获得普通用户身份（邀请码 ${inviteFromLink}）`" />
             <a-form :model="reg" layout="vertical" @finish="doRegister">
-              <a-form-item label="注册身份">
-                <a-radio-group v-model:value="reg.roleCode" name="registerRole" button-style="solid">
-                  <a-radio-button value="buyer">采购方</a-radio-button>
-                  <a-radio-button value="merchant">商户/供应商</a-radio-button>
-                </a-radio-group>
-              </a-form-item>
               <a-form-item label="手机号" :rules="[{ required: true, message: '请输入手机号' }, { pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]">
                 <a-input id="register-phone" name="phone" autocomplete="tel"
                          v-model:value="reg.phone" size="large" placeholder="11 位手机号" />
@@ -156,6 +155,12 @@
             </a-button>
           </div>
         </a-form-item>
+        <a-form-item label="新密码"
+                     :validate-status="forgotErr.password ? 'error' : ''" :help="forgotErr.password">
+          <a-input-password id="forgot-password" name="newPassword" autocomplete="new-password"
+                            v-model:value="forgot.password" size="large"
+                            placeholder="8-20 位，含大小写字母、数字与特殊字符" />
+        </a-form-item>
       </a-form>
       <template #footer>
         <a-button @click="closeForgot">关闭</a-button>
@@ -174,7 +179,9 @@ import { useCartStore } from '../store/cart'
 import QrCodeScanLogin from '../components/ui/QrCodeScanLogin.vue'
 import SocialLoginButtons from '../components/ui/SocialLoginButtons.vue'
 import GlassFold from '../components/ui/GlassFold.vue'
+import BrandWordmark from '../components/BrandWordmark.vue'
 import { socialApi } from '../api'
+import { trackEvent } from '../utils/analytics'
 
 const router = useRouter(); const route = useRoute()
 const user = useUserStore(); const cart = useCartStore()
@@ -182,7 +189,9 @@ const tab = ref('login')
 const loading = ref(false)
 const regLoading = ref(false)
 const form = reactive({ phone: '', password: '' })
-const reg = reactive({ roleCode: 'buyer', phone: '', email: '', nickname: '', code: '', password: '', confirm: '', _srvCode: '' })
+const reg = reactive({ phone: '', email: '', nickname: '', code: '', password: '', confirm: '' })
+/** 邀请链接带来的邀请码（?invite=INVxxx）；为空表示自然注册。 */
+const inviteFromLink = computed(() => String(route.query.invite || '').trim())
 
 // 演示账号快捷填入配置
 const DEMO_CREDENTIALS = {
@@ -214,22 +223,33 @@ const strength = computed(() => {
 })
 const strengthText = computed(() => ['', '弱', '中', '强'][strength.value] || '')
 
-// 验证码（演示：未接真实短信，随机码以提示返回）
+// 验证码：走后端 /auth/register-code 真实下发（演示模式下后端回显 devCode）
 const cd = ref(0)
 let timer = null
-function sendCode() {
+async function sendCode() {
   if (!/^1[3-9]\d{9}$/.test(reg.phone)) { message.warning('请先填写正确的手机号'); return }
-  const code = String(Math.floor(100000 + Math.random() * 900000))
-  reg._srvCode = code
-  message.info(`演示验证码：${code}（未接真实短信）`)
-  cd.value = 60
-  timer = setInterval(() => { cd.value--; if (cd.value <= 0) clearInterval(timer) }, 1000)
+  if (cd.value > 0) return
+  try {
+    const res = await user.registerCode({ phone: reg.phone })
+    if (res?.devCode) message.info(`演示验证码：${res.devCode}`)
+    else message.success('验证码已发送，请查收')
+    cd.value = 60
+    timer = setInterval(() => { cd.value--; if (cd.value <= 0) clearInterval(timer) }, 1000)
+  } catch { /* 拦截器已提示（限流/发送失败） */ }
 }
 
-async function afterLoginSuccess() {
+function safeInternalPath(value) {
+  const text = Array.isArray(value) ? value[0] : value
+  if (typeof text !== 'string' || !text.startsWith('/') || text.startsWith('//') || text.includes('://')) return ''
+  return text
+}
+
+async function afterLoginSuccess(next, method = 'password') {
   await cart.load()
+  trackEvent('login', { method })
   message.success('登录成功')
-  router.push(route.query.redirect || '/')
+  // 必须等导航结束。社交回跳的 finally 如果紧接着 replace 回 /login，会把这次跳转盖掉。
+  await router.push(safeInternalPath(next) || safeInternalPath(route.query.redirect) || '/')
 }
 
 async function submit() {
@@ -277,21 +297,29 @@ async function onQrConfirmed() {
 async function doRegister() {
   if (strength.value < 2) { message.warning('密码强度不足，至少 8 位且含字母与数字'); return }
   if (reg.password !== reg.confirm) { message.error('两次输入的密码不一致'); return }
-  if (!reg._srvCode || reg.code !== reg._srvCode) { message.error('验证码错误或未获取'); return }
+  if (!/^\d{6}$/.test(reg.code || '')) { message.error('请输入 6 位验证码'); return }
   regLoading.value = true
   try {
-    await user.register({ phone: reg.phone, password: reg.password, nickname: reg.nickname, roleCode: reg.roleCode })
+    // 验证码由后端校验（前端不再持有随机码）；roleCode 已废弃，服务端固定 buyer。
+    // inviteCode：从邀请链接 /register?invite=INVxxx 带入，后端据此绑定邀请关系。
+    // 注意：无论邀请码来自哪种角色，注册接口只会分配买家身份；商户身份必须走入驻审核。
+    const inviteCode = String(route.query.invite || '').trim() || undefined
+    await user.register({
+      phone: reg.phone, password: reg.password, nickname: reg.nickname, code: reg.code,
+      ...(inviteCode ? { inviteCode } : {})
+    })
+    trackEvent('signup', { role: 'buyer' })
     message.success('注册成功，请登录')
     form.phone = reg.phone; form.password = reg.password
     tab.value = 'login'
   } finally { regLoading.value = false }
 }
 
-// ===== 忘记密码（重置密码）：账号/邮箱 + 验证码 + 提交（演示链路与注册验证码一致）=====
+// ===== 忘记密码：手机号 + 短信验证码 + 新密码（真实链路 /auth/password-reset）=====
 const forgotOpen = ref(false)
 const forgotLoading = ref(false)
-const forgot = reactive({ account: '', code: '', _srvCode: '' })
-const forgotErr = reactive({ account: '', code: '' })
+const forgot = reactive({ account: '', code: '', password: '' })
+const forgotErr = reactive({ account: '', code: '', password: '' })
 const forgotCd = ref(0)
 let forgotTimer = null
 
@@ -304,8 +332,8 @@ function openForgot() {
 function closeForgot() {
   forgotOpen.value = false
   // 关闭后清空表单与校验状态，避免影响登录表单
-  forgot.account = ''; forgot.code = ''; forgot._srvCode = ''
-  forgotErr.account = ''; forgotErr.code = ''
+  forgot.account = ''; forgot.code = ''; forgot.password = ''
+  forgotErr.account = ''; forgotErr.code = ''; forgotErr.password = ''
   if (forgotTimer) { clearInterval(forgotTimer); forgotTimer = null }
   forgotCd.value = 0
 }
@@ -328,29 +356,46 @@ function checkForgotCode() {
   return true
 }
 
-function sendForgotCode() {
+async function sendForgotCode() {
   if (!checkForgotAccount()) return
-  // 演示验证码（与注册链路一致，未接真实短信/邮件）；真实链路接 VerifyCodeService 后替换
-  const code = String(Math.floor(100000 + Math.random() * 900000))
-  forgot._srvCode = code
-  message.info(`演示验证码：${code}（未接真实短信）`)
-  forgotCd.value = 60
-  forgotTimer = setInterval(() => {
-    forgotCd.value--
-    if (forgotCd.value <= 0) { clearInterval(forgotTimer); forgotTimer = null }
-  }, 1000)
+  if (forgotCd.value > 0) return
+  const phone = (forgot.account || '').trim()
+  if (!/^1[3-9]\d{9}$/.test(phone)) {
+    // 当前重置链路只支持手机号；邮箱重置需要独立的邮件模板与令牌，暂不伪造
+    forgotErr.account = '请填写注册手机号（邮箱重置暂未开放）'
+    return
+  }
+  try {
+    const res = await user.registerCode({ phone })
+    if (res?.devCode) message.info(`演示验证码：${res.devCode}`)
+    else message.success('验证码已发送，请查收')
+    forgotCd.value = 60
+    forgotTimer = setInterval(() => {
+      forgotCd.value--
+      if (forgotCd.value <= 0) { clearInterval(forgotTimer); forgotTimer = null }
+    }, 1000)
+  } catch { /* 拦截器已提示 */ }
 }
 
 async function submitForgot() {
   const okAccount = checkForgotAccount()
   const okCode = checkForgotCode()
   if (!okAccount || !okCode) return
-  if (!forgot._srvCode) { message.error('请先获取验证码'); return }
-  if (forgot.code.trim() !== forgot._srvCode) { message.error('验证码错误'); return }
+  const phone = (forgot.account || '').trim()
+  if (!/^1[3-9]\d{9}$/.test(phone)) { forgotErr.account = '请填写注册手机号'; return }
+  if (!/^\d{6}$/.test((forgot.code || '').trim())) { forgotErr.code = '请输入 6 位验证码'; return }
+  // 与后端 UserService.resetPasswordByPhone 同一强度规则，先在本地给出可读提示
+  if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,20}$/.test(forgot.password || '')) {
+    forgotErr.password = '需 8-20 位，含大小写字母、数字与特殊字符'
+    return
+  }
+  forgotErr.password = ''
   forgotLoading.value = true
   try {
-    // 演示：校验通过即模拟发送重置链接（真实链路由后端发送邮件后返回）
-    message.success('密码重置链接已发送至您的邮箱，请查收')
+    await user.resetPassword({ phone, code: forgot.code.trim(), password: forgot.password })
+    message.success('密码已重置，请用新密码登录')
+    form.phone = phone
+    form.password = ''
     closeForgot()
   } finally { forgotLoading.value = false }
 }
@@ -367,7 +412,8 @@ function cleanSocialQuery() {
 
 async function handleSocialCallback() {
   if (route.query.error) {
-    message.warning('社交登录已取消或授权失败')
+    message.warning(route.query.error === 'user_cancelled_authorize' ? '已取消 Apple 登录' : '社交登录已取消或授权失败')
+    clearSocialHandoff()
     cleanSocialQuery()
     return
   }
@@ -376,7 +422,11 @@ async function handleSocialCallback() {
   if (!code || !state) return
 
   let provider = null
-  try { provider = sessionStorage.getItem(SOCIAL_PROVIDER_KEY) } catch (e) { /* 隐私模式忽略 */ }
+  let intent = 'login'
+  try {
+    provider = sessionStorage.getItem(SOCIAL_PROVIDER_KEY)
+    intent = sessionStorage.getItem('ll_social_intent') || 'login'
+  } catch (e) { /* 隐私模式忽略 */ }
   if (!provider) {
     message.warning('无法确定授权渠道，请重新发起社交登录')
     cleanSocialQuery()
@@ -384,21 +434,49 @@ async function handleSocialCallback() {
   }
 
   loading.value = true
+  // 成功离开登录页之后不能再 replace 回 /login，否则刚建立的会话会被自己弹回登录表单。
+  let leftLogin = false
   try {
+    if (intent === 'bind') {
+      await socialApi.bind(provider, String(code), String(state))
+      message.success('Apple 账号已绑定，下次可直接使用 Apple 登录')
+      clearSocialHandoff()
+      leftLogin = true
+      await router.replace('/me/settings')
+      return
+    }
     await socialApi.callback(provider, String(code), String(state))
-    try { sessionStorage.removeItem(SOCIAL_PROVIDER_KEY) } catch (e) { /* 忽略 */ }
+    const next = readSocialRedirect()
+    clearSocialHandoff()
     // 后端已建立会话：同步前端用户态后走统一登录后处理
     await user.fetchMe()
-    await afterLoginSuccess()
+    await afterLoginSuccess(next, provider)
+    leftLogin = true
   } catch (e) {
     // 未绑定时后端返回可执行指引，由请求拦截器提示
   } finally {
     loading.value = false
-    cleanSocialQuery()
+    if (!leftLogin) cleanSocialQuery()
   }
 }
 
-onMounted(handleSocialCallback)
+function readSocialRedirect() {
+  try { return sessionStorage.getItem('ll_social_redirect') || '' } catch (e) { return '' }
+}
+
+function clearSocialHandoff() {
+  try {
+    sessionStorage.removeItem(SOCIAL_PROVIDER_KEY)
+    sessionStorage.removeItem('ll_social_intent')
+    sessionStorage.removeItem('ll_social_redirect')
+  } catch (e) { /* 忽略 */ }
+}
+
+onMounted(() => {
+  // 邀请链接落地：直接切到注册 tab，避免用户停在登录框
+  if (inviteFromLink.value) tab.value = 'register'
+  handleSocialCallback()
+})
 </script>
 
 <style scoped>
@@ -426,8 +504,7 @@ onMounted(handleSocialCallback)
   display: flex; align-items: center; overflow: hidden; color: #fff;
 }
 .auth__brand-inner { max-width: 560px; padding: 56px 52px; }
-.auth__logo { display: inline-flex; align-items: center; font-weight: 800; font-size: 20px; letter-spacing: .04em; color: #fff; }
-.auth__logo b { color: var(--ll-brand-gold-soft, #F6D38A); }
+.auth__logo { display: inline-flex; }
 .auth__claim { margin: 22px 0 12px; font-size: 30px; line-height: 1.28; color: #fff; }
 .auth__desc { max-width: 46ch; margin: 0; font-size: 14px; line-height: 1.8; color: rgba(255, 255, 255, .72); }
 .auth__points { display: grid; gap: 12px; margin: 26px 0 0; padding: 0; list-style: none; }
@@ -494,6 +571,7 @@ onMounted(handleSocialCallback)
 .forgot-form { margin-top: 8px; }
 .twofa-tip { margin-bottom: 16px; }
 .code-row { display: flex; gap: 8px; }
+.invite-hint { margin-bottom: 12px; }
 .code-row :deep(.ant-input-affix-wrapper), .code-row :deep(.ant-input) { flex: 1; }
 .strength { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .strength .bars { display: inline-flex; gap: 4px; }

@@ -394,7 +394,8 @@ async function handleImportSubmit() {
     const res = await logisticsApi.importRecon(payload)
     message.success('承运商账单导入成功')
     importModalOpen.value = false
-    currentRecon.value = res?.data || res
+    // 拦截器已剥壳：res 即 LogisticsReconciliation 本体（无 data 键）
+    currentRecon.value = res
     await fetchDetail()
   } catch (e) {
     // 拦截器已处理
@@ -408,7 +409,7 @@ async function handleRunMatching() {
   matching.value = true
   try {
     const res = await logisticsApi.runReconMatching(currentRecon.value.reconId)
-    const d = res?.data || res
+    const d = res
     currentRecon.value = d.recon
     items.value = d.items || []
     message.success(`三单智能勾稽完成：自动平账 ${d.matchedCount} 单，存在差异争议 ${d.discrepancyCount} 单`)
@@ -423,7 +424,7 @@ async function fetchDetail() {
   loading.value = true
   try {
     const res = await logisticsApi.reconDetail(rId)
-    const d = res?.data || res
+    const d = res
     currentRecon.value = d?.recon
     items.value = d?.items || []
   } catch (e) {} finally {

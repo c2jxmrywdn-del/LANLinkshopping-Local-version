@@ -8,6 +8,7 @@ import com.lanlink.shopping.module.aikb.ExternalInfoFetchService;
 import com.lanlink.shopping.module.aikb.KnowledgeIngestService;
 import com.lanlink.shopping.module.aikb.KnowledgeRagService;
 import com.lanlink.shopping.module.aikb.RedisVectorStore;
+import com.lanlink.shopping.module.aikb.RagServiceClient;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
@@ -33,19 +34,22 @@ public class KnowledgeAdminController {
     private final EmbeddingService embeddingService;
     private final AiModelRouter router;
     private final ExternalInfoFetchService externalInfoFetchService;
+    private final RagServiceClient ragServiceClient;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lanlink.shopping.module.aikb.KbOutboxService kbOutboxService;
 
     public KnowledgeAdminController(KnowledgeIngestService ingestService, KnowledgeRagService ragService,
                                     RedisVectorStore store, EmbeddingService embeddingService,
-                                    AiModelRouter router, ExternalInfoFetchService externalInfoFetchService) {
+                                    AiModelRouter router, ExternalInfoFetchService externalInfoFetchService,
+                                    RagServiceClient ragServiceClient) {
         this.ingestService = ingestService;
         this.ragService = ragService;
         this.store = store;
         this.embeddingService = embeddingService;
         this.router = router;
         this.externalInfoFetchService = externalInfoFetchService;
+        this.ragServiceClient = ragServiceClient;
     }
 
     @GetMapping("/stats")
@@ -64,6 +68,8 @@ public class KnowledgeAdminController {
         m.put("externalFetch", externalInfoFetchService.stats());
         m.put("kbOutbox", kbOutboxService == null ? Map.of() : kbOutboxService.stats());
         m.put("models", router.modelStatus());
+        // 多模态 RAG（RAG-Anything）状态：null 表示服务不可用，前端据此隐藏入口
+        m.put("multimodalRag", ragServiceClient.health());
         return R.ok(m);
     }
 
@@ -167,5 +173,91 @@ public class KnowledgeAdminController {
     public R<Void> unloadText() {
         embeddingService.unloadOllamaTextModel();
         return R.ok("文本模型已卸载", null);
+    }
+
+    // ===== 多模态 RAG（RAG-Anything，独立索引）=====
+
+    /**
+     * 多模态 RAG 健康状态。
+     *
+     * <p>返回 null 表示 rag-service 未启动或不可达；前端据此隐藏入口，
+     * 不影响现有文本 RAG。
+     */
+    @GetMapping("/multimodal/health")
+    public R<Map<String, Object>> multimodalHealth() {
+        Map<String, Object> h = ragServiceClient.health();
+        if (h == null) {
+            return R.ok("多模态 RAG 服务不可用", null);
+        }
+        return R.ok(h);
+    }
+
+    /**
+     * 写入多模态 RAG 索引。
+     *
+     * <p>请求体：
+     * <pre>
+     * {
+     *   "docId": "order-20261116-001",
+     *   "filePath": "合同扫描件.pdf",          // 可选，仅用于来源显示
+     *   "paragraphs": ["第一段...", "第二段..."]  // 纯文本快捷方式
+     *   // 或 "contentList": [{"type":"text","text":"...","page_idx":0}]
+     * }
+     * </pre>
+     *
+     * <p>为什么同时支持 paragraphs 与 contentList：绝大多数调用方只有纯文本，
+     * 让它拼 RAG-Anything 的原生结构属于无谓负担；需要图片/表格时再用 contentList。
+     */
+    @PostMapping("/multimodal/ingest")
+    @SuppressWarnings("unchecked")
+    public R<Map<String, Object>> multimodalIngest(@RequestBody Map<String, Object> body) {
+        String docId = body.get("docId") instanceof String s ? s.trim() : null;
+        if (docId == null || docId.isBlank()) {
+            return R.fail(400, "docId 不能为空");
+        }
+        List<Map<String, Object>> contentList;
+        Object raw = body.get("contentList");
+        if (raw instanceof List<?> list && !list.isEmpty()) {
+            contentList = (List<Map<String, Object>>) list;
+        } else if (body.get("paragraphs") instanceof List<?> paras && !paras.isEmpty()) {
+            List<String> texts = new ArrayList<>();
+            for (Object p : paras) {
+                if (p != null) texts.add(String.valueOf(p));
+            }
+            contentList = RagServiceClient.textContent(texts.toArray(new String[0]));
+        } else {
+            return R.fail(400, "contentList 或 paragraphs 至少提供一个");
+        }
+        String filePath = body.get("filePath") instanceof String s ? s : null;
+        Map<String, Object> out = ragServiceClient.ingest(docId, contentList, filePath);
+        if (out == null) {
+            return R.fail(503, "多模态 RAG 服务不可用或索引失败");
+        }
+        return R.ok("已写入多模态索引", out);
+    }
+
+    /**
+     * 多模态 RAG 检索问答。
+     *
+     * <p><b>mode 默认 naive</b>：实测 hybrid/local/global 依赖实体抽取，
+     * 而本地 qwen2.5-7b 无法稳定输出 LightRAG 的实体格式，graph 为空。
+     * 保留 mode 参数是为了换更大模型后可直接切换，无需改代码。
+     */
+    @PostMapping("/multimodal/query")
+    public R<Map<String, Object>> multimodalQuery(@RequestBody Map<String, Object> body) {
+        String question = body.get("question") instanceof String s ? s.trim() : null;
+        if (question == null || question.isBlank()) {
+            return R.fail(400, "question 不能为空");
+        }
+        String mode = body.get("mode") instanceof String s && !s.isBlank() ? s.trim() : "naive";
+        Integer topK = body.get("topK") instanceof Number n ? n.intValue() : null;
+        String answer = ragServiceClient.query(question, mode, topK);
+        if (answer == null) {
+            return R.fail(503, "多模态 RAG 服务不可用或检索失败");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("answer", answer);
+        out.put("mode", mode);
+        return R.ok(out);
     }
 }

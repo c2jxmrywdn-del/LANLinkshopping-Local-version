@@ -1,0 +1,34 @@
+package com.lanlink.shopping.module.review.mapper;
+
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.lanlink.shopping.module.review.entity.OrderReview;
+import org.apache.ibatis.annotations.Insert;
+import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
+
+import java.util.List;
+import java.util.Map;
+
+public interface OrderReviewMapper extends BaseMapper<OrderReview> {
+
+    /**
+     * 评分聚合原子累加：评价创建时 +1，审核驳回/隐藏时传负值回退。
+     * 用 upsert + 增量而不是"读出来算再写回"，避免并发评价丢计数；MySQL 行锁保证并发 UPDATE 串行。
+     */
+    @Insert("INSERT INTO t_product_rating_stat (prod_id, review_count, rating_sum, good_count, update_time) "
+            + "VALUES (#{prodId}, #{delta}, #{rating} * #{delta}, #{good} * #{delta}, NOW()) "
+            + "ON DUPLICATE KEY UPDATE review_count = review_count + #{delta}, "
+            + "rating_sum = rating_sum + #{rating} * #{delta}, "
+            + "good_count = good_count + #{good} * #{delta}, update_time = NOW()")
+    int bumpStat(@Param("prodId") Long prodId, @Param("delta") int delta,
+                 @Param("rating") int rating, @Param("good") int good);
+
+    /** 各星级计数（仅可见评价），用于详情页评分分布 */
+    @Select("SELECT rating, COUNT(*) AS c FROM t_order_review "
+            + "WHERE prod_id = #{prodId} AND status = 1 GROUP BY rating")
+    List<Map<String, Object>> ratingDistribution(@Param("prodId") Long prodId);
+
+    /** 本人在该单已评过的订单行：按 buyer_user_id 收窄，查别人的单只会得到空列表 */
+    @Select("SELECT order_item_id FROM t_order_review WHERE order_id = #{orderId} AND buyer_user_id = #{userId}")
+    List<Long> reviewedItemIds(@Param("userId") Long userId, @Param("orderId") String orderId);
+}

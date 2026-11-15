@@ -50,6 +50,23 @@ spring:
   # 缓存后端类型：redis（默认，配合上方连接）；无 Redis 环境可设 LANLINK_CACHE_TYPE=simple 回退内存缓存。
   cache:
     type: ${LANLINK_CACHE_TYPE:redis}
+  # 数据库版本化迁移（out/market-readiness-plan.md P0-5）：纳管 classpath:db-migrations。
+  # baseline-version 取 2026.9.1：必须【低于】所有存量迁移脚本，否则 Flyway 按数字逐段比较会把
+  # 它们判为 Below Baseline 静默跳过（历史值 2026.11.1 使 V2026_11=2026.11 永不执行，
+  # 而代码已只读 t_campaign，旧 t_activity 数据不可见）。取 2026.9.1 后：
+  #   - V2026_10 / V2026_11 均高于基线，非空库升级时会正常执行（脚本自身幂等）；
+  #   - 后续 V2026_12+ 仍高于基线，不会被跳过。
+  # baseline 尚未对账（拍板⑦-14 未完成，见下），启用前约束：
+  #   1) baseline-on-migrate 只在【非空库】生效（Flyway 11.7.2 源码：空库跳过 baseline 并全量执行迁移），
+  #      而 V2026_10/V2026_11 是依赖 schema.sql 先建表的存量数据迁移，且 Boot 3.5.3 中 Flyway 先于
+  #      spring.sql.init 脚本执行 —— 全新空库首启会因 t_member_card 不存在而失败；
+  #      新克隆首次启动请先 SPRING_FLYWAY_ENABLED=false 让 schema.sql 建表，第二次启动再恢复。
+  #   2) 两个既有 SQL 是否已在生产库手工执行未核实，baseline 前必须对账（拍板⑦-14），未对账前 prod 强制 enabled=false。
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: classpath:db-migrations
+    baseline-on-migrate: true
+    baseline-version: "2026.9.1"
   # 邮箱验证码：本地运行模式默认指向 Mailpit（localhost:1025）。
   # 需要真实 QQ 邮箱 SMTP 时：MAIL_HOST=smtp.qq.com / MAIL_PORT=465 / MAIL_SMTP_SSL=true 并填授权码。
   mail:
@@ -139,6 +156,24 @@ mybatis-plus:
 # 凭据兜底为空串——缺失或出厂弱默认值在 StorageConfig 创建 S3Client 前 fail-fast，禁止静默用弱凭据启动。
 # MinIO 必须 forcePathStyle(true)（StorageConfig Bean 侧读取）；切腾讯 COS/阿里 OSS 仅改 env。
 lanlink:
+  # 字段加密（com.lanlink.shopping.crypto）：新写入一律 JWE compact（RSA-OAEP-256 + A256GCM，header 带 kid），
+  # 历史密文仍是 legacy AES-256-GCM，按密文形态双读兼容（无 DDL）。
+  # 注意：这里刻意不写 crypto.secret —— 一旦写成 `${LANLINK_CRYPTO_SECRET:}`，
+  # 缺省空串会把真实环境变量覆盖掉；legacy 主密钥只从环境变量 LANLINK_CRYPTO_SECRET 注入。
+  crypto:
+    min-rsa-bits: ${LANLINK_CRYPTO_MIN_RSA_BITS:2048}
+    jwe:
+      # 关闭后只写 legacy 格式（仅过渡期排障用，不建议长期开启）
+      enabled: ${LANLINK_CRYPTO_JWE_ENABLED:true}
+      # true = 密钥缺失直接启动失败，避免生产静默降级写回 AES-GCM
+      required: ${LANLINK_CRYPTO_JWE_REQUIRED:false}
+      # 明文为 PKCS#8 / X509 DER 的 Base64（允许带 PEM 头尾与换行，服务端会清理）
+      active-kid: ${LANLINK_CRYPTO_JWE_ACTIVE_KID:}
+      active-private-key: ${LANLINK_CRYPTO_JWE_ACTIVE_PRIVATE_KEY:}
+      active-public-key: ${LANLINK_CRYPTO_JWE_ACTIVE_PUBLIC_KEY:}
+      # 轮换期旧私钥：只用于解密，让历史 JWE 在新密钥上线后仍可读
+      previous-kid: ${LANLINK_CRYPTO_JWE_PREVIOUS_KID:}
+      previous-private-key: ${LANLINK_CRYPTO_JWE_PREVIOUS_PRIVATE_KEY:}
   storage:
     enabled: ${LANLINK_STORAGE_ENABLED:true}
     endpoint: ${LANLINK_S3_ENDPOINT:http://localhost:9000}
@@ -148,6 +183,23 @@ lanlink:
     bucket: ${LANLINK_S3_BUCKET:products}
     path-style: ${LANLINK_S3_PATH_STYLE:true}
     public-base-url: ${LANLINK_S3_PUBLIC_BASE_URL:http://localhost:9000/products}
+    # 客服多模态私有桶与浏览器直传预签名（P0 存储基座）：桶与商品桶隔离，
+    # 预签名 action = 请求 Origin + /support-media（nginx 同源反代到 MinIO，path-style）。
+    support-bucket: ${LANLINK_S3_SUPPORT_BUCKET:support-media}
+    presign-origins: ${LANLINK_S3_PRESIGN_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+    presign-ttl-seconds: ${LANLINK_S3_PRESIGN_TTL_SECONDS:600}
+  # 邀请链接（专属邀请码 → 注册页）
+  # register-url 指向【前端 SPA 注册页】而不是 API：二维码被扫后应直接落到注册表单，
+  # 生产部署时用 LANLINK_INVITE_REGISTER_URL 覆盖成正式域名（如 https://lanlink.cc.cd/register）。
+  # expires-days<=0 表示永不过期；默认 30 天，与「支持有效期配置」的要求对应。
+  # max-uses 是邀约码默认可使用次数，0=不限；生产按运营策略用 LANLINK_INVITE_MAX_USES 覆盖。
+  # merchant-apply-url 指向【前端商户入驻表单】/merchant（旧 /merchant-apply 由前端路由 alias 兼容），
+  # 生产部署时用 LANLINK_INVITE_MERCHANT_APPLY_URL 覆盖成正式域名（如 https://lanlink.cc.cd/merchant）。
+  invite:
+    expires-days: ${LANLINK_INVITE_EXPIRES_DAYS:30}
+    max-uses: ${LANLINK_INVITE_MAX_USES:0}
+    register-url: ${LANLINK_INVITE_REGISTER_URL:http://localhost:5173/register}
+    merchant-apply-url: ${LANLINK_INVITE_MERCHANT_APPLY_URL:http://localhost:5173/merchant}
 
 # 消息队列消费通道开关（out/storage-mq-plan.md B4）：mq=走 RabbitMQ（默认），event=回退 Spring 事件。
 # 必须用占位符显式桥接：Boot 宽松绑定对带连字符属性走去连字符形式（APP_MQ_ORDERFLOW），
@@ -160,6 +212,13 @@ app:
     auto-close-timeout-minutes: ${LANLINK_ORDER_AUTOCLOSE_MINUTES:30}
     auto-close-interval-ms: ${LANLINK_ORDER_AUTOCLOSE_INTERVAL_MS:60000}
     auto-close-initial-delay-ms: ${LANLINK_ORDER_AUTOCLOSE_INITIAL_MS:30000}
+  # P1-5 运费报价（FreightQuoteService）：总开关默认 false = 全站运费恒 0，
+  # 与“运费未接入”的上线前行为完全一致（防默认模板 id=1 给全站每单凭空加运费，典型历史模板首价 ¥12）。
+  # 启用顺序：先在 t_logistics_template 配好可用默认模板 → 验证 quote 金额 → 再置 enabled=true → 灰度。
+  # 详见 reports/impl/freight-enabled-switch.md
+  freight:
+    enabled: ${APP_FREIGHT_ENABLED:false}
+    default-template-id: ${APP_FREIGHT_DEFAULT_TEMPLATE_ID:1}
   mq:
     order-flow: ${LANLINK_MQ_ORDER_FLOW:mq}
     # notify-flow 只切系统通知侧（NotifyRabbitConfig/Enqueuer/Publisher/Worker/Consumer 与
@@ -172,6 +231,29 @@ app:
     attachment-consumer-concurrency: ${LANLINK_MQ_ATTACHMENT_CONCURRENCY:1-3}
     attachment-sweep-interval-ms: ${LANLINK_MQ_ATTACHMENT_SWEEP_MS:120000}
     attachment-sweep-initial-delay-ms: ${LANLINK_MQ_ATTACHMENT_SWEEP_INITIAL_MS:45000}
+    # support-media-flow 切客服多模态解析链路（RabbitConfig + OutboxWorker 一起条件化）；
+    # 关掉后上传/确认照旧成功，outbox 停在待投递，重新打开由 worker 与对账任务接手。
+    support-media-flow: ${LANLINK_MQ_SUPPORT_MEDIA_FLOW:mq}
+  # 商户退店（P2）：公示期法定 30 天；时间闸门默认 0（关闭）；保证金为账面登记不接真实打款
+  merchant-exit:
+    notice-days: ${LANLINK_MERCHANT_EXIT_NOTICE_DAYS:30}
+    min-complete-days: ${LANLINK_MERCHANT_EXIT_MIN_COMPLETE_DAYS:0}
+    deposit-amount: ${LANLINK_MERCHANT_EXIT_DEPOSIT_AMOUNT:2000.00}
+    poll-ms: ${LANLINK_MERCHANT_EXIT_POLL_MS:3600000}
+  # 客服多模态媒体（P0 存储基座）：单文件上限按类型分档，配额三维度各自独立计数。
+  # Redis 不可用时默认 fail-closed（拒绝新媒体上传），但绝不阻断文本客服主链路。
+  support-media:
+    retention-days: ${SUPPORT_MEDIA_RETENTION_DAYS:30}
+    max-image-mb: ${SUPPORT_MEDIA_MAX_IMAGE_MB:10}
+    max-audio-mb: ${SUPPORT_MEDIA_MAX_AUDIO_MB:10}
+    max-video-mb: ${SUPPORT_MEDIA_MAX_VIDEO_MB:20}
+    max-doc-mb: ${SUPPORT_MEDIA_MAX_DOC_MB:20}
+    hourly-limit: ${SUPPORT_MEDIA_HOURLY_LIMIT:100}
+    session-limit: ${SUPPORT_MEDIA_SESSION_LIMIT:60}
+    message-limit: ${SUPPORT_MEDIA_MESSAGE_LIMIT:10}
+    redis-fail-closed: ${SUPPORT_MEDIA_REDIS_FAIL_CLOSED:true}
+    # P2 图像/文件理解扩容：扫描版 PDF 视觉兜底渲染页数（默认 3）
+    pdf-scan-pages: ${SUPPORT_MEDIA_PDF_SCAN_PAGES:3}
   # 高德开放平台商业图源凭据：仅由后端持有，登录用户经 GET /logistics/map-config 下发；
   # 不再经 VITE_* 构建注入前端（历史机制会把 key/securityJsCode 明文打进 dist）。留空=前端回退内置矢量底图。
   map:

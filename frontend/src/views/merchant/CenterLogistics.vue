@@ -219,7 +219,8 @@ const slaDashboardRef = ref(null)
 async function loadSlaAlerts() {
   try {
     const res = await logisticsApi.slaOverview()
-    const d = res?.data || res
+    // 拦截器已剥壳：res 即 SlaDashboardOverview 本体（无 data 键）
+    const d = res
     slaAlerts.value = d?.recentAlerts || []
   } catch (e) {}
 }

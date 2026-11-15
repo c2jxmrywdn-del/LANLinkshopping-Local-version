@@ -111,14 +111,17 @@ const NAV = [
   { path: '/merchant/center', label: '工作台', exact: true },
   { path: '/merchant/center/products', label: '商品管理' },
   { path: '/merchant/center/marketing', label: '营销活动' },
+  { path: '/merchant/center/marketing-image', label: '营销图生成' },
   { path: '/merchant/center/live', label: '直播带货' },
   { path: '/merchant/center/pricing', label: '价格监控' },
   { path: '/merchant/center/orders', label: '订单管理', badgeKey: 'pendingShip' },
+  { path: '/merchant/center/rfq', label: '询价报价' },
   { path: '/merchant/center/chat', label: '客户消息', badgeKey: 'chatUnread' },
   { path: '/merchant/center/logistics', label: '物流发货' },
   { path: '/merchant/center/promotion', label: '流量推广' },
   { path: '/merchant/center/traffic', label: '流量分析' },
   { path: '/merchant/center/finance', label: '资金结算' },
+  { path: '/merchant/center/exit', label: '退店管理' },
   { path: '/merchant/center/store', label: '店铺设置' },
   // 管理侧入口：异常件看板属平台运营页（/admin/** + admin:all），普通商户不可见，
   // 门控与路由守卫同口径（roleCode==='admin'），避免商户点进死链
@@ -145,7 +148,9 @@ const storeName = computed(() =>
   dash.value?.store?.entName || user.user?.nickname || '我的店铺')
 
 function isActive(item) {
-  return item.exact ? route.path === item.path : route.path.startsWith(item.path)
+  // 用「路径 + /」判断子路由，避免 /marketing 误匹配 /marketing-image 造成两个菜单同时高亮
+  return item.exact ? route.path === item.path
+    : route.path === item.path || route.path.startsWith(item.path + '/')
 }
 function go(item) {
   if (route.path !== item.path) router.push(item.path)

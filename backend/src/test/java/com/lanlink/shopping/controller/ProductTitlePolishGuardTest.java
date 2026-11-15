@@ -178,7 +178,7 @@ class ProductTitlePolishGuardTest {
         R<Map<String, Object>> response = controller.polishTitle(
                 new PolishRequest("304不锈钢无缝管 DN15", null, null, "", false), loggedInRequest(7L));
 
-        assertEquals(500, response.getCode(), "R.fail=500（R.java:24），前端 request.js 以 code!==200 判失败");
+        assertEquals(400, response.getCode(), "业务失败默认 400（R.fail），前端 request.js 以 code!==200 判失败");
         assertEquals(ProductTitleAiService.MSG_UNAVAILABLE, response.getMessage());
         assertNull(response.getData(), "失败不带任何兜底候选");
         assertFalse(String.valueOf(response.getMessage()).contains("mimosa"), "渠道名不回传（只进审计）");

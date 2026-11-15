@@ -192,7 +192,8 @@
                   </div>
                 </div>
                 <div v-if="detail.merchant?.specialPermitUrl" class="cb-act">
-                  <a :href="detail.merchant.specialPermitUrl" target="_blank">查看证件 ↗</a>
+                  <a :href="`/api/merchant/admin/special-permit/${detail.merchant.merId}`"
+                     target="_blank" rel="noopener">查看证件 ↗</a>
                 </div>
               </div>
             </div>

@@ -2,7 +2,7 @@
   <a-layout class="admin-root">
     <!-- 左侧导航栏：高对比度、清晰舒适 (支持极简浅白 / 经典科技蓝) -->
     <a-layout-sider
-      :width="230"
+      :width="280"
       :theme="siderTheme === 'light' ? 'light' : 'dark'"
       class="admin-sider"
       :class="['sider-' + siderTheme, { 'mobile-open': mobileNavOpen }]"
@@ -64,6 +64,22 @@
         <a-menu-item key="admin-credit-terms">
           <template #icon><SafetyCertificateOutlined /></template>
           <span>账期审核</span>
+        </a-menu-item>
+        <a-menu-item key="admin-settlement">
+          <template #icon><AccountBookOutlined /></template>
+          <span>商户结算</span>
+        </a-menu-item>
+        <a-menu-item key="admin-withdrawals">
+          <template #icon><MoneyCollectOutlined /></template>
+          <span>提现审核</span>
+        </a-menu-item>
+        <a-menu-item key="admin-merchant-exit">
+          <template #icon><LogoutOutlined /></template>
+          <span>退店审核</span>
+        </a-menu-item>
+        <a-menu-item key="admin-merchant-invite">
+          <template #icon><LinkOutlined /></template>
+          <span>商家入驻邀约</span>
         </a-menu-item>
         <a-menu-item key="admin-tracking-exceptions">
           <template #icon><WarningOutlined /></template>
@@ -199,8 +215,11 @@ import {
   AppstoreOutlined,
   GiftOutlined,
   LineChartOutlined,
+  VideoCameraOutlined,
   DollarCircleOutlined,
   SafetyCertificateOutlined,
+  AccountBookOutlined,
+  MoneyCollectOutlined,
   WarningOutlined,
   ApiOutlined,
   ExperimentOutlined,
@@ -210,6 +229,7 @@ import {
   LockOutlined,
   ExportOutlined,
   LogoutOutlined,
+  LinkOutlined,
   MenuOutlined
 } from '@ant-design/icons-vue'
 import { useUserStore } from '../store/user'
@@ -259,6 +279,10 @@ const routeNameMap = {
   'admin-live': '直播管理',
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',
+  'admin-settlement': '商户结算',
+  'admin-withdrawals': '提现审核',
+  'admin-merchant-exit': '退店审核',
+  'admin-merchant-invite': '商家入驻邀约',
   'admin-tracking-exceptions': '物流异常件',
   'admin-ai-models': '外部大模型',
   'admin-tech-service': '技术服务运营',

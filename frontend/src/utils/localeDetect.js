@@ -114,23 +114,11 @@ function withTimeout(promise, ms) {
   })
 }
 
-/** 默认的服务端地理提示请求（同源、短超时、失败即静默降级） */
+/** 默认的服务端地理提示请求（经封装层 i18nApi：同源 GET、短超时、silent，失败即静默降级为 null） */
 async function fetchCountryHint(timeoutMs) {
-  if (typeof fetch !== 'function') return null
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch('/api/i18n/locale-hint', {
-      signal: controller.signal, credentials: 'same-origin', cache: 'no-store'
-    })
-    if (!res.ok) return null
-    const body = await res.json().catch(() => null)
-    return body?.data?.country || null
-  } catch (e) {
-    return null
-  } finally {
-    clearTimeout(timer)
-  }
+  const { i18nApi } = await import('../api')
+  const hint = await i18nApi.localeHint(timeoutMs)
+  return hint?.country || null
 }
 
 /**

@@ -45,6 +45,7 @@
 11. **本地大模型微调与后训练工程**（`training/`）：沉淀基于 Unsloth / TRL 的 Qwen2.5-7B LoRA / SFT 意图微调工程、AGL/GRPO 强化学习闭环、冻结集基线评测与 GGUF 模型量化导出。
 12. **全链路可观测性与韧性守护**（`monitoring/` & `scripts/`）：Prometheus 指标采集、Grafana 实时监控看板、混沌故障注入测试、守护进程健康看门狗与高并发压测基准。
 13. **法务条款中枢与双向合规惩戒体系**：落地包含《用户服务协议》《商户入驻及经营合规准则》《买家交易规范与违规处罚规则》等 8 大中英双语法务协议，严格把控商户实缴资本 ≥ 10 万元准入门槛，建立年度 12 分动态扣分惩戒、阶梯处置与诚信买家保护机制。
+14. **商户退店与闭店全生命周期治理**：落地「申请 → 运营审核 → 30 天法定公示（可撤回）→ 冻结清算 → 正式关闭」五态不可逆软关闭闭环，含六项退店门禁、写操作冻结堵洞、保证金账面台账与商户/运营双端审计轨迹，严守二清合规口径（保证金仅账面登记，不触发真实打款）。
 
 > [!NOTE]
 > 本项目为**教学 / 毕业设计演示项目**，默认运行在本地开发模式，请勿直接用于真实生产资金流交易或未经安全加固直接对外提供公共服务。
@@ -83,6 +84,7 @@ flowchart TD
         RiskSvc["实时风控与安全审计 (高频刷单拦截 / 异常IP预警)"]
         AbSvc["A/B 测试实验中台 (流量分桶 / 指标埋点)"]
         LegalComplianceSvc["法务合规与惩戒中枢 (实缴资本强校验 / 12分记分制 / 违规黑名单)"]
+        MerchantExitSvc["商户退店与闭店治理中枢 (五态状态机 / 六门禁 / 30天法定公示 / 保证金账面台账)"]
     end
 
     subgraph MidLayer["事务性中间件与流处理层 (Middleware & Async Pipeline)"]
@@ -208,70 +210,70 @@ sequenceDiagram
 
 | 模块 | 代码入口与核心类 | 能力与业务特性 |
 |------|-----------------|----------------|
-| 🔐 **登录鉴权中心** | [`UserController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/UserController.java)<br>[`AuthInterceptor.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/config/AuthInterceptor.java) | 手机号注册/登录、RBAC 五级权限矩阵（`GUEST` / `BUYER` / `VIP` / `MERCHANT` / `ADMIN`）、TOTP 双因素安全验证（2FA）、CSRF 双提交防护、密码连续错误阶梯锁定、社交登录授权预留。 |
-| 🏪 **商户入驻中台** | [`MerchantCenterController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/MerchantCenterController.java)<br>[`MerchantApply.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/MerchantApply.vue) | 企业入驻在线申请（统一社会信用代码合规校验、营业执照 MinIO 存证）、硬性实缴资本门槛（≥ 10 万元人民币）、智能合规初筛模型（实缴资本与纳税等级自动过审）、商户独立管理后台（店铺配置、商品上架、营销活动申报、直播推流管理）。 |
-| 🛍️ **多元商品商城** | [`ProductController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/ProductController.java)<br>[`Mall.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Mall.vue) | 24 大实体行业多级分类索引、阶梯批发价（大宗采购起订量与梯度折扣）、多规格 SKU 体系、商品审核流、价格走势日 K 线行情看板。 |
-| 🛒 **智能购物车** | [`Cart.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Cart.vue) | 原子级规格库存校验、大宗批发批量修改数量、一键全选/按店铺勾选结算、企业收货地址中枢联动与运费预估。 |
-| 📦 **下单支付履约** | [`OrderController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/OrderController.java)<br>[`Checkout.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/Checkout.vue) | 分布式/事务原子扣减库存、订单全明细快照持久化、支付宝 / 微信 / 余额沙箱 Mock 支付、企业积分抵扣（1000 积分 = 1 元）、企业白条账期授信延期结账。 |
+| 🔐 **登录鉴权中心** | [`UserController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/UserController.java)<br>[`AuthInterceptor.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/config/AuthInterceptor.java) | 手机号注册/登录、RBAC 五级权限矩阵（`GUEST` / `BUYER` / `VIP` / `MERCHANT` / `ADMIN`）、TOTP 双因素安全验证（2FA）、CSRF 双提交防护、密码连续错误阶梯锁定、社交登录授权预留。 |
+| 🏪 **商户入驻中台** | [`MerchantCenterController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/MerchantCenterController.java)<br>[`MerchantApply.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/MerchantApply.vue) | 企业入驻在线申请（统一社会信用代码合规校验、营业执照 MinIO 存证）、硬性实缴资本门槛（≥ 10 万元人民币）、智能合规初筛模型（实缴资本与纳税等级自动过审）、商户独立管理后台（店铺配置、商品上架、营销活动申报、直播推流管理）。 |
+| 🛍️ **多元商品商城** | [`ProductController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/ProductController.java)<br>[`Mall.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/Mall.vue) | 24 大实体行业多级分类索引、阶梯批发价（大宗采购起订量与梯度折扣）、多规格 SKU 体系、商品审核流、价格走势日 K 线行情看板。 |
+| 🛒 **智能购物车** | [`Cart.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/Cart.vue) | 原子级规格库存校验、大宗批发批量修改数量、一键全选/按店铺勾选结算、企业收货地址中枢联动与运费预估。 |
+| 📦 **下单支付履约** | [`OrderController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/OrderController.java)<br>[`Checkout.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/Checkout.vue) | 分布式/事务原子扣减库存、订单全明细快照持久化、支付宝 / 微信 / 余额沙箱 Mock 支付、企业积分抵扣（1000 积分 = 1 元）、企业白条账期授信延期结账。 |
 
 ---
 
 ### 2. 工业品技术服务与科技成果转化中台
 
-模块全景位于 [`com.lanlink.shopping.module.techservice`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice)，前端入口位于 [`frontend/src/views/techservice/`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/) 及管理后台 [`AdminTechService.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/admin/AdminTechService.vue)：
+模块全景位于 [`com.lanlink.shopping.module.techservice`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice)，前端入口位于 [`frontend/src/views/techservice/`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/) 及管理后台 [`AdminTechService.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/admin/AdminTechService.vue)：
 
-- **工业技术交易与合同生命周期**（[`TechContracts.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechContracts.vue) & [`TechContractService.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/service/TechContractService.java)）：支持工业企业与技术服务商签订法律电子合同，定义阶段性技术里程碑（`TechMilestone`），绑定第三方资金存管托管流水（`TechEscrowLedger`），达成节点验收（`TechAcceptance`）后逐阶段放款。
-- **工业专家库与在线诊断咨询**（[`TechExperts.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechExperts.vue) & `TechExpertService.java`）：汇聚高校科研人员、大国工匠与认证技术专家，提供在线预约、工况参数预检、技术方案出具与付费问答。
-- **中试基地与共享实验室预约**（[`TechPilot.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechPilot.vue) & `TechPilotService.java`）：大型工业设备中试线、高精尖检测仪器排期共享，在线预约工位与试验时段。
-- **企业技术攻关需求揭榜挂帅**（[`TechDemands.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechDemands.vue) & `TechDemandService.java`）：发布“卡脖子”技术难题与技术改造需求，设定悬赏预算与交付周期，面向全行业公开竞标与技术对接。
-- **科技成果鉴定与评估**（[`TechAppraisal.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechAppraisal.vue) & `TechAppraisal`）：成果技术成熟度（TRL）、商业化前景与专利价值多维评估报告出具。
-- **工业设备全生命周期托管维保**（[`TechHosting.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/techservice/TechHosting.vue)）：设备台账档案、定期巡检巡查维保计划、工单指派、备件更换记录与上门服务核销。
+- **工业技术交易与合同生命周期**（[`TechContracts.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechContracts.vue) & [`TechContractService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/service/TechContractService.java)）：支持工业企业与技术服务商签订法律电子合同，定义阶段性技术里程碑（`TechMilestone`），绑定第三方资金存管托管流水（`TechEscrowLedger`），达成节点验收（`TechAcceptance`）后逐阶段放款。
+- **工业专家库与在线诊断咨询**（[`TechExperts.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechExperts.vue) & `TechExpertService.java`）：汇聚高校科研人员、大国工匠与认证技术专家，提供在线预约、工况参数预检、技术方案出具与付费问答。
+- **中试基地与共享实验室预约**（[`TechPilot.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechPilot.vue) & `TechPilotService.java`）：大型工业设备中试线、高精尖检测仪器排期共享，在线预约工位与试验时段。
+- **企业技术攻关需求揭榜挂帅**（[`TechDemands.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechDemands.vue) & `TechDemandService.java`）：发布“卡脖子”技术难题与技术改造需求，设定悬赏预算与交付周期，面向全行业公开竞标与技术对接。
+- **科技成果鉴定与评估**（[`TechAppraisal.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechAppraisal.vue) & `TechAppraisal`）：成果技术成熟度（TRL）、商业化前景与专利价值多维评估报告出具。
+- **工业设备全生命周期托管维保**（[`TechHosting.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/techservice/TechHosting.vue)）：设备台账档案、定期巡检巡查维保计划、工单指派、备件更换记录与上门服务核销。
 
 ---
 
 ### 3. 物流 GIS 轨迹与干线中枢
 
-位于前端 [`frontend/src/utils/logisticsGis.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/logisticsGis.js)、[`logisticsRoute.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/logisticsRoute.js)、[`chinaMapData.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/chinaMapData.js) 与后端 [`LogisticsAdminController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/LogisticsAdminController.java)：
+位于前端 [`frontend/src/utils/logisticsGis.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/logisticsGis.js)、[`logisticsRoute.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/logisticsRoute.js)、[`chinaMapData.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/chinaMapData.js) 与后端 [`LogisticsAdminController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/LogisticsAdminController.java)：
 
-- **高精坐标双向换算引擎**（[`coordTransform.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/coordTransform.js)）：无缝处理 GPS 原始坐标（WGS-84）、国家测绘局加密坐标（GCJ-02 火星坐标）与百度坐标（BD-09）的高精度双向互转与中国大陆境外越界检测。
+- **高精坐标双向换算引擎**（[`coordTransform.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/coordTransform.js)）：无缝处理 GPS 原始坐标（WGS-84）、国家测绘局加密坐标（GCJ-02 火星坐标）与百度坐标（BD-09）的高精度双向互转与中国大陆境外越界检测。
 - **全国干线拓扑路由演进**：基于大圆距离 Haversine 算法与公路绕行修正因子，智能测算全国转运枢纽间物理里程，推演在途节点推进时序。
-- **运单异常阻滞与超时预警中枢**（[`AdminTrackingExceptions.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/admin/AdminTrackingExceptions.vue)）：全天候监测运单在途轨迹；运单在单个中转节点停留超过 24 小时自动触发黄灯警示，超过 48 小时触发红灯紧急调度告警，支持运营端一键催件、改派与干线转运异常重定向。
+- **运单异常阻滞与超时预警中枢**（[`AdminTrackingExceptions.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/admin/AdminTrackingExceptions.vue)）：全天候监测运单在途轨迹；运单在单个中转节点停留超过 24 小时自动触发黄灯警示，超过 48 小时触发红灯紧急调度告警，支持运营端一键催件、改派与干线转运异常重定向。
 - **对账结算单自动化**：按物流服务商与账期周期聚合已签收运单，支持批量对账单核算、扣减费用与附加险申报。
 
 ---
 
 ### 4. 营销大促主会场与领券中心
 
-- **大促主会场聚合**（[`CampaignVenue.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/CampaignVenue.vue)）：集纳各行业大促爆品、限时满减会场、主推工业品首发专区。
-- **高并发领券中心**（[`CouponCenter.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/CouponCenter.vue) & [`AdCampaignController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/AdCampaignController.java)）：支持阶梯满减券、新人专享券与限时折扣券一键批量领取，基于 Redis 原子计数防刷拦截。
-- **结算实时计价门面**（[`PricingFacade.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/pricing/PricingFacade.java) & [`CouponQuoteDTO.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/dto/CouponQuoteDTO.java)）：下单结算时自动匹配最优券包组合，并联动 [`CampaignOrderListener.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/listener/CampaignOrderListener.java) 完成订单支付后的优惠券状态核销。
+- **大促主会场聚合**（[`CampaignVenue.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/CampaignVenue.vue)）：集纳各行业大促爆品、限时满减会场、主推工业品首发专区。
+- **高并发领券中心**（[`CouponCenter.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/CouponCenter.vue) & [`AdCampaignController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/AdCampaignController.java)）：支持阶梯满减券、新人专享券与限时折扣券一键批量领取，基于 Redis 原子计数防刷拦截。
+- **结算实时计价门面**（[`PricingFacade.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/pricing/PricingFacade.java) & [`CouponQuoteDTO.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/dto/CouponQuoteDTO.java)）：下单结算时自动匹配最优券包组合，并联动 [`CampaignOrderListener.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/listener/CampaignOrderListener.java) 完成订单支付后的优惠券状态核销。
 
 ---
 
 ### 5. 企业周期性订阅采购与任务中心
 
-- **周期性订阅采购**（[`SubscriptionOrders.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/SubscriptionOrders.vue)）：针对企业高频易耗品（工业劳保、机床润滑油脂、传动件等），支持设置按周/按月定期自动生成采购订单草稿，提醒采购专员一键确认付款，避免生产断料。
-- **会员任务与权益中心**（[`TaskCenter.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/TaskCenter.vue) & [`MembershipOrderListener.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/listener/MembershipOrderListener.java)）：阶梯成长体系（`BUYER` → `VIP`），完成首单、大宗采买、评价互动可解锁专属积分返点与白条提额权益。
+- **周期性订阅采购**（[`SubscriptionOrders.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/SubscriptionOrders.vue)）：针对企业高频易耗品（工业劳保、机床润滑油脂、传动件等），支持设置按周/按月定期自动生成采购订单草稿，提醒采购专员一键确认付款，避免生产断料。
+- **会员任务与权益中心**（[`TaskCenter.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/TaskCenter.vue) & [`MembershipOrderListener.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/listener/MembershipOrderListener.java)）：阶梯成长体系（`BUYER` → `VIP`），完成首单、大宗采买、评价互动可解锁专属积分返点与白条提额权益。
 
 ---
 
 ### 6. 企业信用白条精准测算器与风控引擎
 
-- **白条授信精准测算器**（[`creditCalculator.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/creditCalculator.js) & [`CreditTermCenter.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/CreditTermCenter.vue)）：基于企业注册资本、开票历史、履约评级与历史采购频次构建多因子评分矩阵，输出动态信用额度建议（最高 500 万元）。
+- **白条授信精准测算器**（[`creditCalculator.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/creditCalculator.js) & [`CreditTermCenter.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/CreditTermCenter.vue)）：基于企业注册资本、开票历史、履约评级与历史采购频次构建多因子评分矩阵，输出动态信用额度建议（最高 500 万元）。
 - **账期日历与阶梯滞纳金精算**：支持 T+30 / T+60 / T+90 灵活账期，账期内免息；若发生逾期，按日万分之五基准利率结合逾期天数阶梯计息，并在收银台自动拦截未结清逾期账户。
 
 ---
 
 ### 7. 售后全流程协商与多媒体证据链存证
 
-- **全轨纠纷流转**（[`OrderDetail.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/OrderDetail.vue) & `components/refund/`）：支持仅退款、退货退款、破损补寄与上门返修全流程流转。
-- **多媒体证据链合规存证**（[`refundEvidence.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/refundEvidence.js)）：买家、商家与平台客服可在工单中上传设备损毁照片、检测报告与维修视频。附件直连 MinIO S3 私有加密桶，前端渲染走后端防盗链中转，确保商业举证材料不可篡改、安全保密。
+- **全轨纠纷流转**（[`OrderDetail.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/OrderDetail.vue) & `components/refund/`）：支持仅退款、退货退款、破损补寄与上门返修全流程流转。
+- **多媒体证据链合规存证**（[`refundEvidence.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/refundEvidence.js)）：买家、商家与平台客服可在工单中上传设备损毁照片、检测报告与维修视频。附件直连 MinIO S3 私有加密桶，前端渲染走后端防盗链中转，确保商业举证材料不可篡改、安全保密。
 
 ---
 
 ### 8. AI 智能商品标题润色与卖点高光
 
-- **工业品 AI 润色引擎**（[`AiTitlePolish.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/merchant/AiTitlePolish.vue) & [`aiPolish.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/utils/aiPolish.js)）：依托本地 Qwen2.5 工业大模型，为商户解决工业品命名不规范难题。自动提取“品牌 + 核心型号 + 工业规格 + 执行标准 + 适用场景”，过滤夸大极限词，重组为符合 B2B SEO 检索权重的标准化爆款标题，并一键提炼核心卖点高光标签。
+- **工业品 AI 润色引擎**（[`AiTitlePolish.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/merchant/AiTitlePolish.vue) & [`aiPolish.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/aiPolish.js)）：依托本地 Qwen2.5 工业大模型，为商户解决工业品命名不规范难题。自动提取“品牌 + 核心型号 + 工业规格 + 执行标准 + 适用场景”，过滤夸大极限词，重组为符合 B2B SEO 检索权重的标准化爆款标题，并一键提炼核心卖点高光标签。
 
 ---
 
@@ -279,22 +281,22 @@ sequenceDiagram
 
 秉承 Apple Human Interface Guidelines 工业设计哲学，全站集成新一代纯矢量拟态交互体系：
 
-- **macOS 拟态物理流体 Dock**（[`AppleDock.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDock.vue)）：流体物理弹性缩放动画、平滑贝塞尔曲线微交互。
-- **iPhone 灵动岛交互胶囊**（[`AppleDynamicIsland.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDynamicIsland.vue)）：悬浮消息通知胶囊、状态变换弹性伸缩动效。
-- **流体滑动选项卡**（[`FluidAnimatedTabs.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/FluidAnimatedTabs.vue)）：带物理惯性的自适应滑块背景，切换丝滑无缝。
-- **光晕流光边框卡片**（[`GlowBorderCard.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/GlowBorderCard.vue)）：跟随光标移动的流光渐变边框，赋予工业硬核视觉未来感。
-- **雷达涟漪状态徽章**（[`RadarPulseBadge.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/RadarPulseBadge.vue)）：用于展示实时在播、运单在途与工单紧急程度的动态脉冲光环。
-- **丝滑触摸手势抽屉**（[`SmoothMobileDrawer.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/SmoothMobileDrawer.vue)）：自适应移动端与平板触摸滑动手势抽屉，顺畅跟手回弹。
-- **3D 景深卡片轮播**（[`AppleCardsCarousel.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleCardsCarousel.vue)）：视差平移动态光影、手势滑动支持。
-- **纯矢量图标治理系统**（[`AppleIcon.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/components/ui/AppleIcon.vue)）：集中映射 Lucide SVG 图标，彻底杜绝 Emoji 乱象。
+- **macOS 拟态物理流体 Dock**（[`AppleDock.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDock.vue)）：流体物理弹性缩放动画、平滑贝塞尔曲线微交互。
+- **iPhone 灵动岛交互胶囊**（[`AppleDynamicIsland.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/AppleDynamicIsland.vue)）：悬浮消息通知胶囊、状态变换弹性伸缩动效。
+- **流体滑动选项卡**（[`FluidAnimatedTabs.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/FluidAnimatedTabs.vue)）：带物理惯性的自适应滑块背景，切换丝滑无缝。
+- **光晕流光边框卡片**（[`GlowBorderCard.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/GlowBorderCard.vue)）：跟随光标移动的流光渐变边框，赋予工业硬核视觉未来感。
+- **雷达涟漪状态徽章**（[`RadarPulseBadge.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/RadarPulseBadge.vue)）：用于展示实时在播、运单在途与工单紧急程度的动态脉冲光环。
+- **丝滑触摸手势抽屉**（[`SmoothMobileDrawer.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/SmoothMobileDrawer.vue)）：自适应移动端与平板触摸滑动手势抽屉，顺畅跟手回弹。
+- **3D 景深卡片轮播**（[`AppleCardsCarousel.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/AppleCardsCarousel.vue)）：视差平移动态光影、手势滑动支持。
+- **纯矢量图标治理系统**（[`AppleIcon.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/AppleIcon.vue)）：集中映射 Lucide SVG 图标，彻底杜绝 Emoji 乱象。
 
 ---
 
 ### 10. 本地双大模型编排与 MCP 向量中枢
 
 - **双模型 Router 架构**：Docker 部署 llama.cpp，运行时支持按请求意图无缝调度 **Qwen2.5-7B（大语言模型）** 与 **Qwen2.5-VL（视觉多模态大模型）**。
-- **硬件显存自适应调度器**（[`hardware_scheduler.py`](file:///d:/桌面/LANLinkShopping/Shopping/ai-gateway/app/hardware_scheduler.py)）：实时感知 GPU 显存与温度；优先全显存加载，显存轻微不足时自动进行 CPU 卸载辅助，告急时主动启动降级保护；支持 `GET /v1/hardware` 查询调度依据。
-- **网关侧只读向量库 MCP 工具**（[`ai-gateway/MCP_KB_SPEC.md`](file:///d:/桌面/LANLinkShopping/Shopping/ai-gateway/MCP_KB_SPEC.md)）：暴露 `lanlink_kb_search` 标准 MCP 工具，外部智能体可直接经 `/mcp` 端点以工具调用方式检索共享向量索引 `aikb-idx`。
+- **硬件显存自适应调度器**（[`hardware_scheduler.py`](file:///d:/Desktop/LANLinkShopping/Shopping/ai-gateway/app/hardware_scheduler.py)）：实时感知 GPU 显存与温度；优先全显存加载，显存轻微不足时自动进行 CPU 卸载辅助，告急时主动启动降级保护；支持 `GET /v1/hardware` 查询调度依据。
+- **网关侧只读向量库 MCP 工具**（[`ai-gateway/MCP_KB_SPEC.md`](file:///d:/Desktop/LANLinkShopping/Shopping/ai-gateway/MCP_KB_SPEC.md)）：暴露 `lanlink_kb_search` 标准 MCP 工具，外部智能体可直接经 `/mcp` 端点以工具调用方式检索共享向量索引 `aikb-idx`。
 
 > [!NOTE]
 > **💻 操作系统、CUDA 版本与本地硬件适配特别说明**：
@@ -311,21 +313,95 @@ sequenceDiagram
 
 ### 11. 双向合规条款体系与违规惩戒治理中枢 (Legal Compliance & Penalty System)
 
-依托平台法务条款中心（[`LegalCenter.vue`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue) 与 [`legalDocs.js`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/data/legalDocs.js)），全面构建买卖双向准入合规门槛、交易行为规范与违规处罚闭环：
+依托平台法务条款中心（[`LegalCenter.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue) 与 [`legalDocs.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/data/legalDocs.js)），全面构建买卖双向准入合规门槛、交易行为规范与违规处罚闭环：
 
-- **商户准入实缴资本硬性门槛**：商户入驻必须具备有限责任公司或合规个体工商户主体资质，且实缴资本必须达到 **10 万元及以上（≥ ¥100,000）**。后端 [`MerchantService.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/service/MerchantService.java)、前端申请表单与管理审核端全链路实施强校验拦截，杜绝空壳皮包企业入驻风险。
-- **《商户入驻及经营合规准则》**（[`merchant-agreement`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
+- **商户准入实缴资本硬性门槛**：商户入驻必须具备有限责任公司或合规个体工商户主体资质，且实缴资本必须达到 **10 万元及以上（≥ ¥100,000）**。后端 [`MerchantService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/service/MerchantService.java)、前端申请表单与管理审核端全链路实施强校验拦截，杜绝空壳皮包企业入驻风险。
+- **《商户入驻及经营合规准则》**（[`merchant-agreement`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
   - **资质真实与保真承诺**：严格遵守正品保真承诺（假一赔十），严禁出售伪劣三无工业品与侵权仿制品。
   - **履约交期保障**：现货订单 48 小时发货、定制备件依约定排期履约，超期触发违约预警。
   - **年度 12 分动态记分制**：实施量化扣分管理（轻微违规扣 1-3 分、中度扣 6 分、严重违规扣 12 分节点处置）。
   - **阶梯式惩戒与退出**：扣分累计达到节点时触发警告降权、商品强制下架、资金提现限制、清退关店直至没收保证金。
   - **商户申诉与复核通道**：设立 5 个工作日内正规线上举证申诉流程与法务仲裁通道。
-- **《买家交易规范与违规处罚规则》**（[`buyer-rules`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
+- **《买家交易规范与违规处罚规则》**（[`buyer-rules`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/LegalCenter.vue)）：
   - **诚信交易与履约义务**：严禁利用平台漏洞恶意刷单、虚假下单、恶意退款以及以差评为要挟实施敲诈勒索。
   - **真实客观举证存证**：维权纠纷必须提交真实清晰的开箱损毁照片、第三方工业检测报告等合规证据。
   - **企业白条履约守则**：按期偿还账期欠款；逾期将产生日万分之五罚息、冻结授信额度并列入履约异常监控名单。
   - **买家分级阶梯处罚**：轻度违规（扣减信誉积分）、中度违规（限制下单与注销权益）、严重违规（永久封禁账号、冻结资产并通报工业供应链失信黑名单）。
 - **中英双语与版本时序留痕**：全条款支持中英文无缝切换，明确最后更新时序，入驻与交易全过程采用主动勾选（Active Opt-in）协议授权。
+
+---
+
+### 12. 商户退店与闭店全生命周期治理中枢 (Merchant Exit & Closure Governance)
+
+模块全景位于 [`com.lanlink.shopping.module.merchantexit`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit)，商户端入口 [`CenterExit.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/merchant/CenterExit.vue)，运营端入口 [`AdminMerchantExit.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/admin/AdminMerchantExit.vue)。对齐《电子商务法》第十六条与《网络交易监督管理办法》第二十三条的法定公示要求，构建「申请 → 运营审核 → 公示期（可撤回）→ 冻结清算 → 正式关闭」的不可逆软关闭闭环：
+
+- **五态状态机与 CAS 并发防护**（[`MerchantExitService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitService.java)）：`ACTIVE（exit_status IS NULL）→ EXIT_REQUESTED → PUBLIC_NOTICE → FROZEN → CLOSED`，仅「运营驳回」「公示期撤回」两条可逆回退；每步以条件更新（`WHERE exit_status=<前态>`）原子流转，非法跳步一律 `400` 拦截，全程落 `t_merchant_exit_log` 流转审计轨迹。
+- **六项退店门禁**（[`MerchantExitGateService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitGateService.java)）：进入公示与正式关闭两处强制校验——无在途订单、无进行中售后、结算全结清、商品全部下架、保证金无欠款、订单完成时间闸门；返回 `GateReport{ready, blockers[]}` 供前端逐项 ✅/❌ 自查与跳转。
+- **30 天法定公示与到点冻结**（[`MerchantExitNoticeJob.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/job/MerchantExitNoticeJob.java)）：公示时长 `app.merchant-exit.notice-days`（默认 30 天，可配）；定时任务 + 运营端手动 `run-notice` 幂等将到期公示商户转入 `FROZEN`，公示期内商户可随时撤回恢复正常经营。
+- **写操作冻结堵洞**（[`MerchantExitGuard.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitGuard.java)）：退店流程中的商户（`exit_status` 非空）一律禁止商品发布/编辑/上架、SKU 维护、RFQ 报价与活动报名（下架不受限），杜绝「闭店商户商品继续售卖」漏洞；撤回后自动解冻。
+- **保证金账面台账**（[`MerchantDepositService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantDepositService.java)）：append-only 复式记账（`PAY` 缴纳 / `REFUND` 退还 / `DEDUCT` 抵扣），每笔携带 `balance_after` 余额快照，`FOR UPDATE` 行锁串行化同商户资金流水；关闭时先抵扣未结费用再退还余额。**保证金退还/抵扣仅为账面登记，不触发真实对公打款**（沿用结算切片二清口径）；违规全额罚没（`FORFEIT`）为推迟项，当前默认不罚没。
+- **订单完成时刻可靠口径**（[`MerchantExitSchemaInitializer.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/support/MerchantExitSchemaInitializer.java)）：新增 `t_order.finish_time` 列，与 `order_status=2` 同语句原子写入，作为时间闸门唯一可靠依据，规避 `update_time` 被后续写刷新漂移导致的误判。
+- **商户/运营双端 UI 与双语 i18n**：商户端状态条 + 六门禁自查面板 + 申请/撤回二次确认 + 保证金台账；运营端申请列表 + 详情抽屉（门禁报告 / 台账 / 流转时间线 / 关闭前保证金结算预览）+ 通过/驳回/关闭。全量中英双语，模板零 CJK 残留。
+
+### 13. 并发正确性与架构治理（2026-11 加固）
+
+针对"单实例跑通、多实例/高并发出错"这一类只在生产暴露的问题，本轮做了系统性加固，每一项都配有可证伪的回归测试：
+
+| 加固点 | 缺陷形态 | 修复方式 | 回归测试 |
+|:---|:---|:---|:---|
+| 广告计划支付 | 读状态→扣钱包→写状态，并发双击扣两次预算 | `pending_payment → active` 条件更新抢占，抢到才扣款 | `AdCampaignPayGuardTest` |
+| 退款看门狗 | 用订单总额回写，部分退款被放大成全额退款（库存/积分/券全量回滚） | 沿用累计已退额，仅 `success` 时触发 `fullRefundSettle` | `RefundSyncAmountTest` |
+| 购物车加购 | `selectOne → 内存相加 → updateById` 丢失更新 | `INSERT ... ON DUPLICATE KEY UPDATE` 原子累加 + 唯一键 `uk_cart_user_prod` | 真机 5 并发 ×100 → 精确 500 |
+| 物流运单状态 | 状态机只在内存校验，落库无状态条件，已签收可被回退 | `AND status = 期望值` CAS；e-POD 审核用 `pod_audit_status='pending'` CAS | `LogisticsStatusCasTest` |
+| 结算同步 | 逐单逐行嵌套查询，O(订单数×行数) | 批量预取 + 限批 500 单 | `SettlementSyncServiceTest` |
+| 定时任务互斥 | RFM/推荐/索引重建型任务多实例互相清半成品 | `DbJobLock`（MySQL 命名锁，`GET_LOCK`） | `DbJobLockTest` |
+| 结算事务 | `terminate/resume` 自调用绕过 Spring 代理，退款在事务外 | 注入 `self` 自代理 | `AdCampaignPayGuardTest` |
+| 价格基准 | 只按行业求均值，94.2% 商品被误判 URGENT | 品类优先 + 中位数，样本 <3 回退行业中位数 | 真机 URGENT 38→16、HOLD 0→14 |
+
+**前端韧性**：`app.mount` 不再被语言识别请求阻塞；401 时同步清 `ll_user` 与 Pinia store，消除"放行→全 401→踢回登录"循环；hls.js（595 KB）改为按需动态导入。
+
+**部署韧性**：`nginx.conf.template` 全部 upstream 改为变量形式 + `resolver`，下游容器未就绪时不再让 nginx 启动失败；`start-local-env.ps1` 增加陈旧同名容器自动回收（按 compose project 标签判定）。
+
+---
+
+### 14. 商户资金出金与提现闭环（merchant-finance，2026-11）
+
+模块全景位于 [`com.lanlink.shopping.module.finance`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/finance)，商户端入口 [`CenterFinance.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/merchant/CenterFinance.vue)，运营端入口 [`AdminWithdrawals.vue`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/views/admin/AdminWithdrawals.vue)：
+
+- **提现单全状态机**（[`WithdrawalService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/finance/service/WithdrawalService.java)）：`0 待审 → 1 已打款 / 2 驳回 / 3 已撤回`，状态流转全部条件更新（`WHERE status=<前态>`），返回 0 即被并发先行者抢占。打款为线下对公登记 + 凭证上传（附件中转 URL），平台不发起任何出金调用（二清口径）。
+- **财务台账 append-only**（`t_finance_ledger`）：冻结/解冻资金变动各落一行（`withdraw_freeze` / `withdraw_reject_unrefreeze`），`amount` 正入负出、`balance_after` 逐行余额快照；打款只改单据状态（凭证 + 审核人即审计轨迹），不改变商户侧余额故不落台账。
+- **防双花并发纪律**：资金路径以商户行排他锁（`SELECT ... FOR UPDATE` on `t_merchant`）作为事务**第一条语句**建立当前读次序，余额三项聚合（已结算净额/累计已打款/在途冻结）全部走 `FOR UPDATE` 锁定读——规避 InnoDB RR 读视图被事务内首条普通读提前固定、快照读不到并发对手已提交冻结的时序缺陷。真实两连接并发双申请回归测试 [`WithdrawalConcurrencyTest.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/test/java/com/lanlink/shopping/module/finance/service/WithdrawalConcurrencyTest.java) 断言恰好一成功一拒绝。
+- **可提余额口径**：`Σ 已结算净额（SETTLED+REVERSED 冲正为负）− 累计已打款 − 在途冻结（待审单）`；银行账号仅落前 4 后 4 掩码（全号不入库），商户档案加密字段不回写。
+- **敏感数据字段级 JWE 加密**（[`crypto/`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/crypto/)）：RSA-2048 + A256GCM 混合加密，`CryptoKeyGuard` 启动期密钥校验，schema 由 [`CryptoFieldSchemaInitializer.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/crypto/CryptoFieldSchemaInitializer.java) 幂等迁移。
+
+### 15. 订单评价闭环（独立订单维度评价模型，2026-11）
+
+- **独立 `t_order_review` 表**（一单多品按 `t_order_item` 拆行，`uk_order_review_item(order_id, order_item_id)` 唯一键防重复评，重复提交返回业务码 409）。
+- **同事务评分聚合**（[`OrderReviewService.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/review/service/OrderReviewService.java)）：评价落库与 `t_product_rating_stat` 均分/计数/好评数聚合在同一事务提交；公开端点暴露商品评分摘要（均分、好评率、星级分布）。
+- **搜索排序回归保障**：[`SearchRankScorerTest`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/test/java/com/lanlink/shopping/module/search/SearchRankScorerTest.java) 全绿，评分聚合链路与检索排序解耦。
+- **买家/商户双端 UI**：我的订单「去评价」入口（星级 + 文本 + 匿名开关）、商品详情评价区展示聚合分与明细。
+
+### 16. SEO 基线与按路由 TDK 注入（CSR，2026-11）
+
+- **静态 SEO 资产**：`frontend/public/robots.txt`（私域路由 Disallow）与 `sitemap.xml`（仅公开路由），单测校验与路由表一致性。
+- **按路由 TDK 注入**（[`seo.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/seo.js)）：34 条公开路由携带 `meta.seo`，路由 afterEach 钩子注入 `title/description/keywords/og`；商品详情页数据加载成功后回写真实商品名（不虚构数据）；私域路由自动回落 `index.html` 全局兜底，无路由值泄漏。
+- **告警送达双通道**（[`monitoring/alertmanager/alertmanager.yml`](file:///d:/Desktop/LANLinkShopping/Shopping/monitoring/alertmanager/alertmanager.yml)）：Alertmanager 邮件兜底 + IM webhook 并行送达（`continue: true`），经 [`monitoring/feishu-adapter/`](file:///d:/Desktop/LANLinkShopping/Shopping/monitoring/feishu-adapter/) 适配器外发；真实地址只存根 `.env`，不进仓库。
+
+### 17. 市场化批次演进总览（对标淘宝/1688/京东，2026-11）
+
+| 批次 | 交付内容 |
+|:---|:---|
+| A 埋点 | Amplitude 双门控（Cookie 授权 + 撤回 opt-out）、六事件漏斗接线（浏览/详情/加购/结算/支付/退款）、空 key 优雅降级 |
+| B 合规 | CSRF 拦截扩面（购物车/签到）、登录限流补口、页脚公示区（营业执照/ICP/平台资质占位） |
+| E1 Flyway | 迁移底座落地（baseline 2026.11.1 对账），V2026_10/V2026_11 存量迁移纳管 |
+| F 前端保障 | 最小错误上报（正例落库 + 三类反例拦截）、内联 Splash |
+| G1 压缩 | nginx 双文件 gzip 块、API 代理路径关闭 gzip、assets immutable 缓存 |
+| H1 阶梯价 | 写侧契约、商户编辑器（TierPriceEditor）、买家展示与 MOQ、OrderService 阶梯快照 |
+| H2 开票+多地址 | 增值税发票需求（抬头/税号 15-20 位校验/内容明细）落 `invoice_*` 列、地址簿下单选择器与默认地址 |
+| G2 SEO | robots/sitemap/TDK 全局兜底 + 按路由注入（见第 16 节）、空态文案 i18n 双语 |
+| I 转人工 | 客服「转接人工」入口（Lucide Headphones）、人工会话态、消息落库 `waiting_agent` 管理端可认领 |
+| C 评价 | 独立订单评价模型（见第 15 节） |
+| D 出金 | merchant-finance 提现闭环（见第 14 节） |
 
 ---
 
@@ -342,7 +418,7 @@ sequenceDiagram
 | **5174** | 前端开发调试服务器 | `Vite` | `127.0.0.1` | 热重载开发端口，通过 `/api` 代理转发至后端 8080 |
 | **3306** | MySQL 8.0 | `mysqld` / Docker | `127.0.0.1` | 业务持久化数据库，字符集 `utf8mb4_unicode_ci` |
 | **6379** | Redis Stack 7.4 | `redis-stack-server` | `127.0.0.1` | RediSearch 模块，承载 `aikb-idx` 1024 维 HNSW 向量索引与全局缓存 |
-| **9000** | MinIO S3 API | `minio` (Docker) | `127.0.0.1` | S3 兼容对象存储 API，后端 [`StorageService`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/common/storage/StorageService.java) 走此端口读写 |
+| **9000** | MinIO S3 API | `minio` (Docker) | `127.0.0.1` | S3 兼容对象存储 API，后端 [`StorageService`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/common/storage/StorageService.java) 走此端口读写 |
 | **9001** | MinIO Web 控制台 | `minio` (Docker) | `127.0.0.1` | 对象存储可视化管理面板，管理存储桶与对象访问策略 |
 | **5672** | RabbitMQ AMQP | `rabbitmq` (Docker) | `127.0.0.1` | AMQP 协议客户端连接端口，生产者与消费者双向通道 |
 | **15672** | RabbitMQ 管理后台 | `rabbitmq` (Docker) | `127.0.0.1` | 队列监控大屏，实时查看消息堆积、消费速率与死信队列 `q.notify.dlq` |
@@ -412,9 +488,9 @@ LANLINK_MQ_NOTIFY_FLOW=mq
 为保证大促高并发交易场景下数据库更新与消息通知的**绝对最终一致性**，系统摒弃了不可靠的直接消息投递，全面落地 **Transactional Outbox 模式**：
 
 1. **事务内原子持久化**：业务主逻辑（如用户下单、支付成功、工单推进）在同一个本地数据库事务中执行，同时向 `order_outbox` 或 `notify_outbox` 数据表写入一条状态为 `PENDING` 的待发送事件。
-2. **异步快车道投递**：独立守护线程 [`OrderOutboxWorker.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/mq/OrderOutboxWorker.java) 监听事务提交后，立即以极短延迟批量抓取 `PENDING` 记录并推送到 RabbitMQ 交换机，发送成功后标记为 `SENT`。
+2. **异步快车道投递**：独立守护线程 [`OrderOutboxWorker.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/integration/mq/OrderOutboxWorker.java) 监听事务提交后，立即以极短延迟批量抓取 `PENDING` 记录并推送到 RabbitMQ 交换机，发送成功后标记为 `SENT`。
 3. **消费端幂等去重**：消费者在处理前从消息头中提取全局唯一 `messageId`，利用 Redis 分布式唯一记录校验幂等，彻底防止网络抖动导致的重复消费。
-4. **死信队列（DLQ）重试与告警**：连续消费失败 3 次的消息自动转入死信队列 `q.notify.dlq`，运营管理后台可通过 [`AdminMqDlqController.java`](file:///d:/桌面/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/AdminMqDlqController.java) 实时查询死信堆积并执行人工重新投递或异常标记。
+4. **死信队列（DLQ）重试与告警**：连续消费失败 3 次的消息自动转入死信队列 `q.notify.dlq`，运营管理后台可通过 [`AdminMqDlqController.java`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/controller/AdminMqDlqController.java) 实时查询死信堆积并执行人工重新投递或异常标记。
 
 ---
 
@@ -510,16 +586,34 @@ LANLinkshopping/
 │   │   │   ├── listener/     # 订单活动与会员变更事件监听器
 │   │   │   └── pricing/      # 营销优惠计价门面（PricingFacade.java）
 │   │   ├── module/           # 高阶业务微中台独立包
-│   │   │   ├── techservice/  # 工业品技术服务与科技成果转化中台（合同、里程碑、专家、中试、需求）
-│   │   │   ├── ab/           # A/B 测试实验流量分桶中台
-│   │   │   ├── aikb/         # 本地向量知识库引擎（HNSW 索引、密集向量嵌入、CDC 同步）
-│   │   │   ├── campaign/     # 营销大促与优惠券中台
-│   │   │   ├── membership/   # 企业会员成长与订阅采购中台
-│   │   │   ├── notify/       # 统一站内信与通知队列中台
-│   │   │   ├── pricemonitor/ # 价格情报雷达（五维加权因子、K 线走势预测）
-│   │   │   ├── recommend/    # 智能协同推荐中台
-│   │   │   └── risk/         # 实时交易风控中台
-│   │   └── config/           # 安全配置、拦截器、跨域与 MyBatis 配置
+│   │   │   ├── techservice/    # 工业品技术服务与科技成果转化中台（合同、里程碑、专家、中试、需求）
+│   │   │   ├── ab/             # A/B 测试实验流量分桶中台
+│   │   │   ├── aikb/           # 本地向量知识库引擎（HNSW 索引、密集向量嵌入、CDC 同步）
+│   │   │   ├── aitool/         # AI 工具调用网关（参数校验、配额与 SSRF 防护）
+│   │   │   ├── attachment/     # 附件与图片上传（魔数校验、缩略图、保留期清理）
+│   │   │   ├── campaign/       # 营销大促与优惠券中台
+│   │   │   ├── crm/            # 客户关系与 RFM 用户分层
+│   │   │   ├── finance/        # 商户财务、提现与台账
+│   │   │   ├── invite/         # 邀请链接与二维码（角色边界、次数上限、关系持久化）
+│   │   │   ├── marketingimage/ # 营销图生成任务
+│   │   │   ├── membership/     # 企业会员成长与订阅采购中台
+│   │   │   ├── merchantexit/   # 商户退店与闭店治理中台（五态状态机、六门禁、保证金台账、公示冻结）
+│   │   │   ├── metrics/        # 平台经营指标聚合
+│   │   │   ├── notify/         # 统一站内信与通知队列中台
+│   │   │   ├── pricemonitor/   # 价格情报雷达（五维加权因子、K 线走势预测）
+│   │   │   ├── productreview/  # 商品审核与违规判定
+│   │   │   ├── recommend/      # 智能协同推荐中台
+│   │   │   ├── review/         # 买家评价与评分聚合
+│   │   │   ├── rfq/            # B2B 询报价（询价单、报价、接受）
+│   │   │   ├── risk/           # 实时交易风控中台
+│   │   │   ├── search/         # 商品向量索引与检索
+│   │   │   ├── settlement/     # 商户结算账本（EARN/REVERSE、持有期、批次）
+│   │   │   ├── sku/            # 商品多规格 SKU 树
+│   │   │   ├── task/           # 任务中心与领取
+│   │   │   └── tracking/       # 物流轨迹同步与异常识别
+│   │   ├── config/           # 安全配置、拦截器、跨域与 MyBatis 配置
+│   │   └── support/          # 基础设施组件：DbJobLock（跨实例任务互斥）、CommerceIndexInitializer（索引幂等兜底）、
+│   │                         #   各模块 SchemaInitializer（启动期幂等建表/补列）
 │   └── src/main/resources/
 │       ├── application.yml   # 核心配置文件
 │       └── sql/schema.sql    # 幂等建表与预置演示数据 SQL
@@ -589,12 +683,23 @@ LANLinkshopping/
 | **企业信用白条** | `/credit/account/info`<br>`/credit/apply`<br>`/credit/bills` | `GET`<br>`POST`<br>`GET` | 企业白条额度查询、白条在线授信测算申请、历史周期性账单查询 |
 | **AI 智能中枢** | `/support/ask`<br>`/v1/hardware`<br>`/mcp` | `POST`<br>`GET`<br>`POST` | 本地知识库客服问答、硬件调度状态感知、标准 MCP 工具调用协议入口 |
 | **商品与交易** | `/product/page`<br>`/cart/add`<br>`/order/checkout`<br>`/order/pay/{orderNo}` | `GET`<br>`POST`<br>`POST`<br>`POST` | 商品多维度分页检索、购物车原子修改、事务原子下单结算、沙箱收银支付 |
+| **商户退店治理** | `/merchant/exit/status`<br>`/merchant/exit/request`<br>`/admin/merchant-exit/list`<br>`/admin/merchant-exit/{merId}/close` | `GET`<br>`POST`<br>`GET`<br>`POST` | 商户退店状态与六门禁自查、申请退店（即时冻结写操作）、运营端退店申请列表、公示期满正式关闭（不可逆软关闭） |
 
 ---
 
 ## 🧪 自动化测试与质量保障体系
 
-项目严格遵循测试驱动与质量分层防护原则，涵盖 200+ 单元测试与系统韧性测试套件：
+项目严格遵循测试驱动与质量分层防护原则。当前实测基线（2026-11-15）：
+
+| 套件 | 命令 | 实测结果 |
+|:---|:---|:---|
+| 后端单元 + 集成测试 | `cd backend && mvn test` | **2046 通过 / 0 失败 / 1 跳过** |
+| 前端单元测试 | `cd frontend && npm test` | **630 通过 / 0 失败（71 个测试文件）** |
+| 前端生产构建 | `cd frontend && npm run build` | 通过（206 个 JS chunk，5.5 MB raw / 1.87 MB gzip） |
+
+接口延迟实测（本机 Docker，n=10）：`GET /api/product/page` 中位 **25 ms**、`GET /api/product/detail/{id}` 中位 **8 ms**，均低于 200 ms 目标。
+
+> 尚未验证：1000 QPS 并发压测、首屏 LCP < 2s。这两项需要压测工具与浏览器自动化，未纳入上表，不作达标声明。
 
 ```bash
 # 1. 后端工程单元测试与集成测试（JUnit 5 + Spring Boot Test，包含 Outbox 与存储测试）
@@ -627,7 +732,7 @@ python scripts/daemon_health_watchdog.py
 2. **敏感资产 AES-256-GCM 加密**：企业统一社会信用代码、银行账号、核心结算凭据使用底层 AES-256-GCM 算法加密落库。
 3. **客服 PII 敏感信息实时脱敏**：智能客服与聊天交互全链路内置敏感词与隐私信息扫描器，出入站实时脱敏手机号、身份证与企业隐私字段。
 4. **接口防护与风控拦截**：配置 CSRF 双提交校验拦截、IP 与用户阶梯滑动窗口限流防刷、连续密码错误防爆破锁定及实时交易风控事件审计。
-5. **合规开源素材声明**：全站商品素材均符合开源商业友好授权并详尽归档于 [`frontend/public/products/CREDITS.json`](file:///d:/桌面/LANLinkShopping/Shopping/frontend/public/products/CREDITS.json)。
+5. **合规开源素材声明**：全站商品素材均符合开源商业友好授权并详尽归档于 [`frontend/public/products/CREDITS.json`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/public/products/CREDITS.json)。
 
 ---
 

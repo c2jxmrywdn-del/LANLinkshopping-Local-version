@@ -272,13 +272,28 @@ public class LogisticsSlaWatchdogService {
     }
 
     /**
-     * 一键催单 / 标记优先跟进
+     * 一键催单 / 标记优先跟进。
+     *
+     * <p>原实现只打一行日志、没有任何持久化副作用：调用方拿到「加急催单已通知承运专席」
+     * 的成功提示，但数据库里查不到这次催办发生过，事后无法追责也无法统计催办次数。
+     *
+     * <p>现在把催办写成一条 {@code t_logistics_alert} 记录（type=expedite），
+     * 与巡检告警共用同一张表、同一套处理流程，运营在告警列表里就能看到并跟进。
+     * 事务保留：确实产生了写入，不再是「只读方法开写事务」。
      */
     @Transactional
     public void expediteWaybill(Long waybillId, String operatorNote) {
         LogisticsWaybill wb = waybillMapper.selectById(waybillId);
         if (wb == null) return;
         log.info("[sla-watchdog] 对运单 {} 执行一键官方加急催办: {}", wb.getWaybillNo(), operatorNote);
-        // 可记录审计日志或调用外部服务商催派接口
+        LogisticsAlert alert = new LogisticsAlert();
+        alert.setWaybillId(wb.getWaybillId());
+        alert.setAlertType("expedite");
+        alert.setAlertLevel("medium");
+        String note = (operatorNote == null || operatorNote.isBlank()) ? "商户一键催派" : operatorNote.trim();
+        alert.setContent("人工催办：" + note);
+        alert.setStatus("pending");
+        alert.setCreateTime(java.time.LocalDateTime.now());
+        alertMapper.insert(alert);
     }
 }

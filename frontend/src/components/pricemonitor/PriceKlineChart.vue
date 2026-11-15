@@ -29,12 +29,12 @@
            @mousemove="onMove" @touchmove.prevent="onTouch">
         <defs>
           <linearGradient id="pkc-volume-up" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#9B2D20" stop-opacity=".78" />
-            <stop offset="100%" stop-color="#9B2D20" stop-opacity=".3" />
+            <stop offset="0%" stop-color="var(--ll-kline-up, #9B2D20)" stop-opacity=".78" />
+            <stop offset="100%" stop-color="var(--ll-kline-up, #9B2D20)" stop-opacity=".3" />
           </linearGradient>
           <linearGradient id="pkc-volume-down" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#2E7D5B" stop-opacity=".78" />
-            <stop offset="100%" stop-color="#2E7D5B" stop-opacity=".3" />
+            <stop offset="0%" stop-color="var(--ll-kline-down, #2E7D5B)" stop-opacity=".78" />
+            <stop offset="100%" stop-color="var(--ll-kline-down, #2E7D5B)" stop-opacity=".3" />
           </linearGradient>
         </defs>
 
@@ -238,7 +238,7 @@ function onTouch(e) {
 </script>
 
 <style scoped>
-.pkc { width: 100%; }
+.pkc { width: 100%; --ll-kline-up: #9B2D20; --ll-kline-down: #2E7D5B; }
 .pkc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
 .pkc-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 10.5px; letter-spacing: .02em; color: var(--ll-muted, #64748B); }
 .pkc-legend .lg { display: inline-flex; align-items: center; gap: 5px; }
@@ -307,4 +307,24 @@ function onTouch(e) {
   .candle, .vol-bar, .ma { animation: none; }
   .ma { stroke-dashoffset: 0; }
 }
+
+/* 深色模式补层：仅行情板块引用；成交量渐变经 CSS 变量翻色（现代引擎支持 SVG stop-color var()） */
+[data-theme='dark'] .pkc { --ll-kline-up: #ff7161; --ll-kline-down: #3E9C82; }
+[data-theme='dark'] .pkc-strip { background: rgba(22, 32, 46, .78); border-color: rgba(255, 255, 255, .10); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+[data-theme='dark'] .pkc-strip b.hi, [data-theme='dark'] .pkc-chg.up { color: #ff7161; }
+[data-theme='dark'] .pkc-strip b.lo, [data-theme='dark'] .pkc-chg.down { color: #3E9C82; }
+[data-theme='dark'] .pkc-date { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .pkc-legend .sw.up { background: #D2543E; }
+[data-theme='dark'] .pkc-legend .sw.down { background: #3E9C82; }
+[data-theme='dark'] .pkc-legend .ln.ma10 { background: #6FB1E8; }
+[data-theme='dark'] .candle.up .wick, [data-theme='dark'] .candle.up .body { stroke: #D2543E; fill: #D2543E; }
+[data-theme='dark'] .candle.down .wick, [data-theme='dark'] .candle.down .body { stroke: #3E9C82; fill: #3E9C82; }
+[data-theme='dark'] .candle.on .body { filter: drop-shadow(0 0 5px rgba(255, 255, 255, .18)); }
+[data-theme='dark'] .ma10 { stroke: #6FB1E8; }
+[data-theme='dark'] .extremes line.hi { stroke: rgba(255, 113, 97, .5); }
+[data-theme='dark'] .extremes line.lo { stroke: rgba(62, 156, 130, .5); }
+[data-theme='dark'] .extremes text { fill: #D9B36C; }
+[data-theme='dark'] .crosshair { stroke: rgba(255, 255, 255, .25); }
+[data-theme='dark'] .focus-dot { fill: #e8edf5; }
+[data-theme='dark'] .volume .base { stroke: rgba(255, 255, 255, .12); }
 </style>

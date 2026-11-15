@@ -23,8 +23,14 @@ public class SocialLoginProperties {
     /** 支付宝渠道标识（签名用私钥而非 appSecret，可用性判定单独处理） */
     private static final String ALIPAY = "alipay";
 
-    /** 授权完成后回跳的前端地址，需与各平台后台登记的 redirect_uri 一致 */
+    /** 授权完成后回跳的前端地址。微信/支付宝/Google 的 redirect_uri 用它；Apple 只把它当作浏览器最终落地页。 */
     private String redirectBase = "http://localhost:5173/login";
+
+    /**
+     * Apple form_post 的接收地址（后端，不是前端页面）。
+     * Services ID 的 Return URL 必须与这里逐字一致。
+     */
+    private String appleRedirectUri = "http://localhost:8080/api/auth/social/apple/return";
 
     /** 是否启用沙箱/本地模拟登录模式（开发/演示环境无公网凭证时允许快速体验） */
     private boolean sandboxEnabled = false;
@@ -40,6 +46,14 @@ public class SocialLoginProperties {
         /** Apple / Google 使用 */
         private String clientId;
         private String clientSecret;
+        /**
+         * Apple：用 .p8 私钥现签 client_secret 时必填。
+         * clientSecret 已是签好的 JWT 时，这三项可以留空。
+         */
+        private String teamId;
+        private String keyId;
+        /** PKCS#8 PEM，或同一内容的 Base64。环境变量里的 \n 会在签名前还原。 */
+        private String privateKey;
 
         /**
          * 支付宝：商户应用私钥（PKCS#8 PEM）。
@@ -58,6 +72,11 @@ public class SocialLoginProperties {
             return notBlank(appSecret) ? appSecret : clientSecret;
         }
 
+        /** Team ID、Key ID、私钥三者齐全，才能现签 Apple client secret。 */
+        public boolean hasAppleSigningKey() {
+            return notBlank(teamId) && notBlank(keyId) && notBlank(privateKey);
+        }
+
         private static boolean notBlank(String v) {
             return v != null && !v.isBlank();
         }
@@ -72,7 +91,18 @@ public class SocialLoginProperties {
         Provider p = providers == null ? null : providers.get(provider);
         if (p == null || !p.isEnabled() || !Provider.notBlank(p.resolveId())) return false;
         if (ALIPAY.equals(provider)) return Provider.notBlank(p.getAlipayPrivateKey());
+        if ("apple".equals(provider)) {
+            return Provider.notBlank(p.resolveSecret()) || p.hasAppleSigningKey();
+        }
         return Provider.notBlank(p.resolveSecret());
+    }
+
+    /** Apple 授权与换票共用的 redirect_uri。空白时回到本地默认值。 */
+    public String resolvedAppleRedirectUri() {
+        if (appleRedirectUri == null || appleRedirectUri.isBlank()) {
+            return "http://localhost:8080/api/auth/social/apple/return";
+        }
+        return appleRedirectUri.trim();
     }
 
     public Provider provider(String provider) {

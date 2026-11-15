@@ -344,6 +344,70 @@ public class SupportAiAnswerService {
         }
     }
 
+    /**
+     * 非流式答案的 SSE 分片重放：MCP 侧先拿完整答案，再按固定字数切片下发。
+     *
+     * <p>为什么分片而不是一次 delta：前端按"逐字出现"的节奏渲染，一次性整段会让
+     * 客服回复突然弹出一大块，与原有流式体验不一致；每片 32 字（20-40 区间）在观感
+     * 与 SSE 帧数之间取平衡。协议结构（head/delta/tail/[DONE]）与模拟流完全一致。
+     */
+    public static void sendChunkedStream(SseEmitter emitter, String text, String source, int chunkChars) {
+        try {
+            String msgId = "chatcmpl-sim-" + System.currentTimeMillis();
+            String body = text == null ? "" : text;
+            int size = Math.max(1, chunkChars);
+
+            ObjectNode head = JSON.createObjectNode();
+            head.put("id", msgId);
+            head.put("object", "chat.completion.chunk");
+            head.put("created", System.currentTimeMillis() / 1000);
+            head.put("model", "lanlink-local-mcp");
+            var choices = head.putArray("choices");
+            var c0 = choices.addObject();
+            c0.put("index", 0);
+            c0.putNull("finish_reason");
+            c0.putObject("delta").put("role", "assistant");
+            emitter.send("data: " + JSON.writeValueAsString(head) + "\n\n");
+
+            for (int i = 0; i < body.length(); i += size) {
+                ObjectNode chunk = JSON.createObjectNode();
+                chunk.put("id", msgId);
+                chunk.put("object", "chat.completion.chunk");
+                chunk.put("created", System.currentTimeMillis() / 1000);
+                chunk.put("model", "lanlink-local-mcp");
+                var chunkChoices = chunk.putArray("choices");
+                var cc0 = chunkChoices.addObject();
+                cc0.put("index", 0);
+                cc0.putNull("finish_reason");
+                cc0.putObject("delta").put("content",
+                        body.substring(i, Math.min(body.length(), i + size)));
+                emitter.send("data: " + JSON.writeValueAsString(chunk) + "\n\n");
+            }
+
+            ObjectNode tail = JSON.createObjectNode();
+            tail.put("id", msgId);
+            tail.put("object", "chat.completion.chunk");
+            tail.put("created", System.currentTimeMillis() / 1000);
+            tail.put("model", "lanlink-local-mcp");
+            var tChoices = tail.putArray("choices");
+            var tc0 = tChoices.addObject();
+            tc0.put("index", 0);
+            tc0.put("finish_reason", "stop");
+            tc0.putObject("delta");
+            ObjectNode lanlink = tail.putObject("lanlink");
+            lanlink.put("source", source != null ? source : "MCP");
+            lanlink.put("cache_type", "NONE");
+            lanlink.put("cache_similarity", 0.0);
+            emitter.send("data: " + JSON.writeValueAsString(tail) + "\n\n");
+
+            emitter.send("data: [DONE]\n\n");
+            emitter.complete();
+        } catch (Exception e) {
+            log.warn("[support-sse] chunked stream send failed: {}", e.getMessage());
+            try { emitter.complete(); } catch (Exception ignored) {}
+        }
+    }
+
     public static String buildSystemPrompt(boolean english) {
         return english
                 ? "You are the intelligent customer-service assistant of LANLinkshopping, an aggregated B2B e-commerce platform. "

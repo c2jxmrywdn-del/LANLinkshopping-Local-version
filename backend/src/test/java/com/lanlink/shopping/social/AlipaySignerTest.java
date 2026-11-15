@@ -75,6 +75,20 @@ class AlipaySignerTest {
         assertTrue(ex.getMessage().contains("PKCS#8") || ex.getMessage().contains("无法解析"));
     }
 
+    @Test
+    void rejectsPrivateKeyBelow2048Bits() throws Exception {
+        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
+        gen.initialize(1024);
+        KeyPair weak = gen.generateKeyPair();
+        String pem = pkcs8Pem((RSAPrivateKey) weak.getPrivate());
+
+        // 弱密钥必须被明确拒绝，且不能被包装成"格式错误"，否则运维会去查 PEM 而不是换密钥
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> signer.loadPrivateKey(pem));
+        assertTrue(ex.getMessage().contains("2048"));
+        assertThrows(IllegalStateException.class, () -> signer.sign(Map.of("a", "1"), pem));
+    }
+
     /* ---------------- helpers ---------------- */
 
     static KeyPair keyPair() throws Exception {

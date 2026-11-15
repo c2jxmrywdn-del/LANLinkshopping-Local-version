@@ -12,7 +12,9 @@ import java.util.*;
 @Service
 public class TrafficService {
     private static final int MAX_DAYS=90;
-    private static final Set<String> EVENTS=Set.of("VISIT","VIEW_PRODUCT","CLICK_PRODUCT","FAVORITE","ADD_CART","CHECKOUT","PAY");
+    private static final Set<String> EVENTS=Set.of("VISIT","VIEW_PRODUCT","CLICK_PRODUCT","FAVORITE","ADD_CART","CHECKOUT","PAY","ERROR");
+    /** P0-7：eventType=ERROR 仅接受此前端错误来源，防止伪装成错误事件混入行为语义 */
+    private static final String FRONTEND_ERROR_SOURCE="frontend_error";
     private final TrafficMapper mapper; private final MerchantService merchantService;
     public TrafficService(TrafficMapper mapper,MerchantService merchantService){this.mapper=mapper;this.merchantService=merchantService;}
 
@@ -46,23 +48,38 @@ public class TrafficService {
     }
     public void track(Map<String,Object> raw, jakarta.servlet.http.HttpServletRequest request){
         String event=String.valueOf(raw.getOrDefault("eventType",""));if(!EVENTS.contains(event))throw new BusinessException("不支持的流量事件");
+        boolean feError="ERROR".equals(event);
+        if(feError && !FRONTEND_ERROR_SOURCE.equals(String.valueOf(raw.getOrDefault("sourceType",""))))throw new BusinessException("不支持的流量事件");
         String sid=String.valueOf(raw.getOrDefault("sessionId",""));if(sid.length()<8||sid.length()>128)throw new BusinessException("无效会话标识");
         Object mid=raw.get("merchantId");
         if(mid==null){
-            // VISIT/PAY 为平台级事件（站点落地页 / 买家支付成功），不归属单一商户：
-            // 允许 merchantId 缺省，落库以 0 哨兵兜底（merchant_id 列 NOT NULL）；
+            // VISIT/PAY/ERROR 为平台级事件（站点落地页 / 买家支付成功 / 前端运行时错误），
+            // 不归属单一商户：允许 merchantId 缺省，落库以 0 哨兵兜底（merchant_id 列 NOT NULL）；
             // 其余商品级事件仍强制要求商户标识（向后兼容）。
-            if(!"VISIT".equals(event)&&!"PAY".equals(event))throw new BusinessException("缺少商户标识");
+            if(!"VISIT".equals(event)&&!"PAY".equals(event)&&!feError)throw new BusinessException("缺少商户标识");
             mid=0;
         }
         Map<String,Object> e=new HashMap<>();e.put("merchantId",mid);e.put("productId",raw.get("productId"));e.put("userId",raw.get("userId"));e.put("sessionId",sid);
-        // 归属回填：前端各上报点未携带 userId（协同过滤/个性化依赖此列），登录态下由服务端补齐
-        if(e.get("userId")==null && request!=null){
+        // 归属回填：前端各上报点未携带 userId（协同过滤/个性化依赖此列），登录态下由服务端补齐。
+        // ERROR 事件例外：运行时错误属运维遥测，保持零 PII，不做用户归属（会话标识足够关联）。
+        if(!feError && e.get("userId")==null && request!=null){
             Long uid=com.lanlink.shopping.config.UserContext.currentUserId(request);
             if(uid!=null)e.put("userId",uid);
         }
-        e.put("eventType",event);e.put("sourceType",clip(raw.getOrDefault("sourceType","direct"),32));e.put("sourceDetail",clip(raw.get("sourceDetail"),255));e.put("pageUrl",clip(raw.get("pageUrl"),500));e.put("deviceType",clip(raw.getOrDefault("deviceType","unknown"),16));mapper.insertEvent(e);
+        e.put("eventType",event);e.put("sourceType",clip(raw.getOrDefault("sourceType","direct"),32));
+        e.put("sourceDetail", feError?errorDetail(raw):clip(raw.get("sourceDetail"),255));
+        e.put("pageUrl",clip(raw.get("pageUrl"),500));e.put("deviceType",clip(raw.getOrDefault("deviceType","unknown"),16));mapper.insertEvent(e);
     }
+    /** P0-7 错误详情：message(≤500)+stack(≤1500)+userAgent(≤200) 合并落 source_detail，总长护栏超 2000 字截断 */
+    private static String errorDetail(Map<String,Object> raw){
+        StringBuilder d=new StringBuilder();
+        appendLine(d,clip(raw.get("message"),500));
+        appendLine(d,clip(raw.get("stack"),1500));
+        appendLine(d,clip(raw.get("userAgent"),200));
+        String s=d.toString();
+        return s.length()>2000?s.substring(0,2000):s;
+    }
+    private static void appendLine(StringBuilder d,String part){if(part==null||part.isEmpty())return;if(d.length()>0)d.append('\n');d.append(part);}
     private Long mustMerId(Long u){Merchant m=merchantService.getByUser(u);if(m==null)throw new BusinessException("仅入驻商户可查看流量数据");return m.getMerId();}
     private int norm(Integer d){return d==null||d<=0?30:Math.min(d,MAX_DAYS);}
     private static BigDecimal dec(Object o){return o==null?BigDecimal.ZERO:new BigDecimal(String.valueOf(o));}

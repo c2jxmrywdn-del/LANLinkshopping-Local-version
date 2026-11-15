@@ -2,8 +2,12 @@ package com.lanlink.shopping.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.common.DesensitizeUtil;
+import com.lanlink.shopping.dto.LogisticsProviderAdminDTO;
+import com.lanlink.shopping.dto.LogisticsTemplateAdminDTO;
 import com.lanlink.shopping.entity.LogisticsAftersale;
 import com.lanlink.shopping.entity.LogisticsAlert;
 import com.lanlink.shopping.entity.LogisticsProvider;
@@ -15,10 +19,12 @@ import com.lanlink.shopping.mapper.LogisticsTemplateMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 物流管理服务：服务商管理、运费模板管理、异常告警处理、物流售后处理。
@@ -27,6 +33,7 @@ import java.util.List;
 public class LogisticsAdminService {
 
     private static final DateTimeFormatter AFTER_SALE_DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final LogisticsProviderMapper providerMapper;
     private final LogisticsTemplateMapper templateMapper;
@@ -82,6 +89,54 @@ public class LogisticsAdminService {
         return p;
     }
 
+    /* ==================== 服务商管理（DTO 层，capabilityJson 读写打通） ==================== */
+
+    public List<LogisticsProviderAdminDTO.ProviderVO> providerVOs() {
+        return providers().stream().map(this::toProviderVO).toList();
+    }
+
+    public LogisticsProviderAdminDTO.ProviderVO toProviderVO(LogisticsProvider p) {
+        LogisticsProviderAdminDTO.ProviderVO vo = new LogisticsProviderAdminDTO.ProviderVO();
+        vo.setProviderId(p.getProviderId());
+        vo.setProviderName(p.getProviderName());
+        vo.setProviderCode(p.getProviderCode());
+        vo.setContactName(p.getContactName());
+        vo.setContactPhone(p.getContactPhone());
+        vo.setApiType(p.getApiType());
+        vo.setApiEndpoint(p.getApiEndpoint());
+        vo.setCapabilityJson(p.getCapabilityJson());
+        vo.setStatus(p.getStatus());
+        vo.setSettleCycle(p.getSettleCycle());
+        vo.setAvgEtaHours(p.getAvgEtaHours());
+        vo.setServiceScore(p.getServiceScore());
+        vo.setSlaRate(p.getSlaRate());
+        vo.setSort(p.getSort());
+        return vo;
+    }
+
+    public LogisticsProviderAdminDTO.ProviderVO saveProviderDTO(LogisticsProviderAdminDTO.ProviderSaveRequest req,
+                                                                Long operatorId,
+                                                                jakarta.servlet.http.HttpServletRequest httpReq) {
+        LogisticsProvider p = new LogisticsProvider();
+        p.setProviderId(req.getProviderId());
+        p.setProviderName(req.getProviderName());
+        p.setProviderCode(req.getProviderCode());
+        p.setContactName(req.getContactName());
+        p.setContactPhone(req.getContactPhone());
+        p.setApiType(req.getApiType());
+        p.setApiEndpoint(req.getApiEndpoint());
+        p.setCapabilityJson(req.getCapabilityJson());
+        p.setApiKey(req.getApiKey());
+        p.setStatus(req.getStatus());
+        p.setSettleCycle(req.getSettleCycle());
+        p.setAvgEtaHours(req.getAvgEtaHours());
+        p.setServiceScore(req.getServiceScore());
+        p.setSlaRate(req.getSlaRate());
+        p.setSort(req.getSort());
+        saveProvider(p, operatorId, httpReq);
+        return toProviderVO(p);
+    }
+
     /* ==================== 运费模板管理 ==================== */
 
     public List<LogisticsTemplate> templates(Long providerId) {
@@ -97,6 +152,7 @@ public class LogisticsAdminService {
             throw new BusinessException("模板名称不能为空");
         }
         if (t.getProviderId() == null) throw new BusinessException("请选择归属物流服务商");
+        validateTemplatePricing(t);
         if (t.getTemplateId() == null) {
             templateMapper.insert(t);
             auditService.record(operatorId, "LOGISTICS_TEMPLATE_CREATE", "新增运费模板 " + t.getTemplateName(), httpReq);
@@ -105,6 +161,114 @@ public class LogisticsAdminService {
             auditService.record(operatorId, "LOGISTICS_TEMPLATE_UPDATE", "更新运费模板 " + t.getTemplateName(), httpReq);
         }
         return t;
+    }
+
+    public LogisticsTemplateAdminDTO.TemplateVO saveTemplateDTO(LogisticsProviderAdminDTO.TemplateSaveRequest req,
+                                                                Long operatorId,
+                                                                jakarta.servlet.http.HttpServletRequest httpReq) {
+        LogisticsTemplate t = new LogisticsTemplate();
+        t.setTemplateId(req.getTemplateId());
+        t.setTemplateName(req.getTemplateName());
+        t.setProviderId(req.getProviderId());
+        t.setPricingType(req.getPricingType());
+        t.setTierMode(req.getTierMode());
+        t.setFirstWeight(req.getFirstWeight());
+        t.setFirstPrice(req.getFirstPrice());
+        t.setContinuedWeight(req.getContinuedWeight());
+        t.setContinuedPrice(req.getContinuedPrice());
+        t.setVolumeFactor(req.getVolumeFactor());
+        t.setFreeThreshold(req.getFreeThreshold());
+        t.setTierRuleJson(req.getTierRuleJson());
+        t.setVasRuleJson(req.getVasRuleJson());
+        t.setMinCharge(req.getMinCharge());
+        t.setRemoteSurcharge(req.getRemoteSurcharge());
+        t.setStatus(req.getStatus());
+        saveTemplate(t, operatorId, httpReq);
+        return toTemplateVO(t);
+    }
+
+    private LogisticsTemplateAdminDTO.TemplateVO toTemplateVO(LogisticsTemplate t) {
+        LogisticsTemplateAdminDTO.TemplateVO vo = new LogisticsTemplateAdminDTO.TemplateVO();
+        vo.setTemplateId(t.getTemplateId());
+        vo.setTemplateName(t.getTemplateName());
+        vo.setProviderId(t.getProviderId());
+        vo.setPricingType(t.getPricingType());
+        vo.setTierMode(t.getTierMode());
+        vo.setFirstWeight(t.getFirstWeight());
+        vo.setFirstPrice(t.getFirstPrice());
+        vo.setContinuedWeight(t.getContinuedWeight());
+        vo.setContinuedPrice(t.getContinuedPrice());
+        vo.setVolumeFactor(t.getVolumeFactor());
+        vo.setFreeThreshold(t.getFreeThreshold());
+        vo.setTierRuleJson(t.getTierRuleJson());
+        vo.setVasRuleJson(t.getVasRuleJson());
+        vo.setMinCharge(t.getMinCharge());
+        vo.setRemoteSurcharge(t.getRemoteSurcharge());
+        vo.setStatus(t.getStatus());
+        return vo;
+    }
+
+    public List<LogisticsTemplateAdminDTO.TemplateVO> templateVOs(Long providerId) {
+        return templates(providerId).stream().map(this::toTemplateVO).toList();
+    }
+
+    /**
+     * 计价配置解析校验（out/carrier-expansion-design.md §3）：
+     *  - tier_mode='tiered' 时 tier_rule_json 必须可解析、区间连续覆盖 [0,∞)、min_charge>0
+     *    （calculateTiered 对坏 JSON/区间外静默返 0，min_charge>0 是唯一兜底）；
+     *  - vas_rule_json 存在时必须可解析为对象。
+     */
+    private void validateTemplatePricing(LogisticsTemplate t) {
+        boolean tiered = "tiered".equalsIgnoreCase(t.getTierMode());
+        if (tiered) {
+            if (t.getTierRuleJson() == null || t.getTierRuleJson().isBlank()) {
+                throw new BusinessException("阶梯模板必须配置计费区间 JSON");
+            }
+            List<Map<String, Object>> rules = parseTierRules(t.getTierRuleJson());
+            if (rules.isEmpty()) {
+                throw new BusinessException("计费区间 JSON 解析失败或为空数组");
+            }
+            double cursor = 0.0;
+            for (Map<String, Object> rule : rules) {
+                double min = toDouble(rule.get("minWeight"), Double.NaN);
+                double max = toDouble(rule.get("maxWeight"), Double.NaN);
+                if (Double.isNaN(min) || Double.isNaN(max) || min < cursor) {
+                    throw new BusinessException("计费区间不连续：需按 minWeight 从 0 起无缝衔接");
+                }
+                cursor = max;
+            }
+            if (cursor < Double.MAX_VALUE && cursor <= 0) {
+                throw new BusinessException("计费区间未覆盖大件重量段（末档 maxWeight 需大于 0）");
+            }
+            if (t.getMinCharge() == null || t.getMinCharge().compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException("阶梯模板必须配置最低起运价（>0），兜底区间外静默返 0");
+            }
+        }
+        if (t.getVasRuleJson() != null && !t.getVasRuleJson().isBlank()) {
+            try {
+                JSON.readValue(t.getVasRuleJson(), new TypeReference<Map<String, Map<String, Object>>>() {});
+            } catch (Exception e) {
+                throw new BusinessException("增值服务费率 JSON 解析失败：" + e.getMessage());
+            }
+        }
+    }
+
+    private List<Map<String, Object>> parseTierRules(String json) {
+        try {
+            return JSON.readValue(json, new TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private static double toDouble(Object obj, double defaultVal) {
+        if (obj instanceof Number n) return n.doubleValue();
+        if (obj != null) {
+            try {
+                return Double.parseDouble(obj.toString());
+            } catch (Exception ignored) {}
+        }
+        return defaultVal;
     }
 
     /* ==================== 异常告警处理 ==================== */

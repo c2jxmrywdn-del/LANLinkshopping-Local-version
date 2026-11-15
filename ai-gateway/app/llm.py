@@ -337,6 +337,10 @@ class LLMClient:
 
     def __init__(self):
         self.backend_pref = (os.environ.get("LLM_BACKEND") or "auto").strip().lower()
+        # GPU 强约束：AI 信息分析等主推理任务必须跑在 4070（llama.cpp router）。
+        # 开启后若 GPU 链路不可用，直接返回明确错误，绝不静默降级到 CPU(Ollama)/mock。
+        self.require_gpu = (os.environ.get("LLM_REQUIRE_GPU") or "0").strip().lower() in (
+            "1", "true", "yes", "on")
         self.manager = ModelManager()
         self.llama = LlamaCppBackend(self.manager.llama_url, self.manager.text_model)
         self.ollama = OllamaBackend(
@@ -546,6 +550,18 @@ class LLMClient:
             finally:
                 self.gate.release()
 
+        # GPU 强约束：主推理任务（如 AI 信息分析）不允许落到 CPU(Ollama) 或启发式 mock。
+        if self.require_gpu:
+            reason = ("llm_lock_timeout" if (not acquired and models)
+                      else "gpu_unavailable")
+            self._record_route(kind, model, None, {"reason": reason}, {
+                "fallback": "none",
+                "fallback_reason": reason,
+                "require_gpu": True,
+            })
+            logger.error("[llm] LLM_REQUIRE_GPU=1 但 GPU 链路不可用（%s），拒绝降级到 CPU", reason)
+            raise RuntimeError("GPU 推理不可用：AI 分析要求运行在 4070，已拒绝降级到 CPU")
+
         if self.backend_pref in ("ollama", "auto") and self.ollama.available():
             try:
                 text = self.ollama.chat(messages, temperature, max_tokens)
@@ -622,6 +638,15 @@ class LLMClient:
                             logger.warning("llamacpp chat_raw 失败: %s", exc)
             finally:
                 self.gate.release()
+
+        if self.require_gpu:
+            self._record_route(kind, model, None, {"reason": "gpu_unavailable"}, {
+                "fallback": "none",
+                "fallback_reason": "gpu_unavailable",
+                "require_gpu": True,
+            })
+            logger.error("[llm] LLM_REQUIRE_GPU=1 但 GPU 链路不可用（chat_raw），拒绝降级到 CPU")
+            raise RuntimeError("GPU 推理不可用：AI 分析要求运行在 4070，已拒绝降级到 CPU")
 
         if self.backend_pref in ("ollama", "auto") and self.ollama.available():
             try:

@@ -42,37 +42,23 @@
 
     <a-spin :spinning="loading">
       <a-empty v-if="!loading && records.length === 0" description="暂无消息" class="empty" />
-      <a-list v-else :data-source="records" item-layout="horizontal" class="list">
-        <template #renderItem="{ item }">
-          <a-list-item class="item" :class="{ unread: item.readFlag === 0 }">
-            <a-list-item-meta>
-              <template #title>
-                <div class="title-row">
-                  <a-badge v-if="item.readFlag === 0" status="processing" />
-                  <span class="title-text">{{ item.title }}</span>
-                  <a-tag :color="typeColor(item.type)">{{ typeName(item.type) }}</a-tag>
-                </div>
-              </template>
-              <template #description>
-                <div class="desc">
-                  <div class="content">{{ item.content }}</div>
-                  <div class="meta">
-                    <span class="time">{{ fmt(item.createTime) }}</span>
-                    <span v-if="item.relatedNo" class="no">关联单号：{{ item.relatedNo }}</span>
-                    <a-button
-                      v-if="item.readFlag === 0"
-                      type="link"
-                      size="small"
-                      class="read-btn"
-                      @click="markRead(item)"
-                    >标为已读</a-button>
-                  </div>
-                </div>
-              </template>
-            </a-list-item-meta>
-          </a-list-item>
-        </template>
-      </a-list>
+      <!--
+        消息列表：外壳统一走 MessageItem，正文按业务分派。
+        订单类消息用 OrderMessageBody，提供「订单详情（二级）→ 退款/物流（三级）」的下钻入口；
+        其余类型（促销/系统/价格）保持纯文本，不产生无意义的跳转按钮。
+      -->
+      <div v-else class="list">
+        <MessageItem
+          v-for="item in records"
+          :key="item.id"
+          :item="item"
+          @read="markRead"
+        >
+          <OrderMessageBody v-if="isOrderMessage(item)" :item="item" />
+          <NoticeMessageBody v-else-if="isNoticeMessage(item)" :item="item" />
+          <p v-else class="msg-plain">{{ item.content }}</p>
+        </MessageItem>
+      </div>
 
       <div v-if="total > size" class="pager">
         <a-pagination
@@ -94,6 +80,10 @@ import { message } from 'ant-design-vue'
 import { useRouter } from 'vue-router'
 import { userApi, chatApi } from '../../api'
 import { useUserStore } from '../../store/user'
+import MessageItem from '../message/MessageItem.vue'
+import OrderMessageBody from '../message/OrderMessageBody.vue'
+import NoticeMessageBody from '../message/NoticeMessageBody.vue'
+import { messageKind, MSG_KIND } from '../../utils/messageLink'
 
 const user = useUserStore()
 const router = useRouter()
@@ -131,15 +121,23 @@ const unread = ref(0)
 
 const hasUnread = computed(() => unread.value > 0)
 
-const TYPE_NAME = { price: '价格', order: '订单', promotion: '促销', system: '系统' }
-const TYPE_COLOR = { price: 'gold', order: 'blue', promotion: 'magenta', system: 'default' }
-function typeName(t) { return TYPE_NAME[t] || t || '通知' }
-function typeColor(t) { return TYPE_COLOR[t] || 'default' }
-
+/** 消息时间格式化（商家咨询列表复用；消息卡片的格式化在 MessageItem 内）。 */
 function fmt(d) {
   if (!d) return ''
   const s = String(d).replace('T', ' ')
   return s.length >= 16 ? s.slice(0, 16) : s
+}
+
+/** 是否按「订单消息」渲染（含退款/物流：它们同属订单业务链，需要下钻入口）。 */
+function isOrderMessage(item) {
+  const kind = messageKind(item)
+  return kind === MSG_KIND.ORDER || kind === MSG_KIND.REFUND || kind === MSG_KIND.LOGISTICS
+}
+
+/** 系统/促销/价格通知：走通用通知正文（带业务落地入口）。 */
+function isNoticeMessage(item) {
+  const kind = messageKind(item)
+  return kind === MSG_KIND.SYSTEM || kind === MSG_KIND.PROMOTION || kind === MSG_KIND.PRICE
 }
 
 async function load() {
@@ -197,15 +195,8 @@ onMounted(() => {
 .toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .empty { padding: 32px 0; }
 .list { max-height: 560px; overflow-y: auto; }
-.item { align-items: flex-start; }
-.item.unread { background: var(--ll-page); }
-.title-row { display: flex; align-items: center; gap: 8px; }
-.title-text { font-weight: 600; color: var(--ll-ink); }
-.desc { display: flex; flex-direction: column; gap: 4px; }
-.content { color: var(--ll-muted); font-size: 13px; }
-.meta { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--ll-gray2); }
-.meta .no { color: var(--ll-muted); }
-.read-btn { padding: 0 4px; height: auto; }
+/* 非订单类消息的纯文本正文（订单类由 OrderMessageBody 自带样式） */
+.msg-plain { margin: 0; font-size: 13px; line-height: 1.6; color: var(--ll-muted); word-break: break-word; }
 .pager { display: flex; justify-content: center; padding: 8px 0; }
 
 /* 商家咨询会话行（与 CenterChat 列表风格一致的轻量版） */

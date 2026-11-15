@@ -2,9 +2,12 @@ package com.lanlink.shopping.payment;
 
 import com.lanlink.shopping.common.BusinessException;
 import com.lanlink.shopping.entity.Order;
+import com.lanlink.shopping.entity.RefundApproval;
 import com.lanlink.shopping.mapper.OrderMapper;
+import com.lanlink.shopping.mapper.RefundApprovalMapper;
 import com.lanlink.shopping.payment.PaymentProperties;
 import com.lanlink.shopping.payment.alipay.AlipayPayClient;
+import com.lanlink.shopping.payment.conflict.dto.SettlePaidResult;
 import com.lanlink.shopping.payment.dto.RefundRequest;
 import com.lanlink.shopping.payment.service.PaymentLogService;
 import com.lanlink.shopping.payment.service.PaymentService;
@@ -40,6 +43,7 @@ class PaymentFlowTest {
     private OrderMapper orderMapper;
     private PaymentLogService payLog;
     private WalletService walletService;
+    private RefundApprovalMapper refundApprovalMapper;
     private PaymentService service;
 
     private Order order(int payStatus, String channel, BigDecimal total, BigDecimal refunded) {
@@ -52,7 +56,25 @@ class PaymentFlowTest {
         o.setRefundAmount(refunded);
         o.setOrderStatus(0);
         o.setPayType("corporate");
+        o.setRefundStatus("merchant_approved"); // P0-C：出款前必须有商户初审态
         return o;
+    }
+
+    /** P0-B：结算成功结果（settlePaid 已改为三态返回） */
+    private SettlePaidResult settled(Order o) {
+        return new SettlePaidResult(SettlePaidResult.Outcome.SETTLED, o, "TXN", false);
+    }
+
+    /** P0-C：造一条未消费的平台复核通过凭证（金额=本次出款额）。 */
+    private void givenPlatformApproval(BigDecimal amount) {
+        RefundApproval approval = new RefundApproval();
+        approval.setId(77L);
+        approval.setStage("PLATFORM");
+        approval.setAction("APPROVE");
+        approval.setAmount(amount);
+        approval.setConsumed(0);
+        when(refundApprovalMapper.findLatestPlatform("NO1")).thenReturn(approval);
+        when(refundApprovalMapper.consume(77L)).thenReturn(1);
     }
 
     private WalletLog wl(long id) {
@@ -73,7 +95,9 @@ class PaymentFlowTest {
         payLog = mock(PaymentLogService.class);
         walletService = mock(WalletService.class);
         StripePayClient stripe = mock(StripePayClient.class);
+        refundApprovalMapper = mock(RefundApprovalMapper.class);
         service = new PaymentService(props, wechat, alipay, stripe, orderService, orderMapper, payLog, walletService);
+        service.setRefundApprovalMapper(refundApprovalMapper); // P0-C：出款收口，审批凭证必需
     }
 
     // ===== 发起支付：wallet 渠道 =====
@@ -82,7 +106,7 @@ class PaymentFlowTest {
     void walletChannelPaysAndSettles() {
         when(orderMapper.selectById("NO1")).thenReturn(order(0, null, new BigDecimal("88.00"), null));
         when(walletService.payFromWallet(eq(2L), eq(new BigDecimal("88.00")), eq("NO1"))).thenReturn(wl(9L));
-        when(orderService.settlePaid("NO1", "wallet", "W9")).thenReturn(true);
+        when(orderService.settlePaid("NO1", "wallet", "W9")).thenReturn(settled(order(1, "wallet", new BigDecimal("88.00"), null)));
         when(walletService.balanceOf(2L)).thenReturn(new BigDecimal("12.00"));
 
         PayCreateVO vo = service.create("NO1", 2L, "wallet");
@@ -97,7 +121,9 @@ class PaymentFlowTest {
         when(orderMapper.selectById("NO1")).thenReturn(order(0, null, new BigDecimal("88.00"), null));
         when(walletService.payFromWallet(any(), any(), anyString())).thenReturn(wl(9L));
         // 并发下订单已被其他请求结算 → 本次扣款必须回滚（事务由 @Transactional 保证，此处验证抛出）
-        when(orderService.settlePaid(anyString(), anyString(), anyString())).thenReturn(false);
+        when(orderService.settlePaid(anyString(), anyString(), anyString()))
+                .thenReturn(new SettlePaidResult(SettlePaidResult.Outcome.ALREADY_PAID,
+                        order(1, "wallet", new BigDecimal("88.00"), null), "W9", false));
         assertThrows(BusinessException.class, () -> service.create("NO1", 2L, "wallet"));
     }
 
@@ -127,8 +153,9 @@ class PaymentFlowTest {
     @Test
     void fullRefundWalletChannelSettlesEverything() {
         when(orderMapper.selectById("NO1")).thenReturn(order(1, "wallet", new BigDecimal("100.00"), null));
-        // 退款两段式：先有退款申请（applied → processing 原子占位）
+        // 退款两段式：先有退款申请（merchant_approved → processing 原子占位）
         when(orderMapper.markRefundProcessingAtomic("NO1")).thenReturn(1);
+        givenPlatformApproval(new BigDecimal("100.00"));
         when(walletService.refundToWallet(eq(2L), eq(new BigDecimal("100.00")), eq("NO1"), anyString()))
                 .thenReturn(wl(20L));
 
@@ -148,6 +175,7 @@ class PaymentFlowTest {
     void partialRefundSkipsFullSettle() {
         when(orderMapper.selectById("NO1")).thenReturn(order(1, "wallet", new BigDecimal("100.00"), null));
         when(orderMapper.markRefundProcessingAtomic("NO1")).thenReturn(1);
+        givenPlatformApproval(new BigDecimal("30.00"));
         when(walletService.refundToWallet(any(), any(), anyString(), anyString())).thenReturn(wl(21L));
 
         RefundRequest req = new RefundRequest();
@@ -198,7 +226,8 @@ class PaymentFlowTest {
     @Test
     void mockConfirmSettlesOnce() {
         when(orderMapper.selectById("NO1")).thenReturn(order(0, "mock", new BigDecimal("10.00"), null));
-        when(orderService.settlePaid(eq("NO1"), eq("mock"), anyString())).thenReturn(true);
+        when(orderService.settlePaid(eq("NO1"), eq("mock"), anyString()))
+                .thenReturn(settled(order(1, "mock", new BigDecimal("10.00"), null)));
         assertTrue(service.mockConfirm("NO1", 2L));
         verify(orderService, times(1)).settlePaid(eq("NO1"), eq("mock"), anyString());
     }

@@ -72,6 +72,31 @@ function injectSupportProxyHeaders(proxy) {
   })
 }
 
+const voiceStreamWsProxy = {
+  target: 'http://127.0.0.1:8080',
+  ws: true,
+  changeOrigin: true,
+  /**
+   * WebSocket 升级请求必须用 `proxyReqWs` 注入头。
+   *
+   * <p>历史缺陷：这里只配了静态 `headers` + `configure(proxyReq)`。
+   * http-proxy 的 `headers` 只在普通 HTTP 请求里合并，**upgrade 请求不走那条路径**，
+   * 导致握手到后端时缺少 X-Support-Proxy-Secret → 403「代理密钥不匹配或缺失」，
+   * 前端表现为「语音连接异常」。改为在 upgrade 事件里显式写入。
+   */
+  configure: (proxy) => {
+    const secret = process.env.SUPPORT_PROXY_SECRET || LOCAL_DEV_PROXY_SECRET
+    proxy.on('proxyReqWs', (proxyReq, req) => {
+      if (secret) proxyReq.setHeader('X-Support-Proxy-Secret', secret)
+      const rawIp = (req.socket && req.socket.remoteAddress) || 'unknown'
+      proxyReq.setHeader('X-Support-Client-IP', rawIp.replace(/^::ffff:/, ''))
+      // 后端 CORS/Origin 校验只认 localhost/127.0.0.1：局域网 IP 访问时统一改写
+      proxyReq.setHeader('Origin', 'http://127.0.0.1:5173')
+    })
+  },
+  headers: { 'X-Support-Proxy-Secret': process.env.SUPPORT_PROXY_SECRET || LOCAL_DEV_PROXY_SECRET }
+}
+
 const supportProxy = {
   // 显式 IPv4：Windows 上 localhost 可能优先解析 ::1，而后端端口映射只监听 127.0.0.1，
   // 会导致 Vite 代理偶发 ECONNREFUSED/Network Error（轮询失败时尤其明显）。
@@ -87,12 +112,29 @@ const supportProxy = {
 // 后端容器重建/重启窗口（docker compose up -d）内的瞬时 ECONNRESET：
 // 输出一条可读提示代替整段 Node 堆栈，避免误判为前端故障（后端就绪后自动恢复）。
 function friendlyProxyError(proxy) {
-  proxy.on('error', (err, req) => {
+  proxy.on('error', (err, req, res) => {
     const url = req && req.url ? req.url : ''
     if (err && /ECONNRESET|ECONNREFUSED|EPIPE/.test(err.code || '')) {
       console.log(`[vite] 后端暂不可达（重启窗口？）：${url} —— 容器就绪后刷新页面即可`)
     } else {
       console.error('[vite] proxy error:', err.code || err.message, url)
+    }
+    // 关键：默认 vite 代理在未写响应时返回 500 + text/plain 空体，
+    // 前端 request.js 会判定为「服务异常」并逐请求弹 toast。
+    // 这里显式回 502 + JSON message，前端按「系统繁忙」合并成一条提示。
+    if (res && !res.headersSent) {
+      const body = JSON.stringify({
+        code: 502,
+        message: '后端服务暂未就绪，请稍候重试',
+        data: null
+      })
+      res.writeHead(502, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': Buffer.byteLength(body)
+      })
+      res.end(body)
+    } else if (res && !res.writableEnded) {
+      res.end()
     }
   })
 }
@@ -114,6 +156,17 @@ const apiProxy = {
   timeout: 600000,
   proxyTimeout: 600000,
   configure: normalizeApiOrigin
+}
+
+// 客服媒体直传：presign 返回同源 action（路径第一段即桶名 support-media），
+// 与生产 nginx 的 location /support-media 行为保持一致，本地转发到 MinIO :9000。
+// Host 必须透传（changeOrigin:false），否则直传签名校验失败。
+const supportMediaProxy = {
+  target: 'http://127.0.0.1:9000',
+  changeOrigin: false,
+  timeout: 600000,
+  proxyTimeout: 600000,
+  configure: friendlyProxyError
 }
 
 export default defineConfig({
@@ -143,10 +196,27 @@ export default defineConfig({
     // 偏好 IPv4 的浏览器会因 JS 模块请求失败而白屏。0.0.0.0 同时覆盖 127.0.0.1 与局域网。
     host: '0.0.0.0',
     port: 5173,
+    /*
+     * 允许隧道域名访问开发服务器。
+     *
+     * 场景：用 cloudflared / ngrok 把本地 5173 暴露成公网 HTTPS 域名，
+     * 以便完成 Stripe Apple Pay 的域名验证（Stripe 拒绝 127.0.0.1）。
+     * Vite 6 默认只允许 localhost，未列入白名单的 Host 会被 403 拦截。
+     *
+     * 用后缀匹配而不是写死随机子域名：quick tunnel 每次启动域名都变，
+     * 写死会导致换一次隧道就要改一次配置。
+     */
+    allowedHosts: ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.io', '.ngrok.app'],
     proxy: {
       // 注意：更精确的路径必须放在 /api 之前（按声明顺序匹配）
+      '/support-media': supportMediaProxy,
+      '/api/support/stream-voice': voiceStreamWsProxy,
       '/api/support/ask-stream': supportProxy,
       '/api/support/ask': supportProxy,
+      // 客服媒体接口与 ask 同一守卫（需代理密钥头），不能落到通用 /api 代理
+      '/api/support/media': supportProxy,
+      // 客服语音播报同样走 SupportRequestGuard，需要本地代理注入代理密钥头
+      '/api/support/tts': supportProxy,
       '/api': apiProxy
     }
   },
@@ -154,8 +224,12 @@ export default defineConfig({
   preview: {
     port: 4173,
     proxy: {
+      '/support-media': supportMediaProxy,
+      '/api/support/stream-voice': voiceStreamWsProxy,
       '/api/support/ask-stream': supportProxy,
       '/api/support/ask': supportProxy,
+      '/api/support/media': supportProxy,
+      '/api/support/tts': supportProxy,
       '/api': apiProxy
     }
   }

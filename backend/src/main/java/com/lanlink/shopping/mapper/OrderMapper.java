@@ -126,20 +126,44 @@ public interface OrderMapper extends BaseMapper<Order> {
      * 订单完成原子流转（确认收货闭环）：仅已发货(order_status=1)或部分发货(order_status=4)时置为已完成(order_status=2)。
      * 买家确认收货 / 运单签收联动 / 超时自动确认共用；返回 0 表示状态不符或已被并发处理。
      */
-    @Update("UPDATE t_order SET order_status = 2, update_time = NOW() " +
+    @Update("UPDATE t_order SET order_status = 2, finish_time = NOW(), update_time = NOW() " +
             "WHERE order_no = #{orderNo} AND order_status IN (1, 4)")
     int markCompletedAtomic(@Param("orderNo") String orderNo);
 
     /** 超时自动确认收货：已发货超过 N 天（按运单发货时间）仍未完成的订单批量置为已完成 */
-    @Update("UPDATE t_order o JOIN t_logistics_waybill w ON w.order_no = o.order_no " +
-            "SET o.order_status = 2, o.update_time = NOW() " +
-            "WHERE o.order_status = 1 AND o.pay_status = 1 AND w.ship_time < DATE_SUB(NOW(), INTERVAL #{days} DAY)")
+    @Update("UPDATE t_order o JOIN t_logistics_waybill w "
+            + "ON w.order_no COLLATE utf8mb4_unicode_ci = o.order_no COLLATE utf8mb4_unicode_ci "
+            + "SET o.order_status = 2, o.finish_time = NOW(), o.update_time = NOW() "
+            + "WHERE o.order_status = 1 AND o.pay_status = 1 AND w.ship_time < DATE_SUB(NOW(), INTERVAL #{days} DAY)")
     int autoCompleteShipped(@Param("days") int days);
 
-    /** 退款处理中原子流转（防并发双退）：applied/partial/none/rejected/merchant_approved → processing，返回 0 表示已被并发处理 */
+    /**
+     * 退款出款「处理中」原子占位（P0-C 退款出款收口，防并发双退）。
+     *
+     * <p><b>守卫矩阵（状态 × 角色 × 入口）</b>：
+     * <ul>
+     *   <li>角色：仅平台运营（{@code admin:all}）可触发「出款」，商户/买家侧永远只改状态不碰钱；</li>
+     *   <li>入口：{@code POST /payment/refund} 与 {@code POST /admin/refund/review/**} 的出款分支；
+     *       两者都必须先有 t_refund_approval 中未消费的 PLATFORM/APPROVE 复核行
+     *       （校验与消费在 {@code PaymentService#refund}，本 SQL 只做第二道状态闸）；</li>
+     *   <li>允许状态：仅「商户已初审通过 / 退货已寄回 / 已收货 / 已有部分退款到账」这些
+     *       “钱已经具备出款条件”的状态 → processing；</li>
+     *   <li>永久禁止：{@code rejected}（驳回是终态，出款不得推翻驳回；异议走售后工单申诉后由平台
+     *       {@code reopenForAppeal} 重开复核）、{@code success}（已全额退）、{@code processing}
+     *       （并发在途）、{@code applied}（仅用户申请，商户未初审）、{@code none}/NULL
+     *       （无退款依据）——这些状态一律返回 0 行，调用方抛 403/400。</li>
+     * </ul>
+     *
+     * <p><b>为什么把 {@code rejected}/{@code none}/{@code applied} 从旧白名单摘掉</b>：旧语句
+     * {@code IN ('applied','partial','none','rejected','merchant_approved')} 让“已驳回”和
+     * “未初审”的订单也能被平台退款接口占位后直接出款——前者等于用出款推翻驳回（可绕过审批链），
+     * 后者等于跳过商户初审。收口后“出款”只认已经走完审批链的状态，且平台复核行是另一把锁。
+     *
+     * @return 1 = 本次拿到出款权；0 = 状态不允许或已被并发处理（调用方禁止继续调用渠道）
+     */
     @Update("UPDATE t_order SET refund_status = 'processing', update_time = NOW() " +
             "WHERE order_no = #{orderNo} " +
-            "AND (refund_status IN ('applied', 'partial', 'none', 'rejected', 'merchant_approved') OR refund_status IS NULL)")
+            "AND refund_status IN ('merchant_approved', 'shipping_back', 'received', 'partial')")
     int markRefundProcessingAtomic(@Param("orderNo") String orderNo);
 
     /**
@@ -157,14 +181,17 @@ public interface OrderMapper extends BaseMapper<Order> {
 
     /**
      * 订单取消原子流转（防并发重复取消 / 先读后改竞态覆盖）。
-     * 仅当订单尚未取消（order_status<>3）时置为已取消(order_status=3)；
+     * 仅当订单既未取消（order_status&lt;&gt;3）也未全额退款（order_status&lt;&gt;5）时置为已取消(order_status=3)；
      * 账期订单(pay_type='term')在同一语句内同步置 pay_status=2（与原 Java 侧 term 置 2 口径一致）。
-     * 返回 1 表示本次完成取消，返回 0 表示已被并发取消或状态已变化，
+     * 返回 1 表示本次完成取消，返回 0 表示已被并发取消/已全额退款/状态已变化，
      * 调用方须抛业务异常整体回滚事务（避免库存已恢复而订单未取消的半取消状态）。
+     *
+     * <p>P1-3 修复：原条件只写 {@code order_status <> 3}，会把已全额退款（order_status=5）的订单再取消一次，
+     * 触发 {@code restoreStock} 二次回补造成库存虚增；故收紧为 {@code NOT IN (3,5)}。
      */
     @Update("UPDATE t_order SET order_status = 3, " +
             "pay_status = IF(pay_type = 'term', 2, pay_status), update_time = NOW() " +
-            "WHERE order_no = #{orderNo} AND order_status <> 3")
+            "WHERE order_no = #{orderNo} AND order_status NOT IN (3, 5)")
     int cancelAtomic(@Param("orderNo") String orderNo);
 
     /**

@@ -74,12 +74,47 @@ const props = defineProps({
   payableTotal: {
     type: [Number, String],
     default: 0
+  },
+  /**
+   * 兼容别名：订单详情/我的订单按 `order-amount` 传值。
+   * 缺省会退化为 payableTotal=0，导致钱包与账期可用性判断失真（余额不足也显示可选）。
+   */
+  orderAmount: {
+    type: [Number, String],
+    default: null
+  },
+  /**
+   * 需要隐藏的渠道 key 列表（如会员订阅不支持 Stripe 卡支付：排除 stripe/apple_pay/google_pay）。
+   * 默认空 = 保持既有全渠道展示，不影响商品订单收银台。
+   */
+  excludeChannels: {
+    type: Array,
+    default: () => []
+  },
+  /**
+   * 钱包渠道（Apple Pay / Google Pay）是否真实可用。
+   *
+   * <p>为什么需要这个开关：Stripe 要求站点域名完成 Apple Pay 域名验证（本地 IP 无法验证），
+   * Google Pay 还需在后台单独开启。账户未就绪时，选钱包只会得到"不可用"，
+   * 不如直接禁用并说明原因，避免用户选了才发现付不了。
+   */
+  walletReady: {
+    type: Boolean,
+    default: false
   }
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
 
-const paymentChannels = computed(() => [
+/** 实际应付金额：优先 payableTotal，未传则回落到 orderAmount（订单详情/我的订单口径）。 */
+const effectiveTotal = computed(() => {
+  const primary = Number(props.payableTotal || 0)
+  if (primary > 0) return primary
+  return Number(props.orderAmount || 0)
+})
+
+const paymentChannels = computed(() => {
+  const channels = [
   {
     key: 'stripe',
     title: 'Stripe 国际卡',
@@ -93,20 +128,26 @@ const paymentChannels = computed(() => [
   {
     key: 'apple_pay',
     title: 'Apple Pay (苹果支付)',
-    desc: 'Safari / iOS 原生 Touch ID / Face ID 极速免密确认',
+    desc: props.walletReady
+      ? 'Safari / iOS 原生 Touch ID / Face ID 极速免密确认'
+      : '需站点完成 Stripe Apple Pay 域名验证后启用（当前不可用）',
     icon: Smartphone,
     iconColor: '#0f172a',
-    badge: 'iOS/Mac',
-    badgeClass: 'badge-slate'
+    badge: props.walletReady ? 'iOS/Mac' : '未启用',
+    badgeClass: 'badge-slate',
+    disabled: !props.walletReady
   },
   {
     key: 'google_pay',
     title: 'Google Pay (谷歌支付)',
-    desc: 'Android / Chrome 浏览器绑定银行卡一键付款',
+    desc: props.walletReady
+      ? 'Android / Chrome 浏览器绑定银行卡一键付款'
+      : '需在 Stripe 后台开启 Google Pay 后启用（当前不可用）',
     icon: Smartphone,
     iconColor: '#2563eb',
-    badge: 'Android',
-    badgeClass: 'badge-blue'
+    badge: props.walletReady ? 'Android' : '未启用',
+    badgeClass: 'badge-blue',
+    disabled: !props.walletReady
   },
   {
     key: 'alipay',
@@ -132,7 +173,7 @@ const paymentChannels = computed(() => [
     desc: `可用余额 ¥${Number(props.walletBalance || 0).toFixed(2)}`,
     icon: Wallet,
     iconColor: '#f59e0b',
-    disabled: Number(props.walletBalance || 0) < Number(props.payableTotal || 0) && Number(props.walletBalance || 0) <= 0,
+    disabled: Number(props.walletBalance || 0) < effectiveTotal.value && Number(props.walletBalance || 0) <= 0,
     badge: '余额扣减',
     badgeClass: 'badge-amber'
   },
@@ -146,7 +187,7 @@ const paymentChannels = computed(() => [
     iconColor: '#0ea5e9',
     badge: '先货后款',
     badgeClass: 'badge-sky',
-    disabled: props.creditStatus !== 'ACTIVE' || Number(props.creditAvailable || 0) < Number(props.payableTotal || 0)
+    disabled: props.creditStatus !== 'ACTIVE' || Number(props.creditAvailable || 0) < effectiveTotal.value
   },
   {
     key: 'corporate',
@@ -157,7 +198,9 @@ const paymentChannels = computed(() => [
     badge: 'B2B大宗',
     badgeClass: 'badge-blue'
   }
-])
+  ]
+  return channels.filter((item) => !props.excludeChannels.includes(item.key))
+})
 
 function selectChannel(item) {
   if (item.disabled) return

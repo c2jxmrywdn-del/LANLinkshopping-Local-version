@@ -1,15 +1,31 @@
 <template>
   <div class="social-login" :class="`is-${variant}`">
-    <div class="social-login__grid">
+    <button
+      v-if="appleItem"
+      type="button"
+      class="siwa"
+      :class="{ 'is-off': !appleItem.enabled && !appleItem.sandbox }"
+      :aria-label="appleItem.enabled ? '通过 Apple 登录' : '通过 Apple 登录（未配置）'"
+      @click="start(appleItem)"
+    >
+      <!-- Apple：苹果官方经典剪影 -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M16.5 12.6c0-2.3 1.9-3.4 2-3.4-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.1-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.3.9-1.3 1.2-2.6 1.2-2.7 0-.1-2.4-.9-2.4-3.6Z" fill="currentColor" />
+        <path d="M14.3 5.5c.6-.8 1.1-1.9 1-3-1 .1-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.8-1.4Z" fill="currentColor" />
+      </svg>
+      <span>通过 Apple 登录</span>
+      <em v-if="appleItem.sandbox">沙箱</em>
+    </button>
+
+    <div class="social-login__others" role="group" aria-label="其他登录方式">
       <button
-        v-for="item in list"
+        v-for="item in otherItems"
         :key="item.provider"
         type="button"
         class="social-login__btn"
         :class="[
           `is-${item.provider}`,
-          { 'is-off': !item.enabled && !item.sandbox },
-          { 'is-sandbox': item.sandbox }
+          { 'is-off': !item.enabled && !item.sandbox }
         ]"
         :aria-label="`${item.name}${item.enabled ? '' : '（未配置）'}`"
         :title="item.enabled ? (item.sandbox ? `${item.name} 登录（快速体验）` : `${item.name} 登录`) : `${item.name} 登录未配置`"
@@ -24,11 +40,6 @@
           <svg v-else-if="item.provider === 'alipay'" viewBox="0 0 24 24" fill="#1677FF">
             <path d="M19.695 15.07c3.426 1.158 4.203 1.22 4.203 1.22V3.846c0-2.124-1.705-3.845-3.81-3.845H3.914C1.808.001.102 1.722.102 3.846v16.31c0 2.123 1.706 3.845 3.813 3.845h16.173c2.105 0 3.81-1.722 3.81-3.845v-.157s-6.19-2.602-9.315-4.119c-2.096 2.602-4.8 4.181-7.607 4.181-4.75 0-6.361-4.19-4.112-6.949.49-.602 1.324-1.175 2.617-1.497 2.025-.502 5.247.313 8.266 1.317a16.796 16.796 0 0 0 1.341-3.302H5.781v-.952h4.799V6.975H4.77v-.953h5.81V3.591s0-.409.411-.409h2.347v2.84h5.744v.951h-5.744v1.704h4.69a19.453 19.453 0 0 1-1.986 5.06c1.424.52 2.702 1.011 3.654 1.333m-13.81-2.032c-.596.06-1.71.325-2.321.869-1.83 1.608-.735 4.55 2.968 4.55 2.151 0 4.301-1.388 5.99-3.61-2.403-1.182-4.438-2.028-6.637-1.809" />
           </svg>
-          <!-- Apple：苹果官方经典剪影 -->
-          <svg v-else-if="item.provider === 'apple'" viewBox="0 0 24 24" class="icon-apple">
-            <path d="M16.5 12.6c0-2.3 1.9-3.4 2-3.4-1.1-1.6-2.8-1.8-3.4-1.9-1.4-.1-2.8.8-3.5.8-.7 0-1.8-.8-3-.8-1.5 0-3 .9-3.8 2.3-1.6 2.8-.4 7 1.2 9.3.8 1.1 1.7 2.4 2.9 2.3 1.2 0 1.6-.7 3-.7s1.8.7 3 .7c1.2 0 2-1.1 2.8-2.3.9-1.3 1.2-2.6 1.2-2.7 0-.1-2.4-.9-2.4-3.6Z" fill="currentColor" />
-            <path d="M14.3 5.5c.6-.8 1.1-1.9 1-3-1 .1-2.1.7-2.8 1.5-.6.7-1.1 1.8-1 2.9 1.1.1 2.2-.6 2.8-1.4Z" fill="currentColor" />
-          </svg>
           <!-- Google：四色 G -->
           <svg v-else viewBox="0 0 24 24">
             <path d="M21.6 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.4c-.2 1.2-.9 2.3-2 3v2.5h3.2c1.9-1.7 3-4.3 3-7.3Z" fill="#4285F4" />
@@ -38,8 +49,6 @@
           </svg>
         </span>
         <span class="social-login__label">{{ item.name }}</span>
-        <span v-if="item.sandbox" class="social-login__badge is-sandbox-badge">沙箱体验</span>
-        <span v-else-if="!item.enabled && showState" class="social-login__badge">未配置</span>
       </button>
     </div>
 
@@ -189,7 +198,8 @@ const cart = useCartStore()
 
 const list = ref([])
 const loading = ref(false)
-const enabledCount = computed(() => list.value.filter((i) => i.enabled).length)
+const appleItem = computed(() => list.value.find((item) => item.provider === 'apple') || null)
+const otherItems = computed(() => list.value.filter((item) => item.provider !== 'apple'))
 
 // 模态框与沙箱登录状态
 const modalOpen = ref(false)
@@ -221,11 +231,12 @@ async function load() {
     const data = await socialApi.providers()
     list.value = Array.isArray(data) ? data : []
   } catch (e) {
+    // 探测失败不能假装沙箱可用，否则会弹出一套走不通的 Apple / Google 登录窗。
     list.value = [
-      { provider: 'google', name: 'Google', enabled: true, sandbox: true },
-      { provider: 'apple', name: 'Apple', enabled: true, sandbox: true },
-      { provider: 'wechat', name: '微信', enabled: false },
-      { provider: 'alipay', name: '支付宝', enabled: false }
+      { provider: 'google', name: 'Google', enabled: false, sandbox: false },
+      { provider: 'apple', name: 'Apple', enabled: false, sandbox: false },
+      { provider: 'wechat', name: '微信', enabled: false, sandbox: false },
+      { provider: 'alipay', name: '支付宝', enabled: false, sandbox: false }
     ]
   } finally {
     loading.value = false
@@ -246,7 +257,8 @@ async function start(item) {
   }
 
   // 若为沙箱模式或特别测试 Google/Apple
-  if (item.sandbox || item.provider === 'google' || item.provider === 'apple') {
+  // 沙箱才打开本地模拟弹窗。已配置的 Apple / Google 走平台授权页，不再被弹窗截走。
+  if (item.sandbox && (item.provider === 'google' || item.provider === 'apple')) {
     activeProvider.value = item.provider
     if (item.provider === 'google') {
       selectAccount(googlePresets[0])
@@ -265,7 +277,16 @@ async function start(item) {
         modalOpen.value = true
         return
       }
-      try { sessionStorage.setItem('ll_social_provider', item.provider) } catch (e) { /* 隐私模式忽略 */ }
+      try {
+        sessionStorage.setItem('ll_social_provider', item.provider)
+        sessionStorage.setItem('ll_social_intent', 'login')
+        const redirect = route.query.redirect
+        if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.includes('://')) {
+          sessionStorage.setItem('ll_social_redirect', redirect)
+        } else {
+          sessionStorage.removeItem('ll_social_redirect')
+        }
+      } catch (e) { /* 隐私模式忽略 */ }
       window.location.href = res.authorizeUrl
     } else {
       message.warning('未取得授权地址，请稍后重试')
@@ -304,63 +325,80 @@ onMounted(load)
 </script>
 
 <style scoped>
-.social-login { width: 100%; }
-.social-login__grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
+.social-login {
+  width: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
-.social-login__btn {
+.siwa {
   position: relative;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 12px;
+  background: #000;
+  color: #fff;
+  font: 600 17px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: background-color .2s ease, transform .18s cubic-bezier(.22, 1, .36, 1);
+}
+.siwa svg { width: 18px; height: 18px; margin-top: -1px; }
+.siwa:hover { background: #1d1d1f; }
+.siwa:active { transform: scale(0.985); }
+.siwa:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 3px; }
+.siwa.is-off { background: #d2d2d7; color: #fff; cursor: not-allowed; }
+.siwa em {
+  position: absolute;
+  right: 14px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: rgba(255, 255, 255, .72);
+}
+/* 渠道特定微细节 */
+.social-login__others {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.social-login__btn {
+  display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px 8px;
-  border: 1px solid var(--ll-border, #e2e8f0);
+  min-height: 44px;
+  padding: 0 8px;
+  border: 1px solid rgba(0, 0, 0, .08);
   border-radius: 12px;
-  background: var(--ll-card, #ffffff);
-  color: var(--ll-ink, #0f172a);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
+  background: rgba(255, 255, 255, .72);
+  color: #1d1d1f;
+  font: 560 13px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  letter-spacing: -0.01em;
   cursor: pointer;
-  transition: all .2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: background-color .2s ease, transform .18s cubic-bezier(.22, 1, .36, 1);
 }
-.social-login__btn:hover {
-  transform: translateY(-2px);
-  border-color: #3b82f6;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
-}
-.social-login__btn:active { transform: translateY(0); }
-.social-login__btn.is-off { opacity: .55; }
-
-.social-login__icon { display: grid; place-items: center; width: 24px; height: 24px; }
-.social-login__icon svg { width: 22px; height: 22px; }
-
-/* 渠道特定微细节 */
-.social-login__btn.is-apple .icon-apple { color: #000; }
-[data-theme='dark'] .social-login__btn.is-apple .icon-apple { color: #fff; }
-
-.social-login__label { font-size: 12px; font-weight: 600; }
-.social-login__badge {
-  position: absolute; top: -7px; right: -4px;
-  padding: 1px 6px; border-radius: 999px;
-  font-size: 9px; font-weight: 700;
-  color: #64748b; background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-}
-.social-login__badge.is-sandbox-badge {
-  color: #0369a1; background: #e0f2fe; border-color: #bae6fd;
-}
+.social-login__btn:hover { background: #fff; }
+.social-login__btn:active { transform: scale(0.98); }
+.social-login__btn:focus-visible { outline: 2px solid #1d1d1f; outline-offset: 2px; }
+.social-login__btn.is-off { opacity: .45; }
+.social-login__icon { display: grid; place-items: center; width: 18px; height: 18px; }
+.social-login__icon svg { width: 16px; height: 16px; }
+.social-login__label { font-size: 13px; font-weight: 560; }
 .social-login__hint {
-  margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--ll-muted, #64748b); text-align: center;
-}
-
-@media (max-width: 440px) {
-  .social-login__grid { grid-template-columns: repeat(2, 1fr); }
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  letter-spacing: -0.01em;
+  color: #6e6e73;
+  text-align: center;
+  text-wrap: pretty;
 }
 
 /* ===== Google & Apple 拟真对话框样式 (21st.dev 风格) ===== */
@@ -377,25 +415,32 @@ onMounted(load)
 
 .apple-header {
   display: flex; flex-direction: column; align-items: center;
-  padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;
+  padding: 8px 0 18px;
 }
 .apple-logo-badge {
-  width: 52px; height: 52px; border-radius: 14px; background: #000;
-  display: grid; place-items: center; margin-bottom: 10px;
+  width: 56px; height: 56px; border-radius: 16px; background: #000;
+  display: grid; place-items: center; margin-bottom: 14px;
 }
-.apple-header h2 { margin: 0; font-size: 19px; font-weight: 700; color: #0f172a; }
-.apple-sub { margin: 2px 0 0; font-size: 13px; color: #64748b; font-weight: 500; }
+.apple-header h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: #1d1d1f;
+  text-wrap: balance;
+}
+.apple-sub { margin: 4px 0 0; font-size: 13px; color: #6e6e73; font-weight: 500; }
 
 .oauth-account-picker { margin: 16px 0; display: flex; flex-direction: column; gap: 8px; }
 .picker-label { font-size: 12px; font-weight: 600; color: #475569; }
 
 .oauth-account-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px; border: 1.5px solid #e2e8f0; border-radius: 12px;
-  cursor: pointer; transition: all .15s ease; background: #fff;
+  padding: 12px 14px; border: 1px solid rgba(0, 0, 0, .08); border-radius: 14px;
+  cursor: pointer; transition: background-color .18s ease, border-color .18s ease; background: #f5f5f7;
 }
-.oauth-account-row:hover { border-color: #93c5fd; background: #f8fafc; }
-.oauth-account-row.active { border-color: #2563eb; background: #eff6ff; }
+.oauth-account-row:hover { background: #fff; }
+.oauth-account-row.active { border-color: #1d1d1f; background: #fff; }
 
 .acc-avatar {
   width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
@@ -407,7 +452,7 @@ onMounted(load)
 .acc-info { flex: 1; min-width: 0; }
 .acc-name { font-size: 13px; font-weight: 600; color: #1e293b; }
 .acc-email { font-size: 12px; color: #64748b; }
-.acc-check { color: #2563eb; font-weight: 800; font-size: 16px; }
+.acc-check { color: #1d1d1f; font-weight: 700; font-size: 16px; }
 
 .custom-acc-input { margin-top: 6px; }
 .custom-label { display: block; font-size: 11px; color: #64748b; margin-bottom: 4px; }
@@ -421,10 +466,9 @@ onMounted(load)
 
 .oauth-scope-notice { font-size: 11px; color: #94a3b8; line-height: 1.5; margin: 12px 0 16px; }
 
-.oauth-actions {
-  display: flex; justify-content: flex-end; gap: 10px;
-}
+.oauth-actions { display: flex; gap: 10px; }
+.oauth-actions :deep(.ant-btn) { flex: 1; height: 44px; border-radius: 12px; }
 .google-btn { background: #1a73e8; border-color: #1a73e8; }
 .apple-btn { background: #000; border-color: #000; color: #fff; font-weight: 600; }
-.apple-btn:hover { background: #222 !important; border-color: #222 !important; }
+.apple-btn:hover { background: #1d1d1f !important; border-color: #1d1d1f !important; }
 </style>

@@ -36,7 +36,7 @@ build/
 ### VS Code ###
 .vscode/
 
-### 本地环境敏感配置（不要提交） ###
+### 鏈湴鐜鏁忔劅閰嶇疆锛堜笉瑕佹彁浜わ級 ###
 .env
 .env.*
 !.env.example
@@ -55,28 +55,28 @@ secrets/
 credentials.json
 service-account*.json
 
-# 运行日志（服务实时产生，不入库）
+# 杩愯鏃ュ織锛堟湇鍔″疄鏃朵骇鐢燂紝涓嶅叆搴擄級
 cloud/logs/
 *.log
 
-# 系统与构建产物
+# 绯荤粺涓庢瀯寤轰骇鐗?
 .DS_Store
 Thumbs.db
 desktop.ini
 *.swp
 
-# 本地端到端验证产物（截图等，不入库）
+# 鏈湴绔埌绔獙璇佷骇鐗╋紙鎴浘绛夛紝涓嶅叆搴擄級
 .verify-out/
 
-# Python 运行时产物
+# Python 杩愯鏃朵骇鐗?
 __pycache__/
 *.pyc
 
-# 训练缓存与冻结数据集（构建/运行时生成，不入库）
+# 璁粌缂撳瓨涓庡喕缁撴暟鎹泦锛堟瀯寤?杩愯鏃剁敓鎴愶紝涓嶅叆搴擄級
 training/unsloth_compiled_cache/
 training/data/_frozen/
 
-# AI 助手工具目录（非业务代码，不入库）
+# AI 鍔╂墜宸ュ叿鐩綍锛堥潪涓氬姟浠ｇ爜锛屼笉鍏ュ簱锛?
 .codebuddy/
 .claude/
 .agents/
@@ -85,14 +85,15 @@ training/data/_frozen/
 .zwork/
 skills-lock.json
 ai-gateway/metrics/
-# Prometheus /metrics 抓取鉴权 token（真实值与根 .env 的 GATEWAY_METRICS_TOKEN 同值）
+# Prometheus /metrics 鎶撳彇閴存潈 token锛堢湡瀹炲€间笌鏍?.env 鐨?GATEWAY_METRICS_TOKEN 鍚屽€硷級
 monitoring/prometheus/metrics_token
 *.tmp
 
-# 文档目录与办公文档（严禁上传）
+# 鏂囨。鐩綍涓庡姙鍏枃妗ｏ紙涓ョ涓婁紶锛?
 docs/
 out/
 reports/
+鎶€鏈紑鍙戞枃妗?
 *.doc
 *.docx
 *.pdf
@@ -101,7 +102,7 @@ reports/
 *.xls
 *.xlsx
 
-# 临时探针、基准与验证脚本
+# 涓存椂鎺㈤拡銆佸熀鍑嗕笌楠岃瘉鑴氭湰
 .probe*
 probe*
 probe*.mjs
@@ -110,4 +111,55 @@ verify-*.mjs
 patch-*.mjs
 pull-*.mjs
 *.mjs.tmp
+
+# 浼氳瘽绾т复鏃?鎺㈤拡鑴氭湰涓庝复鏃舵暟鎹紙涓嶅叆搴擄級
+cold-q.py
+conc-q.py
+seed.json
+.zcode/tmp/
+.archify/
+ai-gateway/data/traces/
+backend/uploads/
+
+# 杩愯鏃ュ織涓庤浆鍙戦毀閬撹緭鍑猴紙涓嶅叆搴擄級
+ll_be_log*.txt
+vite-dev.err
+vite-dev.out
+cf-tunnel.log
+cf-tunnel.out
+*.log.*
+
+# 鑴氭湰浜嬫晠鍨冨溇鏂囦欢锛堥噸瀹氬悜澶辫浜х墿锛屽彧鎺掗櫎涓嶅垹锛?
+$n
+$m[1]]
+m[1])
+m[[]1]]
+NOW()
+0.30.0
+0x1F300]
+1)
+3)
+5
+100
+-p
+'2026-11-09
+'2026-11-10
+''''2026-11-09
+{if(re.test(l)){n++
+frontend/src/$null
+frontend/src/{})
+$null
+{})
+
+# 鏈湴鎺㈤拡/鍘嬫祴涓存椂鑴氭湰锛堜笉鍏ュ簱锛?
+err.py
+tk.py
+tk2.py
+[0-9]*-q.py
 probe-out.txt
+mm*.ps1
+mm*.py
+mm-*.txt
+mm-*.json
+m[[]1]
+m[]1[]]

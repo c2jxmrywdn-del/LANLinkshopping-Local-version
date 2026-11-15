@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { cartApi } from '../api'
+import { trackEvent } from '../utils/analytics'
 
 export const useCartStore = defineStore('cart', {
   state: () => ({ items: [] }),
@@ -10,7 +11,11 @@ export const useCartStore = defineStore('cart', {
   },
   actions: {
     async load() { this.items = await cartApi.list() || [] },
-    async add(prodId, quantity) { await cartApi.add({ prodId, quantity }); await this.load() },
+    async add(prodId, quantity) {
+      await cartApi.add({ prodId, quantity })
+      await this.load()
+      trackEvent('add_to_cart', { prodId, quantity: Number(quantity) || 1 })
+    },
     async remove(cartId) { await cartApi.remove(cartId); await this.load() },
     async setQty(cartId, q) { await cartApi.updateQty(cartId, q); await this.load() },
     async setChecked(cartId, checked) { await cartApi.setChecked(cartId, checked ? 1 : 0); const item=this.items.find(i=>i.cartId===cartId); if(item) item.checked=checked ? 1 : 0 },

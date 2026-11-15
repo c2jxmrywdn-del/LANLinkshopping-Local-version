@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 import java.util.Map;
@@ -23,6 +24,9 @@ import java.util.stream.Collectors;
  */
 @Component
 public class AlipaySigner {
+
+    /** 支付宝 RSA2 私钥的最低强度（位） */
+    private static final int MIN_RSA_BITS = 2048;
 
     /** 组装待签名串（供签名与单测断言） */
     public String canonical(Map<String, String> params) {
@@ -46,22 +50,32 @@ public class AlipaySigner {
             return Base64.getEncoder().encodeToString(sig.sign());
         } catch (BusinessException e) {
             throw e;
+        } catch (IllegalStateException e) {
+            // 弱密钥是配置问题，不能被下面统一包装成"格式错误"，否则排查方向被误导
+            throw e;
         } catch (Exception e) {
             throw new BusinessException("支付宝私钥签名失败，请检查应用私钥格式（PKCS#8）");
         }
     }
 
-    /** 载入 PKCS#8 私钥：允许带 PEM 头尾、允许换行与空白 */
+    /** 载入 PKCS#8 私钥：允许带 PEM 头尾、允许换行与空白；RSA 强度低于 2048 位直接拒绝 */
     public PrivateKey loadPrivateKey(String pem) {
+        PrivateKey key;
         try {
             String normalized = pem
                     .replace("-----BEGIN PRIVATE KEY-----", "")
                     .replace("-----END PRIVATE KEY-----", "")
                     .replaceAll("\\s", "");
             byte[] der = Base64.getDecoder().decode(normalized);
-            return KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(der));
+            key = KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(der));
         } catch (Exception e) {
             throw new BusinessException("支付宝私钥无法解析，请提供 PKCS#8 格式的应用私钥");
         }
+        // RSA-1024 的 SHA256withRSA 签名已不具备现实安全强度，且支付宝侧早已要求 2048 位
+        RSAPrivateKey rsa = (RSAPrivateKey) key;
+        if (rsa.getModulus().bitLength() < MIN_RSA_BITS) {
+            throw new IllegalStateException("支付宝私钥必须≥2048位");
+        }
+        return key;
     }
 }

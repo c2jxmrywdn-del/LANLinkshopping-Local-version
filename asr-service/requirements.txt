@@ -1,0 +1,7 @@
+# 国内网络环境使用阿里云 PyPI 镜像加速构建；如需官方源删除首行即可。
+--index-url https://mirrors.aliyun.com/pypi/simple/
+fastapi==0.115.14
+uvicorn[standard]==0.34.3
+pydantic==2.11.7
+# faster-whisper 1.2.1 = CTranslate2 推理（不依赖 torch）；conversion extra 才会拉 torch，此处不用。
+faster-whisper==1.2.1

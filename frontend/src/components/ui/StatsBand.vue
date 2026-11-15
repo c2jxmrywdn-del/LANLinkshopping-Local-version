@@ -344,4 +344,13 @@ onBeforeUnmount(() => {
 @container stats (max-width: 300px) {
   .sb-stats { grid-template-columns: 1fr; }
 }
+
+/* 深色模式补层：仅行情板块引用（引用面已核），文字与 tone 色翻亮 */
+[data-theme='dark'] .sb-title, [data-theme='dark'] .sb-label, [data-theme='dark'] .sb-number { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .sb-stat { --ink: var(--ll-ink, #e8edf5); --soft: rgba(255, 255, 255, .16); }
+[data-theme='dark'] .sb-stat.tone-high { --ink: #ff7161; --soft: rgba(255, 113, 97, .26); }
+[data-theme='dark'] .sb-stat.tone-low { --ink: #3E9C82; --soft: rgba(62, 156, 130, .26); }
+[data-theme='dark'] .sb-stat.tone-range { --ink: #D9B36C; --soft: rgba(217, 179, 108, .24); }
+[data-theme='dark'] .sb-stat.tone-changes { --ink: var(--ll-ink, #e8edf5); --soft: rgba(255, 255, 255, .18); }
+[data-theme='dark'] .sb[data-layout='divided'] .sb-stat:not(:first-child)::before { background: rgba(255, 255, 255, .10); }
 </style>

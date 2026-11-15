@@ -42,6 +42,10 @@ public class NotifyOutboxWorker {
     int drain(LocalDateTime now) {
         int sent = 0;
         for (NotifyOutbox row : outbox.claimDue(now, BATCH_SIZE)) {
+            // 先认领再投递：多副本下只有一方能把 status 0→3，其余跳过，避免重复通知
+            if (outbox.claimOne(row.getId()) == 0) {
+                continue;
+            }
             try {
                 rabbit.convertAndSend(NotifyRabbitConfig.EXCHANGE, NotifyRabbitConfig.ROUTING_KEY,
                         row.getPayload());

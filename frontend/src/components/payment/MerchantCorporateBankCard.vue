@@ -6,11 +6,11 @@
           <Building2 :size="20" class="text-sky-600" />
         </div>
         <div>
-          <h4 class="bank-name">{{ bankInfo.bankName || '中国工商银行股份有限公司深圳科技园支行' }}</h4>
-          <span class="sub-label">供货商认证对公收款专用账户</span>
+          <h4 class="bank-name">{{ bankInfo.bankName || '对公收款账户' }}</h4>
+          <span class="sub-label">{{ hasAccount ? '供货商认证对公收款专用账户' : '平台暂未配置对公收款账户' }}</span>
         </div>
       </div>
-      <div class="verified-pill">
+      <div v-if="hasAccount" class="verified-pill">
         <ShieldCheck :size="13" class="mr-1 text-emerald-500" /> 已企业认证
       </div>
     </div>
@@ -66,13 +66,19 @@ const props = defineProps({
 
 const copied = ref(false)
 
-const formattedAccount = computed(() => {
-  const acc = props.bankInfo.bankAccount || props.bankInfo.bankAccountMasked || '6222 0240 0001 8899'
-  return acc
-})
+// 只有后端下发了真实账户才展示；绝不回退到硬编码的示例账号（会误导用户汇款到错误账户）
+const hasAccount = computed(() =>
+  Boolean(props.bankInfo?.bankAccount || props.bankInfo?.bankAccountMasked))
+
+const formattedAccount = computed(() =>
+  props.bankInfo?.bankAccount || props.bankInfo?.bankAccountMasked || '—')
 
 async function copyAccount() {
-  const text = (props.bankInfo.bankAccount || props.bankInfo.bankAccountMasked || '6222024000018899').replace(/\s+/g, '')
+  if (!hasAccount.value) {
+    message.warning('平台尚未配置对公收款账户，请联系客服')
+    return
+  }
+  const text = (props.bankInfo.bankAccount || props.bankInfo.bankAccountMasked).replace(/\s+/g, '')
   try {
     await navigator.clipboard.writeText(text)
     copied.value = true

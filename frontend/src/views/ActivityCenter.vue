@@ -272,8 +272,12 @@
               <p class="gc-desc">{{ c.description }}</p>
               <div class="gc-foot">
                 <span class="gc-valid">{{ validText(c) }}</span>
-                <button v-if="c.type === 'register'" type="button" class="gc-btn"
-                        :disabled="c.joined || !!actingId" @click.stop="join(c)">{{ actingId === c.campaignId ? '提交中…' : (c.joined ? '已参与' : '立即参与') }}</button>
+                <!-- 注册有礼：参与活动 + 邀请好友（邀请链接/二维码从这里接入） -->
+                <div v-if="c.type === 'register'" class="gc-actions">
+                  <button type="button" class="gc-btn ghost" @click.stop="openInvite(c)">邀请好友</button>
+                  <button type="button" class="gc-btn"
+                          :disabled="c.joined || !!actingId" @click.stop="join(c)">{{ actingId === c.campaignId ? '提交中…' : (c.joined ? '已参与' : '立即参与') }}</button>
+                </div>
                 <span v-else class="gc-auto">支付后自动参与</span>
               </div>
             </div>
@@ -296,6 +300,27 @@
       :icon-magnification="62"
       @select="handleDockSelect"
     />
+
+    <!--
+      邀请好友（从「注册有礼」卡片进入）：
+      复用个人中心同一个 InviteLinkCard —— 专属链接不可篡改、二维码与链接同源、
+      支持复制/下载/重新生成/有效期与次数限制。身份规则由服务端决定：
+      任何角色在前台生成的邀请，被邀请人注册后都是普通用户（买家）。
+    -->
+    <a-modal
+      v-model:open="inviteOpen"
+      :title="inviteTitle"
+      :footer="null"
+      :width="560"
+      centered
+      destroy-on-close
+      class="invite-modal"
+    >
+      <p class="invite-modal-hint">
+        分享专属链接或二维码，好友通过你的邀请注册后，系统自动记录邀请关系并发放「注册有礼」积分。
+      </p>
+      <InviteLinkCard :size="168" />
+    </a-modal>
   </div>
 </template>
 
@@ -337,6 +362,7 @@ import AppleDynamicIsland from '../components/ui/AppleDynamicIsland.vue'
 import AppleCardsCarousel from '../components/ui/AppleCardsCarousel.vue'
 import AppleGlassCard from '../components/ui/AppleGlassCard.vue'
 import AppleDock from '../components/ui/AppleDock.vue'
+import InviteLinkCard from '../components/invite/InviteLinkCard.vue'
 
 const router = useRouter()
 const cart = useCartStore()
@@ -451,7 +477,8 @@ const carouselProducts = computed(() => {
       badge: p.sales > 30 ? '爆款推荐' : '现货速发',
       src: resolveStorageUrl(p.coverUrl),
       price: p.price,
-      originalPrice: (Number(p.price) * 1.15).toFixed(2),
+      // 划线价必须来自后端字段；前端凭空 ×1.15 属于虚构原价（价格欺诈风险）
+      originalPrice: p.originalPrice ?? p.marketPrice ?? null,
       sales: p.sales,
       stock: p.stock,
       content: p.description || `本商品为平台官方认证直发正品。严格遵循工业与商业采购质量检测标准，支持企业大批量直采、增值税专用发票（13%）开具及 30-60 天企业信用账期月结。`,
@@ -469,6 +496,7 @@ const carouselProducts = computed(() => {
   return [
     {
       id: 101,
+      isPlaceholder: true,
       category: '智能工业互联',
       title: '高精度工业网关与边缘采集终端',
       tagline: '毫秒级工业现场多总线协议采集，IP68 防护，低功耗稳定运行。',
@@ -484,6 +512,7 @@ const carouselProducts = computed(() => {
     },
     {
       id: 102,
+      isPlaceholder: true,
       category: '企业生产力装备',
       title: '极速雷电 4 多屏图形工作站扩展坞',
       tagline: '单线拓展三屏 4K 60Hz 视界，航天级铝合金一体散热机身。',
@@ -499,6 +528,7 @@ const carouselProducts = computed(() => {
     },
     {
       id: 103,
+      isPlaceholder: true,
       category: '商业办公生态',
       title: '人体工学自适应双电机静音升降桌',
       tagline: '德国 TÜV 认证安全气压与防撞传感器，全行程超静音双电机。',
@@ -565,7 +595,8 @@ const islandData = computed(() => {
 
 function handleIslandAction() {
   if (islandData.value.orderNo) {
-    router.push('/order/detail/' + islandData.value.orderNo)
+    // 路由表定义的是 /orders/:orderNo（OrderDetail.vue）；旧路径 /order/detail/... 会落到 404
+    router.push('/orders/' + encodeURIComponent(islandData.value.orderNo))
   } else if (cart.count > 0) {
     router.push('/cart')
   } else {
@@ -606,8 +637,12 @@ function handleDockSelect(item) {
   }
 }
 
-// 真实购物车加入动作
+// 真实购物车加入动作（兜底展示卡不可交易：它们只是营销占位，id 不对应真实商品）
 async function handleAddToCart(card) {
+  if (card?.isPlaceholder) {
+    message.info('该商品为展示占位，请从商城选购真实商品')
+    return
+  }
   try {
     await cart.add(card.id, 1)
     message.success(`已成功将【${card.title}】加入购物车`)
@@ -617,6 +652,10 @@ async function handleAddToCart(card) {
 }
 
 function handleProductBuy(card) {
+  if (card?.isPlaceholder) {
+    message.info('该商品为展示占位，请从商城选购真实商品')
+    return
+  }
   router.push('/product/' + card.id)
 }
 
@@ -685,6 +724,22 @@ function requireLogin() {
 
 // 领取/参与请求中的活动 ID：防抖守卫，请求期间按钮禁用、重复点击直接忽略
 const actingId = ref(null)
+
+// ===== 邀请好友（从「注册有礼」卡片进入）=====
+const inviteOpen = ref(false)
+const inviteTitle = ref('邀请好友注册')
+
+/**
+ * 打开邀请弹窗。
+ *
+ * <p>必须登录：邀请码绑定在邀请人账号下，未登录无法生成；
+ * 未登录时引导去登录并回跳活动页，避免弹出空卡片。
+ */
+function openInvite(c) {
+  if (!logged()) return requireLogin()
+  inviteTitle.value = c?.title ? `邀请好友 · ${c.title}` : '邀请好友注册'
+  inviteOpen.value = true
+}
 
 async function claim(c) {
   if (!logged()) return requireLogin()
@@ -1416,6 +1471,24 @@ onUnmounted(() => clearInterval(timer))
 .gc-btn:disabled { cursor: not-allowed; opacity: .4; }
 .gc-auto { font-size: 12px; color: var(--ll-muted, #6e6e73); }
 
+/* 注册有礼：参与 + 邀请好友 两个动作并排；窄屏自动换行不挤压 */
+.gc-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.gc-btn.ghost {
+  color: #a56a0b;
+  background: rgba(201, 126, 18, .1);
+  border: 1px solid rgba(201, 126, 18, .35);
+}
+.gc-btn.ghost:hover { background: rgba(201, 126, 18, .16); box-shadow: 0 6px 16px rgba(201, 126, 18, .18); }
+[data-theme='dark'] .gc-btn.ghost { color: #e6a23c; border-color: rgba(230, 162, 60, .45); }
+
+/* 邀请弹窗 */
+.invite-modal-hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ll-muted, #6e6e73);
+}
+
 /* ===== 空态 ===== */
 .cp-empty { text-align: center; padding: 72px 0 88px; }
 .cp-empty-ico { display: grid; place-items: center; margin-bottom: 14px; color: var(--ll-muted, #6e6e73); }
@@ -1428,6 +1501,8 @@ onUnmounted(() => clearInterval(timer))
   .cp-hero-side { width: 100%; justify-content: space-between; }
   .cp-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
   .fk { grid-column: span 2; }
+  /* 注册有礼：窄屏让「邀请好友 / 立即参与」换行铺满，避免挤成两行窄按钮 */
+  .gc-actions { width: 100%; justify-content: flex-start; }
   .apple-glass-section { padding: 18px 16px; border-radius: 20px; }
 }
 @media (max-width: 560px) {

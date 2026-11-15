@@ -32,6 +32,9 @@ public class AlipayPayClient {
     public boolean configured() {
         PaymentProperties.Alipay a = props.getAlipay();
         if (props.isMock() || !notBlank(a.getAppId()) || !notBlank(a.getPrivateKey())) return false;
+        if (a.getSignType() != null && !"RSA2".equalsIgnoreCase(a.getSignType().trim())) {
+            throw new BusinessException("支付宝签名算法必须为 RSA2（SHA256withRSA，密钥>=2048位），禁止降级为不安全的 RSA-1024 算法");
+        }
         if (a.isCertMode()) {
             return notBlank(a.getAppCertPath()) && notBlank(a.getAlipayPublicCertPath()) && notBlank(a.getRootCertPath());
         }
@@ -63,11 +66,26 @@ public class AlipayPayClient {
 
     /** 电脑网站支付，返回自动提交表单 HTML（前端渲染后跳转支付宝） */
     public String pagePayForm(String orderNo, BigDecimal amountYuan, String subject, String notifyUrl, String returnUrl) {
+        return pagePayForm(orderNo, amountYuan, subject, notifyUrl, returnUrl, null);
+    }
+
+    /**
+     * 电脑网站支付（带渠道过期时间）。
+     *
+     * @param timeoutExpressMinutes 渠道单过期（分钟，支付宝 {@code timeout_express}），
+     *                              可为空=不限制；由门面按本地关单 deadline 计算并 clamp 到 [1,120]，
+     *                              保证支付宝收银台不会晚于本地关单仍可付款（P0-B）
+     */
+    public String pagePayForm(String orderNo, BigDecimal amountYuan, String subject, String notifyUrl,
+                              String returnUrl, Long timeoutExpressMinutes) {
         try {
             AlipayTradePagePayRequest req = new AlipayTradePagePayRequest();
             req.setNotifyUrl(notifyUrl);
             req.setReturnUrl(returnUrl);
+            String timeout = timeoutExpressMinutes == null ? ""
+                    : "\"timeout_express\":\"" + timeoutExpressMinutes + "m\",";
             req.setBizContent("{" +
+                    timeout +
                     "\"out_trade_no\":\"" + orderNo + "\"," +
                     "\"total_amount\":\"" + amountYuan.setScale(2, java.math.RoundingMode.HALF_UP) + "\"," +
                     "\"subject\":\"" + escape(subject) + "\"," +

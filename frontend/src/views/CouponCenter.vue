@@ -75,6 +75,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { Ticket } from 'lucide-vue-next'
 import { campaignApi } from '../api'
+import { useUserStore } from '../store/user'
 
 import DotPattern from '../components/ui/DotPattern.vue'
 import NumberTicker from '../components/ui/NumberTicker.vue'
@@ -99,7 +100,9 @@ const filteredCoupons = computed(() => {
   return coupons.value
 })
 
-const logged = () => !!localStorage.getItem('ll_user')
+// 登录态统一走 Pinia（localStorage 只是缓存快照，不能作为授权依据）
+const user = useUserStore()
+const logged = () => user.logged
 function requireLogin() {
   message.info('请先登录')
   router.push({ path: '/login', query: { redirect: '/coupons' } })

@@ -14,7 +14,8 @@ services:
     environment:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-lanlink_shopping}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-time-zone=+08:00
     ports:
       # 仅回环：供本地训练脚本（training/dataset_build.py）读取意图日志与语料，不暴露到局域网
       - "127.0.0.1:3306:3306"
@@ -188,6 +189,11 @@ services:
         mc anonymous set-json /policy.json local/products
         # 容量硬上限：防止本地磁盘被图片/日志写满；当前演示数据远低于上限
         mc quota set local/products --size 10Gi || echo "[minio-init] quota not supported by this mc build"
+        # 客服多模态媒体桶：私有（禁止匿名读），读取一律经后端 /support/media/** 中转。
+        # 35 天 ILM 是应用 30 天软删 + 7 天缓冲之后的第二道保险。
+        mc mb --ignore-existing local/support-media
+        mc anonymous set none local/support-media || echo "[minio-init] support-media anonymous none skipped"
+        mc ilm rule add --expire-days 35 local/support-media || echo "[minio-init] support-media ilm rule skipped"
         mc mirror --overwrite /images local/products/     # 幂等增量同步（含 ind/ 子目录）
         # 专用最小权限应用账号（P1-3）：root 只留在初始化与运维，后端走 lanlink-app 读写对象。
         # 不授 ListBucket——exists() 走 HeadObject；列举类运维动作走 root/mc。
@@ -318,6 +324,44 @@ services:
       - "--storage.path=/alertmanager"
     restart: unless-stopped
 
+  # 钉钉/企微告警送达适配器：Alertmanager ops-webhook receiver 指向这里（alertmanager.yml）。
+  # 镜像内无 shell（实测 /bin/sh 不存在）且不展开配置里的 $VAR（实测报 unsupported scheme ""），
+  # 故 webhook 地址由 compose 在宿主机侧渲染进下方 configs.content 后再挂载进容器；
+  # 真实地址只存根 .env（DINGTALK_WEBHOOK_URL），不进仓库也不进容器环境变量。
+  # 接收端 URL 规则：/dingtalk/<targets 名>/send，与下方 config.yml 的 ops 目标一一对应。
+  dingtalk-webhook-adapter:
+    image: docker.m.daocloud.io/timonwong/prometheus-webhook-dingtalk:latest@sha256:0323304b27801cb039719dbc0647274a593111dd7b5a5482e8fff77c7ddfd102
+    container_name: lanlink-dingtalk-webhook-adapter
+    logging: *default-logging
+    mem_limit: 64m
+    configs:
+      - source: dingtalk_adapter_config
+        target: /etc/prometheus-webhook-dingtalk/config.yml
+    ports:
+      # 仅回环：宿主机 curl 自测适配器 /dingtalk/ops/send 用；容器内走服务名 8060
+      - "127.0.0.1:8060:8060"
+    restart: unless-stopped
+
+  # 飞书自建应用告警送达适配器：Alertmanager ops-feishu receiver 指向这里（alertmanager.yml）。
+  # 凭据经 configs 宿主机侧渲染进容器（与钉钉适配器同纪律：真实值只存根 .env，不进仓库也不进容器环境变量）。
+  # FEISHU_CHAT_ID 为告警群 chat_id：先把应用机器人拉进群，curl 127.0.0.1:8061/feishu/health
+  # 可列出群与 chat_id，回填根 .env 后 docker compose up -d feishu-webhook-adapter 重建生效。
+  feishu-webhook-adapter:
+    build:
+      context: ./monitoring/feishu-adapter
+      dockerfile: Dockerfile
+    image: lanlink-feishu-webhook-adapter:local
+    container_name: lanlink-feishu-webhook-adapter
+    logging: *default-logging
+    mem_limit: 64m
+    configs:
+      - source: feishu_adapter_config
+        target: /etc/lanlink-feishu/config.env
+    ports:
+      # 仅回环：宿主机 curl 自测 /feishu/health、/feishu/ops/send 用；容器内走服务名 8061
+      - "127.0.0.1:8061:8061"
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -330,7 +374,7 @@ services:
       # 容器默认 UTC 会使 LocalDate.now() 在北京时间 0-8 点落到前一天，签到/活动时间窗整体偏移；
       # 显式固化 JVM 时区（启动类 TimeZone.setDefault 为代码侧兜底）
       TZ: Asia/Shanghai
-      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -Xss512k -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
+      JAVA_OPTS: "-XX:MaxRAMPercentage=60 -Xss512k -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -Djava.net.preferIPv4Stack=true -Dnetworkaddress.cache.ttl=10"
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-lanlink_shopping}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
       SPRING_DATASOURCE_USERNAME: root
@@ -351,10 +395,59 @@ services:
       SUPPORT_AI_THINKING: ${SUPPORT_AI_THINKING:-true}
       LANLINK_DEMO_DATA_ENABLED: ${LANLINK_DEMO_DATA_ENABLED:-true}
       LANLINK_VERIFY_CODE_DEMO_MODE: "true"
-      LANLINK_PAYMENT_MOCK: "true"
+      LANLINK_PAYMENT_MOCK: ${LANLINK_PAYMENT_MOCK:-true}
+      # ---- Stripe 国际支付（联调 / 生产真实渠道）----
+      # 说明：StripePayClient.configured() 要求 !isMock()，因此真实 Stripe 校验必须同时把
+      #       LANLINK_PAYMENT_MOCK 置 false；否则 /payment/create 会以「通道未配置（或处于 mock 模式）」拒绝。
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-cny}
       # ---- AI 专用环境变量组（外部大模型 API Key，仅 AI 调用；留空=渠道禁用回退规则引擎）----
-      AI_MIMO_API_KEY: ${AI_MIMO_API_KEY:-}
+      # 密钥面拆分（B3）：后端出站文本渠道只读 AI_OUTBOUND_MIMO_API_KEY（留空=渠道禁用）；
+      # 感知/ASR 的 AI_MIMO_API_KEY、AI_ASR_API_KEY 属 ai-gateway 进程，后端不注入。
+      AI_OUTBOUND_MIMO_API_KEY: ${AI_OUTBOUND_MIMO_API_KEY:-}
       AI_MIMO_BASE_URL: ${AI_MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      # ---- 智能客服多模态：感知与生图渠道（Key 只在 .env，不落代码）----
+      AI_MIMO_CHAT_MODEL: ${AI_MIMO_CHAT_MODEL:-mimo-v2.6-flash}
+      AI_MIMO_TTS_MODEL: ${AI_MIMO_TTS_MODEL:-mimo-v2.5-tts}
+      AI_WANX_API_KEY: ${AI_WANX_API_KEY:-}
+      AI_WANX_BASE_URL: ${AI_WANX_BASE_URL:-https://maas.qianwenaiapi.com/compatible-mode/v1}
+      AI_WANX_ANTHROPIC_BASE_URL: ${AI_WANX_ANTHROPIC_BASE_URL:-https://maas.qianwenaiapi.com/apps/anthropic}
+      AI_WANX_IMAGE_MODEL: ${AI_WANX_IMAGE_MODEL:-qwen-image-2.1-turbo}
+      AI_WANX_IMAGE_MODEL_PRO: ${AI_WANX_IMAGE_MODEL_PRO:-qwen-image-2.1-pro}
+      AI_WANX_IMAGE_MODEL_MT: ${AI_WANX_IMAGE_MODEL_MT:-qwen-mt-image-2.0}
+      AI_WANX_BUDGET_CNY: ${AI_WANX_BUDGET_CNY:-200}
+      # ---- 字段加密 JWE（RSA-2048 + A256GCM）：开发环境用环境变量托管，生产应换 KMS/密钥库 ----
+      LANLINK_CRYPTO_SECRET: ${LANLINK_CRYPTO_SECRET:-}
+      LANLINK_CRYPTO_JWE_ENABLED: ${LANLINK_CRYPTO_JWE_ENABLED:-true}
+      LANLINK_CRYPTO_JWE_REQUIRED: ${LANLINK_CRYPTO_JWE_REQUIRED:-false}
+      LANLINK_CRYPTO_JWE_ACTIVE_KID: ${LANLINK_CRYPTO_JWE_ACTIVE_KID:-}
+      LANLINK_CRYPTO_JWE_ACTIVE_PRIVATE_KEY: ${LANLINK_CRYPTO_JWE_ACTIVE_PRIVATE_KEY:-}
+      LANLINK_CRYPTO_JWE_ACTIVE_PUBLIC_KEY: ${LANLINK_CRYPTO_JWE_ACTIVE_PUBLIC_KEY:-}
+      LANLINK_CRYPTO_MIN_RSA_BITS: ${LANLINK_CRYPTO_MIN_RSA_BITS:-2048}
+      # ---- 客服媒体：私有桶、保留期、配额与预签名来源 ----
+      LANLINK_S3_SUPPORT_BUCKET: ${LANLINK_S3_SUPPORT_BUCKET:-support-media}
+      LANLINK_S3_PRESIGN_ORIGINS: ${LANLINK_S3_PRESIGN_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      SUPPORT_MEDIA_RETENTION_DAYS: ${SUPPORT_MEDIA_RETENTION_DAYS:-30}
+      SUPPORT_MEDIA_MAX_IMAGE_MB: ${SUPPORT_MEDIA_MAX_IMAGE_MB:-10}
+      SUPPORT_MEDIA_MAX_AUDIO_MB: ${SUPPORT_MEDIA_MAX_AUDIO_MB:-10}
+      SUPPORT_MEDIA_MAX_VIDEO_MB: ${SUPPORT_MEDIA_MAX_VIDEO_MB:-20}
+      SUPPORT_MEDIA_MAX_DOC_MB: ${SUPPORT_MEDIA_MAX_DOC_MB:-20}
+      SUPPORT_MEDIA_HOURLY_LIMIT: ${SUPPORT_MEDIA_HOURLY_LIMIT:-20}
+      SUPPORT_MEDIA_SESSION_LIMIT: ${SUPPORT_MEDIA_SESSION_LIMIT:-30}
+      SUPPORT_MEDIA_MESSAGE_LIMIT: ${SUPPORT_MEDIA_MESSAGE_LIMIT:-5}
+      SUPPORT_ASR_ENGINE: ${SUPPORT_ASR_ENGINE:-mimo}
+      # ---- 营销图生成（万相）：默认开启；额度不足会返回可行动错误 ----
+      MARKETING_IMAGE_ENABLED: ${MARKETING_IMAGE_ENABLED:-true}
+      MARKETING_IMAGE_UNIT_COST_MICROS: ${MARKETING_IMAGE_UNIT_COST_MICROS:-220000}
+      # 客服语音统一音色与风格：服务端固定，客户端无法覆盖。
+      # 刻意留空：中文默认值经 Windows/.env 传递极易被 GBK 乱码破坏（实测「茉莉」变成「閼煎甯€」），
+      # MiMo 收到非法音色名直接 HTTP 400 → 前端「朗读功能异常」。
+      # 留空后由 SupportTtsService 的内置常量（DEFAULT_VOICE / DEFAULT_STYLE，源码 UTF-8 编译）兜底，
+      # 不经过环境变量，彻底规避编码问题。需要自定义时显式设成 ASCII 音色名即可。
+      SUPPORT_TTS_VOICE: ${SUPPORT_TTS_VOICE:-}
+      SUPPORT_TTS_STYLE: ${SUPPORT_TTS_STYLE:-}
       AI_QWEN_API_KEY: ${AI_QWEN_API_KEY:-}
       AI_QWEN_BASE_URL: ${AI_QWEN_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY:-}
@@ -388,6 +481,13 @@ services:
       AI_GATEWAY_ENABLED: ${AI_GATEWAY_ENABLED:-true}
       AI_GATEWAY_BASE_URL: ${AI_GATEWAY_BASE_URL:-http://lanlink-ai-gateway:8090/v1}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
+      # ---- 多模态 RAG（RAG-Anything）：独立索引，仅 backend 调用 ----
+      # 基址走服务名；密钥必须与 rag-service 的 RAG_INTERNAL_SECRET 同源，
+      # 否则 /ingest 与 /query 会被服务端 403 拒绝（fail-closed）。
+      RAG_SERVICE_BASE_URL: ${RAG_SERVICE_BASE_URL:-http://lanlink-rag-service:8093}
+      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:-lanlink-rag-internal}
+      RAG_INGEST_TIMEOUT_SECONDS: ${RAG_INGEST_TIMEOUT_SECONDS:-300}
+      RAG_QUERY_TIMEOUT_SECONDS: ${RAG_QUERY_TIMEOUT_SECONDS:-120}
       # 本地演示允许空值回退到现有默认；生产 profile 会 fail-fast。显式设置后可与 AI 网关轮换同值。
       INTERNAL_GATEWAY_SECRET: ${INTERNAL_GATEWAY_SECRET:-}
       AI_GATEWAY_MODEL: ${AI_GATEWAY_MODEL:-qwen2.5-7b}
@@ -400,6 +500,15 @@ services:
       # 关闭或网关不可达时客服自动回退 Java 直连检索，不影响可用性。
       AI_KB_MCP_ENABLED: ${AI_KB_MCP_ENABLED:-true}
       AI_GATEWAY_MCP_URL: ${AI_GATEWAY_MCP_URL:-http://lanlink-ai-gateway:8090/mcp}
+      # ---- P2 图像/文件理解扩容：视觉降级链门控与计量单价（本机无 GPU，本地腿默认关）----
+      AI_VISION_LOCAL_ENABLED: ${AI_VISION_LOCAL_ENABLED:-false}
+      AI_VISION_MICROS_PER_CALL: ${AI_VISION_MICROS_PER_CALL:-0}
+      AI_DOC_MICROS_PER_KCHAR: ${AI_DOC_MICROS_PER_KCHAR:-0}
+      SUPPORT_MEDIA_PDF_SCAN_PAGES: ${SUPPORT_MEDIA_PDF_SCAN_PAGES:-3}
+      # 感知兜底服务：后端直连本地 RapidOCR/faster-whisper（OCR_SERVICE_URL/ASR_SERVICE_URL
+      # 是网关侧读取的同源变量；后端容器用带 _BASE_URL 后缀的独立名，避免同名双消费）
+      OCR_SERVICE_BASE_URL: ${OCR_SERVICE_URL:-http://ocr-service:8091}
+      ASR_SERVICE_BASE_URL: ${ASR_SERVICE_URL:-http://asr-service:8092}
       # ---- 外部嵌入/聊天通道（ollama|openai）：留空即沿用本地链路，填了才切换 ----
       AI_EMBED_PROVIDER: ${AI_EMBED_PROVIDER:-ollama}
       AI_EMBED_BASE_URL: ${AI_EMBED_BASE_URL:-}
@@ -410,9 +519,14 @@ services:
       AI_CHAT_MODEL: ${AI_CHAT_MODEL:-}
       # ---- 外部资讯自动抓取（RSS -> t_market_news -> Redis 向量库）----
       AI_EXTERNAL_ENABLED: ${AI_EXTERNAL_ENABLED:-true}
-      AI_EXTERNAL_FEEDS: ${AI_EXTERNAL_FEEDS:-https://www.ithome.com/rss/,https://www.36kr.com/feed,https://rss.huxiu.com/,https://feeds.a.dj.com/rss/RSSMarketsMain.xml}
+      # 权威媒体优先（央媒财经 + 行业垂直 + 国际大宗），顺序即抓取与配额优先级
+      AI_EXTERNAL_FEEDS: ${AI_EXTERNAL_FEEDS:-http://www.news.cn/fortune/news_fortune.xml,https://www.chinanews.com.cn/rss/finance.xml,https://www.chinanews.com.cn/rss/it.xml,https://www.36kr.com/feed,https://rss.huxiu.com/,https://www.ithome.com/rss/,https://feeds.a.dj.com/rss/RSSMarketsMain.xml}
       AI_EXTERNAL_LIMIT: ${AI_EXTERNAL_LIMIT:-30}
       AI_EXTERNAL_LLM_SUMMARY: ${AI_EXTERNAL_LLM_SUMMARY:-true}
+      # 时效窗（天）：只上架最近 N 天的资讯，0 = 不限；旧闻不得伪装成当日资讯
+      AI_EXTERNAL_MAX_AGE_DAYS: ${AI_EXTERNAL_MAX_AGE_DAYS:-7}
+      # 抓取周期（毫秒）：默认 15 分钟，与首页 120s 刷新配合保证「实时」
+      AI_EXTERNAL_POLL_MS: ${AI_EXTERNAL_POLL_MS:-900000}
       # ---- 意图理解增强（向量 KNN + 本地 7B 模型，失败回退关键词规则）----
       AI_INTENT_LLM_ENABLED: ${AI_INTENT_LLM_ENABLED:-true}
       AI_INTENT_VECTOR_MIN_SCORE: ${AI_INTENT_VECTOR_MIN_SCORE:-0.55}
@@ -495,11 +609,13 @@ services:
     tmpfs:
       - /tmp:noexec,nosuid,size=8m
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()\""]
-      interval: 15s
-      timeout: 5s
-      start_period: 5s
-      retries: 5
+      # 单线程 Python 服务 + 0.25 CPU 限额下，健康检查偶发 >5s（会被误判 unhealthy 并阻塞
+      # 后端启动），放宽超时/重试；服务本身 1s 内可响应，阈值放宽只是消除抖动。
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=8).read()\""]
+      interval: 20s
+      timeout: 12s
+      start_period: 20s
+      retries: 8
     restart: unless-stopped
 
   # 商品批量导入 workflow 服务（独立 Next.js 子应用，仓库 workflow/ 目录）。
@@ -543,6 +659,215 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ============================================================
+  # 客服多模态感知服务（仅容器内网，不映射宿主机端口）
+  #   ocr-service：RapidOCR + ONNX Runtime（无 torch/tf），图片/扫描件逐字识别
+  #   asr-service：faster-whisper medium int8 + ffmpeg，语音转写与视频抽帧/音轨
+  # 两者都不对外暴露，只由 ai-gateway 通过服务名调用。
+  # ============================================================
+  ocr-service:
+    build: ./ocr-service
+    image: lanlink-ocr-service:latest
+    container_name: lanlink-ocr-service
+    logging: *default-logging
+    mem_limit: 1g
+    environment:
+      LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  asr-service:
+    build: ./asr-service
+    image: lanlink-asr-service:latest
+    container_name: lanlink-asr-service
+    logging: *default-logging
+    environment:
+      ASR_MODEL: medium
+      ASR_MODEL_DIR: /app/models
+      HF_HOME: /app/models
+      # huggingface.co 在当前网络不可达（Errno 101 实测），权重下载走国内镜像端点；
+      # 首次下载落 asr-models 卷后离线可用。离线环境可预置权重并设 HF_HUB_OFFLINE=1。
+      HF_ENDPOINT: ${HF_ENDPOINT:-https://hf-mirror.com}
+      LOG_LEVEL: INFO
+    volumes:
+      - asr-models:/app/models
+    # medium int8 常驻约 1.5-2GB，抽帧解码峰值再叠加；低于 3G 容易被 OOM Kill
+    mem_limit: 6g
+    memswap_limit: 7g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ============================================================
+  # RAG-Anything 多模态知识检索服务（内部服务，仅供 backend 调用）。
+  #
+  # 为什么用 python:3.14 而不是官方推荐的 3.12：
+  #   raganything 的依赖声明里 MinerU 带 `python_version < "3.14"` 条件，
+  #   3.14 会自动跳过 torch + CUDA 13 整棵依赖树，site-packages 从 6.3GB 降到 334MB，
+  #   镜像从 6GB+ 降到 ~640MB。本机 GPU 仅剩 ~536MiB，装 GPU parser 既跑不动也白占磁盘。
+  #
+  # 为什么不用 GPU：显存被 llama-cpp(Qwen2.5-7B/VL) + ollama + 桌面应用占满，
+  # MinerU 的 GPU 模式需要数 GB，必然 OOM。本服务只做 CPU 侧的索引与向量检索，
+  # LLM/VLM/Embedding 全部复用 ai-gateway（那里有显存调度器）。
+  #
+  # 存储独立：LightRAG 1.4.16 的 Redis 只覆盖 KV 与 DocStatus，没有 vector 实现，
+  # 无法复用现有 aikb-idx（Redis HNSW），因此索引落在独立卷 rag-storage。
+  # ============================================================
+  rag-service:
+    build:
+      context: ./rag-service
+      dockerfile: Dockerfile
+    image: lanlink-rag-service:local
+    container_name: lanlink-rag-service
+    logging: *default-logging
+    # 仅绑回环：本服务只给 backend 用，不对公网暴露；本机调试用 127.0.0.1:8093。
+    ports:
+      - "127.0.0.1:8093:8093"
+    environment:
+      RAG_PORT: "8093"
+      RAG_WORKING_DIR: /data/rag_storage
+      # 复用 ai-gateway 的 OpenAI 兼容端点；容器名是 lanlink-ai-gateway（不是 ai-gateway）
+      RAG_LLM_BASE_URL: http://lanlink-ai-gateway:8090/v1
+      RAG_LLM_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env}
+      RAG_LLM_MODEL: qwen2.5-7b
+      RAG_VISION_MODEL: qwen2.5-vl
+      RAG_EMBED_MODEL: bge-m3
+      # 维度必须与既有 aikb 索引一致（bge-m3 = 1024），否则向量不可比
+      RAG_EMBED_DIM: "1024"
+      RAG_TOP_K: "20"
+      # 内部调用密钥：未配置时服务会拒绝 /ingest 与 /query（fail-closed）
+      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:-lanlink-rag-internal}
+    volumes:
+      - rag-storage:/data/rag_storage
+    # 只做 CPU 侧索引与检索；不吃 GPU，避免与 llama-cpp 抢显存
+    mem_limit: 3g
+    memswap_limit: 4g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8093/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      # 首次启动要加载 LightRAG 存储，给足冷启动时间
+      start_period: 60s
+    restart: unless-stopped
+
+  # ============================================================
+  # AI 网关（OpenAI 兼容 + 客服多模态感知路由）：统一由根 compose 编排。
+  #   - 定义迁移自 ai-gateway/docker-compose.yml（该文件保留 ollama/model-warmup/gpu-metrics
+  #     独立沙盒编排；网关本体并入本项目后 build/up 与 backend/asr-service 同一条命令链）。
+  #   - ollama 仍由 ai-gateway/docker-compose.yml 项目管理并常驻 shopping_default 网络，
+  #     服务名 ollama 在本网络可解析，故此处不再 depends_on（跨项目服务无法声明依赖）。
+  #   - 密钥注入：env_file 读根 .env（REDIS_PASSWORD 等），environment 显式覆盖 + 敏感变量
+  #     置空收敛爆炸半径——与独立编排逐项一致，重建后行为不变。
+  # ============================================================
+  ai-gateway:
+    build:
+      context: ./ai-gateway
+      dockerfile: Dockerfile
+    image: lanlink-ai-gateway:latest
+    container_name: lanlink-ai-gateway
+    logging: *default-logging
+    # 仅绑回环：网关自带 API Key 鉴权；后端容器经本网络以容器名访问
+    # （AI_GATEWAY_BASE_URL=http://lanlink-ai-gateway:8090/v1），本机调试用 127.0.0.1:8090。
+    ports:
+      - "127.0.0.1:8090:8090"
+    env_file:
+      - .env
+    environment:
+      PORT: "8090"
+      # 网关 API Key：与后端侧 AI_GATEWAY_API_KEY 同源（根 .env），后端与直连脚本带同一值。
+      GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
+      AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
+      INTERNAL_GATEWAY_SECRET: ${INTERNAL_GATEWAY_SECRET:-}
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8080}
+      GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
+      GATEWAY_RATE_LIMIT_PER_MIN: ${GATEWAY_RATE_LIMIT_PER_MIN:-120}
+      GATEWAY_RATE_LIMIT_BURST: ${GATEWAY_RATE_LIMIT_BURST:-30}
+      # ---- 客服多模态感知：本地 OCR / ASR 兜底服务（本网络服务名直连）----
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL:-http://ocr-service:8091}
+      ASR_SERVICE_URL: ${ASR_SERVICE_URL:-http://asr-service:8092}
+      # ASR 语音转写云通道独立密钥组（AI_ASR_*）：留空即静默走本地 faster-whisper（CPU），
+      # 与视觉/TTS 的 AI_MIMO_API_KEY、后端出站 AI_OUTBOUND_MIMO_API_KEY 互不耦合。
+      AI_ASR_API_KEY: ${AI_ASR_API_KEY:-}
+      AI_ASR_BASE_URL: ${AI_ASR_BASE_URL:-https://api.xiaomimimo.com/v1}
+      AI_ASR_MODEL: ${AI_ASR_MODEL:-mimo-v2.5-asr}
+      AI_MIMO_CHAT_MODEL: ${AI_MIMO_CHAT_MODEL:-mimo-v2.6-flash}
+      AI_MIMO_TTS_MODEL: ${AI_MIMO_TTS_MODEL:-mimo-v2.5-tts}
+      # P2：本地 qwen2.5-vl 腿开关（/v1/vision）。本机无 GPU（llama.cpp GPU 腿 5GB 口径不可载），
+      # 默认 false；仅多 GPU 部署显式开启。视觉降级链=MiMo 云视觉→本地腿(门控)→RapidOCR。
+      AI_VISION_LOCAL_ENABLED: ${AI_VISION_LOCAL_ENABLED:-false}
+      OLLAMA_BASE_URL: http://ollama:11434
+      LLM_MODEL: qwen2.5:0.5b
+      # 默认 llamacpp：AI 推理必须跑在 4070（llama-cpp router）。
+      # 历史默认 ollama = CPU 0.5B 兜底，会导致 AI 信息分析实际不在 GPU 上计算。
+      # 仅在 GPU 不可用的应急场景，显式设 LLM_BACKEND=ollama 才回落 CPU。
+      LLM_BACKEND: ${LLM_BACKEND:-llamacpp}
+      # 强约束：AI 信息分析等主推理必须跑 4070；GPU 不可用时明确报错，不静默降级 CPU。
+      LLM_REQUIRE_GPU: ${LLM_REQUIRE_GPU:-1}
+      LLAMA_CPP_URL: http://llama-cpp:8123
+      LLAMA_MODEL_TEXT: qwen2.5-7b
+      LLAMA_MODEL_VL: qwen2.5-vl
+      LLAMA_MODEL_CPU_ASSIST: qwen2.5-7b-cpu-assist
+      HARDWARE_LONG_TEXT_CHARS: "6000"
+      HARDWARE_GPU_MARGIN_MB: "200"
+      HARDWARE_VRAM_TEXT_MB: "6700"
+      HARDWARE_VRAM_CPU_ASSIST_MB: "6050"
+      HARDWARE_SWITCH_COOLDOWN_SEC: "120"
+      HARDWARE_RETURN_HYSTERESIS_MB: "500"
+      LLAMA_TIMEOUT: "240"
+      LLAMA_FAST_TIMEOUT: "20"
+      LLAMA_VISION_TIMEOUT: "300"
+      MODEL_PROBE_TIMEOUT: "6"
+      MODEL_PROBE_CACHE: "5"
+      MODEL_PROBE_COOLDOWN: "5"
+      MODEL_MANAGER_URL: ""
+      # ---- 共享 Redis 向量知识库（本网络 redis 服务；密码经 env_file 注入后 Python 侧拼装）----
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      KB_INDEX: aikb-idx
+      AI_EMBED_MODEL: ${AI_EMBED_MODEL:-bge-m3}
+      # 语义缓存/嵌入维度必须与嵌入模型一致（bge-m3=1024）。此前网关侧未注入该变量，
+      # SemanticCache 回落到硬编码 768，导致 Tier-2 语义缓存写入与命中全部被静默丢弃。
+      AI_EMBED_DIM: ${AI_EMBED_DIM:-1024}
+      AI_EMBED_TIMEOUT: "30"
+      KB_PATH: /app/kb_data/ecommerce_kb.json
+      SESSION_TOKEN_BUDGET: "12000"
+      HARDWARE_GPU_METRICS_FILE: /metrics/gpu.txt
+      # ---- env_file 爆炸半径收敛（A2③）：env_file 注入整个根 .env，但网关只用 REDIS_PASSWORD。
+      # environment 优先级高于 env_file，以下显式清空网关用不到的敏感变量，缩小万一出现
+      # 本地文件读取/信息回显类漏洞时可被外带的密钥面（新增密钥请在此补列）。
+      SPRING_DATASOURCE_PASSWORD: ""
+      MYSQL_ROOT_PASSWORD: ""
+      SUPPORT_SANDBOX_TOKEN: ""
+      MAIL_PASSWORD: ""
+      SUPPORT_PROXY_SECRET: ""
+      OUTBOUND_KEY_SECRET: ""
+    volumes:
+      - ./ai-gateway/metrics:/metrics:ro
+      # 训练旁路 trace（prompt/response 语料）持久化到宿主机 ai-gateway/data/traces
+      - ./ai-gateway/data:/app/data
+    extra_hosts:
+      # 仅保留宿主机解析；llama-cpp 已是本网络服务，不能映射到 host-gateway（会覆盖 DNS 名称）
+      - "host.docker.internal:host-gateway"
+    mem_limit: 512m
+    healthcheck:
+      # TCP 探活：只验证 8090 监听可用，避免 CPU 兜底期间长请求导致 HTTP 探针读超时误判
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 8090), 3).close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
@@ -574,6 +899,9 @@ services:
 volumes:
   mysql-data:
   backend-uploads:
+  asr-models:
+  # RAG-Anything 索引落盘（LightRAG 的 graph + NanoVectorDB 文件，独立于 aikb-idx）
+  rag-storage:
   redis-data:
   workflow-data:
   # 本地大模型 GGUF 权重（由 llama-model-init 从宿主机导入，避免 Windows bind mount 冷加载慢）
@@ -587,3 +915,21 @@ volumes:
   # Prometheus 时序数据与 Alertmanager 静默/通知状态
   prometheus-data:
   alertmanager-data:
+
+# 适配器配置内联下发（$VAR 由 compose 从根 .env 展开；镜像内无 shell 无法 envsubst）：
+# DINGTALK_WEBHOOK_URL 为钉钉「自定义机器人」webhook（含 access_token）；企微机器人可直用
+# https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx（payload 同为 text 兼容）。
+# 留空时占位 URL 兜底：适配器起得来、告警送达会失败，填好 .env 后 docker compose up -d 重建即生效。
+configs:
+  dingtalk_adapter_config:
+    content: |
+      targets:
+        ops:
+          url: ${DINGTALK_WEBHOOK_URL:-https://oapi.dingtalk.com/robot/send?access_token=REPLACE_ME_IN_DOTENV}
+  # 飞书自建应用凭据（cli_ 开头的 App ID + App Secret）与告警群 chat_id；FEISHU_CHAT_ID 留空时
+  # 适配器 /feishu/health 会列出机器人所在群，选群回填根 .env 后重建。
+  feishu_adapter_config:
+    content: |
+      FEISHU_APP_ID=${FEISHU_APP_ID:-}
+      FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-}
+      FEISHU_CHAT_ID=${FEISHU_CHAT_ID:-}

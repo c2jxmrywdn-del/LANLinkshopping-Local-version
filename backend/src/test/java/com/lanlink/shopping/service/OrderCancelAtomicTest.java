@@ -37,6 +37,7 @@ class OrderCancelAtomicTest {
     private MessageService messageService;
     private MembershipService membershipService;
     private com.lanlink.shopping.module.campaign.service.CampaignService campaignService;
+    private StockService stockService;
     private OrderService orderService;
 
     @BeforeEach
@@ -47,6 +48,7 @@ class OrderCancelAtomicTest {
         messageService = mock(MessageService.class);
         membershipService = mock(MembershipService.class);
         campaignService = mock(com.lanlink.shopping.module.campaign.service.CampaignService.class);
+        stockService = mock(StockService.class);
         orderService = new OrderService(
                 mock(CartMapper.class), productMapper, orderMapper, orderItemMapper,
                 mock(UserMapper.class), messageService, mock(IdentityService.class), mock(AuditService.class),
@@ -55,6 +57,8 @@ class OrderCancelAtomicTest {
                 mock(IdempotentService.class), mock(TamperGuardService.class),
                 campaignService,
                 mock(com.lanlink.shopping.module.risk.service.RiskEventService.class));
+        // P1-3：库存回补统一走 StockService（幂等），单测注入 mock 以断言委托参数
+        orderService.setStockService(stockService);
     }
 
     private Order pendingOrder() {
@@ -81,6 +85,7 @@ class OrderCancelAtomicTest {
         verify(orderMapper).cancelAtomic("ORD1");
         verify(orderItemMapper, never()).selectList(any());
         verify(productMapper, never()).restoreStockAtomic(any(), any());
+        verify(stockService, never()).restoreByOrder(any(), any(), any(), any(), any());
         verify(membershipService, never()).refundPoints(any(), any());
         verifyNoInteractions(campaignService);
         verifyNoInteractions(messageService);
@@ -102,7 +107,10 @@ class OrderCancelAtomicTest {
         assertDoesNotThrow(() -> orderService.cancel(7L, "ORD1"));
 
         verify(orderMapper).cancelAtomic("ORD1");
-        verify(productMapper).restoreStockAtomic(101L, 2);
+        // P1-3：库存回补委托 StockService（幂等），bizType=ORDER_CANCEL / bizNo=orderNo / orderNo 同源
+        verify(stockService).restoreByOrder(
+                eq(StockService.BIZ_ORDER_CANCEL), eq("ORD1"), eq("ORD1"), eq(7L), any());
+        verify(productMapper, never()).restoreStockAtomic(any(), any());
         verify(campaignService).releaseCoupon("ORD1");
         // 不再整实体写回：取消状态由原子 UPDATE 完成
         verify(orderMapper, never()).updateById(any(Order.class));
@@ -118,7 +126,23 @@ class OrderCancelAtomicTest {
 
         assertDoesNotThrow(() -> orderService.cancel(7L, "ORD1"));
         verify(orderMapper, never()).cancelAtomic(any());
-        verifyNoInteractions(productMapper, campaignService);
+        verifyNoInteractions(productMapper, campaignService, stockService);
+    }
+
+    @Test
+    void cancelRejectsFullyRefundedOrder() {
+        // P1-3 漏洞修复：order_status=5（已全额退款）不得再取消，否则 cancelAtomic 条件会放过它 → 二次回补库存
+        Order refunded = pendingOrder();
+        refunded.setOrderStatus(5);
+        refunded.setPayStatus(2);
+        when(orderMapper.selectById("ORD1")).thenReturn(refunded);
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> orderService.cancel(7L, "ORD1"));
+        assertTrue(ex.getMessage().contains("全额退款") || ex.getMessage().contains("已退款"));
+        // 不得触达任何取消/回补副作用（库存/积分/券/消息）；P1-3：也不得调用幂等回补入口
+        verify(orderMapper, never()).cancelAtomic(any());
+        verify(stockService, never()).restoreByOrder(any(), any(), any(), any(), any());
+        verifyNoInteractions(productMapper, campaignService, membershipService, messageService);
     }
 
     @Test

@@ -1,5 +1,13 @@
 <template>
-  <a-config-provider :theme="{ algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm, token: themeTokens }">
+  <!--
+    locale 必须显式绑定：antd 组件内置文案（分页「10 / page」「共 x 条」、空态、日期选择器等）
+    不受项目 i18n 字典控制，只认 ConfigProvider 的 locale。
+    历史缺陷：此前只绑 theme 未绑 locale，切到中文后分页仍显示英文「10 / page」。
+  -->
+  <a-config-provider
+    :locale="antdLocale"
+    :theme="{ algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm, token: themeTokens }"
+  >
     <!-- 页面切换过渡：out-in + 上浮淡入，路由跳转更顺滑（尊重 prefers-reduced-motion） -->
     <router-view v-slot="{ Component, route }">
       <Transition name="page" mode="out-in" @after-enter="onPageEntered">
@@ -14,16 +22,28 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { theme } from 'ant-design-vue'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
+import enUS from 'ant-design-vue/es/locale/en_US'
+import { locale } from './i18n'
 import SplashScreen from './components/SplashScreen.vue'
 import CookieConsent from './components/CookieConsent.vue'
 import { useUserStore } from './store/user'
 import { useSettingsStore } from './store/settings'
+// 豁免封装收口：fetchCsrfToken 是 request.js 显式导出的引导期接口（封装层自身公共面），非绕行直连
 import { fetchCsrfToken } from './api/request'
 
 const showSplash = ref(false)
 watch(showSplash, (v) => { document.body.style.overflow = v ? 'hidden' : '' }, { immediate: true })
+
+/**
+ * antd 组件语言包：跟随项目 locale 实时切换。
+ *
+ * <p>项目 i18n 只管自有文案（`t()` 字典 + DOM 扫描），antd 的内置文案走自己的
+ * ConfigProvider locale，两者必须显式同步，否则会出现「页面中文、分页英文」的混排。
+ */
+const antdLocale = computed(() => (String(locale.value || '').toLowerCase().startsWith('en') ? enUS : zhCN))
 
 // AntD 全局设计令牌：统一圆角/字号/控件高度/动效曲线（21st.dev 式克制精致）
 // colorBgLayout 透明：让 body 的 --ll-page 令牌成为唯一页面底色，深色模式自动一致

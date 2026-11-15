@@ -11,11 +11,13 @@ import com.lanlink.shopping.integration.event.OrderPaidEvent;
 import com.lanlink.shopping.integration.event.OrderNotificationEvent;
 import com.lanlink.shopping.integration.pricing.MemberEligibility;
 import com.lanlink.shopping.integration.pricing.MemberTierPolicy;
+import com.lanlink.shopping.integration.pricing.OrderAmounts;
 import com.lanlink.shopping.integration.pricing.PricingFacade;
 import com.lanlink.shopping.integration.pricing.TierPricing;
 import com.lanlink.shopping.module.campaign.service.CampaignService;
 import com.lanlink.shopping.module.membership.constant.MemberRule;
 import com.lanlink.shopping.mapper.*;
+import com.lanlink.shopping.payment.conflict.dto.SettlePaidResult;
 import com.lanlink.shopping.vo.OrderDetailVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -54,6 +56,26 @@ public class OrderService {
     private final TamperGuardService tamperGuardService;
     private final com.lanlink.shopping.module.campaign.service.CampaignService campaignService;
     private final com.lanlink.shopping.module.risk.service.RiskEventService riskEventService;
+    /**
+     * 运费报价（P1-5 MVP）：可选注入——单测/降级环境缺省时运费按 0（等价旧行为，绝不阻断下单）。
+     * 报价口径见 FreightQuoteService：fixed/piece/region 三模式，包邮基数=goods_amount。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FreightQuoteService freightQuoteService;
+
+    public void setFreightQuoteService(FreightQuoteService freightQuoteService) {
+        this.freightQuoteService = freightQuoteService;
+    }
+    /**
+     * 库存幂等回补（P1-3）：可选注入（单测缺省时相关路径 fail-fast，避免退化成非幂等直写；
+     * 生产由 Spring 注入）。统一走 {@link StockService}，由 t_stock_flow 唯一键保证一次业务事件只补一次。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StockService stockService;
+
+    public void setStockService(StockService stockService) {
+        this.stockService = stockService;
+    }
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private AddressMapper addressMapper;
     /** 直播归因：下单时校验并落 liveId（可选注入，缺省时直播归因降级关闭） */
@@ -61,6 +83,13 @@ public class OrderService {
     private com.lanlink.shopping.mapper.LiveRoomMapper liveRoomMapper;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.lanlink.shopping.mapper.LiveProductMapper liveProductMapper;
+    /** RFQ 模块（可选注入：缺省时普通下单不受影响，checkoutFromQuote 会明确报模块未启用） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.module.rfq.mapper.RfqMapper rfqMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.module.rfq.mapper.RfqQuoteMapper rfqQuoteMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.lanlink.shopping.module.rfq.mapper.RfqEventMapper rfqEventMapper;
 
     public void setAddressMapper(AddressMapper addressMapper) {
         this.addressMapper = addressMapper;
@@ -87,6 +116,16 @@ public class OrderService {
     /** 支付方式白名单（需求 1/3：与前端 validationRules.js 同契约，见 ValidationRules） */
     private static final java.util.Set<String> ALLOWED_PAY_TYPES =
             com.lanlink.shopping.common.ValidationRules.ALLOWED_PAY_TYPES;
+
+    /** 发票抬头类型白名单（P1-5：与前端 validationRules.js 同契约） */
+    private static final java.util.Set<String> ALLOWED_INVOICE_TITLE_TYPES =
+            com.lanlink.shopping.common.ValidationRules.ALLOWED_INVOICE_TITLE_TYPES;
+    /** 发票内容类型白名单（P1-5：与前端 validationRules.js 同契约） */
+    private static final java.util.Set<String> ALLOWED_INVOICE_CONTENT_TYPES =
+            com.lanlink.shopping.common.ValidationRules.ALLOWED_INVOICE_CONTENT_TYPES;
+    /** 纳税人识别号：15-20 位大写字母数字（ValidationRules 契约） */
+    private static final java.util.regex.Pattern INVOICE_TAX_NO_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Z0-9]{15,20}$");
 
     public OrderService(CartMapper cartMapper, ProductMapper productMapper, OrderMapper orderMapper,
                         OrderItemMapper orderItemMapper, UserMapper userMapper, MessageService messageService,
@@ -133,6 +172,51 @@ public class OrderService {
         }
     }
 
+    /**
+     * 运费报价（P1-5 MVP）：首行商户 + 收货地区 + 总件数 → {@link FreightQuoteService}。
+     * fail-open：依赖缺失/报价异常/负值一律按 0（等价旧行为），绝不阻断下单。
+     */
+    private BigDecimal resolveFreightAmount(CheckoutDTO dto, BigDecimal goodsAmount, List<Line> lines, Long merId) {
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
+        if (freightQuoteService == null) {
+            return zero;
+        }
+        try {
+            int pieces = 0;
+            for (Line line : lines) {
+                pieces += line.quantity();
+            }
+            String region = LogisticsFreightCalculator.extractProvince(dto == null ? null : dto.getAddress());
+            BigDecimal freight = freightQuoteService.quote(merId, goodsAmount, region, pieces);
+            if (freight == null || freight.signum() < 0) {
+                return zero;
+            }
+            return freight.setScale(2, java.math.RoundingMode.HALF_UP);
+        } catch (Exception e) {
+            log.warn("[order] 运费报价异常，按 0 处理（不阻断交易）: {}", e.getMessage());
+            return zero;
+        }
+    }
+
+    /**
+     * 行级金额固化 + 三不变式校验（P1-6）。落库前调用：Σpaid==goods、Σdiscount==Σsubtotal−goods、
+     * Σfreight==freight 任一不成立抛 400 回滚下单，绝不带病落库。
+     */
+    private void finalizeLineAmounts(List<OrderItem> items, BigDecimal goodsAmount, BigDecimal freightAmount) {
+        List<BigDecimal> subtotals = new ArrayList<>(items.size());
+        for (OrderItem item : items) {
+            subtotals.add(item.getSubtotal() == null ? BigDecimal.ZERO.setScale(2) : item.getSubtotal());
+        }
+        try {
+            List<OrderAmounts.LineAmount> lines = OrderAmounts.applyToItems(items, goodsAmount, freightAmount);
+            OrderAmounts.checkInvariants(subtotals, goodsAmount, freightAmount, lines);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            log.warn("[order] 行级金额分摊失败: goods={}, freight={}, err={}",
+                    goodsAmount, freightAmount, e.getMessage());
+            throw new BusinessException(400, "订单金额分摊异常，请稍后重试");
+        }
+    }
+
     private Order doCheckout(Long userId, CheckoutDTO dto) {
         // ===== 需求 1：敏感字段后端独立校验，不信任前端 =====
         if (!ALLOWED_PAY_TYPES.contains(dto.getPayType() == null ? "" : dto.getPayType())) {
@@ -147,16 +231,37 @@ public class OrderService {
             throw new BusinessException("使用积分数不能为负");
         }
         User user = userMapper.selectById(userId);
+        List<Line> lines = loadCheckoutLines(userId, dto.getCartIds());
+        return doCheckoutWithLines(userId, dto, user, lines);
+    }
+
+    /**
+     * 购物车加载的单一入口：普通下单从 t_cart 取行（cartId 非空）；
+     * RFQ 接受转单传入 cartId=null 的行（无购物车行可删）。
+     */
+    private List<Line> loadCheckoutLines(Long userId, List<Long> cartIds) {
         List<Cart> carts;
-        if (dto.getCartIds() != null && !dto.getCartIds().isEmpty()) {
+        if (cartIds != null && !cartIds.isEmpty()) {
             carts = cartMapper.selectList(Wrappers.<Cart>lambdaQuery()
-                    .eq(Cart::getUserId, userId).in(Cart::getCartId, dto.getCartIds()));
+                    .eq(Cart::getUserId, userId).in(Cart::getCartId, cartIds));
         } else {
             carts = cartMapper.selectList(Wrappers.<Cart>lambdaQuery()
                     .eq(Cart::getUserId, userId).eq(Cart::getChecked, 1));
         }
         if (carts.isEmpty()) throw new BusinessException("购物车没有可结算的商品");
+        List<Line> lines = new ArrayList<>(carts.size());
+        for (Cart c : carts) {
+            lines.add(new Line(c.getProdId(), c.getQuantity(), c.getCartId()));
+        }
+        return lines;
+    }
 
+    /** 结算行：cartId 可空（RFQ 报价转单没有购物车行，只消费商品与数量） */
+    record Line(Long prodId, int quantity, Long cartId) {
+    }
+
+    /** 包级可见：普通下单与 RFQ 报价转单共用同一条计价/扣库存/落单链路 */
+    Order doCheckoutWithLines(Long userId, CheckoutDTO dto, User user, List<Line> lines) {
         Order order = new Order();
         order.setOrderNo(genOrderNo());
         order.setUserId(userId);
@@ -192,31 +297,38 @@ public class OrderService {
         order.setCreateTime(LocalDateTime.now());
         order.setUpdateTime(LocalDateTime.now());
         if ("term".equals(dto.getPayType())) order.setPayTime(LocalDateTime.now());
+        applyInvoiceSnapshot(order, userId, dto.getInvoice());
 
         // 先校验库存（并确认商品可售：仅审核通过的商品可下单），累计原价与行业
         // 需求 1：价格/金额由后端按商品当前价重算，禁止信任前端传入金额
         BigDecimal listTotal = BigDecimal.ZERO;
         BigDecimal tierTotal = BigDecimal.ZERO;
         Long orderIndId = null;
+        Long orderMerId = null;
         // 行快照两套：阶梯价行金额 / 原价行金额。最终只选一套参与促销与券的门槛计算，
         // 避免"按阶梯价成交、按原价凑门槛"的口径分裂。
         List<CampaignService.Line> tierLines = new ArrayList<>();
         List<CampaignService.Line> listLines = new ArrayList<>();
         // 选中的成交单价（按 prodId）：明细快照必须与总额同源
         Map<Long, BigDecimal> unitPriceByProd = new HashMap<>();
-        for (Cart c : carts) {
-            Product p = productMapper.selectById(c.getProdId());
-            if (p == null) throw new BusinessException("商品不存在: " + c.getProdId());
+        for (Line line : lines) {
+            Product p = productMapper.selectById(line.prodId());
+            if (p == null) throw new BusinessException("商品不存在: " + line.prodId());
             if (p.getStatus() == null || p.getStatus() != 1) {
                 throw new BusinessException("商品暂不可购买(未通过审核或已下架): " + p.getTitle());
             }
-            if (p.getStock() < c.getQuantity()) throw new BusinessException("库存不足: " + p.getTitle());
+            if (p.getStock() < line.quantity()) throw new BusinessException("库存不足: " + p.getTitle());
             if (p.getPrice() == null || p.getPrice().signum() <= 0) {
                 throw new BusinessException("商品价格异常: " + p.getTitle());
             }
-            BigDecimal qty = BigDecimal.valueOf(c.getQuantity());
+            // 阶梯价起订量（P1-17）：服务端兜底（RFQ 转单/绕过购物车校验的路径都过这里）
+            int moq = TierPricing.minOrderQty(p.getTierPriceJson());
+            if (moq > 0 && line.quantity() < moq) {
+                throw new BusinessException("「" + p.getTitle() + "」起订量为 " + moq + " 件，请调整购买数量");
+            }
+            BigDecimal qty = BigDecimal.valueOf(line.quantity());
             // 阶梯价：B2B 的单品成交价是数量的函数；未配置/未达档回落基准价
-            BigDecimal tierUnit = TierPricing.resolve(p.getPrice(), p.getTierPriceJson(), c.getQuantity()).unitPrice();
+            BigDecimal tierUnit = TierPricing.resolve(p.getPrice(), p.getTierPriceJson(), line.quantity()).unitPrice();
             BigDecimal listAmount = p.getPrice().multiply(qty);
             BigDecimal tierAmount = tierUnit.multiply(qty);
             listTotal = listTotal.add(listAmount);
@@ -225,6 +337,7 @@ public class OrderService {
             tierLines.add(new CampaignService.Line(p.getProdId(), p.getMerId(), tierAmount));
             unitPriceByProd.put(p.getProdId(), tierUnit);
             if (orderIndId == null) orderIndId = p.getIndId();
+            if (orderMerId == null) orderMerId = p.getMerId(); // 运费模板归属预留（当前平台默认模板）
         }
         // 会员折扣与阶梯价**互斥取优**，不叠乘：阶梯价是商家让出的批发毛利，
         // 再叠一层会员折扣会把利润双重击穿（对账也说不清是谁让的价）。
@@ -239,8 +352,8 @@ public class OrderService {
         List<CampaignService.Line> promoLines = useTier ? tierLines : listLines;
         if (!useTier) {
             // 会员胜出：明细按原价快照，会员折扣由 PricingFacade 在订单级折让
-            for (Cart c : carts) {
-                Product p = productMapper.selectById(c.getProdId());
+            for (Line line : lines) {
+                Product p = productMapper.selectById(line.prodId());
                 unitPriceByProd.put(p.getProdId(), p.getPrice());
             }
         }
@@ -277,10 +390,19 @@ public class OrderService {
         order.setPromoSource(quote.getSource());
         order.setCouponDiscount(couponDiscount);
         order.setCouponId(couponDiscount.signum() >= 0 && dto.getCouponId() != null ? dto.getCouponId() : null);
-        order.setTotalAmount(payable);
-        // 需求 1+4：防篡改比对（客户端传入 expectedTotal 时与后端重算总额一致性核验，不一致则告警并拒绝）
+        // ===== P1-6/P1-5 金额口径固化：goods=货款实付（payable 已扣促销/券/积分），total=goods+运费 =====
+        // payable 是"买家为货品实付的现金"，不是原价合计；原价合计（Σ行 subtotal）只用于行级优惠分摊。
+        BigDecimal goodsAmount = payable.setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal freightAmount = resolveFreightAmount(dto, goodsAmount, lines, orderMerId);
+        order.setGoodsAmount(goodsAmount);
+        order.setFreightAmount(freightAmount);
+        order.setTotalAmount(goodsAmount.add(freightAmount));
+        // ===== 需求 1+4：expectedTotal 防篡改口径（P1-3 上线阻断修复）=====
+        // 只比对**货款 goods_amount**：运费 freight_amount 由服务端按商户/收货地区/件数实时计算
+        // （见 resolveFreightAmount），客户端无法预知，**不参与**客户端防篡改比对；
+        // total_amount = goods_amount + freight_amount 仅用于支付/账期/展示，不用于与 expectedTotal 比对。
         if (dto.getExpectedTotal() != null) {
-            if (!tamperGuardService.checkNumeric(userId, "order", "totalAmount", dto.getExpectedTotal(), payable, null)) {
+            if (!tamperGuardService.checkNumeric(userId, "order", "goodsAmount", dto.getExpectedTotal(), goodsAmount, null)) {
                 throw new BusinessException("订单金额异常(客户端传入金额与后端重算不一致)");
             }
         }
@@ -289,38 +411,51 @@ public class OrderService {
         if (dto.getLiveRoomId() != null && liveRoomMapper != null && liveProductMapper != null) {
             var liveRoom = liveRoomMapper.selectById(dto.getLiveRoomId());
             boolean roomLiveable = liveRoom != null && liveRoom.getStatus() != null && liveRoom.getStatus() != 0;
-            boolean hasMountedProduct = roomLiveable && carts.stream().anyMatch(c ->
-                    liveProductMapper.selectByRoomAndProduct(liveRoom.getRoomId(), c.getProdId()) != null);
+            boolean hasMountedProduct = roomLiveable && lines.stream().anyMatch(line ->
+                    liveProductMapper.selectByRoomAndProduct(liveRoom.getRoomId(), line.prodId()) != null);
             if (roomLiveable && hasMountedProduct) order.setLiveId(liveRoom.getRoomId());
         }
         // 账期订单在结算时直接形成授信应付账单，不再进入普通支付弹窗
         orderMapper.insert(order);
         if ("term".equals(dto.getPayType())) {
-            creditTermService.createBillForOrder(userId, order.getOrderNo(), payable);
+            // 账期应收 = 买家实付总额（含运费），与支付/渠道口径一致
+            creditTermService.createBillForOrder(userId, order.getOrderNo(), order.getTotalAmount());
         }
 
-        // 明细 + 扣库存（需求 2：数据库原子扣减防并发超卖）
-        for (Cart c : carts) {
-            Product p = productMapper.selectById(c.getProdId());
+        // 明细快照 + 行级金额固化（P1-6）：先构建行，按 OrderAmounts 分摊 allocated_discount/paid_amount/
+        // freight_amount 并通过三不变式校验后才落库；分摊异常抛 400 回滚整单，绝不带病落库。
+        List<OrderItem> items = new ArrayList<>(lines.size());
+        for (Line line : lines) {
+            Product p = productMapper.selectById(line.prodId());
             // 成交单价来自上面的取优结果（阶梯 或 原价），保证"总额 / 明细 / 券门槛"三者同源
             BigDecimal unitPrice = unitPriceByProd.getOrDefault(p.getProdId(), p.getPrice());
-            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(c.getQuantity()));
+            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(line.quantity()));
             OrderItem item = new OrderItem();
             item.setOrderNo(order.getOrderNo());
             item.setProdId(p.getProdId());
             item.setProdName(p.getTitle());     // 冗余快照
             item.setPrice(unitPrice);           // 成交单价（已含阶梯价）
-            item.setQuantity(c.getQuantity());
+            item.setQuantity(line.quantity());
             item.setSubtotal(subtotal);
             item.setCoverUrl(StorageUrls.toKey(p.getCoverUrl()));  // 快照与商品表同形态（key 归一），换图不断历史
+            items.add(item);
+        }
+        finalizeLineAmounts(items, goodsAmount, freightAmount);
+
+        // 落库 + 扣库存（需求 2：数据库原子扣减防并发超卖）
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            OrderItem item = items.get(i);
             orderItemMapper.insert(item);
             // 原子扣库存 + 加销量（条件更新 stock >= quantity，失败回滚整个事务）
-            int affected = productMapper.deductStockAtomic(p.getProdId(), c.getQuantity());
+            int affected = productMapper.deductStockAtomic(item.getProdId(), line.quantity());
             if (affected == 0) {
-                throw new BusinessException("库存不足(并发扣减冲突): " + p.getTitle());
+                throw new BusinessException("库存不足(并发扣减冲突): " + item.getProdName());
             }
-            // 移除已购购物车项
-            cartMapper.deleteById(c.getCartId());
+            // 移除已购购物车项；RFQ 报价转单没有购物车行（cartId=null），不做删除
+            if (line.cartId() != null) {
+                cartMapper.deleteById(line.cartId());
+            }
         }
         messageService.send(userId, "order", "下单成功",
                 "term".equals(order.getPayType())
@@ -330,9 +465,257 @@ public class OrderService {
         return order;
     }
 
+    /**
+     * RFQ 接受报价转订单：成交价锁定为报价单价，不叠加阶梯/会员/促销/券/积分。
+     *
+     * <p>幂等键 rfq-accept:{quoteId}：重放直接返回首单；报价 CAS SUBMITTED→ACCEPTED 抢闸，
+     * 并发接受只有一方成功；兄弟报价同事务 REJECTED；RFQ 置 ORDERED。
+     * 复用 S2 抽出的结算行思路（cartId=null → 不删购物车），但计价链完全跳过。
+     */
+    @Transactional
+    public Order checkoutFromQuote(Long userId, Long quoteId, CheckoutDTO dto) {
+        if (rfqMapper == null || rfqQuoteMapper == null) {
+            throw new BusinessException("询价模块未启用");
+        }
+        String idemKey = String.valueOf(quoteId);
+        String priorOrderNo = idempotentService.findResultRef("rfq-accept", idemKey);
+        if (priorOrderNo != null) {
+            Order prior = orderMapper.selectById(priorOrderNo);
+            if (prior != null && userId.equals(prior.getUserId())) return prior;
+            throw new BusinessException(409, "该报价已被处理");
+        }
+        Long idemToken = idempotentService.reserve("rfq-accept", idemKey, userId, null);
+        try {
+            Order order = doCheckoutFromQuote(userId, quoteId, dto);
+            idempotentService.bound(idemToken, order.getOrderNo());
+            try {
+                riskEventService.record(userId, "R02", 20, "rfq accept", "order", order.getOrderNo());
+            } catch (Exception ignore) { /* 风控旁路不阻断交易 */ }
+            return order;
+        } catch (RuntimeException e) {
+            idempotentService.release(idemToken);
+            throw e;
+        }
+    }
+
+    private Order doCheckoutFromQuote(Long userId, Long quoteId, CheckoutDTO dto) {
+        if (!ALLOWED_PAY_TYPES.contains(dto.getPayType() == null ? "" : dto.getPayType())) {
+            tamperGuardService.report(userId, "rfq", "payType", dto.getPayType(),
+                    String.join("/", ALLOWED_PAY_TYPES), "非法支付方式尝试(白名单外)", null);
+            throw new BusinessException("非法支付方式");
+        }
+        if (dto.getCouponId() != null) {
+            throw new BusinessException(400, "报价转单不支持优惠券");
+        }
+        if (dto.getUsePoints() != null && dto.getUsePoints() > 0) {
+            throw new BusinessException(400, "报价转单不支持积分抵扣");
+        }
+        com.lanlink.shopping.module.rfq.entity.RfqQuote quote = rfqQuoteMapper.selectById(quoteId);
+        if (quote == null) throw new BusinessException(404, "报价不存在");
+        // 行锁串行化接受与报价/过期扫表：避免在已被扫表置 EXPIRED 的单上成交
+        com.lanlink.shopping.module.rfq.entity.Rfq rfq = rfqMapper.selectByIdForUpdate(quote.getRfqId());
+        // 非本人询价按不存在处理，避免枚举探测
+        if (rfq == null || !userId.equals(rfq.getUserId())) {
+            throw new BusinessException(404, "报价不存在");
+        }
+        if (!"QUOTED".equals(rfq.getStatus())) {
+            throw new BusinessException(400, "询价单状态不可接受报价");
+        }
+        if (!"SUBMITTED".equals(quote.getStatus())) {
+            throw new BusinessException(400, "报价已被接受或已失效");
+        }
+        if (quote.getValidUntil() != null && !quote.getValidUntil().isAfter(LocalDateTime.now())) {
+            throw new BusinessException(400, "报价已过有效期");
+        }
+        if (dto.getExpectedTotal() != null
+                && dto.getExpectedTotal().compareTo(quote.getTotalAmount()) != 0) {
+            tamperGuardService.report(userId, "rfq", "expectedTotal",
+                    dto.getExpectedTotal().toPlainString(), quote.getTotalAmount().toPlainString(),
+                    "RFQ 接受金额与报价总额不一致", null);
+            throw new BusinessException("订单金额异常(客户端传入金额与报价总额不一致)");
+        }
+        // 订单行数量是整数件：小数数量在报价阶段就要拦住，避免静默截断
+        if (quote.getQuantity() == null || quote.getQuantity().stripTrailingZeros().scale() > 0) {
+            throw new BusinessException(400, "暂不支持小数数量成交，请联系商户改用整数数量报价");
+        }
+        int quantity = quote.getQuantity().intValue();
+        if (quantity <= 0) throw new BusinessException(400, "报价数量异常");
+        // 历史脏数据防线：明细口径是"单价×数量"，与报价总额不一致的报价不允许成交
+        BigDecimal recomputed = quote.getUnitPrice().multiply(quote.getQuantity())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (recomputed.compareTo(quote.getTotalAmount()) != 0) {
+            throw new BusinessException(400, "报价金额不一致，请重新报价");
+        }
+
+        if (rfqQuoteMapper.acceptAtomic(quoteId) == 0) {
+            throw new BusinessException(409, "报价已被接受或已失效");
+        }
+        rfqQuoteMapper.rejectSiblings(quote.getRfqId(), quoteId);
+        if (rfqMapper.markOrdered(quote.getRfqId()) == 0) {
+            throw new BusinessException(409, "询价单状态已变化");
+        }
+
+        User user = userMapper.selectById(userId);
+        Product p = productMapper.selectById(quote.getProdId());
+        if (p == null) throw new BusinessException("商品不存在: " + quote.getProdId());
+        if (p.getStatus() == null || p.getStatus() != 1) {
+            throw new BusinessException("商品暂不可购买(未通过审核或已下架): " + p.getTitle());
+        }
+        if (p.getStock() < quantity) throw new BusinessException("库存不足: " + p.getTitle());
+
+        Order order = new Order();
+        order.setOrderNo(genOrderNo());
+        order.setUserId(userId);
+        order.setEntId(user == null ? null : user.getEntId());
+        order.setPayType(dto.getPayType());
+        order.setPayStatus("term".equals(dto.getPayType()) ? 1 : 0);
+        order.setOrderStatus(0);
+        // 与普通下单同口径：前端可能回传打码值，落库前还原为真实收货人/电话
+        String receiver = dto.getReceiver();
+        String phone = dto.getPhone();
+        if (DesensitizeUtil.isMasked(phone) || DesensitizeUtil.isMasked(receiver)) {
+            if (addressMapper != null) {
+                List<Address> addresses = addressMapper.selectList(
+                        Wrappers.<Address>lambdaQuery().eq(Address::getUserId, userId));
+                for (Address a : addresses) {
+                    if (DesensitizeUtil.isMasked(phone) && a.getPhone() != null
+                            && (DesensitizeUtil.maskPhone(a.getPhone()).equals(phone) || a.getPhone().equals(phone))) {
+                        phone = a.getPhone();
+                    }
+                    if (DesensitizeUtil.isMasked(receiver) && a.getReceiver() != null
+                            && (DesensitizeUtil.maskRealName(a.getReceiver()).equals(receiver)
+                                    || a.getReceiver().equals(receiver))) {
+                        receiver = a.getReceiver();
+                    }
+                }
+            }
+            if (DesensitizeUtil.isMasked(phone) && user != null && user.getPhone() != null
+                    && (DesensitizeUtil.maskPhone(user.getPhone()).equals(phone)
+                            || user.getPhone().equals(phone))) {
+                phone = user.getPhone();
+            }
+        }
+        order.setReceiver(receiver);
+        order.setPhone(phone);
+        order.setAddress(dto.getAddress());
+        order.setRemark(dto.getRemark());
+        order.setCreateTime(LocalDateTime.now());
+        order.setUpdateTime(LocalDateTime.now());
+        if ("term".equals(dto.getPayType())) order.setPayTime(LocalDateTime.now());
+        applyInvoiceSnapshot(order, userId, dto.getInvoice());
+        // P1-6/P1-5：RFQ 成交价即货款实付；运费固定 0（报价备注中的"含运费"仅为文本，未结构化进报价）
+        BigDecimal goodsAmount = quote.getTotalAmount().setScale(2, java.math.RoundingMode.HALF_UP);
+        order.setGoodsAmount(goodsAmount);
+        order.setFreightAmount(BigDecimal.ZERO.setScale(2));
+        order.setTotalAmount(goodsAmount);
+        // 议价成交价上不再叠加任何让利：促销/券/积分全部清零
+        order.setPromoDiscount(BigDecimal.ZERO);
+        order.setCouponDiscount(BigDecimal.ZERO);
+        order.setCouponId(null);
+        order.setPointDeductAmount(BigDecimal.ZERO);
+        order.setPointDeductPoints(0);
+        order.setRfqNo(rfq.getRfqNo());
+        order.setRfqQuoteId(quote.getQuoteId());
+        orderMapper.insert(order);
+        if ("term".equals(dto.getPayType())) {
+            creditTermService.createBillForOrder(userId, order.getOrderNo(), order.getTotalAmount());
+        }
+
+        OrderItem item = new OrderItem();
+        item.setOrderNo(order.getOrderNo());
+        item.setProdId(p.getProdId());
+        item.setProdName(p.getTitle());
+        item.setPrice(quote.getUnitPrice());
+        item.setQuantity(quantity);
+        item.setSubtotal(quote.getTotalAmount());
+        item.setCoverUrl(StorageUrls.toKey(p.getCoverUrl()));
+        finalizeLineAmounts(List.of(item), goodsAmount, order.getFreightAmount());
+        orderItemMapper.insert(item);
+        int affected = productMapper.deductStockAtomic(p.getProdId(), quantity);
+        if (affected == 0) {
+            throw new BusinessException("库存不足(并发扣减冲突): " + p.getTitle());
+        }
+        messageService.send(userId, "order", "下单成功",
+                "term".equals(order.getPayType())
+                        ? "订单 " + order.getOrderNo() + " 已按询价报价成交并使用企业账期，账单已进入账期中心。"
+                        : "订单 " + order.getOrderNo() + " 已按询价报价成交，待支付。",
+                order.getOrderNo());
+        if (rfqEventMapper != null) {
+            com.lanlink.shopping.module.rfq.entity.RfqEvent event =
+                    new com.lanlink.shopping.module.rfq.entity.RfqEvent();
+            event.setRfqId(rfq.getRfqId());
+            event.setQuoteId(quoteId);
+            event.setEventType("ACCEPT");
+            event.setActorId(userId);
+            event.setActorRole("BUYER");
+            event.setDetail("报价成交，订单 " + order.getOrderNo());
+            rfqEventMapper.insert(event);
+        }
+        return order;
+    }
+
     public List<Order> myOrders(Long userId) {
         return orderMapper.selectList(Wrappers.<Order>lambdaQuery()
                 .eq(Order::getUserId, userId).orderByDesc(Order::getCreateTime));
+    }
+
+    /**
+     * 发票需求快照（P1-5）：needed=true 时校验抬头并落 invoice_* 列。
+     * 服务端独立校验不信任前端（与 payType/usePoints 同级），非法枚举走 TamperGuard 告警；
+     * needed=false/null 时清空全部发票列，保证「不需要」与历史单落库口径一致。
+     */
+    private void applyInvoiceSnapshot(Order order, Long userId, CheckoutDTO.InvoiceRequest inv) {
+        if (inv == null || !Boolean.TRUE.equals(inv.getNeeded())) {
+            order.setInvoiceNeeded(0);
+            return;
+        }
+        String titleType = inv.getTitleType() == null ? "" : inv.getTitleType().trim();
+        if (!ALLOWED_INVOICE_TITLE_TYPES.contains(titleType)) {
+            tamperGuardService.report(userId, "order", "invoice.titleType", inv.getTitleType(),
+                    String.join("/", ALLOWED_INVOICE_TITLE_TYPES), "发票抬头类型白名单外", null);
+            throw new BusinessException("发票抬头类型不合法");
+        }
+        String title = inv.getTitle() == null ? "" : inv.getTitle().trim();
+        if (title.isEmpty() || title.length() > com.lanlink.shopping.common.ValidationRules.INVOICE_TITLE_MAX) {
+            throw new BusinessException("发票抬头不能为空且最长 "
+                    + com.lanlink.shopping.common.ValidationRules.INVOICE_TITLE_MAX + " 字");
+        }
+        String taxNo = inv.getTaxNo() == null ? "" : inv.getTaxNo().trim();
+        if (com.lanlink.shopping.common.ValidationRules.INVOICE_TYPE_COMPANY.equals(titleType)
+                && !INVOICE_TAX_NO_PATTERN.matcher(taxNo).matches()) {
+            throw new BusinessException("纳税人识别号须为 " + com.lanlink.shopping.common.ValidationRules.INVOICE_TAX_NO_MIN
+                    + "-" + com.lanlink.shopping.common.ValidationRules.INVOICE_TAX_NO_MAX + " 位大写字母或数字");
+        }
+        String contentType = inv.getContentType() == null || inv.getContentType().isBlank()
+                ? com.lanlink.shopping.common.ValidationRules.INVOICE_CONTENT_CATEGORY
+                : inv.getContentType().trim();
+        if (!ALLOWED_INVOICE_CONTENT_TYPES.contains(contentType)) {
+            tamperGuardService.report(userId, "order", "invoice.contentType", inv.getContentType(),
+                    String.join("/", ALLOWED_INVOICE_CONTENT_TYPES), "发票内容类型白名单外", null);
+            throw new BusinessException("发票内容类型不合法");
+        }
+        String category = inv.getCategory() == null ? "" : inv.getCategory().trim();
+        String detail = inv.getDetail() == null ? "" : inv.getDetail().trim();
+        if (com.lanlink.shopping.common.ValidationRules.INVOICE_CONTENT_CATEGORY.equals(contentType)) {
+            if (category.isEmpty() || category.length() > com.lanlink.shopping.common.ValidationRules.INVOICE_CATEGORY_MAX) {
+                throw new BusinessException("商品类别不能为空且最长 "
+                        + com.lanlink.shopping.common.ValidationRules.INVOICE_CATEGORY_MAX + " 字");
+            }
+            detail = "";
+        } else {
+            if (detail.isEmpty() || detail.length() > com.lanlink.shopping.common.ValidationRules.INVOICE_DETAIL_MAX) {
+                throw new BusinessException("开具明细不能为空且最长 "
+                        + com.lanlink.shopping.common.ValidationRules.INVOICE_DETAIL_MAX + " 字");
+            }
+            category = "";
+        }
+        order.setInvoiceNeeded(1);
+        order.setInvoiceTitleType(titleType);
+        order.setInvoiceTitle(title);
+        order.setInvoiceTaxNo(taxNo.isEmpty() ? null : taxNo);
+        order.setInvoiceContentType(contentType);
+        order.setInvoiceCategory(category.isEmpty() ? null : category);
+        order.setInvoiceDetail(detail.isEmpty() ? null : detail);
     }
 
     /**
@@ -416,43 +799,99 @@ public class OrderService {
     }
 
     /**
-     * 支付回调结算（幂等）：仅当订单处于未支付时置为已支付，并复用 pay() 的消息/事件/身份升级副作用。
-     * @return true 表示本次完成结算；false 表示订单此前已支付（重复回调）。
+     * 支付回调结算（幂等 + 三态裁决，P0-B）。
+     *
+     * <p>旧实现用 boolean 表示结果：{@code false} 同时代表"此前已支付（重复回调）"和
+     * "订单已关闭（收款冲突）"，调用方无法区分 → 关单后到达的渠道付款被各渠道入口当作
+     * 重复回调静默 ACK，钱停在渠道、平台无挂账无退款。现改为返回
+     * {@link SettlePaidResult}，由支付门面按三态分别 ACK / 挂账 / 退款。
+     *
+     * <p>竞态裁决仍交给单条条件更新（markPaidAtomic）：并发回调/渠道重发只有一方能把
+     * pay_status 0→1；命中 0 行后<b>必须重读订单</b>再裁决，不能像旧实现那样直接返回 false。
      */
     @Transactional
-    public boolean settlePaid(String orderNo, String channel, String transactionId) {
+    public SettlePaidResult settlePaid(String orderNo, String channel, String transactionId) {
         Order o = orderMapper.selectById(orderNo);
         if (o == null) throw new BusinessException("订单不存在: " + orderNo);
         // 竞态裁决交给单条条件更新：并发回调/渠道重发只有一方能把 pay_status 0→1。
         // 读后写（先 if 判断再 updateById）在并发下会两路都通过，导致 OrderPaidEvent 重复发布、
         // 积分/成长值被重复累计。
-        if (orderMapper.markPaidAtomic(orderNo) == 0) return false;
-        orderMapper.bindPaidChannel(orderNo, channel, transactionId);
-        o = orderMapper.selectById(orderNo);
-        eventPublisher.publishEvent(new OrderNotificationEvent(o.getUserId(), "支付成功",
-                "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo));
-        eventPublisher.publishEvent(new OrderPaidEvent(this, o.getUserId(), orderNo, o.getTotalAmount()));
-        User u = userMapper.selectById(o.getUserId());
-        if (u != null && u.getRoleId() != null && u.getRoleId() == 1L) {
-            BigDecimal before = identityService.paidAmount(o.getUserId()).subtract(o.getTotalAmount());
-            if (before.compareTo(IdentityService.VIP_THRESHOLD) < 0
-                    && identityService.paidAmount(o.getUserId()).compareTo(IdentityService.VIP_THRESHOLD) >= 0) {
-                auditService.record(o.getUserId(), "IDENTITY_CHANGE", "身份升级: buyer -> vip（累计已支付达标）", null);
+        if (orderMapper.markPaidAtomic(orderNo) == 1) {
+            orderMapper.bindPaidChannel(orderNo, channel, transactionId);
+            Order paid = orderMapper.selectById(orderNo);
+            if (paid == null) paid = o;
+            eventPublisher.publishEvent(new OrderNotificationEvent(paid.getUserId(), "支付成功",
+                    "订单 " + orderNo + " 已支付，商家将尽快发货。", orderNo));
+            eventPublisher.publishEvent(new OrderPaidEvent(this, paid.getUserId(), orderNo, paid.getTotalAmount()));
+            User u = userMapper.selectById(paid.getUserId());
+            if (u != null && u.getRoleId() != null && u.getRoleId() == 1L) {
+                BigDecimal before = identityService.paidAmount(paid.getUserId()).subtract(paid.getTotalAmount());
+                if (before.compareTo(IdentityService.VIP_THRESHOLD) < 0
+                        && identityService.paidAmount(paid.getUserId()).compareTo(IdentityService.VIP_THRESHOLD) >= 0) {
+                    auditService.record(paid.getUserId(), "IDENTITY_CHANGE", "身份升级: buyer -> vip（累计已支付达标）", null);
+                }
             }
+            return new SettlePaidResult(SettlePaidResult.Outcome.SETTLED, paid, transactionId, false);
         }
-        return true;
+
+        // 命中 0 行后必须重读：裁决失败后的事实才决定是"真重复回调"还是"订单已关闭却收到付款"
+        Order cur = orderMapper.selectById(orderNo);
+        if (cur == null) throw new BusinessException("订单不存在: " + orderNo);
+        if (cur.getPayStatus() != null && cur.getPayStatus() == 1) {
+            boolean secondCharge = false;
+            if (transactionId != null && !transactionId.isBlank()) {
+                if (cur.getTransactionId() == null || cur.getTransactionId().isBlank()) {
+                    // 补录渠道流水（bindPaidChannel 只对 pay_status=1 生效），绝不覆盖已有渠道信息
+                    orderMapper.bindPaidChannel(orderNo, channel, transactionId);
+                } else if (!transactionId.equals(cur.getTransactionId())) {
+                    // 同一订单出现第二笔渠道流水：钱被扣了两次，标记给调用方挂 duplicate_txn
+                    secondCharge = true;
+                }
+            }
+            return new SettlePaidResult(SettlePaidResult.Outcome.ALREADY_PAID, cur, transactionId, secondCharge);
+        }
+        // pay_status 既非 1 也不可结算：订单已关闭/已取消/已退款（或数据异常）→ 收款冲突，必须挂账退款
+        return new SettlePaidResult(SettlePaidResult.Outcome.ORDER_CONFLICT, cur, transactionId, false);
     }
 
     /** 发起支付后回写渠道预下单信息（微信 prepay_id / 渠道标识） */
     @Transactional
-    public void setPrepay(String orderNo, String channel, String prepayId) {
-        Order o = orderMapper.selectById(orderNo);
+    public void setPrepay(String orderNo, String channel, String prepayId) {        Order o = orderMapper.selectById(orderNo);
         if (o == null) throw new BusinessException("订单不存在: " + orderNo);
         o.setPayChannel(channel);
         if (prepayId != null) o.setPrepayId(prepayId);
         if (o.getRefundStatus() == null) o.setRefundStatus("none");
         o.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(o);
+    }
+
+    /**
+     * 是否已发货（决定运费可退性）：状态机 1 已发货 / 4 部分发货，或已存在运单记录。
+     * 查询异常按"未发货"处理（对买家更宽松，避免因物流模块降级少退运费）。
+     */
+    private boolean hasShipped(Order order) {
+        if (order.getOrderStatus() != null && (order.getOrderStatus() == 1 || order.getOrderStatus() == 4)) {
+            return true;
+        }
+        if (waybillMapper != null) {
+            try {
+                Long count = waybillMapper.selectCount(Wrappers
+                        .<com.lanlink.shopping.entity.LogisticsWaybill>lambdaQuery()
+                        .eq(com.lanlink.shopping.entity.LogisticsWaybill::getOrderNo, order.getOrderNo()));
+                return count != null && count > 0;
+            } catch (Exception e) {
+                log.warn("[order] 运单查询失败，按未发货处理: orderNo={}, err={}", order.getOrderNo(), e.getMessage());
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 可退总额（P1-6 唯一口径，三处退款上限共用）：未发货 = goods + freight；已发货 = goods（运费不退）。
+     * 存量未回填（goods_amount=null）时 {@link OrderAmounts#refundableTotal(Order, boolean)} 回落 total_amount。
+     */
+    private BigDecimal refundableTotal(Order order) {
+        return OrderAmounts.refundableTotal(order, hasShipped(order));
     }
 
     /** 记录退款结果 */
@@ -467,7 +906,8 @@ public class OrderService {
         Order o = orderMapper.selectById(orderNo);
         if (o == null) throw new BusinessException("订单不存在: " + orderNo);
         BigDecimal total = refundAmount == null ? BigDecimal.ZERO : refundAmount;
-        boolean full = total.compareTo(o.getTotalAmount()) >= 0;
+        // P1-6：全额判定按"可退总额"（未发货 goods+freight / 已发货 goods），不再拿含运费 total 一刀切
+        boolean full = total.compareTo(refundableTotal(o)) >= 0;
         o.setRefundId(refundId);
         o.setRefundAmount(total);
         if (success) {
@@ -495,14 +935,19 @@ public class OrderService {
         if (o.getPayStatus() != null && o.getPayStatus() == 1 && !"term".equals(o.getPayType())) throw new BusinessException("已支付订单不可取消，请前往订单列表申请退款");
         // 幂等：已取消订单直接返回，防止重复恢复库存/重复返还积分
         if (o.getOrderStatus() != null && o.getOrderStatus() == 3) return;
+        // P1-3 漏洞修复：已全额退款(order_status=5)不得再取消——旧 cancelAtomic 只判 <>3 会放过它，
+        // 导致 restoreStock 二次回补库存（库存虚增）。前置校验给可读文案，原子 SQL 侧同时收紧做兜底。
+        if (o.getOrderStatus() != null && o.getOrderStatus() == 5) {
+            throw new BusinessException("订单已全额退款，不可取消");
+        }
         // 取消状态原子流转（防并发重复取消/先读后改竞态，口径同 markPaidAtomic 等）：
         // 影响行数=0 即状态已变化，抛异常回滚本事务（含下方账期释放/库存恢复）
         int affected = orderMapper.cancelAtomic(orderNo);
         if (affected == 0) throw new BusinessException("订单状态已变化");
         // 账期订单先释放未结清授信（账期单 pay_status 同步置 2 由 cancelAtomic 内 IF() 完成）
         if ("term".equals(o.getPayType())) creditTermService.cancelOrderBill(userId, orderNo);
-        // 恢复库存
-        restoreStock(orderNo);
+        // 恢复库存（P1-3 幂等：同一订单取消事件只回补一次，重复触发被 t_stock_flow 唯一键拦截）
+        restoreStockIdempotent(StockService.BIZ_ORDER_CANCEL, orderNo, orderNo, userId, "买家取消订单");
         // 积分抵现返还（幂等：按流水判定，无抵现记录返回 0）
         int refunded = membershipService.refundPoints(userId, orderNo);
         if (refunded > 0) {
@@ -530,8 +975,8 @@ public class OrderService {
      * pay_status=0 且 order_status=0 且非账期单，与支付侧 markPaidAtomic（要求 order_status=0）
      * 互为否定条件——并发的「关单」与「支付成功」只有一个能成功。
      *
-     * <p>资源释放只在 CAS 成功后执行：{@code restoreStock} 是累加式 UPDATE（非幂等），
-     * 一旦重复执行会把库存越补越多，所以必须由 affected 行数把关。
+     * <p>资源释放只在 CAS 成功后执行：库存回补经 {@link StockService} 幂等落账（t_stock_flow 唯一键），
+     * 即使同一事件被重复触发也只补一次；订单状态机仍由 impacted 行数把关。
      *
      * @return true 表示本次真正关闭了订单；false 表示订单已支付/已取消/账期单，放弃
      */
@@ -540,7 +985,8 @@ public class OrderService {
         Order o = orderMapper.selectById(orderNo);
         if (o == null) return false;
         if (orderMapper.closeUnpaidAtomic(orderNo) == 0) return false;
-        restoreStock(orderNo);
+        // 恢复库存（P1-3 幂等：系统关单事件只回补一次）
+        restoreStockIdempotent(StockService.BIZ_ORDER_CLOSE, orderNo, orderNo, null, "超时未支付系统关单");
         int refunded = membershipService.refundPoints(o.getUserId(), orderNo);
         if (refunded > 0) {
             messageService.send(o.getUserId(), "order", "积分返还",
@@ -573,7 +1019,8 @@ public class OrderService {
         // 证据 ≥1 必填 + 权威校验归一（type 白名单/URL 前缀/扩展名一致/归属当前用户/File.exists）
         String evidences = RefundEvidenceValidator.normalize(evidencesJson, userId, ChatMediaService.chatUploadRoot());
         BigDecimal already = o.getRefundAmount() == null ? BigDecimal.ZERO : o.getRefundAmount();
-        if (o.getTotalAmount().subtract(already).compareTo(BigDecimal.ZERO) <= 0) {
+        // P1-6：可退余额按可退总额（未发货含运费/已发货不含）计算，不再拿 total_amount 直接减
+        if (refundableTotal(o).subtract(already).compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessException("该订单已无可退金额");
         }
         // 需求 2：退款状态原子流转（防并发重复申请/防退款状态篡改，移除前置Java状态判断消除竞态）
@@ -684,14 +1131,17 @@ public class OrderService {
                 "订单 " + orderNo + " 的退款申请未通过：" + why, orderNo);
     }
 
-    /** 恢复订单占用库存并回退销量（取消 / 全额退款共用；需求 2：原子回滚防并发丢失更新） */
-    private void restoreStock(String orderNo) {
-        List<OrderItem> items = orderItemMapper.selectList(Wrappers.<OrderItem>lambdaQuery()
-                .eq(OrderItem::getOrderNo, orderNo));
-        for (OrderItem it : items) {
-            // 原子回滚库存/销量（单条 UPDATE 消除并发竞态）
-            productMapper.restoreStockAtomic(it.getProdId(), it.getQuantity());
+    /**
+     * 库存回补统一入口（P1-3）：委托 {@link StockService#restoreByOrder} 以 t_stock_flow 唯一键做幂等。
+     *
+     * <p>刻意 fail-fast 而非静默跳过：生产环境 StockService 必注入；若缺失说明装配错误，
+     * 静默跳过会导致「订单已取消/退款但库存未回补」，比抛错更难排查。
+     */
+    private void restoreStockIdempotent(String bizType, String bizNo, String orderNo, Long operatorId, String remark) {
+        if (stockService == null) {
+            throw new IllegalStateException("StockService 未注入，拒绝执行库存回补（避免退化为非幂等直写）");
         }
+        stockService.restoreByOrder(bizType, bizNo, orderNo, operatorId, remark);
     }
 
     /**
@@ -711,7 +1161,8 @@ public class OrderService {
             }
         }
         if (!alreadyRestocked) {
-            restoreStock(o.getOrderNo());
+            // P1-3：全额退款回补经 StockService 幂等落账；bizNo 用订单号（全额退款事件对一单只发生一次）
+            restoreStockIdempotent(StockService.BIZ_FULL_REFUND, o.getOrderNo(), o.getOrderNo(), null, "全额退款结算");
         }
         o.setOrderStatus(5);
         o.setPayStatus(2);
@@ -722,7 +1173,9 @@ public class OrderService {
                 .eq(OrderItem::getOrderNo, o.getOrderNo()));
         for (OrderItem it : items) {
             it.setRefundedQuantity(it.getQuantity());
-            it.setRefundAmount(it.getSubtotal());
+            // P1-6：行退款额 = 行实付货款（paid_amount），不再按原价 subtotal 多退；
+            // 存量未回填行（paid_amount=null）回退 subtotal，保证老单兼容
+            it.setRefundAmount(it.getPaidAmount() != null ? it.getPaidAmount() : it.getSubtotal());
             it.setRefundStatus("refunded");
             orderItemMapper.updateById(it);
         }

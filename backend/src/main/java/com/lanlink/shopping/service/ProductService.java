@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.BusinessException;
+import com.lanlink.shopping.common.PlatformInvitedBadge;
 import com.lanlink.shopping.common.storage.StorageUrls;
 import com.lanlink.shopping.entity.AuditLog;
 import com.lanlink.shopping.entity.Category;
@@ -133,7 +134,39 @@ public class ProductService {
             qw.orderByDesc(Product::getCreateTime);
         }
         qw.orderByDesc(Product::getProdId);
-        return productMapper.selectPage(new Page<>(current, size), qw);
+        IPage<Product> page = productMapper.selectPage(new Page<>(current, size), qw);
+        attachPlatformInvited(page.getRecords());
+        return page;
+    }
+
+    /**
+     * 给前台商品回填「平台特邀商户」公开展示标识。
+     *
+     * <p>展示条件由 {@link PlatformInvitedBadge#visible} 统一裁决：后台已标记特邀
+     * + 入驻审核通过 + 店铺未关闭/未冻结。不满足时写 null（`@JsonInclude(NON_NULL)` 不输出），
+     * 前端 `v-if` 自然不渲染，因此普通商户不会出现该标识。
+     *
+     * <p>实现说明：这里直接用 merchantMapper 而不是注入 MerchantService，
+     * 避免 ProductService ↔ MerchantService 的循环依赖；merchantMapper 未注入（单测）时跳过。
+     */
+    private void attachPlatformInvited(java.util.List<Product> products) {
+        if (products == null || products.isEmpty() || merchantMapper == null) return;
+        java.util.Set<Long> merIds = new java.util.LinkedHashSet<>();
+        for (Product p : products) {
+            if (p != null && p.getMerId() != null) merIds.add(p.getMerId());
+        }
+        if (merIds.isEmpty()) return;
+        java.util.Map<Long, com.lanlink.shopping.entity.Merchant> merchants = new java.util.HashMap<>();
+        for (com.lanlink.shopping.entity.Merchant m : merchantMapper.selectBatchIds(merIds)) {
+            if (m != null && m.getMerId() != null) merchants.put(m.getMerId(), m);
+        }
+        for (Product p : products) {
+            if (p == null || p.getMerId() == null) continue;
+            com.lanlink.shopping.entity.Merchant m = merchants.get(p.getMerId());
+            boolean show = m != null && PlatformInvitedBadge.visible(
+                    m.getReviewStatus(), m.getPlatformInvited(), m.getExitStatus());
+            p.setPlatformInvited(show ? Boolean.TRUE : null);
+        }
     }
 
     /**
@@ -154,7 +187,10 @@ public class ProductService {
                                      Long userId, String analyticsCookie) {
         if (StringUtils.hasText(keyword) && catId == null && indId == null && searchService != null) {
             try {
-                return searchService.search(keyword, current, size, userId, analyticsCookie);
+                IPage<Product> page = searchService.search(keyword, current, size, userId, analyticsCookie);
+                // 语义搜索分支不走 page()，需在此单独回填特邀标识，否则搜索结果卡片缺标识
+                if (page != null) attachPlatformInvited(page.getRecords());
+                return page;
             } catch (Exception e) {
                 // 语义搜索任何异常回退原 LIKE（可回滚承诺）
             }
@@ -179,6 +215,8 @@ public class ProductService {
             Category cat = categoryMapper.selectById(p.getCatId());
             if (cat != null) p.setCatName(cat.getName());
         }
+        // 阶梯价对外契约（P1-17）：仅详情回填（列表不回填，NON_NULL 空档不出站）
+        p.setTierPrices(com.lanlink.shopping.integration.pricing.TierPricing.toContract(p.getTierPriceJson()));
         return p;
     }
 
@@ -190,6 +228,9 @@ public class ProductService {
     @Transactional
     public Product publish(Long merId, Product p) {
         validatePublish(p);
+        // 阶梯价（P1-17）：契约校验 + 归一化落库（minQty 升序、两位小数）；空档=纯单价商品
+        p.setTierPriceJson(com.lanlink.shopping.integration.pricing.TierPricing.encodeContract(
+                p.getTierPrices(), p.getPrice()));
         p.setMerId(merId);
         p.setStatus(0);            // 不可售：待审核
         p.setReviewStatus(0);      // 待审核
@@ -288,6 +329,9 @@ public class ProductService {
     public Product review(Long prodId, Integer reviewStatus, String reason) {
         Product p = productMapper.selectById(prodId);
         if (p == null) throw new BusinessException("商品不存在");
+        if (reviewStatus != null && reviewStatus == 1) {
+            requireMerchantNotExiting(p.getMerId());
+        }
         if (reviewStatus == null || (reviewStatus != 1 && reviewStatus != 2)) {
             throw new BusinessException("审核状态不合法");
         }
@@ -342,6 +386,12 @@ public class ProductService {
     @Transactional
     public boolean applyAutoReviewDecision(Long prodId, boolean approved, String reason, int score) {
         if (prodId == null) return false;
+        if (approved) {
+            Product p = productMapper.selectById(prodId);
+            if (p == null) return false;
+            // 退店中的商户不得被自动审核"重新上架"，否则门禁4被绕过且商户无法自行恢复
+            if (isMerchantExiting(p.getMerId())) return false;
+        }
         String safeReason = approved ? null : truncateReason(reason);
         int affected = productMapper.update(null, Wrappers.<Product>lambdaUpdate()
                 .eq(Product::getProdId, prodId)
@@ -365,6 +415,20 @@ public class ProductService {
         if (reason == null || reason.isBlank()) return "自动审核未通过";
         String s = reason.trim();
         return s.length() > 255 ? s.substring(0, 255) : s;
+    }
+
+    /** 商户是否处于退店流程中（exit_status 非空）。merchantMapper 为可选注入，缺失时视为正常经营。 */
+    private boolean isMerchantExiting(Long merId) {
+        if (merId == null || merchantMapper == null) return false;
+        Merchant m = merchantMapper.selectById(merId);
+        return m != null && StringUtils.hasText(m.getExitStatus());
+    }
+
+    /** 上架类操作的统一前置：退店流程中的商户商品一律不许重新上架（下架不受限）。 */
+    private void requireMerchantNotExiting(Long merId) {
+        if (isMerchantExiting(merId)) {
+            throw new BusinessException(400, "该商户正在办理退店，商品不可重新上架");
+        }
     }
 
     /** 管理后台: 商品审核统计看板 */
@@ -462,6 +526,9 @@ public class ProductService {
         if (status == null || (status != 0 && status != 1)) throw new BusinessException("商品状态不合法");
         Product p = productMapper.selectById(prodId);
         if (p == null) throw new BusinessException("商品不存在");
+        if (status == 1) {
+            requireMerchantNotExiting(p.getMerId());
+        }
         int affected = productMapper.update(null, Wrappers.<Product>lambdaUpdate()
                 .eq(Product::getProdId, prodId)
                 .eq(status == 1, Product::getReviewStatus, 1)
@@ -483,10 +550,11 @@ public class ProductService {
 
     // ===== 商户端：商品编辑与自主上下架（归属校验 + 内容变更重新送审） =====
 
-    /** 商户自己的商品详情（归属校验，不含已逻辑删除商品） */
+    /** 商户自己的商品详情（归属校验，不含已逻辑删除商品）；回填 tierPrices 供阶梯价编辑回显 */
     public Product myDetail(Long merId, Long prodId) {
         Product p = productMapper.selectById(prodId);
         if (p == null || !merId.equals(p.getMerId())) throw new BusinessException("商品不存在或无权操作");
+        p.setTierPrices(com.lanlink.shopping.integration.pricing.TierPricing.toContract(p.getTierPriceJson()));
         return p;
     }
 
@@ -556,6 +624,16 @@ public class ProductService {
                 throw new BusinessException("库存需为 1 ~ 999999 之间的整数");
             }
             p.setStock(patch.getStock());
+        }
+        // 阶梯价（P1-17）：显式提交才改动（tierPrices 为 null=本次未编辑，不误清空）；
+        // 空数组=清除阶梯。变更属于内容字段，随整单重新送审。
+        if (patch.getTierPrices() != null) {
+            String tierJson = com.lanlink.shopping.integration.pricing.TierPricing.encodeContract(
+                    patch.getTierPrices(), p.getPrice());
+            if (!java.util.Objects.equals(tierJson, p.getTierPriceJson())) {
+                p.setTierPriceJson(tierJson);
+                contentChanged = true;
+            }
         }
         if (contentChanged) {
             if (p.getTitle() == null || p.getTitle().length() < 2 || p.getTitle().length() > 100) {

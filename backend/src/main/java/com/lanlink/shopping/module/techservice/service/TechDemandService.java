@@ -25,6 +25,15 @@ public class TechDemandService {
 
     private static final Set<String> DEMAND_STATUSES = Set.of("MATCHING", "IN_PROGRESS", "CLOSED");
 
+    /**
+     * 需求状态迁移白名单：MATCHING → IN_PROGRESS → CLOSED 单向推进。
+     * 允许从 IN_PROGRESS 回到 MATCHING（重新匹配），但 CLOSED 为终态，不可回退。
+     */
+    private static final java.util.Map<String, Set<String>> DEMAND_TRANSITIONS = java.util.Map.of(
+            "MATCHING", Set.of("IN_PROGRESS", "CLOSED"),
+            "IN_PROGRESS", Set.of("MATCHING", "CLOSED"),
+            "CLOSED", Set.of());
+
     private final TechDemandMapper demandMapper;
     private final TechProjectService projectService;
     private final TechComplianceGuard complianceGuard;
@@ -95,6 +104,8 @@ public class TechDemandService {
         if (demand == null) {
             throw new BusinessException(404, "需求不存在");
         }
+        com.lanlink.shopping.module.techservice.support.TechStatusGuard
+                .require(DEMAND_TRANSITIONS, demand.getStatus(), status, "需求");
         demand.setStatus(status);
         demandMapper.updateById(demand);
         return demand;

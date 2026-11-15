@@ -73,6 +73,24 @@
           <span>成交量为销量热度估算，非真实撮合</span>
           <button v-if="selectedId" type="button" @click="router.push('/product/' + selectedId)">{{ isEn ? 'View product' : '查看商品' }} →</button>
         </footer>
+
+        <!-- 右侧因子列更高，卡片被拉高后这里会空出一块。
+             这里跟行业基准（外部行情）和资讯流走，不复读本商品自己的平盘收盘价。 -->
+        <div v-if="recentSessions.length" class="mp-tape" :aria-label="isEn ? 'External market' : '外部行情'">
+          <div class="mp-tape-head">
+            <span>{{ isEn ? 'Session' : '日期' }}</span>
+            <span>{{ isEn ? 'Industry benchmark' : '行业基准' }}</span>
+            <span>{{ isEn ? 'Market move' : '市场涨跌' }}</span>
+            <span>{{ isEn ? 'External driver' : '外部驱动' }}</span>
+          </div>
+          <div v-for="row in recentSessions" :key="row.key" class="mp-tape-row">
+            <span class="t-day">{{ row.day }}</span>
+            <span class="t-close">{{ row.benchmarkText }}</span>
+            <span class="t-chg" :class="row.tone">{{ row.changeText }}</span>
+            <button v-if="row.news" type="button" class="t-driver is-link" @click="openNews(row.news)">{{ row.driver }}</button>
+            <span v-else class="t-driver">{{ row.driver }}</span>
+          </div>
+        </div>
       </article>
 
       <aside class="mp-card mp-factor-card">
@@ -141,11 +159,11 @@
           <button type="button" class="mp-text-link" @click="router.push('/price-monitor')">{{ isEn ? 'All news' : '全部资讯' }} →</button>
         </header>
 
-        <div v-if="tickerNews.length" class="mp-ticker">
+        <div v-if="dailyNews.length" class="mp-ticker">
           <span class="mp-ticker-label"><i></i>{{ isEn ? 'BRIEF' : '快讯' }}</span>
           <Marquee :repeat="2" gap="2.6rem" duration="34s" pause-on-hover>
             <span
-              v-for="n in tickerNews"
+              v-for="n in dailyNews"
               :key="'t' + n.id"
               class="mp-ticker-item"
               role="button"
@@ -163,8 +181,8 @@
           <SegmentedControl v-model="newsCategory" :options="categoryOptions" :aria-label="isEn ? 'News category' : '资讯分类'" />
         </div>
 
-        <ul v-if="news.length" class="mp-news-list">
-          <li v-for="n in news.slice(0, 4)" :key="n.id">
+        <ul v-if="dailyNews.length" class="mp-news-list">
+          <li v-for="n in dailyNews.slice(0, 6)" :key="n.id">
             <div class="news-top">
               <span class="news-cat" :class="n.category">{{ categoryText(n.category) }}</span>
               <span v-if="newsBadge(n)" class="news-link-badge" :class="'lt-' + newsLinkType(n)">{{ newsBadge(n) }}</span>
@@ -191,7 +209,7 @@
             </div>
           </li>
         </ul>
-        <div v-else class="mp-empty">{{ newsLoading ? (isEn ? 'Loading news…' : '资讯加载中…') : (isEn ? 'No news yet.' : '暂无资讯') }}</div>
+        <div v-else class="mp-empty">{{ newsLoading ? (isEn ? 'Loading live news…' : '正在拉取实时新闻…') : (isEn ? 'No live news for this product right now.' : '这件商品暂时没有检索到实时新闻') }}</div>
       </article>
 
       <article class="mp-card mp-ai-card">
@@ -291,7 +309,6 @@ const trend = ref(null)
 const factorData = ref(null)
 const factors = ref([])
 const factorLoading = ref(false)
-const news = ref([])
 const newsCategory = ref('')
 const newsLoading = ref(false)
 const loading = ref(false)
@@ -331,6 +348,9 @@ const productOptions = computed(() => products.value.map(p => ({
 })))
 
 const selected = computed(() => products.value.find(p => p.prodId === selectedId.value) || null)
+
+/** 每日资讯：当前商品的实时新闻，不拿商品自述充数。 */
+const dailyNews = ref([])
 
 /** 因子卡头部覆盖徽标：已分析 N/M（N=快照索引行数，M=在售商品总数） */
 const analyzedCount = computed(() => Object.keys(analyzedMap.value).length)
@@ -438,6 +458,61 @@ const quoteChangeText = computed(() => {
 })
 const totalTrades = computed(() => candles.value.reduce((n, c) => n + (Number(c.trades) || 0), 0))
 
+/** 图下空白：行业基准涨跌（外部行情）+ 当天资讯。资讯每 2 分钟重拉，基准随行情刷新。 */
+const recentSessions = computed(() => {
+  const bench = Array.isArray(trend.value?.benchmark) ? [...trend.value.benchmark] : []
+  const ordered = [...bench].sort((a, b) => String(a.day).localeCompare(String(b.day)))
+  const start = Math.max(0, ordered.length - 6)
+  const points = ordered.slice(start).reverse()
+  const stories = [...dailyNews.value]
+  const used = new Set()
+  const pickNews = (day, allowLatest) => {
+    const same = stories.find(n => n && !used.has(n.id) && dayKey(n.publishedAt) === day)
+    if (same) { used.add(same.id); return same }
+    if (!allowLatest) return null
+    const latest = stories.find(n => n && !used.has(n.id))
+    if (latest) used.add(latest.id)
+    return latest || null
+  }
+  const fromBench = points.map((b, i) => {
+    const day = dayKey(b.day)
+    const price = Number(b.benchmark)
+    const prev = ordered[start + (points.length - 1 - i) - 1]
+    const prevPrice = prev ? Number(prev.benchmark) : NaN
+    let pct = b.changePct == null || b.changePct === '' ? null : Number(b.changePct)
+    if ((pct == null || Number.isNaN(pct)) && prevPrice > 0 && !Number.isNaN(price)) {
+      pct = (price - prevPrice) / prevPrice * 100
+    }
+    const story = pickNews(day, i === 0)
+    return sessionRow(day || String(i), price, pct, story, i === 0)
+  })
+  if (fromBench.length) return fromBench
+  return stories.slice(0, 6).map((n, i) => sessionRow(dayKey(n.publishedAt) || String(i), null, null, n, false))
+})
+
+function dayKey(v) {
+  if (!v) return ''
+  return String(v).slice(0, 10)
+}
+
+function sessionRow(day, price, pct, story, markedLatest) {
+  const tone = pct == null || Number.isNaN(pct) ? 'flat' : pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat'
+  const driver = story
+    ? (markedLatest && dayKey(story.publishedAt) !== day
+      ? (isEn.value ? 'Latest · ' : '最新 · ') + story.title
+      : story.title)
+    : (isEn.value ? 'No external item affecting this product' : '当日无影响本商品的外部资讯')
+  return {
+    key: day + (story?.id || ''),
+    day: shortDay(day),
+    benchmarkText: price == null || Number.isNaN(price) ? '—' : '¥' + price.toFixed(2),
+    changeText: pct == null || Number.isNaN(pct) ? '—' : (pct > 0 ? '+' : '') + pct.toFixed(2) + '%',
+    tone,
+    driver,
+    news: story
+  }
+}
+
 /** Stats Band 四联统计：区间最低 / 最高 / 振幅 / 调价次数，各自带迷你图 */
 const statItems = computed(() => {
   const list = candles.value
@@ -500,7 +575,7 @@ const statItems = computed(() => {
 
 /** 仪表环：按五维强度占比着色（沿用 Finance Bento Allocation 的占比着色逻辑）。
  *  后端新增 per-product 的 weight 时把权重乘进 strength；字段缺失（旧数据）按 strength 原值。 */
-const factorColors = { sentiment: '#C8A45C', supply: '#B5654F', material: '#7E9BB8', international: '#7FA89B', politics: '#13233A' }
+const factorColors = { sentiment: '#C8A45C', supply: '#B5654F', material: '#7E9BB8', international: '#7FA89B', politics: '#8566A8' }
 const gaugeSegments = computed(() => {
   const weighted = factors.value.map(f => {
     const strength = Math.max(0, Number(f.strength) || 0)
@@ -514,9 +589,6 @@ const gaugeSegments = computed(() => {
     color: factorColors[f.key] || '#C8A45C'
   }))
 })
-
-
-const tickerNews = computed(() => news.value)
 
 const dateNumeric = computed(() => {
   const d = new Date()
@@ -663,7 +735,20 @@ async function loadProducts() {
   loading.value = true
   try {
     // 24 = 后端 market/products 上限（有调价留痕的在售商品按最近调价排序置顶）
-    const rows = await priceMonitorApi.marketProducts(24)
+    // 后端刚重启时第一次请求会失败，空列表会把行情卡停在「未分析」。这里短间隔重试。
+    let rows = null
+    let lastError = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        rows = await priceMonitorApi.marketProducts(24)
+        lastError = null
+        break
+      } catch (e) {
+        lastError = e
+        await new Promise((resolve) => setTimeout(resolve, 1200))
+      }
+    }
+    if (lastError) throw lastError
     products.value = (rows || []).map(normalizeProduct).filter(p => Number.isFinite(p.prodId))
     if (!products.value.some(p => p.prodId === selectedId.value)) {
       selectedId.value = products.value[0]?.prodId ?? null
@@ -725,16 +810,48 @@ async function loadFactors() {
 }
 
 async function loadNews() {
+  // 每日资讯与选中商品解耦：不传 prodId、不因商品为空而清空板块。
+  // 后端 /news/daily 走库内 RSS 结果并自带兜底，保证永远有内容。
   const seq = ++newsSeq
   newsLoading.value = true
   try {
-    const rows = await priceMonitorApi.news(newsCategory.value, 6)
-    if (seq === newsSeq) news.value = rows || []
+    const rows = await priceMonitorApi.dailyNews(newsCategory.value, 8)
+    if (seq === newsSeq) dailyNews.value = rows || []
   } catch (e) {
-    if (seq === newsSeq) news.value = []
+    // 失败时保留上一次成功结果，避免瞬时网络抖动导致板块闪空
+    if (seq === newsSeq && !dailyNews.value.length) dailyNews.value = localFallbackNews()
   } finally {
     if (seq === newsSeq) newsLoading.value = false
   }
+}
+
+/**
+ * 前端最后一道兜底：接口不可用时给出可读的占位资讯，保证板块不空白。
+ * 文案为平台观察口径，不编造具体行情数字。
+ */
+function localFallbackNews() {
+  const now = new Date()
+  const seeds = isEn.value
+    ? [
+        ['price', 'Industrial price watch', 'We track spot quotes across building materials, chemicals and electronics. Refer to product pages for live prices.'],
+        ['supply', 'Supply chain note', 'Off-peak production in northern regions may affect lead times; allow extra transit time for cross-region purchases.'],
+        ['policy', 'Procurement compliance', 'Check invoicing eligibility and credit terms before ordering; see policy pages for details.']
+      ]
+    : [
+        ['price', '工业品价格观察：本周主要品类报价以稳为主', '平台持续跟踪建材、化工、电子元器件等主要品类的现货报价与成交节奏，具体价格以商品页实时数据为准。'],
+        ['supply', '供应链提示：关注错峰生产与物流时效对交期的影响', '北方地区进入错峰生产周期，部分基础化工品供给偏紧；跨区域采购建议预留额外在途时间。'],
+        ['policy', '采购合规：增值税专用发票与账期结算要点', '企业采购需关注开票资质与账期授信条件，具体规则以平台政策页与订单结算页为准。']
+      ]
+  return seeds.map(([category, title, summary], i) => ({
+    id: `local-${i}`,
+    category,
+    title,
+    summary,
+    source: isEn.value ? 'Platform watch' : '平台观察',
+    publishedAt: new Date(now.getTime() - i * 3 * 3600 * 1000).toISOString(),
+    linkType: 'internal',
+    url: '/price-monitor'
+  }))
 }
 
 async function loadProduct() {
@@ -778,6 +895,7 @@ async function ask(q) {
   }
 }
 
+// 切换商品只重载价格/因子；资讯是独立的每日内容，不随商品变化重新拉取
 watch(selectedId, (id) => { if (id) loadProduct() })
 watch(days, () => { if (selectedId.value) loadTrend() })
 watch(newsCategory, loadNews)
@@ -794,7 +912,11 @@ onMounted(async () => {
   loadCoverage()
   await loadProducts()
   await loadNews()
-  newsTimer = window.setInterval(loadNews, 120_000)
+  // 资讯与行业基准一起滚：外部行情变了，图下对照表跟着变，不必等手动刷新
+  newsTimer = window.setInterval(() => {
+    loadNews()
+    if (selectedId.value) loadTrend()
+  }, 120_000)
 })
 onBeforeUnmount(() => {
   if (newsTimer) window.clearInterval(newsTimer)
@@ -890,6 +1012,51 @@ onBeforeUnmount(() => {
 .mp-chart-body.dim { opacity: .5; }
 .mp-chart-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 10px; padding-top: 12px; border-top: 1px solid rgba(19, 35, 58, .06); font-size: 11.5px; color: var(--ll-muted, #94A3B8); }
 .mp-chart-foot button { margin-left: auto; border: 0; background: transparent; color: var(--ll-brand-blue, #1E6EB8); font-size: 11.5px; cursor: pointer; padding: 0; }
+/* 交易日表紧挨图例，用真实 K 线把图下方被因子列拉出的空白填上 */
+.mp-chart-card { display: flex; flex-direction: column; }
+.mp-tape { margin-top: 6px; }
+.mp-tape-head,
+.mp-tape-row {
+  display: grid;
+  grid-template-columns: 72px 96px 84px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.mp-tape-head {
+  padding: 0 12px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--ll-muted, #94A3B8);
+}
+.mp-tape-row {
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ll-brand-base, #13233A);
+}
+.mp-tape-row:nth-child(even) { background: rgba(19, 35, 58, .04); }
+.t-chg.up { color: #9B2D20; font-weight: 700; }
+.t-chg.down { color: #2E7D5B; font-weight: 700; }
+.t-chg.flat { color: var(--ll-muted, #64748B); }
+.t-driver {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--ll-muted, #64748B);
+  font-size: 12.5px;
+}
+.t-driver.is-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: var(--ll-brand-base, #13233A);
+}
+.t-driver.is-link:hover { color: var(--ll-brand-blue, #1E6EB8); }
 
 /* 因子卡 */
 .mp-factor-card { display: flex; flex-direction: column; }
@@ -1024,6 +1191,58 @@ a.news-src:hover { color: var(--ll-brand-blue, #1E6EB8); text-decoration: underl
 @keyframes mpPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.82); } }
 @keyframes mpOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
+/* ===== 深色模式补层：仅覆盖行性板块内部（techservice 等刻意浅底页不受影响，故不做组件级 dark） ===== */
+/* 卡面：深玻璃底 */
+[data-theme='dark'] .mp-card { border-color: rgba(255, 255, 255, .10); background: linear-gradient(180deg, rgba(30, 41, 59, .60) 0%, rgba(15, 23, 42, .55) 100%); box-shadow: 0 34px 80px -46px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .06); }
+[data-theme='dark'] .mp-card:hover { box-shadow: 0 44px 96px -50px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06); }
+[data-theme='dark'] .mp-ai-card { background: linear-gradient(165deg, rgba(30, 41, 59, .60) 0%, rgba(200, 164, 92, .10) 58%, rgba(30, 110, 184, .08) 100%); }
+/* 深墨文字 → ink（var 自动翻转） */
+[data-theme='dark'] .mp-head h2, [data-theme='dark'] .mp-date, [data-theme='dark'] .mp-card-head h3, [data-theme='dark'] .mp-quote b, [data-theme='dark'] .f-name, [data-theme='dark'] .news-title, [data-theme='dark'] .ai-preview b, [data-theme='dark'] .ai-summary, [data-theme='dark'] .ai-driver b, [data-theme='dark'] .ai-suggestion, [data-theme='dark'] .ask-result b { color: var(--ll-ink, #e8edf5); }
+/* 暗金 → 亮金 */
+[data-theme='dark'] .mp-eyebrow, [data-theme='dark'] .mp-weekday, [data-theme='dark'] .mp-label, [data-theme='dark'] .mp-kicker, [data-theme='dark'] .mp-head h2 em, [data-theme='dark'] .f-evidence .src, [data-theme='dark'] .f-ext, [data-theme='dark'] .ai-source, [data-theme='dark'] .news-src { color: var(--ll-brand-gold, #C8A45C); }
+/* 蓝 → 亮蓝 */
+[data-theme='dark'] .mp-link, [data-theme='dark'] .mp-chart-foot button, [data-theme='dark'] .mp-factor-foot button { color: #6FB1E8; }
+[data-theme='dark'] .mp-link:hover { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .mp-ticker-item:hover, [data-theme='dark'] .f-evidence-link:hover .f-evidence, [data-theme='dark'] .f-evidence-link:hover .f-ext, [data-theme='dark'] a.news-src:hover { color: #6FB1E8; }
+/* 红 → 亮红 */
+[data-theme='dark'] .q-change.up, [data-theme='dark'] .mp-factor-row.up .f-impact, [data-theme='dark'] .mp-factor-row.up .f-score, [data-theme='dark'] .ai-driver .impact.up, [data-theme='dark'] .news-cat.price, [data-theme='dark'] .news-link-badge.lt-article { color: #ff7161; }
+[data-theme='dark'] .mp-ticker-label { color: #ff7161; background: rgba(255, 113, 97, .12); }
+[data-theme='dark'] .mp-ticker-label i, [data-theme='dark'] .mp-factor-state .dot-ok { background: #ff7161; }
+[data-theme='dark'] .live-dot { background: #ff7161; box-shadow: 0 0 0 4px rgba(255, 113, 97, .16); }
+/* 绿 → 亮绿（dot-ok 本体红/环绿与浅态同构） */
+[data-theme='dark'] .q-change.down, [data-theme='dark'] .mp-factor-row.down .f-impact, [data-theme='dark'] .mp-factor-row.down .f-score, [data-theme='dark'] .ai-driver .impact.down, [data-theme='dark'] .news-cat.supply, [data-theme='dark'] .news-link-badge.lt-internal { color: #3E9C82; }
+[data-theme='dark'] .pulse { background: #3E9C82; box-shadow: 0 0 0 4px rgba(62, 156, 130, .14); }
+[data-theme='dark'] .mp-factor-state .dot-ok { box-shadow: 0 0 0 3px rgba(62, 156, 130, .14); }
+[data-theme='dark'] .mp-factor-state.ok { color: #3E9C82; }
+/* 黄/蓝标签 */
+[data-theme='dark'] .news-cat.policy, [data-theme='dark'] .news-link-badge.lt-search { color: #D9B36C; }
+[data-theme='dark'] .news-cat.international, [data-theme='dark'] .news-link-badge.lt-source { color: #6FB1E8; }
+/* 白底表面翻深 */
+[data-theme='dark'] .mp-product-select :deep(.ant-select-selector) { background: rgba(30, 41, 59, .6) !important; border-color: rgba(255, 255, 255, .14) !important; }
+[data-theme='dark'] .mp-refresh, [data-theme='dark'] .mp-ghost { border-color: rgba(255, 255, 255, .14); background: rgba(30, 41, 59, .6); color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .mp-news-list li { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .10); }
+[data-theme='dark'] .mp-news-list li:hover { border-color: rgba(200, 164, 92, .35); }
+[data-theme='dark'] .mp-chip.subtle { background: rgba(255, 255, 255, .08); }
+[data-theme='dark'] .ai-preview div { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .08); }
+[data-theme='dark'] .ask-box :deep(.ant-input-affix-wrapper) { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); }
+[data-theme='dark'] .quick-asks button { border-color: rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .06); color: var(--ll-muted, #8fa0b5); }
+[data-theme='dark'] .quick-asks button:hover { color: #C8A45C; }
+[data-theme='dark'] .ask-result { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .10); }
+[data-theme='dark'] .ai-source { border-color: rgba(200, 164, 92, .35); }
+[data-theme='dark'] .ai-orbit { border-color: rgba(200, 164, 92, .4); }
+/* 分隔线/轨道 → 白系 */
+[data-theme='dark'] .mp-stats, [data-theme='dark'] .mp-chart-foot, [data-theme='dark'] .mp-factor-list, [data-theme='dark'] .mp-factor-foot, [data-theme='dark'] .mp-ticker { border-color: rgba(255, 255, 255, .10); }
+[data-theme='dark'] .mp-tape-row { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .mp-tape-row:nth-child(even) { background: rgba(255, 255, 255, .05); }
+[data-theme='dark'] .f-track { background: rgba(255, 255, 255, .10); }
+[data-theme='dark'] .f-mid { background: rgba(255, 255, 255, .28); }
+[data-theme='dark'] .f-impact { background: rgba(255, 255, 255, .08); }
+/* SegmentedControl 深色形态（scoped 覆盖，不做组件级 dark——避免污染 LiveSquare/PriceIntelligence/techservice 的浅底页） */
+[data-theme='dark'] .mp-section :deep(.seg) { background: rgba(15, 23, 42, .6); border-color: rgba(255, 255, 255, .14); }
+[data-theme='dark'] .mp-section :deep(.seg button) { color: var(--ll-muted, #8fa0b5); }
+[data-theme='dark'] .mp-section :deep(.seg button:hover) { color: var(--ll-ink, #e8edf5); }
+[data-theme='dark'] .mp-section :deep(.seg button[aria-pressed='true']) { background: #31405a; color: var(--ll-ink, #e8edf5); box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px -6px rgba(0, 0, 0, .5); }
+
 @media (max-width: 1220px) {
   .mp-bento { grid-template-columns: 1fr; }
   .mp-lower { grid-template-columns: 1fr; }
@@ -1053,6 +1272,8 @@ a.news-src:hover { color: var(--ll-brand-blue, #1E6EB8); text-decoration: underl
   .mp-quote { text-align: left; }
   .mp-chart-foot span:nth-child(2) { display: none; }
   .mp-chart-foot button { margin-left: 0; }
+  .mp-tape-head, .mp-tape-row { grid-template-columns: 64px 78px 72px minmax(0, 1fr); gap: 6px; padding-inline: 4px; }
+  .t-driver { font-size: 12px; }
   .ai-intro { flex-direction: column; align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) {

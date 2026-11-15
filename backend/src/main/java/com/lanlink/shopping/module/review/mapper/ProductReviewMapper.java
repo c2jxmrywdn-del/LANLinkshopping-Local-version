@@ -27,4 +27,8 @@ public interface ProductReviewMapper extends BaseMapper<ProductReview> {
     @Select("SELECT rating, COUNT(*) AS c FROM t_product_review "
             + "WHERE prod_id = #{prodId} AND status = 1 GROUP BY rating")
     List<Map<String, Object>> ratingDistribution(@Param("prodId") Long prodId);
+
+    /** 本人在该单已评过的订单行：按 user_id 收窄，查别人的单只会得到空列表 */
+    @Select("SELECT item_id FROM t_product_review WHERE order_no = #{orderNo} AND user_id = #{userId}")
+    List<Long> reviewedItemIds(@Param("userId") Long userId, @Param("orderNo") String orderNo);
 }

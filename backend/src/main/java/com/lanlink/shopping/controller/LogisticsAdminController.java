@@ -3,12 +3,12 @@ package com.lanlink.shopping.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
+import com.lanlink.shopping.dto.LogisticsProviderAdminDTO;
+import com.lanlink.shopping.dto.LogisticsTemplateAdminDTO;
 import com.lanlink.shopping.entity.LogisticsAftersale;
 import com.lanlink.shopping.entity.LogisticsAlert;
-import com.lanlink.shopping.entity.LogisticsProvider;
 import com.lanlink.shopping.entity.LogisticsSettlement;
 import com.lanlink.shopping.entity.LogisticsSettlementItem;
-import com.lanlink.shopping.entity.LogisticsTemplate;
 import com.lanlink.shopping.entity.LogisticsReconciliation;
 import com.lanlink.shopping.entity.LogisticsInvoice;
 import com.lanlink.shopping.dto.LogisticsReconciliationDTO.ReconciliationImportDTO;
@@ -56,27 +56,27 @@ public class LogisticsAdminController {
     /* ==================== 服务商 ==================== */
 
     @GetMapping("/provider/list")
-    public R<List<LogisticsProvider>> providers() {
-        return R.ok(adminService.providers());
+    public R<List<LogisticsProviderAdminDTO.ProviderVO>> providers() {
+        return R.ok(adminService.providerVOs());
     }
 
     @PostMapping("/provider/save")
-    public R<LogisticsProvider> saveProvider(@RequestBody LogisticsProvider provider, HttpServletRequest request) {
+    public R<LogisticsProviderAdminDTO.ProviderVO> saveProvider(@RequestBody LogisticsProviderAdminDTO.ProviderSaveRequest req, HttpServletRequest request) {
         Long userId = UserContext.currentUserId(request);
-        return R.ok("保存成功", adminService.saveProvider(provider, userId, request));
+        return R.ok("保存成功", adminService.saveProviderDTO(req, userId, request));
     }
 
     /* ==================== 运费模板 ==================== */
 
     @GetMapping("/template/list")
-    public R<List<LogisticsTemplate>> templates(@RequestParam(required = false) Long providerId) {
-        return R.ok(adminService.templates(providerId));
+    public R<List<LogisticsTemplateAdminDTO.TemplateVO>> templates(@RequestParam(required = false) Long providerId) {
+        return R.ok(adminService.templateVOs(providerId));
     }
 
     @PostMapping("/template/save")
-    public R<LogisticsTemplate> saveTemplate(@RequestBody LogisticsTemplate template, HttpServletRequest request) {
+    public R<LogisticsTemplateAdminDTO.TemplateVO> saveTemplate(@RequestBody LogisticsProviderAdminDTO.TemplateSaveRequest req, HttpServletRequest request) {
         Long userId = UserContext.currentUserId(request);
-        return R.ok("保存成功", adminService.saveTemplate(template, userId, request));
+        return R.ok("保存成功", adminService.saveTemplateDTO(req, userId, request));
     }
 
     /* ==================== 异常告警 ==================== */

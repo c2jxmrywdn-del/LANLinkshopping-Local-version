@@ -100,9 +100,9 @@ class MembershipCheckinTest {
         verify(pointLogMapper).insert(logCaptor.capture());
         assertEquals("checkin:" + LocalDate.now(), logCaptor.getValue().getRefOrderNo());
         assertEquals(10, logCaptor.getValue().getChangeVal());
-        ArgumentCaptor<MemberCard> cardCaptor = ArgumentCaptor.forClass(MemberCard.class);
-        verify(cardMapper).updateById(cardCaptor.capture());
-        assertEquals(110, cardCaptor.getValue().getPoints());
+        // 余额累加走原子 UPDATE（+10），不再是 updateById 整实体写回
+        verify(cardMapper).update(isNull(), argThat(w ->
+                w != null && w.getSqlSet() != null && w.getSqlSet().contains("+ 10")));
     }
 
     // ===== 连续签到 =====

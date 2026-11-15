@@ -121,6 +121,26 @@
       </div>
     </section>
 
+    <section class="tech-cta" data-reveal="scale">
+      <div>
+        <span class="tech-eyebrow">{{ isEn ? 'START SMALL, PROVE THE DEAL' : '从小切口开始，把第一单跑通' }}</span>
+        <h2>{{ isEn ? 'One patent. One need. One broker.' : '一件专利，一条需求，一位经纪人。' }}</h2>
+        <p>
+          {{ isEn
+            ? 'Pilot in intelligent manufacturing and advanced materials, then replicate the playbook to adjacent industries.'
+            : '先在智能制造与新材料做透，再把方法论复制到相邻行业；用真实成交验证模式，而不是用挂牌量证明存在感。' }}
+        </p>
+      </div>
+      <div class="tech-cta-actions">
+        <button type="button" class="tech-btn tech-btn-primary" @click="go('/tech/demands', { publish: 1 })">
+          {{ isEn ? 'Post a demand' : '发布需求' }}
+        </button>
+        <button type="button" class="tech-btn tech-btn-ghost" @click="go('/tech/hosting')">
+          {{ isEn ? 'Host a patent' : '申请专利托管' }}
+        </button>
+      </div>
+    </section>
+
     <section class="tech-section" data-reveal="fade-up">
       <TechSectionHead
         eyebrow="FULL-PROCESS ACCOMPANIMENT"
@@ -246,25 +266,6 @@
       </div>
     </section>
 
-    <section class="tech-cta" data-reveal="scale">
-      <div>
-        <span class="tech-eyebrow">{{ isEn ? 'START SMALL, PROVE THE DEAL' : '从小切口开始，把第一单跑通' }}</span>
-        <h2>{{ isEn ? 'One patent. One need. One broker.' : '一件专利，一条需求，一位经纪人。' }}</h2>
-        <p>
-          {{ isEn
-            ? 'Pilot in intelligent manufacturing and advanced materials, then replicate the playbook to adjacent industries.'
-            : '先在智能制造与新材料做透，再把方法论复制到相邻行业；用真实成交验证模式，而不是用挂牌量证明存在感。' }}
-        </p>
-      </div>
-      <div class="tech-cta-actions">
-        <button type="button" class="tech-btn tech-btn-primary" @click="go('/tech/demands', { publish: 1 })">
-          {{ isEn ? 'Post a demand' : '发布需求' }}
-        </button>
-        <button type="button" class="tech-btn tech-btn-ghost" @click="go('/tech/hosting')">
-          {{ isEn ? 'Host a patent' : '申请专利托管' }}
-        </button>
-      </div>
-    </section>
   </TechPageShell>
 </template>
 

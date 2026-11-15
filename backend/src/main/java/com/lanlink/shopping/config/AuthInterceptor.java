@@ -37,6 +37,12 @@ public class AuthInterceptor implements HandlerInterceptor {
 
         // Support requests are authenticated by the server-side proxy before any identity/database lookup.
         if (uri.equals("/support/ask")) return true;
+        // 客服媒体（预签名/确认/状态/中转）：匿名访客可用，鉴权由 SupportRequestGuard 的代理密钥 +
+        // 限流 + visitorToken 归属校验完成，不能落到登录拦截（否则访客上传直接被 401）。
+        if (uri.startsWith("/support/media")) return true;
+        // 客服语音播报：匿名访客可用，鉴权由 SupportRequestGuard 的代理密钥/平台 Key + 限流完成，
+        // 不能落到登录拦截（否则未登录用户的播报请求直接 401）。
+        if (uri.startsWith("/support/tts")) return true;
         // AI 内部工具网关请求：由 AiToolGuard 在控制器前置独立完成服务间凭证/API Key 鉴权与限流
         if (uri.startsWith("/internal/ai/tools")) return true;
 
@@ -80,6 +86,8 @@ public class AuthInterceptor implements HandlerInterceptor {
     private boolean isWhiteList(String uri) {
         return uri.startsWith("/auth/login")
                 || uri.startsWith("/auth/register")
+                || uri.startsWith("/auth/register-code")
+                || uri.startsWith("/auth/password-reset")
                 // 商品推荐位公开浏览（个性化仅在 analytics 授权下生效，服务端自动降级）
                 || uri.startsWith("/recommendations/")
                 // A/B 实验：分流/曝光/转化公开上报（匿名用 sessionId 分桶，管理端 CRUD 在 /admin/**）
@@ -88,6 +96,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || uri.equals("/auth/social/providers")
                 || uri.startsWith("/auth/social/authorize/")
                 || uri.startsWith("/auth/social/callback/")
+                || uri.equals("/auth/social/apple/return")
                 || uri.startsWith("/auth/social/sandbox-login")
                 // 语言自动识别的地理提示：启动期（登录前）即需调用
                 || uri.startsWith("/i18n/")
@@ -98,17 +107,24 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 商品仅公开浏览(分页/详情)；发布/图片上传/我的列表/审核均需登录
                 || uri.equals("/product/page")
                 || uri.startsWith("/product/detail/")
+                // 公开店铺卡片（店铺首页/店铺列表/搜索结果的店铺条目）：
+                // 只返回店铺名、企业名、是否「平台特邀商户」，不含任何敏感字段
+                || uri.equals("/merchant/shops")
                 // 活动中心公开浏览（列表/详情）；领券/参与/券包/商户端均需登录
                 || uri.equals("/campaign/list")
                 || uri.startsWith("/campaign/detail/")
                 // 商品详情页促销（公开浏览）：生效中命中该商品的促销（平台 + 商户）
                 || uri.startsWith("/campaign/for-product/")
+                // 领券中心券池：公开浏览（游客可看有哪些券）；领取/批量领取/券包仍需登录
+                || uri.equals("/campaign/coupons/center")
                 // 价格监控：商品价格走势、五维因子与市场资讯公开浏览（商品详情页/首页行情）
                 || uri.startsWith("/price-monitor/trend/")
                 || uri.startsWith("/price-monitor/factors/")
                 || uri.startsWith("/price-monitor/auto-profile/")
                 || uri.startsWith("/price-monitor/market/")
                 || uri.equals("/price-monitor/news")
+                || uri.equals("/price-monitor/news/live")
+                || uri.equals("/price-monitor/news/daily")
                 // 直播间公开浏览（广场/详情/商品/弹幕/进出场/点击埋点）；点赞评论可匿名（昵称降级），商户端与复盘需权限
                 || uri.equals("/live/rooms")
                 || uri.startsWith("/live/room/")
@@ -116,6 +132,8 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || uri.startsWith("/live/room-by-product/")
                 // 订阅方案列表公开浏览；购买/我的/取消需登录
                 || uri.equals("/subscription/plans")
+                // 平台对公收款账户：收银台展示用，公开只读（未配置时返回空对象）
+                || uri.equals("/payment/corporate-bank")
                 // 支付渠道异步通知与同步回跳：无登录态，公开放行（内部已做签名校验）
                 || uri.startsWith("/payment/notify/")
                 || uri.equals("/payment/alipay/return")

@@ -105,4 +105,23 @@ class FallbackPolicyGuardTest {
         assertEquals(FallbackPolicyGuard.Intent.KNOWLEDGE,
                 FallbackPolicyGuard.classify("你好，请问如何注册账号"));
     }
+
+    // ---------- 复杂多模态外部嵌入权限校验 ----------
+    @Test
+    void authorizeExternalEmbeddedAnswerValidation() {
+        // 1. 总开关关闭时拦截
+        assertNotNull(FallbackPolicyGuard.authorizeExternalEmbeddedAnswer(
+                FallbackPolicyGuard.Intent.COMPLEX_EMBEDDED, true, false));
+        // 2. 违规请求一律拦截
+        assertNotNull(FallbackPolicyGuard.authorizeExternalEmbeddedAnswer(
+                FallbackPolicyGuard.Intent.PROHIBITED, true, true));
+        // 3. 非复杂分流且非 COMPLEX_EMBEDDED 拦截
+        assertNotNull(FallbackPolicyGuard.authorizeExternalEmbeddedAnswer(
+                FallbackPolicyGuard.Intent.KNOWLEDGE, false, true));
+        // 4. 合规复杂分流放行
+        assertNull(FallbackPolicyGuard.authorizeExternalEmbeddedAnswer(
+                FallbackPolicyGuard.Intent.KNOWLEDGE, true, true));
+        assertNull(FallbackPolicyGuard.authorizeExternalEmbeddedAnswer(
+                FallbackPolicyGuard.Intent.COMPLEX_EMBEDDED, true, true));
+    }
 }

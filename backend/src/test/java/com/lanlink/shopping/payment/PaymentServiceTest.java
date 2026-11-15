@@ -1,7 +1,9 @@
 package com.lanlink.shopping.payment;
 
 import com.lanlink.shopping.entity.Order;
+import com.lanlink.shopping.entity.RefundApproval;
 import com.lanlink.shopping.mapper.OrderMapper;
+import com.lanlink.shopping.mapper.RefundApprovalMapper;
 import com.lanlink.shopping.payment.alipay.AlipayPayClient;
 import com.lanlink.shopping.payment.dto.RefundRequest;
 import com.lanlink.shopping.payment.service.PaymentLogService;
@@ -32,6 +34,7 @@ class PaymentServiceTest {
     private OrderMapper orderMapper;
     private PaymentLogService payLog;
     private WalletService walletService;
+    private RefundApprovalMapper refundApprovalMapper;
     private PaymentService svc;
 
     @BeforeEach
@@ -44,8 +47,10 @@ class PaymentServiceTest {
         orderMapper = mock(OrderMapper.class);
         payLog = mock(PaymentLogService.class);
         walletService = mock(WalletService.class);
+        refundApprovalMapper = mock(RefundApprovalMapper.class);
         StripePayClient stripe = mock(StripePayClient.class);
         svc = new PaymentService(props, wechat, alipay, stripe, orderService, orderMapper, payLog, walletService);
+        svc.setRefundApprovalMapper(refundApprovalMapper); // P0-C：出款必须有平台复核凭证
     }
 
     private Order unpaidOrder() {
@@ -102,9 +107,19 @@ class PaymentServiceTest {
         Order paid = unpaidOrder();
         paid.setPayStatus(1);
         paid.setPayChannel("mock");
+        paid.setRefundStatus("merchant_approved"); // P0-C：须先有商户初审
         when(orderMapper.selectById("20261004123456")).thenReturn(paid);
-        // 退款两段式：先有退款申请（applied → processing 原子占位）
+        // 退款两段式：先有退款申请（merchant_approved → processing 原子占位）
         when(orderMapper.markRefundProcessingAtomic("20261004123456")).thenReturn(1);
+        // P0-C：必须有未消费的平台复核凭证，且金额一致（剩余可退 88.80）
+        RefundApproval approval = new RefundApproval();
+        approval.setId(66L);
+        approval.setStage("PLATFORM");
+        approval.setAction("APPROVE");
+        approval.setAmount(new BigDecimal("88.80"));
+        approval.setConsumed(0);
+        when(refundApprovalMapper.findLatestPlatform("20261004123456")).thenReturn(approval);
+        when(refundApprovalMapper.consume(66L)).thenReturn(1);
 
         RefundRequest req = new RefundRequest();
         req.setOrderNo("20261004123456");
@@ -114,6 +129,7 @@ class PaymentServiceTest {
         assertTrue(ok);
         verify(orderService).applyRefundResult(eq("20261004123456"), anyString(),
                 eq(new BigDecimal("88.80")), eq(true));
+        verify(refundApprovalMapper).consume(66L); // 一次复核只出一次款
     }
 
     @Test

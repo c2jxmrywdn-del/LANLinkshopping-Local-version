@@ -345,4 +345,23 @@ public class VerifyCodeService {
     private String key(Long userId, String type, String target) {
         return userId + ":" + type + ":" + target;
     }
+
+    /**
+     * 匿名注册场景发送验证码（注册前无 userId）。
+     *
+     * <p>与已登录链路共用同一存储与冷却，但用固定前缀区分作用域，避免与
+     * "换绑手机号"的验证码互相覆盖（同一个手机号在两处应有独立验证码）。
+     * 返回非 null 表示演示模式回显，调用方不得在生产回显。
+     */
+    public String sendForRegistration(String phone) {
+        return send(REGISTER_SCOPE, "phone", phone);
+    }
+
+    /** 匿名注册场景校验验证码。 */
+    public void verifyForRegistration(String phone, String code) {
+        verify(REGISTER_SCOPE, "phone", phone, code);
+    }
+
+    /** 匿名作用域哨兵：与真实 userId 不可能碰撞（userId 为数值）。 */
+    private static final Long REGISTER_SCOPE = -1L;
 }

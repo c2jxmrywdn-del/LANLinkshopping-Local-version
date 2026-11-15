@@ -131,6 +131,12 @@ public class PriceMonitorAiService {
         }
     }
 
+    @Value("${AI_MODEL_ROUTER_URL:}")
+    private String gpuRouterUrl;
+
+    /** 价格分析只打 llama.cpp 的 qwen2.5-7b。该预设 n-gpu-layers=99，不走 CPU 辅助模型。 */
+    private static final String GPU_TEXT_MODEL = "qwen2.5-7b";
+
     private record Cached(Object value, long at) { }
 
     public PriceMonitorAiService(ProductMapper productMapper, PriceHistoryMapper historyMapper,
@@ -209,8 +215,9 @@ public class PriceMonitorAiService {
     /**
      * 五维因子看板：把「全局最新资讯」换成「本商品相关资讯加权分」+「本商品价格行为分」融合计算。
      *
-     * <p>资讯分：先用维度关键词筛出该维度资讯，再按 {@link ProductFactorProfile#relevanceOf} 加权
-     * （商品相关 3 / 同行业 2 / 泛市场 1 / 其他行业 0.4），权重再乘行业暴露度；
+     * <p>资讯分：先用维度关键词筛出该维度资讯，只保留能影响本商品的条目
+     * （{@link ProductFactorProfile#relevanceOf} ≥ 2：商品自身或同行业）。
+     * 泛市场和其他行业资讯不进分数、也不当证据。权重再乘行业暴露度；
      * 行为分：本商品 30 日动量、区间位置、相对行业强弱、库存覆盖等。两者 65% / 35% 合成，
      * 因此不同商品命中不同资讯、价格走势不同，factors 输出必然不同。
      *
@@ -225,7 +232,7 @@ public class PriceMonitorAiService {
         ProductFactorProfile profile = ProductFactorProfile.of(p, industryName, categoryName);
         Map<String, Object> rule = safeAnalyze(prodId);
         PriceBehavior behavior = priceBehavior(p, rule, safeHistories(prodId));
-        List<MarketNews> news = safeNews(40);
+        List<MarketNews> news = newsForProduct(profile, 40);
         List<Map<String, Object>> list = computeFactors(news, profile, behavior, en);
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -267,6 +274,8 @@ public class PriceMonitorAiService {
             if (n == null) continue;
             String text = textOf(n);
             double productRelevance = profile.relevanceOf(n);
+            // 低于同行业（2.0）的资讯不影响这件商品，不参与打分，也不作为因子证据。
+            if (productRelevance < 2.0) continue;
             int importance = n.getImportance() == null ? 1 : Math.max(1, n.getImportance());
             for (String key : FACTOR_KEYS) {
                 if (!matchesFactor(key, n.getCategory(), text)) continue;
@@ -859,9 +868,8 @@ public class PriceMonitorAiService {
         return d == null ? null : d.intValue();
     }
 
-    /** 按商品相关度取资讯：>=2（本商品/本行业）优先，不足的用最新资讯补足到 limit 条。 */
+    /** 只保留能影响本商品的资讯（相关度 ≥ 2：商品自身或同行业）。不够 limit 也不用无关稿补。 */
     private List<MarketNews> relevantNews(List<MarketNews> all, ProductFactorProfile profile, int limit) {
-        List<MarketNews> out = new ArrayList<>();
         List<MarketNews> relevant = new ArrayList<>();
         for (MarketNews n : all) {
             if (n != null && profile.relevanceOf(n) >= 2.0) relevant.add(n);
@@ -872,16 +880,7 @@ public class PriceMonitorAiService {
             if (Double.compare(rb, ra) != 0) return Double.compare(rb, ra);
             return compareAtDesc(a.getPublishedAt(), b.getPublishedAt());
         });
-        out.addAll(relevant.subList(0, Math.min(limit, relevant.size())));
-        if (out.size() < limit) {
-            List<MarketNews> latest = new ArrayList<>(all);
-            latest.sort((a, b) -> compareAtDesc(a.getPublishedAt(), b.getPublishedAt()));
-            for (MarketNews n : latest) {
-                if (out.size() >= limit) break;
-                if (n != null && !out.contains(n)) out.add(n);
-            }
-        }
-        return out;
+        return new ArrayList<>(relevant.subList(0, Math.min(limit, relevant.size())));
     }
 
     private String industryNameOf(Product p) {
@@ -930,6 +929,48 @@ public class PriceMonitorAiService {
             log.warn("[price-ai] market news unavailable: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 本商品的资讯候选集：全局最新 + 按商品词定向检索，去重后按发布时间倒序。
+     *
+     * <p>历史缺陷：只取全局最新 40 条，油价/美元指数/股市收盘等宏观快讯会把候选集占满，
+     * 水泥、钢材等具体品类的资讯一条都进不来，因子面板长期显示「没有该商品的直接信号」。
+     * 现在把商品自身/行业关键词下推到 SQL 定向取，再与全局最新合并。
+     */
+    private List<MarketNews> newsForProduct(ProductFactorProfile profile, int limit) {
+        Map<String, MarketNews> merged = new LinkedHashMap<>();
+        List<String> keywords = new ArrayList<>();
+        if (profile != null) {
+            keywords.addAll(profile.productKeywords());
+            keywords.addAll(profile.industryKeywords());
+        }
+        // 商品相关资讯【优先占位】：定向检索命中的条目先入列，
+        // 之后才用全局最新资讯补足剩余额度。
+        // 历史缺陷：先合并再按时间截断到 40 条时，热门宏观稿（11-12 的油价/美元/股市）
+        // 会把 11-05~11-09 的水泥/钢材资讯挤出候选集，商品侧依旧「0 条相关」。
+        try {
+            for (MarketNews n : newsService.relatedTo(keywords, limit)) {
+                if (n != null && merged.size() < limit) merged.put(newsKey(n), n);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[price-ai] product-scoped news unavailable: {}", e.getMessage());
+        }
+        for (MarketNews n : safeNews(limit)) {
+            if (n == null || merged.size() >= limit) break;
+            merged.putIfAbsent(newsKey(n), n);
+        }
+        return new ArrayList<>(merged.values());
+    }
+
+    /**
+     * 去重键：优先用主键；主键缺失（单测构造的对象、尚未入库的临时行）时退化为
+     * 标题 + 发布时间，避免整批资讯因 id 为空被静默丢弃。
+     */
+    private static String newsKey(MarketNews n) {
+        if (n.getId() != null) return "id:" + n.getId();
+        return "t:" + (n.getTitle() == null ? "" : n.getTitle())
+                + "@" + (n.getPublishedAt() == null ? "" : n.getPublishedAt());
     }
 
     // ==================== 对外 ====================
@@ -1515,12 +1556,12 @@ public class PriceMonitorAiService {
         BigDecimal relative = changePct.subtract(benchChange == null ? BigDecimal.ZERO : benchChange)
                 .setScale(2, RoundingMode.HALF_UP);
 
-        // 按商品：先算画像/价格行为/五维因子，再按商品相关度取上下文资讯（>=2 优先，最新补足）。
+        // 按商品：先算画像/价格行为/五维因子，上下文资讯只留能影响本商品的条目。
         String industryName = industryNameOf(p);
         String categoryName = categoryNameOf(p);
         ProductFactorProfile profile = ProductFactorProfile.of(p, industryName, categoryName);
         PriceBehavior behavior = priceBehavior(p, safeRule, hs);
-        List<MarketNews> allNews = safeNews(40);
+        List<MarketNews> allNews = newsForProduct(profile, 40);
         List<Map<String, Object>> factorList = computeFactors(allNews, profile, behavior, en);
         List<MarketNews> news = relevantNews(allNews, profile, 6);
         // 展示模型名与实际调用顺序一致：优先本地 AI 网关（mimosa）渠道，其次任一启用渠道。
@@ -1691,6 +1732,13 @@ public class PriceMonitorAiService {
     }
 
     private JsonNode callAi(String prompt, boolean en) {
+        if (gpuRouterUrl != null && !gpuRouterUrl.isBlank()) {
+            JsonNode gpu = callGpuModel(prompt, en);
+            if (gpu != null) return gpu;
+            throw new BusinessException(en
+                    ? "GPU inference is unavailable. This analysis does not fall back to the rule engine."
+                    : "GPU 推理不可用。这次分析没有改走规则引擎。");
+        }
         if (System.currentTimeMillis() < aiDisabledUntil) return null;
         if (!tryAcquireAiQuota()) return null;
         int attempts = 0;
@@ -1773,6 +1821,57 @@ public class PriceMonitorAiService {
         // 一次超时不该让后续 5 分钟全部降级，故熔断窗口短于历史 5 分钟）。
         aiDisabledUntil = System.currentTimeMillis() + 2 * 60 * 1000L;
         return null;
+    }
+
+    /**
+     * 直连 llama.cpp router 的文本模型。模型名固定 qwen2.5-7b，对应预设 n-gpu-layers=99。
+     * 不调用 qwen2.5-7b-cpu-assist，也不调用 Ollama。
+     */
+    private JsonNode callGpuModel(String prompt, boolean en) {
+        String base = gpuRouterUrl.trim();
+        while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+        String url = base.endsWith("/v1") ? base + "/chat/completions" : base + "/v1/chat/completions";
+        try {
+            ObjectNode body = JSON.createObjectNode();
+            body.put("model", GPU_TEXT_MODEL);
+            body.put("temperature", 0.2);
+            body.put("max_tokens", 800);
+            var messages = body.putArray("messages");
+            messages.addObject().put("role", "system").put("content", en
+                    ? "You are a rigorous B2B price analyst. Output ONLY valid JSON, and write every value in English."
+                    : "你是严谨的 B2B 价格分析师，只输出合法 JSON。");
+            messages.addObject().put("role", "user").put("content", prompt);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(120))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                log.warn("[price-ai] GPU {} HTTP {}", GPU_TEXT_MODEL, resp.statusCode());
+                return null;
+            }
+            JsonNode root = JSON.readTree(resp.body());
+            String content = root.path("choices").path(0).path("message").path("content").asText("");
+            JsonNode parsed = extractJson(content);
+            if (parsed != null) {
+                log.info("[price-ai] GPU inference ok model={} n-gpu-layers=99", GPU_TEXT_MODEL);
+                recordAiAudit("gpu", GPU_TEXT_MODEL, "ok");
+                return parsed;
+            }
+            if (content != null && !content.isBlank() && !AnalysisSafetyFilter.containsInjectionEcho(content)) {
+                ObjectNode node = JSON.createObjectNode();
+                String raw = stripFence(content);
+                node.put("summary", raw.length() > 600 ? raw.substring(0, 600) + "…" : raw);
+                log.info("[price-ai] GPU inference ok model={} raw-fallback", GPU_TEXT_MODEL);
+                recordAiAudit("gpu", GPU_TEXT_MODEL, "raw-fallback");
+                return node;
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("[price-ai] GPU {} failed: {}", GPU_TEXT_MODEL, e.getMessage());
+            return null;
+        }
     }
 
     /** 本地 AI 网关（mimosa）优先，其次其余启用渠道，避免先撞不可用的外部渠道浪费尝试次数。 */

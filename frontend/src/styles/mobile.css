@@ -236,3 +236,9 @@ html[data-viewport='mobile'] .toolbar-right .ant-select {
   flex: 1 1 100%;
   width: 100% !important;
 }
+
+/* 物流承运商推荐：能力标签与包邮角标手机端放大可读（out/carrier-expansion-design.md §4.1） */
+html[data-viewport='mobile'] .capability-tag { font-size: 11px; }
+html[data-viewport='mobile'] .free-shipping-badge,
+html[data-viewport='mobile'] .intl-quote-text { font-size: 11px; }
+html[data-viewport='mobile'] .recommend-pref-row .ant-radio-button-wrapper { min-height: 36px; }

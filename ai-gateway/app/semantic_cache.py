@@ -47,6 +47,27 @@ DEFAULT_CACHE_INVALIDATE_CHANNEL = os.environ.get(
     "GATEWAY_CACHE_INVALIDATE_CHANNEL", "aigateway:cache:invalidate"
 )
 
+
+def _env_embed_dim() -> Optional[int]:
+    """读取 AI_EMBED_DIM；未配置/非法时返回 None（交由嵌入模型实际输出决定维度）。
+
+    历史缺陷：`dim` 硬编码 768，而网关部署注入的 `AI_EMBED_MODEL=bge-m3` 输出 1024 维，
+    `len(vector) != self.dim` 会静默丢弃全部 Tier-2 写入与命中，语义缓存退化成仅精确匹配。
+    """
+    raw = (os.environ.get("AI_EMBED_DIM") or "").strip()
+    if not raw:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("AI_EMBED_DIM 非法（%r），改由嵌入模型实际输出决定维度", raw)
+        return None
+    return value if value > 0 else None
+
+
+# 维度探测用的探针文本：短、无业务语义，避免被敏感规则或业务逻辑干扰。
+_DIM_PROBE_TEXT = "维度探针"
+
 # 动态敏感正则：命中则绝对不予缓存（防隐私泄露与越权）
 SENSITIVE_QUERY_PATTERNS = [
     re.compile(r"\bORD[-_A-Za-z0-9]+\b", re.IGNORECASE),  # 订单号
@@ -168,13 +189,17 @@ class SemanticCache:
         self,
         redis_client: Optional[Any] = None,
         embedder: Optional[Any] = None,
-        dim: int = 768,
+        dim: Optional[int] = None,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
         ttl_seconds: int = DEFAULT_CACHE_TTL,
+        auto_start_pubsub: bool = False,
     ):
         self._client = redis_client
         self._embedder = embedder
-        self.dim = dim
+        # 维度解析优先级：显式参数 > AI_EMBED_DIM > 嵌入模型首次实际输出。
+        # 后两者都可能为 None：此时不预先定死维度，等首次 embed 时按真实输出校准，
+        # 避免"配置写 768、模型吐 1024"这类静默失效。
+        self.dim: Optional[int] = dim if dim else _env_embed_dim()
         self.similarity_threshold = similarity_threshold
         self.distance_threshold = round(1.0 - similarity_threshold, 4)
         self.ttl = ttl_seconds
@@ -187,22 +212,27 @@ class SemanticCache:
         # 异步失效 MVCC 时间戳，防止后台异步写回覆盖失效指令
         self._last_invalidate_time: Dict[str, float] = {}
 
-    def _is_invalidated_since(self, role: str, t: float) -> bool:
-        """检查自 t 刻起是否发生过主动失效指令。"""
-        with self._lock:
-            role_key = (role or "buyer").strip().lower()
-            return (self._last_invalidate_time.get(role_key, 0.0) >= t or
-                    self._last_invalidate_time.get("", 0.0) >= t)
-
         # RediSearch 可用性探针状态
         self._redis_available = True
         self._redisearch_ready = False
         self._last_index_check = 0.0
 
         # Redis Pub/Sub 广播自动失效监听器
+        # 只有进程级单例才订阅：每个 SemanticCache 实例各起一条重连线程会让线程数随实例
+        # 线性增长（Redis 不可用时每秒重试一次）。测试/临时实例默认不订阅，需要时显式调用
+        # start_pubsub_listener()。GATEWAY_ENABLE_PUBSUB_INVALIDATION=false 可整体关闭。
         self._pubsub_listener: Optional[CachePubSubListener] = None
-        if os.environ.get("GATEWAY_ENABLE_PUBSUB_INVALIDATION", "true").lower() in ("1", "true", "yes"):
+        if (auto_start_pubsub
+                and os.environ.get("GATEWAY_ENABLE_PUBSUB_INVALIDATION", "true").lower()
+                in ("1", "true", "yes")):
             self.start_pubsub_listener()
+
+    def _is_invalidated_since(self, role: str, t: float) -> bool:
+        """检查自 t 刻起是否发生过主动失效指令。"""
+        with self._lock:
+            role_key = (role or "buyer").strip().lower()
+            return (self._last_invalidate_time.get(role_key, 0.0) >= t or
+                    self._last_invalidate_time.get("", 0.0) >= t)
 
     def start_pubsub_listener(self, channel: Optional[str] = None):
         """启动后台 Redis Pub/Sub 监听线程，感知后端主动失效广播。"""
@@ -263,7 +293,7 @@ class SemanticCache:
         return None
 
     def _ensure_index(self, client) -> bool:
-        """确保 RediSearch 索引就绪"""
+        """确保 RediSearch 索引就绪（维度与当前嵌入模型一致）。"""
         if self._redisearch_ready:
             return True
         now = time.time()
@@ -275,8 +305,23 @@ class SemanticCache:
             names = client.execute_command("FT._LIST") or []
             names = [_decode(n) for n in names]
             if CACHE_INDEX_NAME in names:
-                self._redisearch_ready = True
-                return True
+                existing = self._index_dim(client)
+                if existing is None or self.dim is None or existing == self.dim:
+                    self._redisearch_ready = True
+                    return True
+                # 已有索引维度与当前嵌入模型不一致：旧向量无法参与 KNN，
+                # 直接删索引重建，否则每次检索都报 "Invalid vector blob size"。
+                logger.warning(
+                    "语义缓存索引维度不一致（索引 %s / 当前 %s），删除后重建 %s",
+                    existing, self.dim, CACHE_INDEX_NAME)
+                client.execute_command("FT.DROPINDEX", CACHE_INDEX_NAME, "DD")
+
+            if self.dim is None:
+                # 维度还没由嵌入模型校准：此时建索引只能靠猜，一旦猜错就要整库重建。
+                # 先退回内存 VSS，等首次 embed 锁定真实维度后再建。
+                logger.info("语义缓存维度尚未确定，暂不创建 RediSearch 索引（先用内存 VSS）")
+                self._redisearch_ready = False
+                return False
 
             # 创建 HNSW 向量索引
             client.execute_command(
@@ -305,6 +350,57 @@ class SemanticCache:
             self._redisearch_ready = False
             return False
 
+    @staticmethod
+    def _index_dim(client) -> Optional[int]:
+        """从 FT.INFO 读出索引已声明的向量维度；读不到返回 None（视为未知，不重建）。"""
+        try:
+            info = client.execute_command("FT.INFO", CACHE_INDEX_NAME)
+        except Exception:
+            return None
+        try:
+            attributes = None
+            if isinstance(info, dict):
+                attributes = info.get(b"attributes") or info.get("attributes")
+            else:
+                flat = list(info or [])
+                for i, item in enumerate(flat[:-1]):
+                    if _decode(item).lower() == "attributes":
+                        attributes = flat[i + 1]
+                        break
+            return SemanticCache._dim_from_attributes(attributes)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _dim_from_attributes(attributes) -> Optional[int]:
+        """在 attributes 结构里找 DIM：兼容 dict / RESP2 扁平列表 / 元素为 dict 的列表。"""
+        if not attributes:
+            return None
+
+        def flatten(node, out):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    out.extend([key, value])
+                    flatten(value, out)
+            elif isinstance(node, (list, tuple)):
+                for item in node:
+                    if isinstance(item, (dict, list, tuple)):
+                        flatten(item, out)
+                    else:
+                        out.append(item)
+            else:
+                out.append(node)
+
+        flat: list = []
+        flatten(attributes, flat)
+        for i, item in enumerate(flat[:-1]):
+            if _decode(item).upper() == "DIM":
+                try:
+                    return int(float(_decode(flat[i + 1])))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
     def _get_embedder(self):
         if self._embedder is not None:
             return self._embedder
@@ -314,6 +410,32 @@ class SemanticCache:
             return self._embedder
         except Exception:
             return None
+
+    def _resolve_dim(self, vector) -> Optional[int]:
+        """用嵌入向量的真实长度校准维度，返回可用的维度（不可用时 None）。
+
+        首次拿到向量时若维度未定，就地锁定；若已定但与实际不符，说明配置与模型不一致——
+        以实际输出为准并告警，同时让 RediSearch 索引按新维度重建，避免 Tier-2 永久失效。
+        """
+        if not vector:
+            return None
+        actual = len(vector)
+        if actual <= 0:
+            return None
+        with self._lock:
+            if self.dim == actual:
+                return actual
+            previous, self.dim = self.dim, actual
+            # 维度变了，旧索引的向量字段宽度不匹配，必须重建
+            self._redisearch_ready = False
+            self._last_index_check = 0.0
+        if previous is None:
+            logger.info("语义缓存维度已按嵌入模型实际输出锁定为 %d", actual)
+        else:
+            logger.warning(
+                "语义缓存维度与嵌入模型不一致（配置 %s / 实际 %d），已切换为实际维度并重建索引",
+                previous, actual)
+        return actual
 
     @staticmethod
     def _exact_hash(role: str, query: str) -> str:
@@ -411,7 +533,7 @@ class SemanticCache:
         except Exception as exc:
             logger.debug("Query Embedding 计算失败: %s", exc)
 
-        if not vector or len(vector) != self.dim:
+        if not vector or self._resolve_dim(vector) is None:
             return None
 
         # L2 归一化
@@ -549,7 +671,7 @@ class SemanticCache:
         if self._is_invalidated_since(role_clean, set_start):
             return False
 
-        if vector and len(vector) == self.dim:
+        if vector and self._resolve_dim(vector) is not None:
             norm = math.sqrt(sum(v * v for v in vector))
             if norm:
                 norm_vec = [v / norm for v in vector]
@@ -599,15 +721,23 @@ class SemanticCache:
     # ----------------- 缓存主动失效 -----------------
 
     def invalidate(self, role: Optional[str] = None, pattern: Optional[str] = None) -> int:
-        """主动失效指定的语义缓存项"""
+        """主动失效指定的语义缓存项。
+
+        role 非空时必须只删该角色的键：exact 键名是 `前缀 + sha256(role:query)`，
+        角色不在键名里；doc 哈希把角色存成字段。因此不能按前缀整批删，必须逐键回读判定。
+        否则角色级失效（含 Pub/Sub 广播）会连其它角色的缓存一起清空，破坏角色隔离。
+        """
         deleted = 0
         client = self._get_redis()
+        role_clean = (role or "").strip().lower()
         if client is not None:
             try:
                 exact_pat = f"{EXACT_KEY_PREFIX}*"
                 doc_pat = f"{DOC_KEY_PREFIX}*"
                 for pat in (exact_pat, doc_pat):
                     for k in client.scan_iter(match=pat, count=200):
+                        if role_clean and not self._redis_key_belongs_to_role(client, k, role_clean):
+                            continue
                         client.delete(k)
                         deleted += 1
             except Exception as exc:
@@ -615,8 +745,8 @@ class SemanticCache:
 
         now = time.time()
         with self._lock:
-            if role:
-                r = role.strip().lower()
+            if role_clean:
+                r = role_clean
                 self._last_invalidate_time[r] = now
                 deleted += len(self._mem_exact)
                 self._mem_exact = {k: v for k, v in self._mem_exact.items() if v.get("role") != r}
@@ -628,6 +758,23 @@ class SemanticCache:
                 self._mem_vectors.clear()
 
         return deleted
+
+    @staticmethod
+    def _redis_key_belongs_to_role(client, key, role: str) -> bool:
+        """回读 Redis 键判断归属角色；读不到/解析失败时返回 False，宁可不删也不误删他人缓存。"""
+        try:
+            name = _decode(key)
+            if name.startswith(EXACT_KEY_PREFIX):
+                raw = client.get(key)
+                if not raw:
+                    return False
+                data = json.loads(_decode(raw))
+                return str(data.get("role") or "").strip().lower() == role
+            if name.startswith(DOC_KEY_PREFIX):
+                return _decode(client.hget(key, "role")).strip().lower() == role
+        except Exception as exc:
+            logger.debug("Redis 键角色判定失败，跳过 key=%s: %s", key, exc)
+        return False
 
     # ----------------- 辅助解析 -----------------
 

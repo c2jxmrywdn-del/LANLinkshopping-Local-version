@@ -144,4 +144,120 @@ class TrafficServiceTest {
         assertEquals(1, rows.size());
         assertEquals(1L, rows.get(0).get("prodId"));
     }
+
+    // ---- P0-7：eventType=ERROR（sourceType=frontend_error）落库语义 ----
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> captureInserted() {
+        org.mockito.ArgumentCaptor<Map<String, Object>> captor =
+                org.mockito.ArgumentCaptor.forClass((Class<Map<String, Object>>) (Class<?>) Map.class);
+        verify(trafficMapper).insertEvent(captor.capture());
+        return captor.getValue();
+    }
+
+    private jakarta.servlet.http.HttpServletRequest requestWithUser(Long userId) {
+        com.lanlink.shopping.entity.User u = new com.lanlink.shopping.entity.User();
+        u.setUserId(userId);
+        jakarta.servlet.http.HttpSession session = mock(jakarta.servlet.http.HttpSession.class);
+        when(session.getAttribute(any())).thenReturn(u);
+        jakarta.servlet.http.HttpServletRequest req = mock(jakarta.servlet.http.HttpServletRequest.class);
+        when(req.getSession(anyBoolean())).thenReturn(session);
+        return req;
+    }
+
+    @Test
+    void frontendErrorStoredAsPlatformEventWithCombinedDetail() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("eventType", "ERROR");
+        raw.put("sourceType", "frontend_error");
+        raw.put("sessionId", "ll-test-session-0001");
+        raw.put("pageUrl", "/product/detail/9");
+        raw.put("message", "Cannot read properties of undefined");
+        raw.put("stack", "TypeError: Cannot read properties of undefined\n    at Mall.vue:120:5");
+        raw.put("userAgent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+
+        service.track(raw, null);
+
+        Map<String, Object> e = captureInserted();
+        assertEquals("ERROR", e.get("eventType"));
+        assertEquals("frontend_error", e.get("sourceType"));
+        // 平台级事件：merchantId 以 0 哨兵兜底，userId 不回填（零 PII）
+        assertEquals(0, ((Number) e.get("merchantId")).longValue());
+        assertNull(e.get("userId"));
+        String detail = String.valueOf(e.get("sourceDetail"));
+        assertTrue(detail.contains("Cannot read properties of undefined"), "detail 应含 message");
+        assertTrue(detail.contains("at Mall.vue:120:5"), "detail 应含 stack");
+        assertTrue(detail.contains("Mozilla/5.0"), "detail 应含 userAgent");
+        assertEquals("/product/detail/9", e.get("pageUrl"));
+    }
+
+    @Test
+    void errorDetailClippedAt2000Chars() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("eventType", "ERROR");
+        raw.put("sourceType", "frontend_error");
+        raw.put("sessionId", "ll-test-session-0001");
+        raw.put("message", "m".repeat(500));
+        raw.put("stack", "s".repeat(1500));
+        raw.put("userAgent", "u".repeat(200)); // 合计 2202 → 总护栏截到 2000
+
+        service.track(raw, null);
+
+        Map<String, Object> e = captureInserted();
+        assertEquals(2000, String.valueOf(e.get("sourceDetail")).length());
+    }
+
+    @Test
+    void errorEventRejectsForeignSourceType() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("eventType", "ERROR");
+        raw.put("sourceType", "search");
+        raw.put("sessionId", "ll-test-session-0001");
+        assertThrows(BusinessException.class, () -> service.track(raw, null));
+        verifyNoInteractions(trafficMapper);
+    }
+
+    @Test
+    void unknownEventTypeStillRejected() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("eventType", "FOO");
+        raw.put("sessionId", "ll-test-session-0001");
+        assertThrows(BusinessException.class, () -> service.track(raw, null));
+        verifyNoInteractions(trafficMapper);
+    }
+
+    @Test
+    void errorEventSkipsUserIdBackfillUnlikeVisit() {
+        jakarta.servlet.http.HttpServletRequest req = requestWithUser(88L);
+
+        Map<String, Object> visit = new HashMap<>();
+        visit.put("eventType", "VISIT");
+        visit.put("sessionId", "ll-test-session-0001");
+        service.track(visit, req);
+        Map<String, Object> storedVisit = captureInserted();
+        assertEquals(88L, ((Number) storedVisit.get("userId")).longValue(), "VISIT 登录态应回填 userId");
+
+        org.mockito.Mockito.clearInvocations(trafficMapper);
+        Map<String, Object> error = new HashMap<>();
+        error.put("eventType", "ERROR");
+        error.put("sourceType", "frontend_error");
+        error.put("sessionId", "ll-test-session-0001");
+        error.put("message", "boom");
+        service.track(error, req);
+        Map<String, Object> storedError = captureInserted();
+        assertNull(storedError.get("userId"), "ERROR 属运维遥测，不回填 userId（零 PII）");
+    }
+
+    @Test
+    void businessEventSourceDetailStillClippedTo255() {
+        Map<String, Object> raw = new HashMap<>();
+        raw.put("eventType", "VISIT");
+        raw.put("sessionId", "ll-test-session-0001");
+        raw.put("sourceDetail", "k".repeat(300)); // 业务事件保持既有 255 裁剪语义
+
+        service.track(raw, null);
+
+        Map<String, Object> e = captureInserted();
+        assertEquals(255, String.valueOf(e.get("sourceDetail")).length());
+    }
 }

@@ -5,15 +5,19 @@ server {
     index index.html;
 
     gzip on;
-    gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+    gzip_types text/plain text/css application/javascript application/json image/svg+xml text/xml;
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_vary on;
 
     # 上传闸门必须 >= spring.servlet.multipart.max-request-size（当前 26MB）。
     # nginx 默认 1m 会让它在后端之前先返回 413，后端 5/10/20MB 的分级上限全部形同虚设。
     client_max_body_size 26m;
 
-    # index.html 不缓存，保证前端发版后刷新即拿新 bundle；带 hash 的 assets 长缓存。
+    # index.html 强制不缓存（no-store）：避免浏览器/中间代理继续使用旧版本 HTML，
+    # 导致长开页面一直调用已被移除的旧接口、出现"后端服务异常"的假象。
     location = /index.html {
-        add_header Cache-Control "no-cache";
+        add_header Cache-Control "no-store, no-cache, must-revalidate";
     }
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
@@ -21,7 +25,11 @@ server {
 
     # 智能客服流式接口（SSE）：禁用代理缓冲与缓存，保持长连接与代理签名头透传
     location /api/support/ask-stream {
-        proxy_pass http://backend:8080/api/support/ask-stream;
+        # 代理响应由后端自行压缩，nginx 层关闭 gzip 避免二次压缩
+        gzip off;
+        set $be_stream http://backend:8080;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $be_stream/api/support/ask-stream;
         proxy_http_version 1.1;
         proxy_connect_timeout 10s;
         proxy_send_timeout 600s;
@@ -39,7 +47,10 @@ server {
     }
 
     location /api/support/ask {
-        proxy_pass http://backend:8080/api/support/ask;
+        gzip off;
+        set $be_ask http://backend:8080;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $be_ask/api/support/ask;
         proxy_http_version 1.1;
         proxy_connect_timeout 10s;
         # 本地 7B/VL 推理可能 10-60s：放宽 nginx 默认 60s 读超时，避免长 AI 请求被截断
@@ -53,7 +64,68 @@ server {
         proxy_set_header X-Support-Client-IP $remote_addr;
     }
 
+    # 客服媒体上传接口：与 ask 一样必须由反代注入代理密钥，否则 SupportRequestGuard 在生产直接 403
+    location /api/support/media {
+        gzip off;
+        set $be_media http://backend:8080;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $be_media/api/support/media;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 10s;
+        # 确认阶段要回源 MinIO 做 HEAD + 全量 SHA-256，20MB 文件给足 120s
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Support-Proxy-Secret "${SUPPORT_PROXY_SECRET}";
+        proxy_set_header X-Support-Client-IP $remote_addr;
+    }
+
+    # 客服语音播报：与媒体接口同一套代理密钥注入
+    location /api/support/tts {
+        gzip off;
+        set $be_tts http://backend:8080;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $be_tts/api/support/tts;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Support-Proxy-Secret "${SUPPORT_PROXY_SECRET}";
+        proxy_set_header X-Support-Client-IP $remote_addr;
+    }
+
+    # 客服实时语音（WebSocket 全双工）：必须显式做 Upgrade 升级 + 注入代理密钥。
+    # 缺失本段时 upgrade 请求会落到下面的通用 /api/ 块，nginx 按普通 HTTP 转发，
+    # 后端拿不到 Upgrade 头 → 握手失败，前端显示「语音连接异常」。
+    location /api/support/stream-voice {
+        set $be_voice http://backend:8080;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $be_voice/api/support/stream-voice;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        # 语音会话可能持续数分钟，读超时给足；否则长连接会被 nginx 主动断开
+        proxy_connect_timeout 10s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+        proxy_buffering off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Support-Proxy-Secret "${SUPPORT_PROXY_SECRET}";
+        proxy_set_header X-Support-Client-IP $remote_addr;
+    }
+
     location /api/ {
+        gzip off;
         # backend 容器重建后容器 IP 会变：静态 proxy_pass 只在 nginx 启动时解析一次并永久缓存
         # 旧 IP，backend 重建后新 IP 连接被拒 → 全部 /api 502。127.0.0.11 是 Docker 内嵌 DNS，
         # valid=10s 让 IP 变更后 10 秒内自动重新解析。
@@ -74,7 +146,12 @@ server {
 
     # 外部大模型与智能体集成端点（OpenAPI 规范 / OpenAI Tools / 统一调度）
     location /v1/ai/ {
-        proxy_pass http://lanlink-ai-gateway:8090/v1/ai/;
+        # 必须用变量形式：静态 upstream 名会在 nginx **启动时**解析，网关容器未就绪时
+        # 直接 `host not found in upstream` 让整个 nginx 退出 → 前端容器无限重启。
+        # 变量形式 + resolver 改成请求时解析，网关晚起或重建都不影响前端启动。
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $ai_gateway_upstream http://lanlink-ai-gateway:8090;
+        proxy_pass $ai_gateway_upstream/v1/ai/;
         proxy_http_version 1.1;
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;
@@ -91,7 +168,10 @@ server {
 
     # Anthropic MCP 协议端点（Streamable HTTP / SSE / JSON-RPC 2.0）
     location /mcp {
-        proxy_pass http://lanlink-ai-gateway:8090/mcp;
+        # 同上：变量形式避免启动期 DNS 依赖
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        set $ai_gateway_mcp http://lanlink-ai-gateway:8090;
+        proxy_pass $ai_gateway_mcp/mcp;
         proxy_http_version 1.1;
         proxy_connect_timeout 10s;
         proxy_send_timeout 300s;
@@ -119,7 +199,9 @@ server {
 
     location @minio_products {
         # 不带 URI 的 proxy_pass：原样透传 $request_uri，且无需 resolver 运行时解析
-        proxy_pass http://minio:9000;
+        set $minio_upstream http://minio:9000;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $minio_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -128,6 +210,27 @@ server {
         proxy_buffering off;
         proxy_read_timeout 60s;
         add_header Cache-Control "public, max-age=86400";
+    }
+
+    # 客服媒体预签名直传：浏览器 POST 到同源 /support-media/，原样转发 MinIO（path-style 第一段即桶名）。
+    # 同源代理避免 CORS、混合内容与签名 Host 不一致三类问题；Host 必须透传，否则 SigV4 校验失败。
+    location /support-media {
+        # 视频 20MB + multipart 开销，预留 22m；更细的按类型上限由后端 confirm 再校验
+        client_max_body_size 22m;
+        # 大文件直传不在 nginx 落盘缓冲，避免磁盘被打满
+        proxy_request_buffering off;
+        proxy_buffering off;
+        set $minio_upstream http://minio:9000;
+        resolver 127.0.0.11 valid=10s ipv6=off;
+        proxy_pass $minio_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
     }
 
     location / {

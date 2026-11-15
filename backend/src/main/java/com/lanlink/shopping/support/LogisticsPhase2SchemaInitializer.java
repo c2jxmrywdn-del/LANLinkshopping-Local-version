@@ -101,7 +101,81 @@ public class LogisticsPhase2SchemaInitializer implements ApplicationRunner {
         addColumnIfNotExists("t_logistics_template", "vas_rule_json", "TEXT COMMENT '增值服务费率JSON'");
         addColumnIfNotExists("t_logistics_template", "min_charge", "DECIMAL(10,2) DEFAULT 0 COMMENT '最低起运价'");
 
+        // 5. 大件模板阶梯/VAS/起价回填（out/carrier-expansion-design.md §1.3）：
+        //    按 template_name + provider_code 业务键定位（不按自增 template_id，防撞库）；
+        //    tier_rule_json 仍为空才写入（不覆盖管理端人工配置）；配置成功才置 status=1，
+        //    模板在 schema.sql 阶段以 status=0 落库，避免"线性占位价"先上线后跳阶梯。
+        //    全部 tiered 模板强制 min_charge>0：calculateTiered 对坏 JSON 静默返 0，
+        //    保底金额兜住 ¥0 垄断不以坏 JSON 路径回归。
+        backfillHeavyCargoTemplate("KYE", "跨越特快-大件限时", java.math.BigDecimal.valueOf(45),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.3,\"basePrice\":30}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.22,\"basePrice\":30}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.15,\"basePrice\":30}]",
+                "{\"forklift\":{\"basePrice\":80,\"freeTons\":1,\"perTonPrice\":50}," +
+                        "\"upstairs\":{\"basePrice\":50,\"perFloorPrice\":20}," +
+                        "\"woodenCrate\":{\"pricePerM3\":120}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.2}}");
+        backfillHeavyCargoTemplate("ANE", "安能零担-大件经济", java.math.BigDecimal.valueOf(25),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.25,\"basePrice\":15}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.2,\"basePrice\":15}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.15,\"basePrice\":15}]",
+                "{\"forklift\":{\"basePrice\":60,\"freeTons\":1,\"perTonPrice\":45}," +
+                        "\"upstairs\":{\"basePrice\":40,\"perFloorPrice\":15}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.15}}");
+        backfillHeavyCargoTemplate("BEST", "百世快运-托盘档", java.math.BigDecimal.valueOf(30),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.3,\"basePrice\":20}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.25,\"basePrice\":20}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.18,\"basePrice\":20}]",
+                "{\"forklift\":{\"basePrice\":70,\"freeTons\":1,\"perTonPrice\":40}," +
+                        "\"woodenCrate\":{\"pricePerM3\":110}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.15}}");
+        backfillHeavyCargoTemplate("SF", "顺丰卡航-大件零担", java.math.BigDecimal.valueOf(80),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.5,\"basePrice\":40}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.35,\"basePrice\":40}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.25,\"basePrice\":40}]",
+                "{\"forklift\":{\"basePrice\":90,\"freeTons\":1,\"perTonPrice\":55}," +
+                        "\"upstairs\":{\"basePrice\":60,\"perFloorPrice\":20}," +
+                        "\"woodenCrate\":{\"pricePerM3\":130}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.2}}");
+        backfillHeavyCargoTemplate("DB", "德邦重货-送装一体", java.math.BigDecimal.valueOf(55),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.45,\"basePrice\":30}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.32,\"basePrice\":30}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.2,\"basePrice\":30}]",
+                "{\"forklift\":{\"basePrice\":80,\"freeTons\":1,\"perTonPrice\":50}," +
+                        "\"upstairs\":{\"basePrice\":55,\"perFloorPrice\":20}," +
+                        "\"woodenCrate\":{\"pricePerM3\":120}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.18}}");
+        backfillHeavyCargoTemplate("ZT", "中通快运-电商大件", java.math.BigDecimal.valueOf(20),
+                "[{\"minWeight\":0,\"maxWeight\":300,\"unitPrice\":0.35,\"basePrice\":10}," +
+                        "{\"minWeight\":300,\"maxWeight\":1000,\"unitPrice\":0.25,\"basePrice\":10}," +
+                        "{\"minWeight\":1000,\"maxWeight\":999999,\"unitPrice\":0.15,\"basePrice\":10}]",
+                "{\"upstairs\":{\"basePrice\":40,\"perFloorPrice\":15}," +
+                        "\"oversizeOverweight\":{\"surchargeRate\":0.15}}");
+
         log.info("[logistics-phase2-schema] 物流发货 Phase 2 数据模型初始化完成。");
+    }
+
+    /** 单个大件模板的阶梯/VAS/起价回填：空配置守卫 + 配置成功置启用 */
+    private void backfillHeavyCargoTemplate(String providerCode, String templateName,
+                                            java.math.BigDecimal minCharge, String tierRuleJson, String vasRuleJson) {
+        try {
+            int updated = jdbc.update("UPDATE t_logistics_template t JOIN t_logistics_provider p " +
+                            "ON t.provider_id = p.provider_id " +
+                            "SET t.tier_mode='tiered', t.tier_rule_json=?, t.vas_rule_json=?, t.min_charge=? " +
+                            "WHERE p.provider_code=? AND t.template_name=? " +
+                            "AND (t.tier_rule_json IS NULL OR t.tier_rule_json = '')",
+                    tierRuleJson, vasRuleJson, minCharge, providerCode, templateName);
+            if (updated > 0) {
+                jdbc.update("UPDATE t_logistics_template t JOIN t_logistics_provider p " +
+                                "ON t.provider_id = p.provider_id " +
+                                "SET t.status=1 WHERE p.provider_code=? AND t.template_name=? " +
+                                "AND t.tier_rule_json IS NOT NULL AND t.tier_rule_json != ''",
+                        providerCode, templateName);
+                log.info("[logistics-phase2-schema] 大件模板阶梯回填完成: {} ({})", templateName, providerCode);
+            }
+        } catch (Exception e) {
+            log.warn("[logistics-phase2-schema] 大件模板 {} 回填略过: {}", templateName, e.getMessage());
+        }
     }
 
     private void addColumnIfNotExists(String tableName, String columnName, String columnDef) {

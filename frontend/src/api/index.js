@@ -1,9 +1,11 @@
 import request, { fetchCsrfToken } from './request'
+import { preloadManager } from '../utils/preloadManager'
 import { hasCookieConsent } from '../utils/cookieConsent'
 
 // The public assistant stays knowledge-base-only. Dialogue storage is token-scoped and redacted server-side.
 export const supportApi = {
-  async ask(question, visitorToken, persistConversation = false) {
+  // mediaIds：随提问提交的客服媒体编号（后端 P1 生效前会被忽略，不会报错）
+  async ask(question, visitorToken, persistConversation = false, mediaIds = []) {
     const unavailable = '您好！客服暂时无法响应，请稍后重试。'
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 25000)
@@ -11,7 +13,7 @@ export const supportApi = {
       const response = await fetch('/api/support/ask', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' }, cache: 'no-store',
-        body: JSON.stringify({ action: 'ask', question, visitorToken, persistConversation }),
+        body: JSON.stringify({ action: 'ask', question, visitorToken, persistConversation, mediaIds }),
         signal: controller.signal
       })
       const body = await response.json().catch(() => null)
@@ -39,6 +41,7 @@ export const supportApi = {
     visitorToken,
     persistConversation = true,
     thinking = true,
+    mediaIds = [],
     onReasoning,
     onContent,
     onMeta,
@@ -58,7 +61,8 @@ export const supportApi = {
           question,
           visitorToken,
           persistConversation,
-          thinking
+          thinking,
+          mediaIds
         }),
         signal
       })
@@ -76,7 +80,7 @@ export const supportApi = {
       }
 
       if (!response.ok || !response.body) {
-        const legacy = await this.ask(question, visitorToken, persistConversation)
+        const legacy = await this.ask(question, visitorToken, persistConversation, mediaIds)
         if (onContent) onContent(legacy.answer || fallback)
         if (onDone) onDone()
         return legacy
@@ -193,6 +197,10 @@ export const kbApi = {
 
 export const authApi = {
   register: (d) => request.post('/auth/register', d),
+  // 注册前获取短信验证码（匿名可调用；演示模式下返回 devCode 便于本地联调）
+  registerCode: (d) => request.post('/auth/register-code', d),
+  // 忘记密码：短信验证码 + 新密码（匿名可调用）
+  resetPassword: (d) => request.post('/auth/password-reset', d),
   login: (d) => request.post('/auth/login', d),
   // 两步验证登录：登录返回 require2fa 后，用一次性票据 + 动态码完成登录
   login2fa: (d) => request.post('/auth/login/2fa', d),
@@ -219,9 +227,29 @@ export const socialApi = {
 }
 
 export const homeApi = {
-  industries: () => request.get('/home/industries'),
-  hot: (limit = 8) => request.get('/home/hot', { params: { limit } }),
-  categories: (indId) => request.get('/category/list', { params: { indId } })
+  // config 允许调用方传 { silent: true }（首屏预加载/埋点类调用不应弹错误 toast）
+  industries: (config = {}) => preloadManager.execute('/home/industries', () => request.get('/home/industries', config), {
+    ttl: 10 * 60 * 1000,
+    staleTtl: 60 * 60 * 1000,
+    persist: true,
+    tags: ['dict', 'industry']
+  }),
+  hot: (limit = 8, config = {}) => preloadManager.execute(`/home/hot?limit=${limit}`, () => request.get('/home/hot', { params: { limit }, ...config }), {
+    ttl: 2 * 60 * 1000,
+    staleTtl: 10 * 60 * 1000,
+    tags: ['home', 'hot']
+  }),
+  categories: (indId, config = {}) => {
+    if (!indId) {
+      return preloadManager.execute('/category/list', () => request.get('/category/list', config), {
+        ttl: 10 * 60 * 1000,
+        staleTtl: 60 * 60 * 1000,
+        persist: true,
+        tags: ['dict', 'category']
+      })
+    }
+    return request.get('/category/list', { params: { indId }, ...config })
+  }
 }
 
 export const productApi = {
@@ -253,6 +281,13 @@ export const productApi = {
   adminUpdateAutoReviewConfig: (payload) => request.put('/product/admin/review/config', payload),
   adminRerunAutoReview: (prodId) => request.post(`/product/admin/review/${prodId}/auto`),
   adminAutoReviewLatest: (prodId) => request.get(`/product/admin/review/${prodId}/auto`)
+}
+
+// 商户 SKU 多规格树：读/存挂在 /product/my/sku 下（与 /product/my/* 同门禁；
+// 后端 SkuController 三重收口：product:publish 权限 + 已过审商户 + 商品归属校验）
+export const skuApi = {
+  get: (prodId) => request.get(`/product/my/sku/${prodId}`),
+  save: (prodId, d) => request.post(`/product/my/sku/${prodId}/save`, d)
 }
 
 export const cartApi = {
@@ -294,8 +329,28 @@ export const paymentApi = {
   query: (orderNo) => request.get(`/payment/query/${orderNo}`),
   // 我的交易记录
   my: () => request.get('/payment/my'),
-  // 发起退款（仅平台运营）
-  refund: (orderNo, amount, reason) => request.post('/payment/refund', { orderNo, amount, reason })
+  // ⚠️ legacy：P0-C 退款出款收口后，此端点直接调出款会被守卫拦截（无平台复核凭证 403 / 凭证已用 409）。
+  // 管理端退款请改用下方 refundReviewApi（先平台复核通过，服务端在复核事务内出款）。
+  refund: (orderNo, amount, reason) => request.post('/payment/refund', { orderNo, amount, reason }),
+  // 平台对公收款账户（公开只读；未配置时返回空对象）
+  corporateBank: () => request.get('/payment/corporate-bank'),
+  // 钱包支付能力（Apple Pay / Google Pay 是否已在该 Stripe 账户生效）
+  walletCapability: () => request.get('/payment/wallet-capability', { silent: true })
+}
+
+// ===== 退款平台复核（P0-C：退款出款唯一运营入口，仅平台运营 admin:all） =====
+// 两步走：商户初审（链A 由商户端完成 / 链B 由 RMA 流程推进）→ 平台复核通过（服务端原路出款）或驳回。
+export const refundReviewApi = {
+  // 链A 普通订单（t_order.refund_status）：payload = { amount?, remark? } / { reason? }
+  approveOrder: (orderNo, payload) => request.post(`/admin/refund/review/order/${orderNo}/approve`, payload || {}),
+  rejectOrder: (orderNo, payload) => request.post(`/admin/refund/review/order/${orderNo}/reject`, payload || {}),
+  // 链B RMA 售后单（platform_pending → 出款结案 / platform_rejected）
+  approveRma: (rmaNo, payload) => request.post(`/admin/refund/review/rma/${rmaNo}/approve`, payload || {}),
+  rejectRma: (rmaNo, payload) => request.post(`/admin/refund/review/rma/${rmaNo}/reject`, payload || {}),
+  // 申诉重开：仅当存在引用该 RMA 的在途客服工单（OPEN/PROCESSING）
+  reopenRma: (rmaNo, payload) => request.post(`/admin/refund/review/rma/${rmaNo}/reopen`, payload || {}),
+  // 双人留痕审批历史（MERCHANT 初审 + PLATFORM 复核/驳回/重开逐行）
+  history: (orderNo) => request.get(`/admin/refund/review/history/${orderNo}`)
 }
 
 // ===== 钱包 =====
@@ -349,6 +404,9 @@ export const logisticsApi = {
   templates: (providerId) => request.get('/logistics/templates', { params: { providerId } }),
   // 轨迹同步（联调/模拟服务商推送）
   syncTrace: (waybillId, nodes) => request.post(`/logistics/trace/sync/${waybillId}`, nodes),
+  // 高德图源凭据下发（后端持有 key/securityJsCode，登录端点统一代理）：silent 静默 +
+  // 调用方模块级缓存（LogisticsMap / LogisticsDynamicMap 失败不缓存、允许重试）
+  mapConfig: () => request.get('/logistics/map-config', { silent: true }),
   // ===== Phase 3A: AI 运力智能推荐与在途 SLA 看门狗大屏 =====
   recommendCarriers: (d) => request.post('/logistics/recommend-carriers', d),
   slaOverview: () => request.get('/logistics/dashboard/sla-overview'),
@@ -436,7 +494,12 @@ export const userApi = {
   addressDelete: (id) => request.delete(`/user/address/${id}`),
   addressSetDefault: (id) => request.post(`/user/address/${id}/default`),
   // 登录安全记录
-  loginLogPage: (params) => request.get('/user/login-log', { params })
+  loginLogPage: (params) => request.get('/user/login-log', { params }),
+  // 习惯画像跨设备同步（analytics Cookie 授权门控在调用方 utils/habitTracker）：全程 silent，
+  // 失败静默由调用方兜底（本机 Cookie 仍是权威副本，服务端副本只做合并源）
+  habitGet: () => request.get('/user/habits', { silent: true }),
+  habitReport: (profile) => request.post('/user/habits/report', { payload: profile }, { silent: true }),
+  habitRemove: () => request.delete('/user/habits', { silent: true })
 }
 
 export const merchantApi = {
@@ -476,9 +539,13 @@ export const merchantApi = {
   adminBatchReview: (payload) => request.post('/merchant/admin/batch-review', payload),
   adminAuditLogs: (merId) => request.get(`/merchant/admin/audit-logs/${merId}`),
   adminReview: (merId, reviewStatus, reason) => request.post(`/merchant/admin/review/${merId}`, null, { params: { reviewStatus, reason } }),
+  markPlatformInvited: (merId, enabled) => request.post(`/merchant/admin/platform-invited/${merId}`, null, { params: { enabled } }),
   // 营业执照查看验证门：验证码签发与校验（校验通过换短时效单次票据，票据拼在水印图 URL 上）
   licenseCaptcha: (merId) => request.get('/merchant/admin/license-captcha', { params: { merId } }),
-  licenseVerify: (payload) => request.post('/merchant/admin/license-verify', payload)
+  licenseVerify: (payload) => request.post('/merchant/admin/license-verify', payload),
+  // 商户端自助查看：merId 由服务端按登录账号解析，前端不传（防越权看他人执照）
+  myLicenseCaptcha: () => request.get('/merchant/license-captcha'),
+  myLicenseVerify: (payload) => request.post('/merchant/license-verify', payload)
 }
 
 // ===== 直播带货（广场/直播间/商户控制台/管理端治理；后端 /live/** 与 /admin/live/**） =====
@@ -569,6 +636,49 @@ export const merchantCenterApi = {
   rejectRefund: (orderNo, reason) => request.post(`/merchant/center/order/refund/reject/${orderNo}`, { reason })
 }
 
+// ===== 商户结算（收益台账 / 结算批次）：商户端 3 读，merId 由后端从会话解析 =====
+export const settlementApi = {
+  summary: () => request.get('/merchant/settlement/summary'),
+  earnings: (params) => request.get('/merchant/settlement/earnings', { params }),
+  batches: (params) => request.get('/merchant/settlement/batches', { params })
+}
+
+// ===== 商户提现与财务台账：余额/申请/记录/撤回/台账，merId 由后端从会话解析 =====
+export const merchantFinanceApi = {
+  balance: () => request.get('/merchant/finance/balance'),
+  applyWithdrawal: (d) => request.post('/merchant/finance/withdrawals', d),
+  withdrawals: (params) => request.get('/merchant/finance/withdrawals', { params }),
+  cancelWithdrawal: (id) => request.post(`/merchant/finance/withdrawals/${id}/cancel`),
+  ledger: (params) => request.get('/merchant/finance/ledger', { params })
+}
+
+// ===== 提现审核管理端（待审列表/通过登记打款凭证/驳回解冻；凭证经 attachmentApi 上传） =====
+export const adminFinanceApi = {
+  page: (params) => request.get('/admin/finance/withdrawals', { params }),
+  approve: (id, voucherUrl) => request.post(`/admin/finance/withdrawals/${id}/approve`, { voucherUrl }),
+  reject: (id, reason) => request.post(`/admin/finance/withdrawals/${id}/reject`, { reason })
+}
+
+// ===== 商户结算管理端（对账 / 生成批次 / 审核 / 打款登记 / 佣金率） =====
+// 平台只记账不对私划转（二清红线）：pay 仅登记线下对公打款凭证号，不触发任何出金
+export const adminSettlementApi = {
+  sync: () => request.post('/admin/settlement/sync'),
+  generate: (params) => request.post('/admin/settlement/generate', null, { params }),
+  list: (params) => request.get('/admin/settlement/list', { params }),
+  detail: (id) => request.get(`/admin/settlement/detail/${id}`),
+  approve: (id) => request.post(`/admin/settlement/${id}/approve`),
+  pay: (id, payVoucher) => request.post(`/admin/settlement/${id}/pay`, { payVoucher }),
+  setCommission: (merId, commissionRate) => request.put(`/admin/settlement/commission/${merId}`, { commissionRate })
+}
+
+// ===== 商户营销图（万相异步生成：提交后轮询任务状态） =====
+export const marketingImageApi = {
+  // body: { prompt, negativePrompt?, size?: '1024x1024'|'1280x720', pro? }
+  create: (d) => request.post('/merchant/marketing-image/tasks', d),
+  list: (page = 1, size = 10) => request.get('/merchant/marketing-image/tasks', { params: { page, size } }),
+  detail: (taskNo) => request.get(`/merchant/marketing-image/tasks/${taskNo}`)
+}
+
 // ===== 广告流量推广（商户购买流量 → 钱包冻结 → 点击计费 → 结算退回） =====
 export const adApi = {
   // 商户端：创建/支付/暂停/恢复/终止/列表/总览
@@ -598,19 +708,38 @@ export const trafficApi = {
   trackPage: (event) => {
     // 页面行为分析属于可选 Cookie 范畴；用户未同意时不创建分析会话或上报行为。
     if (!hasCookieConsent('analytics')) return Promise.resolve({ skipped: true })
-    const key='ll_traffic_session'
-    let sid=sessionStorage.getItem(key)
-    if(!sid){
-      sid=crypto.randomUUID?.() || ('ll-' + Date.now() + '-' + Math.random().toString(36).slice(2))
-      sessionStorage.setItem(key,sid)
-    }
     return request.post('/merchant/traffic/events',{
       ...event,
-      sessionId:sid,
+      sessionId:trafficSessionId(),
       deviceType:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'pc',
       pageUrl:location.pathname
     }, { silent: true })
+  },
+  // P0-7 运行时错误上报（运维遥测，不做 Cookie 授权门控）：复用同一 traffic events
+  // 端点，sourceType=frontend_error 由后端 TrafficService 校验后落 t_traffic_event；
+  // silent 通道：失败不弹错、不跳登录，由调用方（utils/errorReport）兜底吞掉。
+  reportError: (report) => request.post('/merchant/traffic/events',{
+    eventType:'ERROR',
+    sourceType:'frontend_error',
+    sessionId:trafficSessionId(),
+    deviceType:/Mobi|Android/i.test(navigator.userAgent)?'mobile':'pc',
+    pageUrl:report.page_path,
+    message:report.message,
+    stack:report.stack,
+    userAgent:report.userAgent
+  }, { silent: true })
+}
+
+// 流量会话标识：行为分析与错误上报共用同一会话（便于按 sessionId 关联）；
+// 未授权 analytics 的访客也会因错误上报创建会话（随机 UUID，非 PII）。
+function trafficSessionId(){
+  const key='ll_traffic_session'
+  let sid=sessionStorage.getItem(key)
+  if(!sid){
+    sid=crypto.randomUUID?.() || ('ll-' + Date.now() + '-' + Math.random().toString(36).slice(2))
+    sessionStorage.setItem(key,sid)
   }
+  return sid
 }
 
 // ===== 商品推荐（公开浏览；个性化仅在 analytics 授权下生效，否则回退热度榜） =====
@@ -656,6 +785,17 @@ export const adminApi = {
   configRefresh: () => request.post('/admin/config/refresh'),
   // 平台经营指标看板（MetricsController /admin/metrics/overview：漏斗/分来源/交易护栏/广告四块）
   metricsOverview: (days = 14) => request.get('/admin/metrics/overview', { params: { days } })
+}
+
+// ===== 风控中心（/admin/risk/**，AdminRiskController，admin 权限） =====
+// 全程 silent：风控台加载失败由页面自管空态（AdminRiskUsers），不弹全局 toast、不跳登录
+export const riskApi = {
+  // 用户风险分页（后端返回 Page 本体：records/total）
+  users: (params) => request.get('/admin/risk/users', { params, silent: true }),
+  // 单用户风控事件流水（数组）
+  userEvents: (userId) => request.get(`/admin/risk/users/${userId}/events`, { silent: true }),
+  // 人工复核：{ eventId, reviewedStatus } → 返回复核后风险档案 { totalScore, level }
+  review: (userId, payload) => request.post(`/admin/risk/users/${userId}/review`, payload, { silent: true })
 }
 
 // ===== 营销中台：统一活动系统（领券/促销/激励/商户报名） =====
@@ -771,6 +911,9 @@ export const priceMonitorApi = {
   ask: (prodId, question, lang = 'zh') => request.post('/price-monitor/ask', { prodId, question, lang }, { timeout: 180000 }),
   // 市场资讯
   news: (category, limit = 20) => request.get('/price-monitor/news', { params: { category: category || undefined, limit } }),
+  liveNews: (prodId, category, limit = 8) => request.get('/price-monitor/news/live', { params: { prodId, category: category || undefined, limit } }),
+  // 首页每日资讯：与商品解耦（不传 prodId），后端保证不返回空
+  dailyNews: (category, limit = 8) => request.get('/price-monitor/news/daily', { params: { category: category || undefined, limit } }),
   // 商户价格总览
   merchantOverview: () => request.get('/price-monitor/merchant/overview'),
   // 管理端
@@ -837,6 +980,13 @@ export const workflowApi = {
     const res = await fetch(`${WORKFLOW_BASE}/api/import/${encodeURIComponent(runId)}`)
     return res.json()
   },
+}
+
+// ===== 语言自动识别（公开 /i18n/**，LocaleHintController）：服务端 IP 地理提示 =====
+// bootstrap 早期探测（utils/localeDetect）：短超时 + silent，任何失败一律 resolve null 静默降级
+export const i18nApi = {
+  localeHint: (timeoutMs = 1200) => request.get('/i18n/locale-hint', { timeout: timeoutMs, silent: true })
+    .catch(() => null)
 }
 
 // ===== 技术服务（技术交流 / 供需对接 / 成果鉴定 / 专利托管 / 交易陪跑）=====
@@ -942,11 +1092,33 @@ export const techAdminApi = {
 // 出站地址一律用后端返回的中转 URL：桶是匿名只读的，前端不得拼桶域名，
 // 也不得走 utils/storageUrl.js 那套归一（它的语义是"指向公开桶"，与材料中转相反）。
 // 上传放宽到 120s：默认 15s 会掐断大文件（与聊天媒体同一处理）。
-// 买家评价：读接口挂在 /product/detail/**（公开浏览），写接口走 /order/{no}/review（需登录 + CSRF）
+// 买家评价：读接口挂在 /product/detail/**（公开浏览），写接口走 /order/{no}/review（需登录 + CSRF）。
+// 订单维度评价（t_order_review 新链路）读走 /product/detail/{id}/order-reviews*，
+// 写走 /order/{no}/order-review，商家侧 /merchant/order-reviews（CSRF 对 GET 天然豁免）
 export const reviewApi = {
   list: (prodId, params) => request.get(`/product/detail/${prodId}/reviews`, { params }),
   summary: (prodId) => request.get(`/product/detail/${prodId}/reviews/summary`),
-  submit: (orderNo, payload) => request.post(`/order/${orderNo}/review`, payload)
+  submit: (orderNo, payload) => request.post(`/order/${orderNo}/review`, payload),
+  reviewedItems: (orderNo) => request.get(`/order/${orderNo}/reviewed-items`),
+  orderList: (prodId, params) => request.get(`/product/detail/${prodId}/order-reviews`, { params }),
+  orderSummary: (prodId) => request.get(`/product/detail/${prodId}/order-reviews/summary`),
+  submitOrderReview: (orderNo, payload) => request.post(`/order/${orderNo}/order-review`, payload),
+  orderReviewedItems: (orderNo) => request.get(`/order/${orderNo}/order-reviewed-items`),
+  merchantOrderReviews: (params) => request.get('/merchant/order-reviews', { params })
+}
+
+// RFQ 询报价（P1-9）：买家发布/我的询价/收到的报价/接受转订单；商户开放询价/报价
+export const rfqApi = {
+  create: (payload) => request.post('/rfq', payload),
+  my: () => request.get('/rfq/my'),
+  detail: (rfqNo) => request.get(`/rfq/${rfqNo}`),
+  quotes: (rfqNo) => request.get(`/rfq/${rfqNo}/quotes`),
+  accept: (quoteId, payload) => request.post(`/rfq/quotes/${quoteId}/accept`, payload),
+  merchantOpen: () => request.get('/merchant/rfq/open'),
+  merchantDetail: (rfqNo) => request.get(`/merchant/rfq/${rfqNo}`),
+  submitQuote: (rfqNo, payload) => request.post(`/merchant/rfq/${rfqNo}/quote`, payload),
+  // 404=尚未报价属正常态（打开报价弹窗时探测），silent 防止误报错 toast
+  myQuote: (rfqNo) => request.get(`/merchant/rfq/${rfqNo}/quote`, { silent: true })
 }
 
 export const attachmentApi = {
@@ -960,6 +1132,14 @@ export const attachmentApi = {
       onUploadProgress: (e) => { if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100)) }
     })
   },
+  // 物流单证直传（bizType 内嵌 URL query，与历史直连调用逐字一致）：不带 timeout/进度回调，
+  // 维持调用方原有默认 15s 超时——与 upload 的 120s 语义不同，勿合并
+  uploadCoaDoc: (fd) => request.post('/attachment/upload?bizType=logistics-coa-doc', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  uploadEpodReceipt: (fd) => request.post('/attachment/upload?bizType=logistics-epod-receipt', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
   list: (params) => request.get('/attachment/list', { params }),
   bind: (payload) => request.post('/attachment/bind', payload),
   remove: (no) => request.delete(`/attachment/${no}`)
@@ -974,4 +1154,24 @@ export const rmaApi = {
   merchantApprove: (rmaNo, data) => request.post(`/order/rma/merchant/approve/${rmaNo}`, data),
   merchantInspect: (rmaNo, data) => request.post(`/order/rma/merchant/inspect/${rmaNo}`, data),
   merchantReject: (rmaNo, reason) => request.post(`/order/rma/merchant/reject/${rmaNo}`, { reason })
+}
+
+// ===== 商户退店（申请/撤回/门禁自查/保证金台账）：merId 由后端从会话解析 =====
+export const merchantExitApi = {
+  status: () => request.get('/merchant/exit/status'),
+  gate: () => request.get('/merchant/exit/gate'),
+  request: (reason) => request.post('/merchant/exit/request', { reason }),
+  withdraw: () => request.post('/merchant/exit/withdraw'),
+  deposits: (params) => request.get('/merchant/exit/deposits', { params })
+}
+
+// ===== 商户退店管理端（列表/详情/审核/驳回/正式关闭/公示扫表） =====
+// 保证金退还/抵扣为账面登记，不触发任何出金（二清红线）
+export const adminMerchantExitApi = {
+  list: (params) => request.get('/admin/merchant-exit/list', { params }),
+  detail: (merId) => request.get(`/admin/merchant-exit/detail/${merId}`),
+  approve: (merId) => request.post(`/admin/merchant-exit/${merId}/approve`),
+  reject: (merId, reason) => request.post(`/admin/merchant-exit/${merId}/reject`, { reason }),
+  close: (merId, body) => request.post(`/admin/merchant-exit/${merId}/close`, body || {}),
+  runNotice: () => request.post('/admin/merchant-exit/run-notice')
 }

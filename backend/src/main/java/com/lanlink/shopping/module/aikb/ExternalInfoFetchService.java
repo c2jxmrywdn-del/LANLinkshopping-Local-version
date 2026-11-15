@@ -1,10 +1,20 @@
 package com.lanlink.shopping.module.aikb;
 
+import com.lanlink.shopping.entity.Category;
+import com.lanlink.shopping.entity.Industry;
+import com.lanlink.shopping.entity.Product;
+import com.lanlink.shopping.mapper.CategoryMapper;
+import com.lanlink.shopping.mapper.IndustryMapper;
+import com.lanlink.shopping.mapper.ProductMapper;
 import com.lanlink.shopping.module.pricemonitor.entity.MarketNews;
 import com.lanlink.shopping.module.pricemonitor.service.MarketNewsService;
 import com.lanlink.shopping.module.pricemonitor.service.NewsSourceCatalog;
+import com.lanlink.shopping.module.pricemonitor.service.ProductCatalogTerms;
+import com.lanlink.shopping.module.pricemonitor.service.ProductFactorProfile;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -46,15 +56,19 @@ import java.util.regex.Pattern;
 /**
  * 外部资讯自动抓取（RSS → t_market_news → 向量库 news 源刷新）。
  *
- * <p>链路：AI_EXTERNAL_FEEDS 配置的 RSS（默认 IT之家 / 36氪 / 虎嗅 / WSJ Markets，均为后端容器
- * 实测可访问的源）→ JDK HttpClient 抓取（UA=浏览器、connect 5s/request 20s、响应上限 2MB）
+ * <p>链路：AI_EXTERNAL_FEEDS 配置的 RSS（默认含 IT之家 / 36氪 / 虎嗅 / WSJ Markets，
+ * 以及新华网、中国新闻网、人民网、BBC Business 等权威机构公开源；可用环境变量覆盖）
+ * → JDK HttpClient 抓取（UA=浏览器、connect 5s/request 20s、响应上限 2MB）
  * → JDK DocumentBuilder 安全解析（禁 DTD/外部实体/XInclude/实体展开）→ HTML 清洗 + 关键词归类
- * → 标题查重 → 写入 t_market_news（url 保留真实原文链接，供每日资讯跳转）
+ * → 标题精确查重 + 归一化近重复去重
+ * → 对照在售商品的标题、品牌、规格、分类和行业：不影响商城商品的资讯不上架
+ * → 本地 qwen2.5-7B 降噪：娱乐软文或与在售商品无关则输出 DROP
+ * → 通过后写入 t_market_news（上架到每日资讯；url 保留真实原文链接）
  * → 有新条目时调用 {@link KnowledgeIngestService#ingestNews()} 刷新向量库 news 源。
  *
- * <p>摘要增强：摘要为空或过短（&lt;40 字）的条目，单轮最多取前 2 条调用本地 qwen2.5-7B
- * （{@link EmbeddingService#chatText}）生成 80-120 字中文摘要；失败/超时保留原始摘要，
- * 绝不影响抓取主链路。
+ * <p>摘要与降噪：单轮最多 6 条交给本地 qwen2.5-7B（{@link EmbeddingService#chatText}）。
+ * 模型判定为噪音时不入库；否则用 80-120 字摘要覆盖过短正文。失败/超时保留关键词过滤结果，
+ * 绝不阻断抓取主链路。
  *
  * <p>调度：每 2 小时自动抓取（启动后 3 分钟首跑）；管理端可 POST /admin/kb/fetch-external 手动触发。
  * 整轮用 AtomicBoolean 互斥，统计字段供 /admin/kb/stats 展示。
@@ -68,8 +82,21 @@ public class ExternalInfoFetchService {
      * 内置默认 RSS 源（Lead 已从后端容器实测可访问；可用 AI_EXTERNAL_FEEDS 覆盖，逗号分隔）。
      */
     public static final String DEFAULT_FEEDS =
-            "https://www.ithome.com/rss/,https://www.36kr.com/feed,"
-                    + "https://rss.huxiu.com/,https://feeds.a.dj.com/rss/RSSMarketsMain.xml";
+            // 权威机构公开 RSS（2026-11 实测可解析，容器内可访问）。
+            // 抓取失败只跳过该源，不影响其它源；顺序即优先级。
+            // 新华网财经：通讯社口径，政策/宏观/大宗价格
+            "http://www.news.cn/fortune/news_fortune.xml,"
+                    // 中新网财经：产业与区域经济
+                    + "https://www.chinanews.com.cn/rss/finance.xml,"
+                    // 中新网 IT：工业电子/元器件上游（经业务相关性过滤后仅保留工业侧）
+                    + "https://www.chinanews.com.cn/rss/it.xml,"
+                    // 36氪 / 虎嗅：产业与供应链深度（过滤后保留工业侧）
+                    + "https://www.36kr.com/feed,"
+                    + "https://rss.huxiu.com/,"
+                    // IT之家：制造业/供应链快讯（过滤后保留工业侧）
+                    + "https://www.ithome.com/rss/,"
+                    // WSJ Markets：国际大宗与汇率（国际源，仅保留业务相关条目）
+                    + "https://feeds.a.dj.com/rss/RSSMarketsMain.xml";
 
     /** 单次响应体上限 2MB（超过直接跳过，避免恶意/异常大文件拖垮内存） */
     static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -79,8 +106,8 @@ public class ExternalInfoFetchService {
     static final int MAX_ITEMS_KEPT = 10;
     /** 摘要短于该长度视为"过短"，可交给本地文本模型润色/补全 */
     static final int LLM_SUMMARY_MIN_CHARS = 40;
-    /** 单轮最多调用本地文本模型生成摘要的条数 */
-    static final int LLM_SUMMARY_MAX_PER_RUN = 2;
+    /** 单轮最多交给本地模型降噪/补摘要的条数 */
+    static final int LLM_SUMMARY_MAX_PER_RUN = 6;
 
     private static final int MAX_TITLE = 200;
     private static final int MAX_SUMMARY = 1000;
@@ -102,6 +129,19 @@ public class ExternalInfoFetchService {
             "&(#\\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});");
     private static final Map<String, String> NAMED_ENTITIES = buildEntities();
 
+    /**
+     * 文章 URL 里的日期（新华社 {@code /2022-12/14/c_xxx.htm}、部分站点 {@code /2026/11/12/}、
+     * {@code /20261112/}）。用于交叉校验 RSS 的 pubDate。
+     */
+    private static final Pattern URL_DATE = Pattern.compile(
+            "/(20\\d{2})[-/]?(\\d{2})[-/]?(\\d{2})?/");
+
+    /** 过宽词不拿来判断「是否影响商城商品」，否则几乎所有商业稿都会被留下。 */
+    static final java.util.Set<String> CATALOG_STOP = java.util.Set.of(
+            "价格", "行情", "市场", "行业", "商品", "采购", "供应", "供给", "需求", "政策", "订单", "公司", "中国", "电子");
+    /** 在售商品词表缓存，避免每条资讯都扫一遍商品表。 */
+    private static final long CATALOG_TTL_MS = 10 * 60_000L;
+
     private final MarketNewsService newsService;
     private final KnowledgeIngestService ingestService;
     private final EmbeddingService embeddingService;
@@ -114,12 +154,29 @@ public class ExternalInfoFetchService {
     private final boolean llmSummaryEnabled;
     /** 业务相关性过滤开关（AI_EXTERNAL_RELEVANCE_FILTER，默认开启；关闭后所有条目都尝试入库） */
     private final boolean relevanceFilter;
+    /**
+     * 商品闸门是否启用。
+     *
+     * <p>只有 Spring 装配（有商品库依赖）时才启用；纯单测构造器不接商品表，
+     * 无法判断相关性，跳过闸门而不是把所有条目判死。
+     */
+    private final boolean productGateEnabled;
+    /** 时效窗（天）：只入库最近 N 天的资讯，0 表示不限制（AI_EXTERNAL_MAX_AGE_DAYS，默认 7） */
+    private final int maxAgeDays;
+    private final ProductMapper productMapper;
+    private final IndustryMapper industryMapper;
+    private final CategoryMapper categoryMapper;
+    /**
+     * 在售商品词表（可选注入）。有它时以它为准，保证写入侧与首页读取侧口径一致；
+     * 单测/无 Spring 场景下为 null，回退到本类内置的 {@link #buildCatalog()}。
+     */
+    private ProductCatalogTerms catalogTermsService;
     private final HttpClient http;
     /** 整轮抓取互斥（调度线程 + 管理端手动触发并发防护） */
     private final AtomicBoolean running = new AtomicBoolean(false);
     /** 并行抓取线程池：多个 RSS 源并发拉取，整轮耗时 ≈ 最慢源而非各源之和 */
     private final java.util.concurrent.ExecutorService feedPool =
-            java.util.concurrent.Executors.newFixedThreadPool(4, r -> {
+            java.util.concurrent.Executors.newFixedThreadPool(8, r -> {
                 Thread t = new Thread(r, "external-feed-fetch");
                 t.setDaemon(true);
                 return t;
@@ -128,6 +185,12 @@ public class ExternalInfoFetchService {
     @jakarta.annotation.PreDestroy
     void shutdownFeedPool() {
         feedPool.shutdownNow();
+    }
+
+    /** 可选依赖：Spring 容器有该 Bean 时注入；纯单测环境不注入，走内置词表构建。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCatalogTermsService(ProductCatalogTerms catalogTermsService) {
+        this.catalogTermsService = catalogTermsService;
     }
 
     // ==================== 最近一轮运行统计（/admin/kb/stats、/admin/kb/fetch-external） ====================
@@ -142,34 +205,86 @@ public class ExternalInfoFetchService {
     private volatile long lastElapsedMs;
     private volatile List<Map<String, Object>> lastItems = List.of();
 
+    private volatile List<String> catalogTerms = List.of();
+    private volatile long catalogLoadedAt;
+
+    @Autowired
     public ExternalInfoFetchService(MarketNewsService newsService,
                                     KnowledgeIngestService ingestService,
                                     EmbeddingService embeddingService,
+                                    ProductMapper productMapper,
+                                    IndustryMapper industryMapper,
+                                    CategoryMapper categoryMapper,
                                     @Value("${AI_EXTERNAL_ENABLED:true}") boolean enabled,
                                     @Value("${AI_EXTERNAL_FEEDS:" + DEFAULT_FEEDS + "}") String feedConfig,
                                     @Value("${AI_EXTERNAL_LIMIT:30}") int limit,
                                     @Value("${AI_EXTERNAL_LLM_SUMMARY:true}") boolean llmSummaryEnabled,
-                                    @Value("${AI_EXTERNAL_RELEVANCE_FILTER:true}") boolean relevanceFilter) {
+                                    @Value("${AI_EXTERNAL_RELEVANCE_FILTER:true}") boolean relevanceFilter,
+                                    @Value("${AI_EXTERNAL_MAX_AGE_DAYS:7}") int maxAgeDays) {
+        this(newsService, ingestService, embeddingService, productMapper, industryMapper, categoryMapper,
+                enabled, feedConfig, limit, llmSummaryEnabled, relevanceFilter, maxAgeDays, true);
+    }
+
+    /** 单测入口：不接商品库时词表为空，不额外拦截（既有用例保持可跑）。 */
+    public ExternalInfoFetchService(MarketNewsService newsService,
+                                    KnowledgeIngestService ingestService,
+                                    EmbeddingService embeddingService,
+                                    boolean enabled,
+                                    String feedConfig,
+                                    int limit,
+                                    boolean llmSummaryEnabled,
+                                    boolean relevanceFilter) {
+        this(newsService, ingestService, embeddingService, null, null, null,
+                // maxAgeDays=0：单测只验证解析/去重/入库分支，不引入随日历漂移的时效窗；
+                // 时效窗本身由 isFresh 的独立用例覆盖。
+                enabled, feedConfig, limit, llmSummaryEnabled, relevanceFilter, 0, false);
+    }
+
+    private ExternalInfoFetchService(MarketNewsService newsService,
+                                     KnowledgeIngestService ingestService,
+                                     EmbeddingService embeddingService,
+                                     ProductMapper productMapper,
+                                     IndustryMapper industryMapper,
+                                     CategoryMapper categoryMapper,
+                                     boolean enabled,
+                                     String feedConfig,
+                                     int limit,
+                                     boolean llmSummaryEnabled,
+                                     boolean relevanceFilter,
+                                     int maxAgeDays,
+                                     boolean springManaged) {
         this.newsService = newsService;
         this.ingestService = ingestService;
         this.embeddingService = embeddingService;
+        this.productMapper = productMapper;
+        this.industryMapper = industryMapper;
+        this.categoryMapper = categoryMapper;
         this.enabled = enabled;
         this.feedUrls = parseFeedConfig(feedConfig);
         this.maxPerRun = limit > 0 ? limit : 30;
         this.llmSummaryEnabled = llmSummaryEnabled;
         this.relevanceFilter = relevanceFilter;
+        this.productGateEnabled = springManaged;
+        this.maxAgeDays = maxAgeDays;
         this.http = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build();
-        log.info("[external-fetch] configured {} RSS feeds (enabled={}, maxPerRun={}, llmSummary={}, relevanceFilter={})",
-                feedUrls.size(), enabled, maxPerRun, llmSummaryEnabled, relevanceFilter);
+        log.info("[external-fetch] configured {} RSS feeds (enabled={}, maxPerRun={}, llmSummary={}, relevanceFilter={}, catalog={})",
+                feedUrls.size(), enabled, maxPerRun, llmSummaryEnabled, relevanceFilter, springManaged && productMapper != null);
     }
 
     // ==================== 调度 / 手动触发 ====================
 
     /** 每 2 小时自动抓取（启动后 3 分钟首跑）；开关关闭时跳过 */
-    @Scheduled(fixedDelay = 2 * 3600_000L, initialDelay = 180_000L)
+    /**
+     * 资讯抓取周期：默认 15 分钟（AI_EXTERNAL_POLL_MS 可调）。
+     *
+     * <p>历史实现为 2 小时，首页「每日资讯」最长滞后 2 小时，不满足"实时"。
+     * 15 分钟与前端 120s 刷新配合，可保证首页内容始终是近时段资讯。
+     * 多实例部署需配合分布式锁，否则会重复抓取（见 scheduledFetch 的 running 标志）。
+     */
+    @Scheduled(fixedDelayString = "${AI_EXTERNAL_POLL_MS:900000}", initialDelay = 180_000L)
     public void scheduledFetch() {
         if (!enabled) {
             log.debug("[external-fetch] scheduled run skipped: AI_EXTERNAL_ENABLED=false");
@@ -216,6 +331,11 @@ public class ExternalInfoFetchService {
                 pending.add(CompletableFuture.supplyAsync(() -> fetchFeed(feedUrl), feedPool));
             }
             feedsAttempted = pending.size();
+            // LLM 降噪预算按【整轮】共享（历史实现每个 feed 各 6 次，
+            // 7 个源最多 42 次；且失败也计数，导致后面的条目完全跳过降噪）。
+            java.util.concurrent.atomic.AtomicInteger denoiseBudget =
+                    new java.util.concurrent.atomic.AtomicInteger(LLM_SUMMARY_MAX_PER_RUN);
+            List<List<Map<String, String>>> parsedByFeed = new ArrayList<>(pending.size());
             for (int i = 0; i < pending.size(); i++) {
                 List<Map<String, String>> parsed;
                 try {
@@ -226,10 +346,13 @@ public class ExternalInfoFetchService {
                     parsed = List.of();
                 }
                 fetched += parsed.size();
-                if (inserted >= effectiveMax) continue;
-                int perFeedMax = Math.min(MAX_PER_FEED, effectiveMax - inserted);
-                if (perFeedMax <= 0) continue;
-                Map<String, Object> stored = storeParsedItems(parsed, perFeedMax, items);
+                parsedByFeed.add(parsed);
+            }
+            // 配额公平：按源轮询交错，避免前两个源（新华网 100+ 条）吃满整轮配额，
+            // 导致后面的行业/国际源一条都进不来（历史实现是「按源顺序先到先得」）。
+            List<Map<String, String>> interleaved = interleave(parsedByFeed, effectiveMax * 4);
+            if (!interleaved.isEmpty()) {
+                Map<String, Object> stored = storeParsedItems(interleaved, effectiveMax, items, denoiseBudget);
                 inserted += (Integer) stored.get("inserted");
                 skipped += (Integer) stored.get("skipped");
                 filtered += (Integer) stored.get("filtered");
@@ -269,6 +392,34 @@ public class ExternalInfoFetchService {
     }
 
     // ==================== 抓取 → 解析 → 去重入库 ====================
+
+    /**
+     * 多源轮询交错：第 1 轮取每个源的第 1 条，第 2 轮取每个源的第 2 条……
+     *
+     * <p>这样在「单轮入库上限 30 条」的约束下，各源按相同权重分享配额，
+     * 而不是让排在前面的源（新华网单次可返回 100+ 条）把配额吃光。
+     * 单源最多取 {@link #MAX_PER_FEED} 条，避免某源条目过多挤占其它源。
+     *
+     * @param perFeed 各源已解析条目（顺序与 feedUrls 一致）
+     * @param cap     合并后的总条数上限（防止内存放大）
+     */
+    static List<Map<String, String>> interleave(List<List<Map<String, String>>> perFeed, int cap) {
+        List<Map<String, String>> out = new ArrayList<>();
+        if (perFeed == null || perFeed.isEmpty()) return out;
+        int maxPerFeed = Math.min(MAX_PER_FEED, Math.max(1, cap));
+        int longest = 0;
+        for (List<Map<String, String>> rows : perFeed) {
+            if (rows != null) longest = Math.max(longest, Math.min(rows.size(), maxPerFeed));
+        }
+        for (int round = 0; round < longest && out.size() < cap; round++) {
+            for (List<Map<String, String>> rows : perFeed) {
+                if (rows == null || round >= rows.size() || round >= maxPerFeed) continue;
+                out.add(rows.get(round));
+                if (out.size() >= cap) break;
+            }
+        }
+        return out;
+    }
 
     /** 抓取单个 RSS 并解析为统一字段（网络异常/非 200/超大响应返回空列表，不抛出） */
     List<Map<String, String>> fetchFeed(String feedUrl) {
@@ -310,21 +461,40 @@ public class ExternalInfoFetchService {
      * @return {inserted, skipped, filtered, llmSummaries}；skipped 含被相关性过滤的条目，filtered 为其子集
      */
     Map<String, Object> storeParsedItems(List<Map<String, String>> parsed, int max) {
-        return storeParsedItems(parsed, max, new ArrayList<>());
+        return storeParsedItems(parsed, max, new ArrayList<>(),
+                new java.util.concurrent.atomic.AtomicInteger(LLM_SUMMARY_MAX_PER_RUN));
     }
 
     Map<String, Object> storeParsedItems(List<Map<String, String>> parsed, int max,
-                                         List<Map<String, Object>> itemViews) {
+                                         List<Map<String, Object>> itemViews,
+                                         java.util.concurrent.atomic.AtomicInteger denoiseBudget) {
         int inserted = 0;
         int skipped = 0;
         int filtered = 0;
         int llmSummaries = 0;
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        if (newsService != null) {
+            List<String> recent = newsService.recentTitles(200);
+            if (recent != null) {
+                for (String existing : recent) {
+                    String norm = normalizeTitle(existing);
+                    if (!norm.isEmpty()) seen.add(norm);
+                }
+            }
+        }
         if (parsed != null) {
             for (Map<String, String> row : parsed) {
                 if (inserted >= max) break;
                 MarketNews news = toNews(row);
                 if (news == null) {
                     skipped++;
+                    continue;
+                }
+                // 时效窗：旧闻不上架（首页「每日资讯」必须实时）
+                if (!isFresh(news, maxAgeDays)) {
+                    filtered++;
+                    skipped++;
+                    log.debug("[external-fetch] stale filtered ({}): {}", news.getPublishedAt(), news.getTitle());
                     continue;
                 }
                 try {
@@ -337,19 +507,62 @@ public class ExternalInfoFetchService {
                         log.debug("[external-fetch] relevance filtered ({}) {}", reason, news.getTitle());
                         continue;
                     }
+                    // 必须能影响到当前在售商品（标题/品牌/规格/分类/行业）。词表为空时不拦截。
+                    List<String> catalog = currentCatalog();
+                    if (!productGateEnabled) {
+                        // 单测/无商品库场景：无法判断相关性，跳过商品闸门
+                    } else if (catalog.isEmpty()) {
+                        // 商品词表不可用：不能静默放行（会让消费类资讯上架），
+                        // 也不能静默丢弃（全新库还没商品时会一条都进不来）。
+                        // 折中：只保留强业务信号条目，并打告警等人工核对。
+                        if (!hasBusinessSignal(news.getTitle() + " " + news.getSummary())) {
+                            filtered++;
+                            skipped++;
+                            continue;
+                        }
+                        log.warn("[external-fetch] catalog empty, keeping business-signal item only: {}",
+                                news.getTitle());
+                    } else if (!affectsCatalog(news.getTitle(), news.getSummary(), catalog)) {
+                        filtered++;
+                        skipped++;
+                        log.debug("[external-fetch] catalog filtered {}", news.getTitle());
+                        continue;
+                    }
                     if (newsService.existsByTitle(news.getTitle())) {
                         skipped++;
                         continue;
                     }
-                    // 本地 7B 摘要增强：仅对摘要为空/过短的条目，单轮最多 2 条；失败保留原摘要
-                    if (llmSummaryEnabled && llmSummaries < LLM_SUMMARY_MAX_PER_RUN
-                            && needsLlmSummary(news.getSummary())) {
+                    String norm = normalizeTitle(news.getTitle());
+                    if (norm.isEmpty() || isNearDuplicate(norm, seen)) {
+                        skipped++;
+                        continue;
+                    }
+                    seen.add(norm);
+                    // 本地模型降噪（GPU/4070，经 ai-gateway）。
+                    // 预算按【整轮】共享：只有真正调用成功才扣减，避免失败吃掉配额。
+                    // 预算耗尽时标记 denoise=skipped（仍上架，但可审计），不再静默跳过。
+                    if (llmSummaryEnabled && denoiseBudget.get() > 0) {
                         String enhanced = generateLlmSummary(news.getTitle(), news.getSummary());
                         if (enhanced != null) {
-                            news.setSummary(enhanced);
+                            denoiseBudget.decrementAndGet();
                             llmSummaries++;
                         }
+                        if (isModelDrop(enhanced)) {
+                            filtered++;
+                            skipped++;
+                            log.debug("[external-fetch] llm denoise dropped {}", news.getTitle());
+                            continue;
+                        }
+                        if (enhanced != null && needsLlmSummary(news.getSummary())) {
+                            news.setSummary(enhanced);
+                        } else if (enhanced != null && enhanced.length() >= LLM_SUMMARY_MIN_CHARS
+                                && enhanced.length() <= MAX_SUMMARY) {
+                            news.setSummary(enhanced);
+                        }
+                    } else if (llmSummaryEnabled) {
+                        log.debug("[external-fetch] denoise budget exhausted, pass through: {}", news.getTitle());
                     }
+                    // 上架：写入每日资讯。唯一键冲突（并发/多实例）计入跳过。
                     if (newsService.saveExternal(news)) {
                         inserted++;
                         if (itemViews != null && itemViews.size() < MAX_ITEMS_KEPT) {
@@ -397,9 +610,56 @@ public class ExternalInfoFetchService {
                 publishedAt = parsePublishedAt(published);
             }
         }
-        news.setPublishedAt(publishedAt == null ? LocalDateTime.now() : publishedAt);
+        // URL 日期交叉校验：新华社等源的历史频道会把 2022 年的稿件放在当前 RSS 里，
+        // 且 pubDate 缺失/错误。此时若 URL 内嵌日期明显早于 pubDate，以 URL 日期为准，
+        // 否则旧稿会被当成今日资讯排到首页最前（实测混入 2022-12 的油价快讯）。
+        LocalDateTime urlDate = dateFromUrl(news.getUrl());
+        if (urlDate != null && (publishedAt == null || urlDate.isBefore(publishedAt.minusDays(1)))) {
+            publishedAt = urlDate;
+        }
+        // 解析不到发布时间时不再用 now() 兜底：否则 2023 年的旧稿会被当成"刚刚发布"
+        // 排到首页最前。published_at 是 NOT NULL，因此由调用方（toNews 返回 null）
+        // 直接丢弃该条，而不是塞一个假时间。
+        if (publishedAt == null) return null;
+        news.setPublishedAt(publishedAt);
         news.setCreatedAt(LocalDateTime.now());
         return news;
+    }
+
+    /**
+     * 从文章 URL 提取发布日期（仅年月也可用，日缺省为 1 号）。
+     *
+     * @return 解析失败或不是合理日期时返回 null
+     */
+    static LocalDateTime dateFromUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        Matcher m = URL_DATE.matcher(url);
+        if (!m.find()) return null;
+        try {
+            int year = Integer.parseInt(m.group(1));
+            int month = Integer.parseInt(m.group(2));
+            int day = m.group(3) == null ? 1 : Integer.parseInt(m.group(3));
+            if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+            LocalDateTime candidate = LocalDateTime.of(year, month, day, 0, 0);
+            // 未来日期（时区/误写）不采信，避免把新稿误判成旧稿
+            return candidate.isAfter(LocalDateTime.now().plusDays(1)) ? null : candidate;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * 时效窗判定：只接受最近 N 天内发布的资讯。
+     *
+     * <p>历史缺陷：RSS 里 2023 年的旧闻与当天新闻混在一起入库，首页「每日资讯」
+     * 会出现多年前的行情分析，实时性名不副实。
+     *
+     * <p>边界：解析不到发布时间的条目视为「当前」，避免误杀（部分源不提供 pubDate）。
+     */
+    static boolean isFresh(MarketNews news, int maxAgeDays) {
+        if (news == null || news.getPublishedAt() == null) return true;
+        if (maxAgeDays <= 0) return true;
+        return news.getPublishedAt().isAfter(LocalDateTime.now().minusDays(maxAgeDays));
     }
 
     private static Map<String, Object> toView(MarketNews news) {
@@ -415,24 +675,228 @@ public class ExternalInfoFetchService {
         return summary == null || stripHtml(summary).length() < LLM_SUMMARY_MIN_CHARS;
     }
 
-    /** 本地 7B 生成 80-120 字中文摘要（失败/超时返回 null，保留原摘要） */
+    /** 本地 7B 降噪并生成摘要。返回 DROP 表示不上架；null 表示模型失败，调用方保留原摘要并继续上架。 */
     String generateLlmSummary(String title, String summary) {
         if (embeddingService == null) return null;
         try {
-            String system = "你是中文资讯摘要助手。请用 80-120 个中文字符概括资讯要点，"
-                    + "只输出摘要正文，不要标题、不要引号、不要解释、不要 Markdown。";
+            String system = "你是中文市场资讯编辑，服务一家 B2B 商城。"
+                    + "若内容是娱乐、数码评测、广告软文、重复通稿，或影响不到商城在售商品"
+                    + "（建材、水泥、钢材、纺织、化工、电子元器件、机械、能源、包装、新能源及其原料与价格），只输出 DROP。"
+                    + "否则用 80-120 个中文字符写降噪后的摘要，点明它会影响哪类商品。"
+                    + "只输出 DROP 或摘要正文，不要标题、引号、解释或 Markdown。";
             String user = "标题：" + clip(trimToEmpty(title), 120) + "\n正文：" + clip(trimToEmpty(summary), 800);
             String generated = CompletableFuture
                     .supplyAsync(() -> embeddingService.chatText(system, user))
                     .get(20, TimeUnit.SECONDS);
             if (generated == null || generated.isBlank()) return null;
             String cleaned = generated.replaceAll("\\s+", " ").trim();
+            if (isModelDrop(cleaned)) return "DROP";
+            if (isModelNoise(cleaned)) {
+                log.debug("[external-fetch] llm returned non-editorial text, keep original: {}", cleaned);
+                return null;
+            }
             if (cleaned.length() < 20) return null;
             return clip(cleaned, MAX_SUMMARY);
         } catch (Exception e) {
-            log.debug("[external-fetch] llm summary failed, keep original summary: {}", e.getMessage());
+            log.debug("[external-fetch] llm denoise failed, publish with original summary: {}", e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 模型输出是否为「非资讯编辑内容」：客服话术、拒答、知识库兜底、商品卡片等。
+     *
+     * <p>实测污染：模型偶发把客服回答（"该问题超出知识库范围…商品名称：硅酸盐水泥 P.O42.5…"）
+     * 当成摘要写回，导致白银行情稿的摘要里出现「硅酸盐水泥」，进而被商品相关性判定
+     * 误判成水泥商品的强相关证据。
+     */
+    static boolean isModelNoise(String text) {
+        if (text == null || text.isBlank()) return true;
+        String t = text.toLowerCase(Locale.ROOT);
+        for (String signal : MODEL_NOISE_SIGNALS) {
+            if (t.contains(signal)) return true;
+        }
+        // 摘要不应出现「商品名称/品牌/规格/单价/库存」这类结构化商品卡片字段
+        return t.contains("商品名称：") && t.contains("单价");
+    }
+
+    private static final List<String> MODEL_NOISE_SIGNALS = List.of(
+            "超出知识库范围", "转人工客服", "人工客服", "无法回答", "我无法", "作为ai",
+            "知识库中未", "未找到相关信息", "抱歉，", "抱歉,", "请提供更多", "以下是我的回答",
+            "查询的商品信息", "商品名称：", "来源：《");
+
+    /** 词表为空视为「还没读到商品」，不拦截；否则标题或摘要必须命中在售商品/行业词。 */
+    static boolean affectsCatalog(String title, String summary, List<String> terms) {
+        // 空词表 = 无法判断相关性（商品表为空/查询异常/首次加载）：
+        // 历史实现 return true 会让商品闸门整体失效，消费类资讯直接上架。
+        // 改为返回 false，由调用方结合业务词兜底并记录告警，避免静默失效。
+        if (terms == null || terms.isEmpty()) return false;
+        String text = cleanText((title == null ? "" : title) + " " + (summary == null ? "" : summary))
+                .toLowerCase(Locale.ROOT);
+        if (text.isEmpty()) return false;
+        // 单字品类词（钢/铜/铝/锂/锡/镍/锌/煤/油/硅/铁/纸）信息量足够，允许命中
+        java.util.Set<String> singleChar = java.util.Set.of(
+                "钢", "铜", "铝", "锂", "锡", "镍", "锌", "煤", "油", "硅", "铁", "纸");
+        for (String term : terms) {
+            if (term == null) continue;
+            String needle = term.trim().toLowerCase(Locale.ROOT);
+            if (CATALOG_STOP.contains(needle)) continue;
+            if (needle.length() < 2 && !singleChar.contains(needle)) continue;
+            if (text.contains(needle)) return true;
+        }
+        return false;
+    }
+
+    private List<String> currentCatalog() {
+        if (catalogTermsService != null) {
+            return catalogTermsService.terms();
+        }
+        if (productMapper == null) return List.of();
+        long now = System.currentTimeMillis();
+        List<String> cached = catalogTerms;
+        if (cached != null && !cached.isEmpty() && now - catalogLoadedAt < CATALOG_TTL_MS) return cached;
+        try {
+            List<String> built = buildCatalog();
+            catalogTerms = built;
+            catalogLoadedAt = now;
+            return built;
+        } catch (Exception e) {
+            log.warn("[external-fetch] catalog load failed, skip product gate this run: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    /** 在售且审核通过的商品：标题、品牌、规格、分类、行业，收成匹配词。 */
+    private List<String> buildCatalog() {
+        List<Product> products = productMapper.selectList(Wrappers.<Product>lambdaQuery()
+                .eq(Product::getStatus, 1)
+                .eq(Product::getReviewStatus, 1)
+                .select(Product::getTitle, Product::getBrand, Product::getSpec, Product::getIndId, Product::getCatId)
+                .last("LIMIT 500"));
+        if (products == null || products.isEmpty()) return List.of();
+        Map<Long, String> industries = new LinkedHashMap<>();
+        if (industryMapper != null) {
+            for (Industry industry : industryMapper.selectList(null)) {
+                if (industry != null && industry.getIndId() != null && industry.getName() != null) {
+                    industries.put(industry.getIndId(), industry.getName());
+                }
+            }
+        }
+        Map<Long, String> categories = new LinkedHashMap<>();
+        if (categoryMapper != null) {
+            for (Category category : categoryMapper.selectList(null)) {
+                if (category != null && category.getCatId() != null && category.getName() != null) {
+                    categories.put(category.getCatId(), category.getName());
+                }
+            }
+        }
+        java.util.LinkedHashSet<String> terms = new java.util.LinkedHashSet<>();
+        for (Product product : products) {
+            String industryName = product.getIndId() == null ? "" : industries.getOrDefault(product.getIndId(), "");
+            String categoryName = product.getCatId() == null ? "" : categories.getOrDefault(product.getCatId(), "");
+            ProductFactorProfile profile = ProductFactorProfile.of(product, industryName, categoryName);
+            for (String word : profile.productKeywords()) addCatalogTerm(terms, word);
+            for (String word : profile.industryKeywords()) addCatalogTerm(terms, word);
+            if (terms.size() >= 400) break;
+        }
+        return List.copyOf(terms);
+    }
+
+    private static void addCatalogTerm(java.util.Set<String> terms, String word) {
+        if (word == null) return;
+        String term = word.trim();
+        if (term.length() < 2 || CATALOG_STOP.contains(term)) return;
+        terms.add(term);
+    }
+    static boolean isModelDrop(String raw) {
+        if (raw == null || raw.isBlank()) return false;
+        String compact = raw.trim().replace(" ", "").toLowerCase(Locale.ROOT);
+        if (compact.equals("drop") || compact.startsWith("drop。") || compact.startsWith("drop.")) return true;
+        return compact.contains("\"keep\":false");
+    }
+
+    /** 去标点空白后的标题，用于近重复判断。 */
+    /** 标题尾部常见媒体署名/来源后缀（跨源转载时各站会各加一个）。 */
+    private static final java.util.regex.Pattern MEDIA_SUFFIX = java.util.regex.Pattern.compile(
+            "[-|｜—–]\\s*(36氪|虎嗅|IT之家|新华网|中国新闻网|中新网|人民网|央视|新浪|网易|腾讯|"
+                    + "界面新闻|第一财经|财新|澎湃|观察者网|钛媒体|亿邦动力)\\s*$");
+    /** 标题前缀标签，如「【图】」「【视频】」「【独家】」。 */
+    private static final java.util.regex.Pattern TITLE_TAG_PREFIX = java.util.regex.Pattern.compile(
+            "^[【\\[（(][^】\\]）)]{1,8}[】\\]）)]");
+
+    /**
+     * 标题归一化（去重键）。
+     *
+     * <p>相比历史实现（仅去标点+小写），这里额外处理：
+     * <ul>
+     *   <li>NFKC：全角转半角（Ｐ.Ｏ42.5 → P.O42.5、１２mm → 12mm）</li>
+     *   <li>剥离「【图】」类前缀与「-36氪」类媒体后缀，让跨源转载归一</li>
+     *   <li>去掉所有标点/空白/零宽字符</li>
+     * </ul>
+     * 繁简转换需引入第三方库，这里不做（避免为去重增加依赖），
+     * 由近似重复（SimHash/Jaccard）兜住繁简差异。
+     */
+    static String normalizeTitle(String title) {
+        if (title == null) return "";
+        String text = cleanText(title);
+        text = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC);
+        text = TITLE_TAG_PREFIX.matcher(text).replaceFirst("");
+        text = MEDIA_SUFFIX.matcher(text).replaceFirst("");
+        text = text.toLowerCase(Locale.ROOT);
+        return text.replaceAll("[\\p{Punct}\\p{IsPunctuation}\\s\\u200B-\\u200D\\uFEFF]+", "");
+    }
+
+    static boolean isNearDuplicate(String normalized, java.util.Set<String> seen) {
+        if (normalized == null || normalized.isEmpty() || seen == null || seen.isEmpty()) return false;
+        if (seen.contains(normalized)) return true;
+        // 中文短标题（如「钢材价格上调」6 字）同样需要近似判重，阈值从 12 降到 8
+        if (normalized.length() < 8) return false;
+        java.util.Set<String> grams = bigrams(normalized);
+        for (String existing : seen) {
+            if (existing.length() < 8) continue;
+            if (existing.contains(normalized) || normalized.contains(existing)) return true;
+            // 同事件不同措辞（「水泥三周连涨」vs「华东水泥连续第三周上涨」）：
+            // 字符 2-gram Jaccard ≥ 0.62 视为同一事件，避免跨源重复上架。
+            if (jaccard(grams, bigrams(existing)) >= 0.62) return true;
+        }
+        return false;
+    }
+
+    /** 字符 2-gram 集合（中文无需分词即可捕捉短语级相似）。 */
+    private static java.util.Set<String> bigrams(String s) {
+        java.util.Set<String> out = new java.util.HashSet<>();
+        if (s == null || s.length() < 2) return out;
+        for (int i = 0; i + 1 < s.length(); i++) {
+            out.add(s.substring(i, i + 2));
+        }
+        return out;
+    }
+
+    /** Jaccard 相似度：交集 / 并集。 */
+    private static double jaccard(java.util.Set<String> a, java.util.Set<String> b) {
+        if (a.isEmpty() || b.isEmpty()) return 0.0;
+        java.util.Set<String> small = a.size() <= b.size() ? a : b;
+        java.util.Set<String> large = small == a ? b : a;
+        int inter = 0;
+        for (String g : small) {
+            if (large.contains(g)) inter++;
+        }
+        int union = a.size() + b.size() - inter;
+        return union == 0 ? 0.0 : (double) inter / union;
+    }
+
+    /** 权威机构源用固定来源名，方便每日资讯跳到对应官网。其余沿用 RSS 频道名。 */
+    static String authoritativeSource(String feedUrl, String channelTitle) {
+        String url = feedUrl == null ? "" : feedUrl.toLowerCase(Locale.ROOT);
+        if (url.contains("news.cn") || url.contains("xinhuanet.com")) return "新华网";
+        if (url.contains("chinanews.com")) return "中国新闻网";
+        if (url.contains("people.com.cn")) return "人民网";
+        if (url.contains("bbci.co.uk") || url.contains("bbc.co.uk") || url.contains("bbc.com")) return "BBC";
+        if (url.contains("ithome.com")) return "IT之家";
+        if (url.contains("36kr.com")) return "36氪";
+        if (url.contains("huxiu.com")) return "虎嗅";
+        if (url.contains("wsj.com") || url.contains("dj.com") || url.contains("dowjones")) return "华尔街日报";
+        return channelTitle == null ? "" : channelTitle;
     }
 
     // ==================== 统计 ====================
@@ -559,7 +1023,8 @@ public class ExternalInfoFetchService {
             if (root == null) return out;
             Element channel = "rss".equalsIgnoreCase(localName(root)) ? firstChild(root, "channel") : root;
             if (channel == null) channel = root;
-            String sourceName = clip(cleanText(childText(channel, "title")), MAX_SOURCE);
+            String sourceName = authoritativeSource(feedUrl,
+                    clip(cleanText(childText(channel, "title")), MAX_SOURCE));
             if (sourceName.isBlank()) sourceName = domainOf(feedUrl);
             NodeList items = channel.getElementsByTagName("item");
             for (int i = 0; i < items.getLength(); i++) {
@@ -623,7 +1088,11 @@ public class ExternalInfoFetchService {
         } catch (Exception ignored) {
             // 同上
         }
-        return factory.newDocumentBuilder();
+        // Xerces 默认 ErrorHandler 会把 fatal error 先打到 stderr（如 DOCTYPE 被禁、prolog 非法），
+        // 显式接管：warning/error 静默（slf4j 已记录失败原因），fatalError 原样重抛保持失败语义
+        javax.xml.parsers.DocumentBuilder builder = factory.newDocumentBuilder();
+        builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
+        return builder;
     }
 
     /** XML 安全特性逐项开启（不支持的特性跳过，不影响其他防护） */
@@ -951,7 +1420,13 @@ public class ExternalInfoFetchService {
      * 是否与 B2B 市场资讯相关：标题命中硬过滤词（娱乐/数码/会员促销/生活方式）→ 直接过滤；
      * 其余条目要求标题+摘要命中 BUSINESS（工业/贸易/政策/企业财报）信号。
      */
-    static boolean isBusinessRelevant(String title, String summary) {
+    /**
+     * B2B 业务相关性判定（写入侧与读取侧共用同一口径）。
+     *
+     * <p>公开为 {@code public} 以便每日资讯读取侧复用，避免"写入过滤一套、读取展示另一套"
+     * 导致历史脏数据（过滤上线前入库的消费类资讯）继续出现在首页。
+     */
+    public static boolean isBusinessRelevant(String title, String summary) {
         String titleText = cleanText(title).toLowerCase(Locale.ROOT);
         if (containsAnySignal(titleText, HARD_BLOCK_SIGNALS)) return false;
         String text = (cleanText(title) + " " + cleanText(summary)).toLowerCase(Locale.ROOT);

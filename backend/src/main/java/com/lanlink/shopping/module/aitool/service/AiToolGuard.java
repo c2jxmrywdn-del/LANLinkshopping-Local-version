@@ -56,7 +56,10 @@ public class AiToolGuard {
             sec = env.getProperty("support.proxy-secret", "");
         }
         if (!StringUtils.hasText(sec)) {
-            sec = env.getProperty("INTERNAL_GATEWAY_SECRET", DEFAULT_INTERNAL_SECRET);
+            // 不再回退到硬编码默认密钥：空值即视为"未配置内部通道"，
+            // authenticateContext 不会放行任何内部调用（fail-closed）。
+            // 仅显式配置 AI_INTERNAL_SECRET / INTERNAL_GATEWAY_SECRET / SUPPORT_PROXY_SECRET 才可用。
+            sec = env.getProperty("INTERNAL_GATEWAY_SECRET", "");
         }
         this.internalSecret = sec.trim();
         this.environment = env;
@@ -65,6 +68,12 @@ public class AiToolGuard {
 
     @PostConstruct
     public void warnInsecureDefaults() {
+        if (!StringUtils.hasText(internalSecret)) {
+            log.warn("[ai-tool-guard] 未配置内部密钥（AI_INTERNAL_SECRET / INTERNAL_GATEWAY_SECRET / "
+                    + "SUPPORT_PROXY_SECRET），/internal/ai/tools/** 的内部通道已关闭（fail-closed）；"
+                    + "仅 API Key 方式可调用");
+            return;
+        }
         if (DEFAULT_INTERNAL_SECRET.equals(internalSecret) || internalSecret.contains(DEFAULT_INTERNAL_SECRET)) {
             List<String> profiles = Arrays.asList(environment.getActiveProfiles());
             if (profiles.contains("prod")) {

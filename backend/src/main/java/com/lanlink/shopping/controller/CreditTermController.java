@@ -10,6 +10,7 @@ import com.lanlink.shopping.vo.RepayResultVO;
 import com.lanlink.shopping.integration.security.RequirePerm;
 import com.lanlink.shopping.service.CreditTermService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Max;
@@ -46,13 +47,13 @@ public class CreditTermController {
 
     @PostMapping("/apply")
     @RequirePerm("credit:apply")
-    public R<CreditAccount> apply(@RequestBody ApplyDTO dto, HttpServletRequest request) {
+    public R<CreditAccount> apply(@Valid @RequestBody ApplyDTO dto, HttpServletRequest request) {
         return R.ok("账期申请已提交", service.apply(UserContext.currentUserId(request), dto.getRequestedLimit(), dto.getTermDays(), dto.getPurpose()));
     }
 
     @PostMapping("/bills/{id}/repay")
     @RequirePerm("credit:repay")
-    public R<RepayResultVO> repay(@PathVariable Long id, @RequestBody RepayDTO dto, HttpServletRequest request) {
+    public R<RepayResultVO> repay(@PathVariable Long id, @Valid @RequestBody RepayDTO dto, HttpServletRequest request) {
         RepayResultVO result = service.repay(UserContext.currentUserId(request), id, dto.getAmount(), dto.getMethod(), dto.getReferenceNo());
         return R.ok(result.isPending() ? "转账登记已提交，待平台财务核销" : "还款成功", result);
     }
@@ -67,7 +68,7 @@ public class CreditTermController {
 
     @PostMapping("/adjust")
     @RequirePerm("credit:apply")
-    public R<CreditAdjustRequest> adjust(@RequestBody AdjustApplyDTO dto, HttpServletRequest request) {
+    public R<CreditAdjustRequest> adjust(@Valid @RequestBody AdjustApplyDTO dto, HttpServletRequest request) {
         return R.ok("调额申请已提交", service.applyAdjustment(
                 UserContext.currentUserId(request), dto.getRequestedLimit(), dto.getTermDays(), dto.getPurpose()));
     }
@@ -81,7 +82,7 @@ public class CreditTermController {
     // ==================== 商业化利率计算器 ====================
 
     @PostMapping("/calculator/trial")
-    public R<Map<String, Object>> calculatorTrial(@RequestBody CalculatorTrialDTO dto) {
+    public R<Map<String, Object>> calculatorTrial(@Valid @RequestBody CalculatorTrialDTO dto) {
         return R.ok(service.calculateInterestTrial(
                 dto.getAmount(), dto.getTermDays(), dto.getDailyRate(), dto.getGraceDays(), dto.getOverdueDays(),
                 dto.getRiskTier(), dto.getWithLogisticsDiscount()));
@@ -104,7 +105,7 @@ public class CreditTermController {
 
     @PostMapping("/admin/accounts/{id}/review")
     @RequirePerm("admin:all")
-    public R<CreditAccount> review(@PathVariable Long id, @RequestBody ReviewDTO dto) {
+    public R<CreditAccount> review(@PathVariable Long id, @Valid @RequestBody ReviewDTO dto) {
         return R.ok("审核完成", service.review(id, dto.getStatus(), dto.getApprovedLimit(), dto.getTermDays(), dto.getRemark()));
     }
 
@@ -116,7 +117,7 @@ public class CreditTermController {
 
     @PostMapping("/admin/adjustments/{id}/review")
     @RequirePerm("admin:all")
-    public R<CreditAdjustRequest> reviewAdjust(@PathVariable Long id, @RequestBody AdjustReviewDTO dto) {
+    public R<CreditAdjustRequest> reviewAdjust(@PathVariable Long id, @Valid @RequestBody AdjustReviewDTO dto) {
         return R.ok("调额审核完成", service.reviewAdjustment(id, dto.getStatus(), dto.getApprovedLimit(), dto.getTermDays(), dto.getRemark()));
     }
 
@@ -128,7 +129,7 @@ public class CreditTermController {
 
     @PostMapping("/admin/repayments/{id}/confirm")
     @RequirePerm("admin:all")
-    public R<CreditRepayment> confirmRepayment(@PathVariable Long id, @RequestBody TransferConfirmDTO dto) {
+    public R<CreditRepayment> confirmRepayment(@PathVariable Long id, @Valid @RequestBody TransferConfirmDTO dto) {
         return R.ok(dto.isApproved() ? "转账已核销入账" : "转账登记已驳回",
                 service.confirmTransferRepayment(id, dto.isApproved(), dto.getRemark()));
     }

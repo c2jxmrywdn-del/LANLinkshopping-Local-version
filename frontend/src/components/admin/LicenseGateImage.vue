@@ -74,7 +74,8 @@ import { merchantApi } from '../../api'
  * 不做票据复用，避免把一次性凭证变成可分享的直链。
  */
 const props = defineProps({
-  merId: { type: Number, required: true },
+  /** 运营端必传；商户自助模式（selfService）下由服务端解析本人商户，前端不传 */
+  merId: { type: Number, default: 0 },
   /** 商户企业名（仅作查看对象提示；水印内的商户名由后端按 entId 实时取） */
   merchantName: { type: String, default: '' },
   hasLicense: { type: Boolean, default: false },
@@ -83,7 +84,14 @@ const props = defineProps({
   emptyText: { type: String, default: '商户暂未上传营业执照原件' },
   errorText: { type: String, default: '水印图加载失败，请重新验证' },
   /** 透传给水印 img 的额外样式（如双屏核验的旋转） */
-  imgStyle: { type: Object, default: () => ({}) }
+  imgStyle: { type: Object, default: () => ({}) },
+  /**
+   * 商户自助查看模式：接口换成 `/merchant/license-*`（merId 由服务端按登录账号解析）。
+   *
+   * <p>为什么不让商户端也传 merId：那等于把"看谁的执照"交给前端决定，
+   * 只要改一个数字就能越权查看同行执照。自助模式下一律由服务端解析本人商户。
+   */
+  selfService: { type: Boolean, default: false }
 })
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
@@ -113,7 +121,9 @@ async function loadCaptcha() {
   captchaId.value = ''
   code.value = ''
   try {
-    const res = await merchantApi.licenseCaptcha(props.merId)
+    const res = props.selfService
+      ? await merchantApi.myLicenseCaptcha()
+      : await merchantApi.licenseCaptcha(props.merId)
     captchaId.value = res?.captchaId || ''
     captchaImage.value = res?.image || ''
   } catch (e) {
@@ -125,14 +135,17 @@ async function submit() {
   if (!code.value || submitting.value) return
   submitting.value = true
   try {
-    const res = await merchantApi.licenseVerify({
-      merId: props.merId,
-      captchaId: captchaId.value,
-      captchaCode: code.value
-    })
+    const payload = { captchaId: captchaId.value, captchaCode: code.value }
+    // 自助模式不传 merId：越权面交给服务端按登录账号收敛
+    if (!props.selfService) payload.merId = props.merId
+    const res = props.selfService
+      ? await merchantApi.myLicenseVerify(payload)
+      : await merchantApi.licenseVerify(payload)
     const ticket = res?.ticket
     if (!ticket) throw new Error('未获取到查看凭证')
-    watermarkedSrc.value = `${API_BASE}/merchant/admin/license-watermarked/${props.merId}?ticket=${encodeURIComponent(ticket)}`
+    watermarkedSrc.value = props.selfService
+      ? `${API_BASE}/merchant/license-watermarked?ticket=${encodeURIComponent(ticket)}`
+      : `${API_BASE}/merchant/admin/license-watermarked/${props.merId}?ticket=${encodeURIComponent(ticket)}`
     stage.value = 'view'
     loadFailed.value = false
     imgReady.value = false

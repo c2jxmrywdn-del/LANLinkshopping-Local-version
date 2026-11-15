@@ -30,13 +30,16 @@ public class ProdConfigGuard {
     private final boolean cookieSecure;
     private final String sameSite;
     private final String[] activeProfiles;
+    private final boolean socialSandboxEnabled;
 
     public ProdConfigGuard(
             @Value("${server.servlet.session.cookie.secure:true}") boolean cookieSecure,
             @Value("${server.servlet.session.cookie.same-site:none}") String sameSite,
+            @Value("${app.social.sandbox-enabled:false}") boolean socialSandboxEnabled,
             Environment env) {
         this.cookieSecure = cookieSecure;
         this.sameSite = sameSite;
+        this.socialSandboxEnabled = socialSandboxEnabled;
         this.activeProfiles = env.getActiveProfiles();
     }
 
@@ -53,6 +56,14 @@ public class ProdConfigGuard {
         // SameSite=None 必须同时 Secure，否则现代浏览器会直接丢弃该 Cookie —— 这里 secure 已保证为 true。
         if ("none".equalsIgnoreCase(sameSite) && !cookieSecure) {
             throw new IllegalStateException("SameSite=None 必须与 Secure=true 同时启用。");
+        }
+
+        // 沙箱社交登录 = 任何人无需凭证即可登录固定演示账号，生产必须关闭
+        boolean prod = Arrays.asList(activeProfiles).contains("prod");
+        if (prod && socialSandboxEnabled) {
+            throw new IllegalStateException(
+                    "生产环境禁止开启社交登录沙箱（app.social.sandbox-enabled=true）："
+                            + "该端点无需凭证即可登录演示账号。请设置 SOCIAL_SANDBOX_ENABLED=false。");
         }
     }
 }

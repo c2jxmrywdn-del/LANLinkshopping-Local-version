@@ -7,7 +7,9 @@
       <a-descriptions-item label="关联订单">{{item.refOrderNo||'—'}}</a-descriptions-item><a-descriptions-item label="时间">{{(item.createTime||'').replace('T',' ')}}</a-descriptions-item>
       <a-descriptions-item label="备注" :span="2">{{item.remark||'—'}}</a-descriptions-item>
     </a-descriptions>
-    <a-empty v-else :description="loadError?'加载失败，请稍后重试':'未找到该流水'"/>
+    <a-empty v-else :description="loadError?'加载失败，请稍后重试':'未找到该流水'">
+      <a-button type="link" @click="$router.push('/wallet/transactions')">查看全部流水</a-button>
+    </a-empty>
   </a-card></div>
 </template>
 <script setup>

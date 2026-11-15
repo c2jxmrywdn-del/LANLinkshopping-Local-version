@@ -35,6 +35,14 @@
             </div>
           </div>
 
+          <a-alert
+            v-if="invitePrefilled && form.joinType === '邀约' && form.joinCode"
+            type="info"
+            show-icon
+            style="margin-bottom:16px"
+            :message="`已自动带入平台邀约码 ${form.joinCode}，请核对后继续提交`"
+          />
+
           <a-form :model="form" layout="vertical" class="apply-form" @finish="submit">
             <!-- 步骤 1：企业工商主体基础信息 -->
             <div v-show="currentStep === 0" class="step-pane">
@@ -539,8 +547,8 @@
               <div class="sec-item">
                 <span class="k">营业执照：</span>
                 <span class="v">
-                  <a v-if="mine.licenseUrl" :href="mine.licenseUrl" target="_blank">查看原件 ↗</a>
-                  <span v-else class="text-muted">未上传</span>
+                  <span v-if="!mine.licenseUrl" class="text-muted">未上传</span>
+                  <span v-else class="text-muted">已上传（需人机验证后在商户中心查看带水印副本）</span>
                 </span>
               </div>
               <div class="sec-item" v-if="mine.hasSpecialPermit">
@@ -616,6 +624,7 @@
 
 <script setup>
 import { reactive, ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   FolderUp,
@@ -631,6 +640,7 @@ import {
   UploadOutlined
 } from '@ant-design/icons-vue'
 import { merchantApi } from '../api'
+import { readInvitePrefill } from './merchantApplyInvite'
 import CertImage from '../components/ui/CertImage.vue'
 import CertSampleHint from '../components/ui/CertSampleHint.vue'
 import AppleIcon from '../components/ui/AppleIcon.vue'
@@ -645,10 +655,12 @@ import {
   deadlineText
 } from '../utils/taxCompliance'
 
+const route = useRoute()
 const loading = ref(false)
 const mine = ref(null)
 const currentStep = ref(0)
 const agreed = ref(false)
+const invitePrefilled = ref(false)
 
 const steps = [
   { title: '工商主体', sub: '主体类型与模式' },
@@ -1142,6 +1154,12 @@ async function submit() {
 }
 
 onMounted(async () => {
+  const prefill = readInvitePrefill(route.query)
+  if (prefill) {
+    form.joinType = prefill.joinType
+    form.joinCode = prefill.joinCode
+    invitePrefilled.value = true
+  }
   try {
     const res = await merchantApi.my()
     if (res) mine.value = res

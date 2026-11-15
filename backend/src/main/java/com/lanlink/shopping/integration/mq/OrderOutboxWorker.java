@@ -40,6 +40,15 @@ public class OrderOutboxWorker {
         }
     }
 
+    /**
+     * 补发待投递事件。
+     *
+     * <p>事务边界：认领（{@code FOR UPDATE SKIP LOCKED}）必须在事务内，否则行锁随语句结束释放，
+     * 多副本仍会重复认领。这里整体加 {@code @Transactional}，让「认领 → 发送 → 标记」
+     * 在同一个事务里完成；发送失败抛异常时整批回滚，行保持 status=0 由下一轮重试
+     * （已发出的那几条由消费者幂等兜底，不会重复发奖）。
+     */
+    @org.springframework.transaction.annotation.Transactional
     int drain(LocalDateTime now) {
         int sent = 0;
         for (OrderOutbox row : outbox.claimDue(now, BATCH_SIZE)) {
@@ -53,7 +62,9 @@ public class OrderOutboxWorker {
                 outbox.markSent(row.getId());
                 sent++;
             } catch (RuntimeException e) {
-                int next = row.getRetryCount() + 1;
+                // retryCount 是 Integer：历史行可能为 NULL，直接拆箱会 NPE，
+                // 而 NPE 发生在 catch 块内部不会被同级的 catch(Exception) 捕获，会中断整批循环。
+                int next = (row.getRetryCount() == null ? 0 : row.getRetryCount()) + 1;
                 if (NotifyOutboxPolicy.exhausted(next)) {
                     outbox.markDead(row.getId());
                     log.error("[order-outbox] 重投超限转死态 id={} orderNo={} retry={}",

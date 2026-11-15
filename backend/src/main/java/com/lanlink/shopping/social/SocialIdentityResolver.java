@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -40,23 +41,35 @@ public class SocialIdentityResolver {
     private final SocialHttp http;
     private final JwtVerifier jwt;
     private final AlipaySigner alipaySigner;
+    private final AppleClientSecret appleSecret;
     private final ObjectMapper mapper = new ObjectMapper();
     /** JWKS 缓存：平台公钥轮换不频繁，避免每次登录都出网 */
     private final Map<String, CachedJwks> jwksCache = new ConcurrentHashMap<>();
 
-    public SocialIdentityResolver(SocialHttp http, JwtVerifier jwt, AlipaySigner alipaySigner) {
+    public SocialIdentityResolver(SocialHttp http, JwtVerifier jwt, AlipaySigner alipaySigner,
+                                  AppleClientSecret appleSecret) {
         this.http = http;
         this.jwt = jwt;
         this.alipaySigner = alipaySigner;
+        this.appleSecret = appleSecret;
     }
 
     private record CachedJwks(JsonNode doc, long at) {}
 
     public SocialIdentity resolve(String provider, SocialLoginProperties.Provider cfg, String code, String redirectUri) {
+        return resolve(provider, cfg, code, redirectUri, null, null);
+    }
+
+    /**
+     * @param expectedNonce Apple 授权时写入的 nonce；非 Apple 渠道忽略。为 null 时不校验（仅测试换票路径）
+     * @param appleNickname Apple 首次授权 form_post 里的姓名；之后的登录 Apple 不再下发
+     */
+    public SocialIdentity resolve(String provider, SocialLoginProperties.Provider cfg, String code, String redirectUri,
+                                  String expectedNonce, String appleNickname) {
         return switch (provider) {
             case "wechat" -> wechat(cfg, code);
             case "alipay" -> alipay(cfg, code);
-            case "apple" -> apple(cfg, code, redirectUri);
+            case "apple" -> apple(cfg, code, redirectUri, expectedNonce, appleNickname);
             case "google" -> google(cfg, code, redirectUri);
             default -> throw new BusinessException("不支持的社交登录渠道");
         };
@@ -107,13 +120,17 @@ public class SocialIdentityResolver {
 
     /* ---------------- Apple ---------------- */
 
-    private SocialIdentity apple(SocialLoginProperties.Provider cfg, String code, String redirectUri) {
+    private SocialIdentity apple(SocialLoginProperties.Provider cfg, String code, String redirectUri,
+                                 String expectedNonce, String appleNickname) {
         JsonNode token = parse(http.postForm(APPLE_TOKEN, form(Map.of(
                 "grant_type", "authorization_code",
                 "code", code,
                 "client_id", cfg.resolveId(),
-                "client_secret", cfg.resolveSecret(),
+                "client_secret", appleSecret.resolve(cfg),
                 "redirect_uri", safe(redirectUri))), null));
+        if (text(token, "error") != null) {
+            throw new BusinessException("Apple 授权码换取失败：" + text(token, "error"));
+        }
         String idToken = required(token, "id_token", "Apple");
 
         String kid = jwt.kidOf(idToken);
@@ -121,9 +138,24 @@ public class SocialIdentityResolver {
         if (jwk == null) throw new BusinessException("Apple 公钥未匹配到对应 kid，无法校验身份令牌");
 
         JsonNode payload = jwt.verifyRs256(idToken, jwk[0], jwk[1], APPLE_ISS, cfg.resolveId());
+        requireNonce(payload, expectedNonce);
         String sub = required(payload, "sub", "Apple");
         String email = text(payload, "email");
-        return new SocialIdentity("apple", sub, null, null, null, email, boolOf(payload.get("email_verified")));
+        String nickname = appleNickname == null || appleNickname.isBlank() ? null : appleNickname.trim();
+        return new SocialIdentity("apple", sub, null, nickname, null, email, boolOf(payload.get("email_verified")));
+    }
+
+    /**
+     * 网页授权流程里，id_token 的 nonce 就是授权 URL 上的原文（不是 JS SDK 的 SHA-256）。
+     */
+    private static void requireNonce(JsonNode payload, String expectedNonce) {
+        if (expectedNonce == null) return;
+        String actual = text(payload, "nonce");
+        byte[] expected = expectedNonce.getBytes(StandardCharsets.UTF_8);
+        byte[] got = actual == null ? new byte[0] : actual.getBytes(StandardCharsets.UTF_8);
+        if (actual == null || expected.length != got.length || !MessageDigest.isEqual(expected, got)) {
+            throw new BusinessException("Apple 身份令牌 nonce 不匹配");
+        }
     }
 
     private JsonNode jwks(String url) {

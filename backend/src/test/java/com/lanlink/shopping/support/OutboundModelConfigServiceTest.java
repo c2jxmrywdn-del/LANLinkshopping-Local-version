@@ -48,6 +48,14 @@ class OutboundModelConfigServiceTest {
     }
 
     @Test
+    void encryptDecryptEmptyOrNullReturnsNull() {
+        assertNull(service.encrypt(null));
+        assertNull(service.encrypt(""));
+        assertNull(service.decrypt(null));
+        assertNull(service.decrypt(""));
+    }
+
+    @Test
     void maskPrefixNeverRevealsFullKey() {
         String masked = OutboundModelConfigService.maskPrefix("sk-abcdef123456789");
         assertEquals("sk-abc****", masked);

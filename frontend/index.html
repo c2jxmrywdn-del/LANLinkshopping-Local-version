@@ -21,43 +21,47 @@
     <!-- iOS 不支持 SVG apple-touch-icon，必须保留 PNG -->
     <link rel="apple-touch-icon" sizes="180x180" href="/logo-256.png" />
     <title>LANLinkshopping · 聚合型B2B电商平台</title>
-    <meta name="description" content="LANLinkshopping 聚合型一体多元化解决方案 B2B 电商平台：商品商城、商户入驻、购物车下单支付、智能客服一站式采购体验。" />
+    <!-- SEO 全局兜底 TDK（P1-19）：SPA 单份基线，按路由差异化注入（CSR/预渲染）随拍板⑦-12 后增强；
+         此处仅写平台通用事实，不虚构具体商品/商户数据。 -->
+    <meta name="description" content="LANLinkshopping 聚合型一体多元化解决方案 B2B 电商平台：面向工业大宗集采与供应链协同，覆盖商品商城、商户入驻、询价下单支付、企业钱包与账期、会员活动与物流履约的一站式采购体验。" />
+    <meta name="keywords" content="B2B电商,工业品采购,大宗集采,供应链协同,商户入驻,企业账期,询价采购,批发平台,LANLinkshopping" />
+    <meta name="robots" content="index,follow" />
+    <!-- Open Graph 基线（P1-19）：og:url 与 og:image 为待生产域名确认的占位，
+         og:type=website 是全局兜底；文章/商品级 og 随拍板⑦-12 的 TDK 注入方案增强。 -->
+    <meta property="og:site_name" content="LANLinkshopping" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LANLinkshopping · 聚合型B2B电商平台" />
+    <meta property="og:description" content="面向工业大宗集采与供应链协同的 B2B 电商平台：商品商城、商户入驻、询价下单支付、企业钱包与账期、会员活动与物流履约一站式覆盖。" />
+    <meta property="og:url" content="https://lanlink.cc.cd/" />
+    <meta property="og:image" content="https://lanlink.cc.cd/logo-256.png" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:locale:alternate" content="en_US" />
     <!-- 首屏关键 logo 预加载（LCP 候选资源） -->
     <link rel="preload" as="image" href="/logo.svg" />
     <style>
-      /* 首屏骨架占位：JS 加载前防止白屏，减少布局偏移（CLS） */
-      html { background: #f6f8fb; }
+      /* 首屏只保留 Vue 侧的 SplashScreen（光感过渡动画），此处不再渲染静态骨架屏。
+         html 底色与应用浅色页底一致：避免滚动/回弹时从 body 边缘透出深色。 */
+      html { background: #F5F6F8; }
       #app { min-height: 100vh; }
-      .ll-boot-skeleton {
-        position: fixed; inset: 0; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 14px;
-        background: #f6f8fb; z-index: 1; transition: opacity .3s ease;
-      }
-      .ll-boot-skeleton.hide { opacity: 0; pointer-events: none; }
-      .ll-boot-bar {
-        width: min(320px, 70vw); height: 6px; border-radius: 999px;
-        background: linear-gradient(90deg, #dbe6f5, #eef3fa, #dbe6f5);
-        background-size: 200% 100%; animation: llBootPulse 1.2s ease-in-out infinite;
-      }
-      @keyframes llBootPulse { 0%,100% { opacity: .55 } 50% { opacity: 1 } }
-      @media (prefers-reduced-motion: reduce) { .ll-boot-bar { animation: none } }
     </style>
   </head>
   <body>
     <div id="app"></div>
-    <div class="ll-boot-skeleton" id="ll-boot-skeleton" aria-hidden="true">
-      <img src="/logo.svg" width="64" height="64" alt="" />
-      <div class="ll-boot-bar"></div>
-    </div>
     <!-- 入口脚本：保留静态 src（Vite 构建依赖它识别入口）；
          旁路 error 捕获实现弱网重试，全部失败展示基础降级提示。 -->
     <script>
       (function () {
         var attempts = 0
         var MAX_RETRY = 2
-        function hideSkeleton() {
-          var sk = document.getElementById('ll-boot-skeleton')
-          if (sk) { sk.classList.add('hide'); setTimeout(function () { sk.remove() }, 400) }
+        // 静态骨架屏已移除：首屏过渡只由 Vue 侧 SplashScreen 承担。
+        // 这里只负责"加载失败"的降级提示，避免弱网时用户看到纯白页。
+        function showNetworkFallback() {
+          var app = document.getElementById('app')
+          if (!app || app.children.length > 0) return
+          app.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;' +
+            'background:#F5F6F8;color:#64748b;font:14px/1.6 system-ui,-apple-system,sans-serif;text-align:center;padding:0 24px">' +
+            '<p>网络异常，资源加载失败。<br/>请检查网络后 ' +
+            '<a href="javascript:location.reload()" style="color:#1E6EB8">点击重试</a></p></div>'
         }
         var entrySrc = '' // 入口实际 src（构建后为 /assets/index-[hash].js），重试时惰性读取
         function resolveEntrySrc() {
@@ -68,18 +72,13 @@
         }
         function retryEntry() {
           if (attempts++ >= MAX_RETRY) {
-            var sk = document.getElementById('ll-boot-skeleton')
-            if (sk) {
-              sk.innerHTML = '<p style="color:#64748b;font:14px/1.6 system-ui,sans-serif;text-align:center;padding:0 24px">' +
-                '网络异常，资源加载失败。<br/>请检查网络后 <a href="javascript:location.reload()" style="color:#1E6EB8">点击重试</a></p>'
-            }
+            showNetworkFallback()
             return
           }
           var base = resolveEntrySrc() || '/src/main.js'
           var s = document.createElement('script')
           s.type = 'module'
           s.src = base + (base.includes('?') ? '&' : '?') + 'retry=' + attempts
-          s.onload = hideSkeleton
           s.onerror = function () { setTimeout(retryEntry, 800 * attempts) }
           document.head.appendChild(s)
         }
@@ -94,28 +93,8 @@
             retryEntry()
           }
         }, true)
-        function showNetworkFallback() {
-          var sk = document.getElementById('ll-boot-skeleton')
-          if (sk) {
-            sk.innerHTML = '<p style="color:#64748b;font:14px/1.6 system-ui,sans-serif;text-align:center;padding:0 24px">' +
-              '网络异常，资源加载失败。<br/>请检查网络后 <a href="javascript:location.reload()" style="color:#1E6EB8">点击重试</a></p>'
-          }
-        }
-        // 入口正常执行后（Vue 挂载完成）隐藏骨架；未挂载则显示降级页
-        // （module 脚本失败不冒泡 error，故按"是否挂载"兜底判定，与 attempts 无关）
-        window.addEventListener('load', function () {
-          setTimeout(function () {
-            var app = document.getElementById('app')
-            if (app && app.children.length > 0) hideSkeleton()
-            else showNetworkFallback()
-          }, 1500)
-        })
-        // 6s 兜底：仍未挂载 → 降级页；已挂载 → 撤掉骨架
-        setTimeout(function () {
-          var app = document.getElementById('app')
-          if (app && app.children.length > 0) hideSkeleton()
-          else showNetworkFallback()
-        }, 6000)
+        // 6s 兜底：仍未挂载才提示降级（挂载可能因语言自动识别合法推迟，过早提示会误伤）
+        setTimeout(showNetworkFallback, 6000)
       })()
     </script>
     <script type="module" id="ll-entry" src="/src/main.js"></script>

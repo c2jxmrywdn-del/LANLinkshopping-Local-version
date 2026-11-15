@@ -96,6 +96,69 @@ groups:
           summary: "数据库连接池出现等待"
           description: "HikariCP 有线程等待连接，检查连接池上限、慢查询或连接泄漏。"
 
+      # ===== P0-B 关单/支付冲突（迟到支付 + 重复扣款 + 自动补偿）=====
+      # 指标来源：payment/conflict/service/PaymentConflictService.java:61-63
+      #   lanlink.payment.conflict{outcome=detected|duplicate}            → lanlink_payment_conflict_total
+      #   lanlink.payment.conflict.compensate{outcome=refunded|failed|to_manual|skipped|stale|stale_recovered|exception}
+      #                                                                  → lanlink_payment_conflict_compensate_total
+      #   lanlink.payment.conflict.manual{outcome=claimed|refunded|closed}→ lanlink_payment_conflict_manual_total
+      # 说明：计数器仅在冲突被记录/补偿执行时产生序列；无冲突时告警静默属预期。
+      # 指标语义局限（待实施者确认）：METRIC_DETECTED 只打 outcome=detected|duplicate 两个 tag，
+      # 没有 conflict_type 标签——迟到支付(late_pay_after_close) 与第二笔渠道流水(duplicate_txn)
+      # 的新增挂账都计入 outcome="detected"；outcome="duplicate" 是唯一键命中（同一 channel+transaction_id
+      # 重复上报）。要按类型精确告警，需给该 Counter 增加 type 标签或新增专用 Counter。
+      - alert: LatePayAfterCloseDetected
+        expr: increase(lanlink_payment_conflict_total{outcome="detected"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "检测到关单/取消后渠道仍扣款（资金缺口事件）"
+          description: "过去 10 分钟新增 {{ $value }} 笔收款冲突挂账（含迟到支付与第二笔渠道流水）；系统会尝试自动原路退款，请按资金异常处置 SOP 核对渠道对账单与挂账闭环。"
+
+      - alert: DuplicateTxnDetected
+        expr: increase(lanlink_payment_conflict_total{outcome="duplicate"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "同一 (channel, transaction_id) 重复上报（唯一键命中）"
+          description: "过去 10 分钟 {{ $value }} 次重复渠道流水上报（渠道重试/重复回调）；若伴随 detected 突增，按 SOP 核对是否发生同订单第二笔扣款。"
+
+      - alert: PaymentConflictAutoRefundFailing
+        expr: increase(lanlink_payment_conflict_compensate_total{outcome=~"failed|to_manual"}[30m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "收款冲突自动退款失败/转人工"
+          description: "过去 30 分钟出现 {{ $value }} 次补偿失败或转人工；检查渠道退款可用性（证书/余额/签名），按 SOP 人工处置。"
+
+      # 挂账积压：规划中的 Gauge lanlink.payment.conflict.open 尚未在代码中实现（无 Gauge 注册），
+      # 暂用真实 Counter 的「近 1 小时新增 − 已自动/人工闭环」代理口径；待实施者补 Gauge 后
+      # 替换为 lanlink_payment_conflict_open > 5（见 reports/impl/observability-p0.md「待确认指标」）。
+      - alert: PaymentConflictBacklog
+        # 真实积压口径（Gauge，PaymentConflictService 构造时注册）：未闭环 = OPEN/FAILED/AUTO_REFUNDING
+        expr: sum(lanlink_payment_conflict_open) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "收款冲突挂账积压（近 1 小时净新增 > 5）"
+          description: "未闭环挂账（OPEN/FAILED/AUTO_REFUNDING）持续 >5，检查补偿 job 是否运行、渠道退款是否可用；转人工未闭环计入积压。"
+
+      # 支付入口门禁拒绝：规划中的 lanlink.payment.gate.rejected 尚未在代码中注册（PaymentService.assertPayable 只抛异常/写日志），
+      # 暂用 /payment/create 的 HTTP 4xx 速率作代理；精确指标落地后替换该表达式。
+      - alert: PaymentGateRejectedSpike
+        # 真实门禁口径（Counter，PaymentService.assertPayable 上报 reason=order_status|window）
+        expr: sum(rate(lanlink_payment_gate_rejected_total[5m])) > 0.2
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "支付入口建单被拒突增（HTTP 4xx）"
+          description: "过去 5 分钟 /payment/create 4xx 速率 >0.2/s（含订单状态/支付时间窗门禁与参数错误）；检查前端缓存、批量重试与订单状态。"
+
   - name: lanlink-rabbitmq-alerts
     rules:
       - alert: RabbitMQNodeDown

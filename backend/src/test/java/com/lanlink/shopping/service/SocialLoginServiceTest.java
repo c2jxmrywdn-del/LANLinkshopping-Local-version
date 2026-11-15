@@ -125,11 +125,51 @@ class SocialLoginServiceTest {
         assertTrue(appleUrl.startsWith("https://appleid.apple.com/auth/authorize?"));
         assertTrue(appleUrl.contains("client_id=apple.client.id"));
         assertTrue(appleUrl.contains("scope=" + enc("name email")));
+        assertTrue(appleUrl.contains("response_mode=form_post"));
+        assertTrue(appleUrl.contains("redirect_uri=" + enc("http://localhost:8080/api/auth/social/apple/return")));
+        assertTrue(appleUrl.contains("nonce="));
+        assertFalse(appleUrl.contains("response_mode=query"));
 
         enable("google", "google-client-id", "gsecret");
         String googleUrl = service.authorizeUrl("google", "st4");
         assertTrue(googleUrl.startsWith("https://accounts.google.com/o/oauth2/v2/auth?"));
         assertTrue(googleUrl.contains("scope=" + enc("openid email profile")));
+    }
+
+    @Test
+    void appleConfiguredWithSigningKeyWithoutStaticSecret() {
+        SocialLoginProperties.Provider apple = props.provider("apple");
+        apple.setEnabled(true);
+        apple.setClientId("com.lanlink.web");
+        assertFalse(props.configured("apple"));
+        apple.setTeamId("TEAMID123");
+        apple.setKeyId("KEYID12345");
+        apple.setPrivateKey("not-a-real-key");
+        assertTrue(props.configured("apple"));
+    }
+
+    @Test
+    void appleCallbackWithoutNonceIsRejectedBeforeTokenExchange() {
+        enable("apple", "apple.client.id", "jwt-client-secret");
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.callback("apple", "code-a", "st"));
+        assertTrue(ex.getMessage().contains("状态校验失败"));
+        verifyNoInteractions(resolver);
+    }
+
+    @Test
+    void appleCallbackUsesReturnUriNonceAndFirstName() {
+        enable("apple", "apple.client.id", "jwt-client-secret");
+        when(resolver.resolve(eq("apple"), any(), eq("code-a"),
+                eq("http://localhost:8080/api/auth/social/apple/return"),
+                eq("nonce1234567890ab"), eq("Jun Jie")))
+                .thenReturn(new SocialIdentity("apple", "apple-sub", null, "Jun Jie", null, "u@privaterelay.appleid.com", true));
+        when(bindingService.find("apple", "apple-sub")).thenReturn(null);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.callback("apple", "code-a", "st", "nonce1234567890ab", "Jun Jie"));
+        assertTrue(ex.getMessage().contains("尚未绑定"));
+        assertTrue(ex.getMessage().contains("社交账号绑定"));
     }
 
     @Test

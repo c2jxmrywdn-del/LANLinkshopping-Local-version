@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.integration.security.RequirePerm;
+import com.lanlink.shopping.support.orchestrator.SupportMcpAnswerService;
+import com.lanlink.shopping.support.orchestrator.SupportComplexityRouter;
+import com.lanlink.shopping.support.orchestrator.SupportMediaGroundingService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -43,6 +46,8 @@ public class SupportController {
     private final IntentUnderstandingService intents;
     private final SupportAiAnswerService supportAi;
     private final com.lanlink.shopping.module.aikb.KnowledgeRagService rag;
+    private final SupportMcpAnswerService mcpAnswer;
+    private final SupportMediaGroundingService mediaGrounding;
 
     @Autowired(required = false)
     private com.lanlink.shopping.mapper.ProductMapper productMapper;
@@ -51,7 +56,7 @@ public class SupportController {
     private com.lanlink.shopping.module.aikb.KnowledgeIngestService knowledgeIngestService;
 
     @Autowired(required = false)
-    private ExternalFallbackService externalFallbackService;
+    private com.lanlink.shopping.support.orchestrator.SupportComplexityRouter complexityRouter;
 
     /** 向量检索命中最低相似度：低于此值视为无相关资料，回退兜底而非强行作答。 */
     private static final double RAG_MIN_SCORE = 0.12d;
@@ -65,7 +70,9 @@ public class SupportController {
                              ObjectMapper objectMapper, CustomerCommunicationService communications,
                              SupportFallbackService fallbackService, IntentUnderstandingService intents,
                              SupportAiAnswerService supportAi,
-                             com.lanlink.shopping.module.aikb.KnowledgeRagService rag) {
+                             com.lanlink.shopping.module.aikb.KnowledgeRagService rag,
+                             SupportMcpAnswerService mcpAnswer,
+                             SupportMediaGroundingService mediaGrounding) {
         this.answers = answers;
         this.guard = guard;
         this.objectMapper = objectMapper;
@@ -74,6 +81,8 @@ public class SupportController {
         this.intents = intents;
         this.supportAi = supportAi;
         this.rag = rag;
+        this.mcpAnswer = mcpAnswer;
+        this.mediaGrounding = mediaGrounding;
     }
 
     @PostMapping("/ask")
@@ -140,8 +149,11 @@ public class SupportController {
             }
 
             String question = body.path("question").asText();
+            List<String> mediaIds = mediaIdList(body.path("mediaIds"));
+            SupportMediaGroundingService.Grounding media = mediaGrounding.build(mediaIds, visitorToken);
             String answer;
             String answerSource = "KB";
+            String evidence = "";
             boolean english = !containsCjk(question);
             try {
                 // 先取本地知识库精确答案（含问候/自我介绍/拒答兜底），作为事实来源与最终回退。
@@ -149,63 +161,76 @@ public class SupportController {
                 answer = kbAnswer;
                 String matched = answers.matchedEntryId(question);
                 boolean substantive = answers.eligibleForAiModel(question);
-                // 统一"组合接地"策略：命中权威条目时以其打底，再叠加向量检索到的本站真实数据
-                // （政策/会员/订阅/商品/物流/学习候选…），交本地 qwen2.5-vl 生成——既摆脱模板腔，
-                // 又让"会员折扣/物流合作方/退换政策"这类事实子问题以入库数据为准，抑制臆造。
-                if (substantive && supportAi.available()) {
-                    String ragContext = "";
+                SupportComplexityRouter router = this.complexityRouter != null ? this.complexityRouter : new SupportComplexityRouter();
+                SupportComplexityRouter.ComplexityDecision decision = router.evaluate(question, mediaIds, media.text(), substantive, matched);
+                boolean kbExact = decision.tier() == SupportComplexityRouter.Tier.TIER_1_EXACT_KB;
+                if (kbExact) {
+                    // 精确命中且无附件：知识库即已审核口径，直接返回，避免模型改写权威答案。
+                    answerSource = "KB";
+                // 带附件时必须进入模型/MCP 分支：eligibleForAiModel 只看文本意图，
+                // 文档类问题（如「文档里的订单号」）会被判为不可答而漏掉附件证据。
+                } else if (substantive || StringUtils.hasText(media.text()) || decision.isComplexDiverted()) {
+                    // 复杂问题/带附件：优先让本地模型经 MCP 只读工具取数后作答（答案可追溯到工具轨迹）。
+                    java.util.Optional<SupportMcpAnswerService.Answer> mcp = java.util.Optional.empty();
                     try {
-                        com.lanlink.shopping.module.aikb.KnowledgeRagService.RagContext ctx =
-                                rag.buildContext(question, 6, RAG_MIN_SCORE, english);
-                        if (ctx.usable()) ragContext = ctx.text();
-                    } catch (Exception ragEx) {
-                        log.warn("[support] rag retrieval skipped: {}", ragEx.getMessage());
+                        mcp = mcpAnswer.answer(question, media.text());
+                    } catch (Exception mcpEx) {
+                        // 含来源校验失败（502）：一律降级本地 RAG/知识库，绝不再外呼答案。
+                        log.warn("[support] mcp answer unavailable: {}", mcpEx.getMessage());
                     }
-                    StringBuilder grounding = new StringBuilder();
-                    if (StringUtils.hasText(matched)) grounding.append(kbAnswer);
-                    if (!ragContext.isEmpty()) {
-                        if (grounding.length() > 0) grounding.append("\n\n");
-                        grounding.append(ragContext);
-                    }
-                    // 商品实体精准回补：若向量检索未命中或未命中具体商品，从 t_product 在售表精准回补最新商品知识卡片
-                    if (ragContext.isEmpty() || !ragContext.contains("【商品编号")) {
-                        String entityCard = tryProductEntityFallback(question, english);
-                        if (!entityCard.isEmpty()) {
-                            if (grounding.length() > 0) grounding.append("\n\n");
-                            grounding.append(entityCard);
+                    if (mcp.isPresent()) {
+                        answer = mcp.get().text();
+                        answerSource = "MCP";
+                        evidence = summarizeTrace(mcp.get().traceJson());
+                    } else if (supportAi.available()) {
+                        String ragContext = "";
+                        try {
+                            com.lanlink.shopping.module.aikb.KnowledgeRagService.RagContext ctx =
+                                    rag.buildContext(question, 6, RAG_MIN_SCORE, english);
+                            if (ctx.usable()) ragContext = ctx.text();
+                        } catch (Exception ragEx) {
+                            log.warn("[support] rag retrieval skipped: {}", ragEx.getMessage());
                         }
-                    }
-
-                    String modelText = null;
-                    if (grounding.length() > 0) {
-                        modelText = supportAi.answerRag(question, grounding.toString()).orElse(null);
-                        // 本地模型未给出有效答案时，尝试经由本地知识库 Grounding 触发外部大模型兜底
-                        if (modelText == null && externalFallbackService != null) {
-                            try {
-                                var ext = externalFallbackService.answer(question, english, grounding.toString(), 1);
-                                if (ext != null && StringUtils.hasText(ext.answer())) {
-                                    modelText = ext.answer();
-                                }
-                            } catch (Exception extEx) {
-                                log.warn("[support] external fallback grounding call failed: {}", extEx.getMessage());
+                        StringBuilder grounding = new StringBuilder();
+                        if (StringUtils.hasText(matched)) grounding.append(kbAnswer);
+                        if (!ragContext.isEmpty()) {
+                            if (grounding.length() > 0) grounding.append("\n\n");
+                            grounding.append(ragContext);
+                        }
+                        // 商品实体精准回补：若向量检索未命中或未命中具体商品，从 t_product 在售表精准回补最新商品知识卡片
+                        if (ragContext.isEmpty() || !ragContext.contains("【商品编号")) {
+                            String entityCard = tryProductEntityFallback(question, english);
+                            if (!entityCard.isEmpty()) {
+                                if (grounding.length() > 0) grounding.append("\n\n");
+                                grounding.append(entityCard);
                             }
                         }
-                    } else if (StringUtils.hasText(matched)) {
-                        // 无检索资料但命中条目：对权威答案做纯润色
-                        modelText = supportAi.answer(question, kbAnswer).orElse(null);
-                    }
-                    boolean hasRag = !ragContext.isEmpty() || grounding.length() > 0;
-                    if (modelText != null) {
-                        answer = modelText;
-                        answerSource = hasRag ? "RAG" : "AI";
-                    }
-                    boolean deflected = modelText == null || modelText.contains("超出知识库范围")
-                            || (english && containsCjk(modelText));
-                    if (english && hasRag && deflected) {
-                        String extracted = contextExtract(ragContext, true);
-                        if (!extracted.isBlank()) {
-                            answer = extracted;
-                            answerSource = "RAG";
+                        // MCP 不可用时附件证据不能丢：一并交给本地 RAG 组织答案。
+                        if (StringUtils.hasText(media.text())) {
+                            if (grounding.length() > 0) grounding.append("\n\n");
+                            grounding.append(media.text());
+                        }
+
+                        String modelText = null;
+                        if (grounding.length() > 0) {
+                            modelText = supportAi.answerRag(question, grounding.toString()).orElse(null);
+                        } else if (StringUtils.hasText(matched)) {
+                            // 无检索资料但命中条目：对权威答案做纯润色
+                            modelText = supportAi.answer(question, kbAnswer).orElse(null);
+                        }
+                        boolean hasRag = !ragContext.isEmpty() || grounding.length() > 0;
+                        if (modelText != null) {
+                            answer = modelText;
+                            answerSource = hasRag ? "RAG" : "AI";
+                        }
+                        boolean deflected = modelText == null || modelText.contains("超出知识库范围")
+                                || (english && containsCjk(modelText));
+                        if (english && hasRag && deflected) {
+                            String extracted = contextExtract(ragContext, true);
+                            if (!extracted.isBlank()) {
+                                answer = extracted;
+                                answerSource = "RAG";
+                            }
                         }
                     }
                 }
@@ -259,6 +284,8 @@ public class SupportController {
             return ResponseEntity.ok(R.ok(Map.of(
                     "answer", answer, "visitorToken", visitorToken, "lastMessageId", lastMessageId,
                     "source", answerSource,
+                    "mediaPending", media.pending(),
+                    "evidence", evidence,
                     "intent", intents.analyzeFast(question).data())));
         } catch (JsonProcessingException ex) {
             return ResponseEntity.ok(R.ok(Map.of("answer", fallback)));
@@ -332,13 +359,18 @@ public class SupportController {
                 return emitter;
             }
 
+            List<String> mediaIds = mediaIdList(body.path("mediaIds"));
+            final SupportMediaGroundingService.Grounding media = mediaGrounding.build(mediaIds, visitorToken);
             boolean substantive = answers.eligibleForAiModel(question);
             boolean english = !containsCjk(question);
             String kbAnswer = answers.answer(question);
             String matched = answers.matchedEntryId(question);
 
-            // 若命中静态问候、自我介绍或非大模型咨询内容，快速流式直出
-            if (!substantive || !supportAi.available()) {
+            // 问候/自我介绍/拒答类，或精确命中知识库且无附件：快速流式直出（口径与 /ask 一致）。
+            SupportComplexityRouter router = this.complexityRouter != null ? this.complexityRouter : new SupportComplexityRouter();
+            SupportComplexityRouter.ComplexityDecision decision = router.evaluate(question, mediaIds, media.text(), substantive, matched);
+
+            if (decision.tier() == SupportComplexityRouter.Tier.TIER_1_EXACT_KB || (!substantive && !decision.isComplexDiverted())) {
                 String directAnswer = kbAnswer;
                 if (english && directAnswer != null) {
                     if (directAnswer.equals(answers.greeting())) directAnswer = answers.englishGreeting();
@@ -352,6 +384,31 @@ public class SupportController {
             // 组合接地检索 (KB + Hybrid RAG + 商品在售卡片)
             final String finalVisitorToken = visitorToken;
             java.util.concurrent.CompletableFuture.runAsync(() -> {
+                // MCP 优先：先用非流式拿完整答案，再按 SSE 分片重放——前端协议不变，
+                // 答案仍来自本地模型 + 本项目只读工具；失败才回落到原有流式 RAG。
+                try {
+                    java.util.Optional<SupportMcpAnswerService.Answer> mcp =
+                            mcpAnswer.answer(question, media.text());
+                    if (mcp.isPresent()) {
+                        String full = mcp.get().text();
+                        SupportAiAnswerService.sendChunkedStream(emitter, full, "MCP", 32);
+                        if (persist && StringUtils.hasText(full)) {
+                            try {
+                                communications.recordCustomerTurn(finalVisitorToken, question, full);
+                            } catch (Exception e) {
+                                log.warn("[support-stream] persist turn failed: {}", e.getMessage());
+                            }
+                        }
+                        return;
+                    }
+                } catch (Exception mcpEx) {
+                    log.warn("[support-stream] mcp answer unavailable: {}", mcpEx.getMessage());
+                }
+                if (!supportAi.available()) {
+                    // 网关 MCP 与流式直连都不可用：知识库兜底，保证 SSE 一定收尾。
+                    SupportAiAnswerService.sendSimulatedStream(emitter, kbAnswer, "KB");
+                    return;
+                }
                 try {
                     String ragContext = "";
                     try {
@@ -374,6 +431,11 @@ public class SupportController {
                             if (grounding.length() > 0) grounding.append("\n\n");
                             grounding.append(entityCard);
                         }
+                    }
+                    // MCP 不可用时附件证据不能丢：交给本地流式 RAG 一起组织答案。
+                    if (StringUtils.hasText(media.text())) {
+                        if (grounding.length() > 0) grounding.append("\n\n");
+                        grounding.append(media.text());
                     }
 
                     supportAi.answerStream(question, grounding.toString(), emitter, (finalText) -> {
@@ -413,6 +475,48 @@ public class SupportController {
         status.put("externalChannelConfigured", fallbackService.externalChannelConfigured());
         status.put("policy", "knowledge=local-kb-only; external-model=greeting-only; anti-proxy=enforced");
         return ResponseEntity.ok(R.ok(status));
+    }
+
+    /**
+     * 解析请求体里的 mediaIds（值为 mediaNo）。
+     * 只接受字符串、去空去重并限制数量：前端上传上限有限，这里再兜一层防止超长请求放大查询与提示词。
+     */
+    private static List<String> mediaIdList(JsonNode node) {
+        if (node == null || !node.isArray()) return List.of();
+        List<String> out = new java.util.ArrayList<>();
+        for (JsonNode item : node) {
+            if (!item.isTextual() || !StringUtils.hasText(item.asText())) continue;
+            String mediaNo = item.asText().trim();
+            if (!out.contains(mediaNo)) out.add(mediaNo);
+            if (out.size() >= 10) break;
+        }
+        return out;
+    }
+
+    /**
+     * 工具轨迹摘要：把网关返回的 tool_trace 压成一行可读证据（工具名 + 成败 + 耗时），
+     * 随响应回给前端便于用户/运营核对"这个答案查了什么"。解析失败时原样截断返回。
+     */
+    private String summarizeTrace(String traceJson) {
+        if (!StringUtils.hasText(traceJson)) return "";
+        try {
+            JsonNode array = objectMapper.readTree(traceJson);
+            if (!array.isArray() || array.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            for (JsonNode item : array) {
+                String name = item.path("tool").asText("");
+                if (!StringUtils.hasText(name)) continue;
+                if (sb.length() > 0) sb.append(" · ");
+                sb.append(name).append('(');
+                if (item.has("ok")) sb.append(item.path("ok").asBoolean() ? "ok" : "fail");
+                if (item.has("ms")) sb.append(',').append(item.path("ms").asLong()).append("ms");
+                sb.append(')');
+            }
+            String out = sb.toString();
+            return out.length() > 300 ? out.substring(0, 300) + "…" : out;
+        } catch (Exception e) {
+            return traceJson.length() > 300 ? traceJson.substring(0, 300) + "…" : traceJson;
+        }
     }
 
     private static boolean containsCjk(String s) {

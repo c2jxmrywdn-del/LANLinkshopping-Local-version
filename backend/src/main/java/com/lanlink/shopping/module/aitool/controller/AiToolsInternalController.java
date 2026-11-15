@@ -130,8 +130,8 @@ public class AiToolsInternalController {
     @PostMapping("/create-cart-draft")
     public R<AiToolDto.CreateCartDraftResponse> createCartDraft(@Valid @RequestBody AiToolDto.CreateCartDraftRequest req,
                                                                 HttpServletRequest request) {
-        checkAuthAndRate(request, "cart:write");
-        return R.ok("意向草稿单已生成", toolExecutionService.createCartDraft(req));
+        AiToolGuard.AuthContext auth = checkAuthAndRate(request, "cart:write");
+        return R.ok("意向草稿单已生成", toolExecutionService.createCartDraft(req, auth.tenantId(), auth.keyPrefix()));
     }
 
     /**
@@ -150,8 +150,8 @@ public class AiToolsInternalController {
     @PostMapping("/track-logistics")
     public R<AiToolDto.TrackLogisticsResponse> trackLogistics(@Valid @RequestBody AiToolDto.TrackLogisticsRequest req,
                                                               HttpServletRequest request) {
-        checkAuthAndRate(request, "orders:read");
-        return R.ok("物流轨迹获取成功", toolExecutionService.trackLogistics(req));
+        AiToolGuard.AuthContext auth = checkAuthAndRate(request, "orders:read");
+        return R.ok("物流轨迹获取成功", toolExecutionService.trackLogistics(req, auth.tenantId()));
     }
 
     /**
@@ -160,8 +160,8 @@ public class AiToolsInternalController {
     @PostMapping("/audit-procurement-draft")
     public R<AiToolDto.AuditProcurementDraftResponse> auditProcurementDraft(@Valid @RequestBody AiToolDto.AuditProcurementDraftRequest req,
                                                                             HttpServletRequest request) {
-        checkAuthAndRate(request, "procurement:audit");
-        return R.ok("财务合规审核完成", toolExecutionService.auditProcurementDraft(req));
+        AiToolGuard.AuthContext auth = checkAuthAndRate(request, "procurement:audit");
+        return R.ok("财务合规审核完成", toolExecutionService.auditProcurementDraft(req, auth.tenantId()));
     }
 
     /**
@@ -170,8 +170,8 @@ public class AiToolsInternalController {
     @PostMapping("/approve-procurement-flow")
     public R<AiToolDto.ApproveProcurementFlowResponse> approveProcurementFlow(@Valid @RequestBody AiToolDto.ApproveProcurementFlowRequest req,
                                                                               HttpServletRequest request) {
-        checkAuthAndRate(request, "procurement:approve");
-        return R.ok("审批操作完成", toolExecutionService.approveProcurementFlow(req));
+        AiToolGuard.AuthContext auth = checkAuthAndRate(request, "procurement:approve");
+        return R.ok("审批操作完成", toolExecutionService.approveProcurementFlow(req, auth.tenantId()));
     }
 
     /**

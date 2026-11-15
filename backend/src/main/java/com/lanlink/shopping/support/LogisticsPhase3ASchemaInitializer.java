@@ -40,11 +40,16 @@ public class LogisticsPhase3ASchemaInitializer implements ApplicationRunner {
         addColumnIfNotExists("t_logistics_provider", "sla_rate", "DECIMAL(5,2) NOT NULL DEFAULT 98.00 COMMENT '历史准时交付率百分比'");
 
         // 3. 回填或初始化主流服务商基准 SLA 数据
+        //    守卫口径（out/carrier-expansion-design.md §4.3）：三列均为列默认值
+        //    （48/92/98.00，即该行从未被人工配置）才整体回填；任一列被管理端
+        //    改过则整行跳过，避免人工配置被启动时覆盖。DBL 笔误已勘误为 DB。
         try {
-            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 24, service_score = 98, sla_rate = 99.50 WHERE provider_code = 'SF' OR provider_name LIKE '%顺丰%'");
-            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 36, service_score = 96, sla_rate = 99.00 WHERE provider_code = 'JD' OR provider_name LIKE '%京东%'");
-            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 48, service_score = 95, sla_rate = 98.50 WHERE provider_code = 'DBL' OR provider_name LIKE '%德邦%'");
-            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 72, service_score = 90, sla_rate = 96.00 WHERE provider_code = 'ANE' OR provider_name LIKE '%安能%'");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 24, service_score = 98, sla_rate = 99.50 WHERE provider_code = 'SF' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 36, service_score = 96, sla_rate = 99.00 WHERE provider_code = 'JD' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 48, service_score = 95, sla_rate = 98.50 WHERE provider_code = 'DB' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 72, service_score = 90, sla_rate = 96.00 WHERE provider_code = 'ANE' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 24, service_score = 98, sla_rate = 99.50 WHERE provider_code = 'KYE' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
+            jdbc.update("UPDATE t_logistics_provider SET avg_eta_hours = 72, service_score = 90, sla_rate = 96.00 WHERE provider_code = 'BEST' AND avg_eta_hours = 48 AND service_score = 92 AND sla_rate = 98.00");
             // 将历史运单的 last_trace_time 初始化为 update_time
             jdbc.update("UPDATE t_logistics_waybill SET last_trace_time = update_time WHERE last_trace_time IS NULL");
         } catch (Exception e) {

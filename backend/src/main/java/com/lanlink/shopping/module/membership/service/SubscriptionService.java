@@ -56,6 +56,9 @@ public class SubscriptionService implements SubscriptionPayHandler {
     /** 自动续费扣款渠道：走 mock/沙箱渠道（不触真实资金；mock 关闭时扣款失败进入重试/上限流程） */
     public static final String RENEW_CHANNEL = "mock";
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(SubscriptionService.class);
+
     private final SubscriptionPlanMapper planMapper;
     private final UserSubscriptionMapper subMapper;
     private final SubscriptionOrderMapper orderMapper;
@@ -63,6 +66,14 @@ public class SubscriptionService implements SubscriptionPayHandler {
     private final SequenceService sequenceService;
     private final MessageService messageService;
     private final PaymentService paymentService;
+
+    /**
+     * 会员卡等级重算：setter 注入 + @Lazy，避免 SubscriptionService ↔ MembershipService 构造期循环。
+     * 订阅生效/过期都要立即回写卡等级，否则等级会滞后到下一笔已支付订单。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private MembershipService membershipService;
 
     /**
      * {@code paymentService} 用 @Lazy 注入：订阅购买要复用支付渠道分发，
@@ -198,6 +209,8 @@ public class SubscriptionService implements SubscriptionPayHandler {
                 "订阅「" + so.getPlanName() + "」已生效，有效期至 " + sub.getEndTime() + "。", orderNo);
         auditService.record(so.getUserId(), "SUBSCRIPTION_PAID",
                 "订阅单 " + orderNo + " 支付成功，" + (renewal ? "续费顺延至 " : "开通生效至 ") + sub.getEndTime(), null);
+        // 订阅生效即重算会员等级：老用户成长值可能早已达标，不重算就要白付一期才升级
+        refreshMemberLevel(so.getUserId());
     }
 
     /** 当前生效订阅（先惰性过期，再返回 status=active 且未到期的一条；无则 null） */
@@ -346,10 +359,30 @@ public class SubscriptionService implements SubscriptionPayHandler {
                 .eq(UserSubscription::getUserId, userId)
                 .eq(UserSubscription::getStatus, STATUS_ACTIVE)
                 .le(UserSubscription::getEndTime, now));
+        boolean changed = false;
         for (UserSubscription s : stale) {
             s.setStatus(STATUS_EXPIRED);
             s.setUpdatedAt(now);
             subMapper.updateById(s);
+            changed = true;
+        }
+        // 订阅过期即回落等级：否则卡上旧 level_id 会继续享受折扣
+        if (changed) {
+            refreshMemberLevel(userId);
+        }
+    }
+
+    /**
+     * 重算并回写会员卡等级（订阅状态变化后调用）。
+     *
+     * <p>幂等且失败不影响主流程：等级重算只是权益一致性修正，不能让订阅支付/过期翻转回滚。
+     */
+    private void refreshMemberLevel(Long userId) {
+        if (membershipService == null || userId == null) return;
+        try {
+            membershipService.recomputeLevel(userId);
+        } catch (Exception ex) {
+            log.warn("[subscription] 会员等级重算失败 userId={}: {}", userId, ex.getMessage());
         }
     }
 

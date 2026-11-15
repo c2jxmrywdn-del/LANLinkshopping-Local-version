@@ -40,6 +40,50 @@ export const MIN_USE_POINTS = 0
 // ===== 幂等键 =====
 export const IDEMPOTENT_KEY_MAX = 64
 
+// ===== 订单开票（P1-5，与后端 ValidationRules 同口径） =====
+export const INVOICE_TYPE_PERSONAL = 'personal'
+export const INVOICE_TYPE_COMPANY = 'company'
+export const ALLOWED_INVOICE_TITLE_TYPES = [INVOICE_TYPE_PERSONAL, INVOICE_TYPE_COMPANY]
+export const INVOICE_CONTENT_CATEGORY = 'category'
+export const INVOICE_CONTENT_DETAIL = 'detail'
+export const ALLOWED_INVOICE_CONTENT_TYPES = [INVOICE_CONTENT_CATEGORY, INVOICE_CONTENT_DETAIL]
+export const INVOICE_TITLE_MAX = 100
+export const INVOICE_TAX_NO_MIN = 15
+export const INVOICE_TAX_NO_MAX = 20
+export const INVOICE_CATEGORY_MAX = 60
+export const INVOICE_DETAIL_MAX = 255
+
+/**
+ * 发票需求表单校验（P1-5，与后端 OrderService.applyInvoiceSnapshot 同规则双重校验）。
+ * @param {{needed:boolean, titleType:string, title:string, taxNo:string, contentType:string, category:string, detail:string}} inv
+ * @returns {{ok:boolean, msg:string}}
+ */
+export function validateInvoiceRequest(inv) {
+  if (!inv || !inv.needed) return { ok: true, msg: '' }
+  if (!ALLOWED_INVOICE_TITLE_TYPES.includes(inv.titleType)) return { ok: false, msg: '请选择发票抬头类型' }
+  const title = (inv.title || '').trim()
+  if (!title) return { ok: false, msg: '发票抬头不能为空' }
+  if (title.length > INVOICE_TITLE_MAX) return { ok: false, msg: `发票抬头最长 ${INVOICE_TITLE_MAX} 字` }
+  if (inv.titleType === INVOICE_TYPE_COMPANY) {
+    const taxNo = (inv.taxNo || '').trim()
+    if (!taxNo) return { ok: false, msg: '单位抬头必须填写纳税人识别号' }
+    if (!/^[A-Z0-9]{15,20}$/.test(taxNo)) {
+      return { ok: false, msg: `纳税人识别号须为 ${INVOICE_TAX_NO_MIN}-${INVOICE_TAX_NO_MAX} 位大写字母或数字` }
+    }
+  }
+  if (!ALLOWED_INVOICE_CONTENT_TYPES.includes(inv.contentType)) return { ok: false, msg: '请选择发票内容类型' }
+  if (inv.contentType === INVOICE_CONTENT_CATEGORY) {
+    const category = (inv.category || '').trim()
+    if (!category) return { ok: false, msg: '商品类别不能为空' }
+    if (category.length > INVOICE_CATEGORY_MAX) return { ok: false, msg: `商品类别最长 ${INVOICE_CATEGORY_MAX} 字` }
+  } else {
+    const detail = (inv.detail || '').trim()
+    if (!detail) return { ok: false, msg: '开具明细不能为空' }
+    if (detail.length > INVOICE_DETAIL_MAX) return { ok: false, msg: `开具明细最长 ${INVOICE_DETAIL_MAX} 字` }
+  }
+  return { ok: true, msg: '' }
+}
+
 /**
  * 结算表单提交前校验（L3 形式校验，与后端 CheckoutDTO 注解同规则）。
  * 注意：金额/价格为 L1 字段，前端不校验、不传值，由服务端权威重算。

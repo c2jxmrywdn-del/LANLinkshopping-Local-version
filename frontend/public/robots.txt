@@ -1,0 +1,26 @@
+# LANLinkshopping robots 基线（market-readiness-plan P1-19，2026-11-10）
+# 前缀语义：Disallow 按路径前缀匹配（/me 同时封禁 /me/ 与 /me/**）。
+# 公开前台内容页允许抓取（清单见 sitemap.xml）；登录后私有区与 API 一律禁止。
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /merchant
+Disallow: /me
+Disallow: /cart
+Disallow: /checkout
+Disallow: /orders
+Disallow: /wallet
+Disallow: /rfq
+Disallow: /chat
+Disallow: /tasks
+Disallow: /membership
+Disallow: /credit-term
+Disallow: /price-monitor
+Disallow: /activity/my
+Disallow: /activity/*/participation
+Disallow: /tech/workspace
+Disallow: /tech/contracts
+Disallow: /tech/org-tasks
+Disallow: /api/
+
+Sitemap: https://lanlink.cc.cd/sitemap.xml

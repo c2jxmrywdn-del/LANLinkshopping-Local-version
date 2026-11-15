@@ -110,8 +110,12 @@ public class TrackingIngestService {
                 desensitizer.summarize(rawBody, PASS_BODY_SNIPPET_CHARS), null);
 
         TrackingChannel channel = TrackingChannel.fromCode(providerCode);
-        String externalEventId = resolveExternalEventId(providerCode, rawBody);
-        String logisticsNo = extractLogisticsNo(rawBody);
+        // 快递100 官方推送是 application/x-www-form-urlencoded: param=<urlencoded JSON>&sign=...
+        // 验签侧已解出 param，但解析侧历史实现只接受 JSON，导致所有真实回调验签通过后
+        // 仍被判 failed 并回成功应答（渠道不再重推）。这里统一归一化为 JSON 后再解析。
+        String payload = normalizeCallbackPayload(rawBody);
+        String externalEventId = resolveExternalEventId(providerCode, payload);
+        String logisticsNo = extractLogisticsNo(payload);
         String maskedBody = desensitizer.desensitize(rawBody);
 
         // 3. 事件幂等（uk_event 冲突即幂等返回成功应答，§3.2）
@@ -136,7 +140,7 @@ public class TrackingIngestService {
             if (adapter == null) {
                 return failEvent(event, "channel adapter not available (P2 skeleton)", channel);
             }
-            List<NormalizedTraceNode> nodes = adapter.parse(rawBody);
+            List<NormalizedTraceNode> nodes = adapter.parse(payload);
             // 七态收敛（P2/P3 任务 3）：节点状态统一在映射层落位并随节点显式下传，
             // event_time 取渠道侧最新节点时间（入库延迟 P95 指标分母）
             event.setEventTime(TrackingStatusMapper.maxNodeTime(nodes));
@@ -243,6 +247,32 @@ public class TrackingIngestService {
             // 非 JSON 正文：运单解析失败会在失败分支落 failed 事件
         }
         return null;
+    }
+
+    /**
+     * 回调正文归一化：把 `param=<urlencoded JSON>&sign=...` 表单解成 JSON。
+     *
+     * <p>仅对「首字符不是 { 或 [」且含 `param=` 的正文生效，其它形态原样返回，
+     * 因此 JSON 推送与 mock 推送行为不变。
+     */
+    private String normalizeCallbackPayload(String rawBody) {
+        if (rawBody == null) return null;
+        String body = rawBody.trim();
+        if (body.isEmpty() || body.startsWith("{") || body.startsWith("[")) return rawBody;
+        if (!body.contains("param=")) return rawBody;
+        try {
+            for (String pair : body.split("&")) {
+                int eq = pair.indexOf('=');
+                if (eq <= 0) continue;
+                if (!"param".equals(pair.substring(0, eq).trim())) continue;
+                String value = java.net.URLDecoder.decode(
+                        pair.substring(eq + 1), java.nio.charset.StandardCharsets.UTF_8);
+                if (value != null && !value.isBlank()) return value;
+            }
+        } catch (Exception e) {
+            log.warn("[tracking] 回调表单 param 解码失败，按原文处理: {}", e.getMessage());
+        }
+        return rawBody;
     }
 
     private static String sha256Short(String text) {

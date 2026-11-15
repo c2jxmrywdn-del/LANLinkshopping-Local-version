@@ -403,4 +403,82 @@ public class AiToolExecutionServiceTest {
         assertFalse(slaResp.getHasAlert());
         assertEquals(10L, slaResp.getElapsedHours());
     }
+
+    // ==================== 租户隔离 / 越权回归 ====================
+
+    /**
+     * 草稿跨租户读取：A 租户生成的草稿，B 租户的 Key 不能审核、也不能放行。
+     *
+     * <p>历史缺陷：`auditProcurementDraft`/`approveProcurementFlow` 只看 draftId，
+     * 持 procurement:audit 的任意 Key 都能读别家企业的授信与金额。
+     */
+    @Test
+    void auditAndApproveRejectCrossTenantDraft() {
+        when(productService.detailForPublic(101L)).thenReturn(createSampleProduct());
+
+        AiToolDto.CreateCartDraftRequest draftReq = AiToolDto.CreateCartDraftRequest.builder()
+                .productId(101L)
+                .quantity(10)
+                .build();
+        // 归属商户 7
+        String draftId = toolExecutionService
+                .createCartDraft(draftReq, 7L, "llk_tenant7")
+                .getDraftId();
+
+        // 同租户可审核
+        AiToolDto.AuditProcurementDraftRequest ownReq = AiToolDto.AuditProcurementDraftRequest.builder()
+                .draftId(draftId)
+                .build();
+        assertNotNull(toolExecutionService.auditProcurementDraft(ownReq, 7L));
+
+        // 其它租户被拒
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> toolExecutionService.auditProcurementDraft(ownReq, 8L));
+        assertTrue(ex.getMessage().contains("FORBIDDEN"));
+
+        // 未绑定租户的 Key 同样被拒（fail-closed）
+        assertThrows(BusinessException.class,
+                () -> toolExecutionService.auditProcurementDraft(ownReq, null));
+    }
+
+    /**
+     * 审批链不可跳过：未审核的草稿不能直接放行。
+     */
+    @Test
+    void approveRequiresPriorAudit() {
+        when(productService.detailForPublic(101L)).thenReturn(createSampleProduct());
+
+        String draftId = toolExecutionService
+                .createCartDraft(AiToolDto.CreateCartDraftRequest.builder()
+                        .productId(101L).quantity(5).build(), 7L, "llk_tenant7")
+                .getDraftId();
+
+        AiToolDto.ApproveProcurementFlowRequest approveReq = AiToolDto.ApproveProcurementFlowRequest.builder()
+                .draftId(draftId)
+                .approved(true)
+                .comment("直接放行")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> toolExecutionService.approveProcurementFlow(approveReq, 7L));
+        assertTrue(ex.getMessage().contains("尚未完成财务审核"), ex.getMessage());
+    }
+
+    /**
+     * 物流查询 fail-closed：不传 userId 不能再读任意订单。
+     */
+    @Test
+    void trackLogisticsRequiresCallerIdentity() {
+        Order order = new Order();
+        order.setOrderNo("ORD202611010001");
+        order.setUserId(888L);
+        when(orderMapper.selectById("ORD202611010001")).thenReturn(order);
+
+        AiToolDto.TrackLogisticsRequest anonymous = AiToolDto.TrackLogisticsRequest.builder()
+                .orderNo("ORD202611010001")
+                .build();
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> toolExecutionService.trackLogistics(anonymous, null));
+        assertTrue(ex.getMessage().contains("FORBIDDEN"), ex.getMessage());
+    }
 }

@@ -31,7 +31,9 @@ public class AuditService {
     public void record(Long userId, String action, String detail, HttpServletRequest request) {
         try {
             AuditLog entry = new AuditLog();
-            entry.setUserId(userId);
+            // 匿名/系统调用没有登录用户：t_audit_log.user_id 为 NOT NULL，统一落 0（系统账号），
+            // 否则每次匿名审计都会 DataIntegrityViolationException 且日志丢失。
+            entry.setUserId(userId == null ? 0L : userId);
             entry.setAction(action);
             entry.setDetail(trim(detail, 500));
             if (request != null) {

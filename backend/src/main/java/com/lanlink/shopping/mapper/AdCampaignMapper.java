@@ -35,6 +35,23 @@ public interface AdCampaignMapper extends BaseMapper<AdCampaign> {
             + " WHERE campaign_id = #{campaignId} AND status = 'active'")
     int countImpression(@Param("campaignId") Long campaignId);
 
+    /**
+     * 支付状态抢占（原子）：把计划从 pending_payment 置为 active 并回填投放窗口。
+     *
+     * <p>为什么必须条件更新：{@code pay()} 原来是「selectById 判状态 → 扣钱包 → updateById」，
+     * 并发双击支付时两个线程都读到 pending_payment，各自扣一次钱包，商户被扣两倍预算
+     * 却只有一个投放计划。这里用 {@code WHERE status='pending_payment'} 做 CAS，
+     * 只有抢到状态迁移的那一个线程才允许扣款。
+     *
+     * @return 1 = 抢占成功（调用方此时才可扣钱包）；0 = 已被并发支付/状态已变
+     */
+    @Update("UPDATE t_ad_campaign SET status = 'active',"
+            + " start_time = NOW(),"
+            + " end_time = DATE_ADD(NOW(), INTERVAL duration_days DAY),"
+            + " update_time = NOW()"
+            + " WHERE campaign_id = #{campaignId} AND status = 'pending_payment'")
+    int activateFromPending(@Param("campaignId") Long campaignId);
+
     /** 广告位候选：投放中的计划（JOIN 在售商品）全量取出（≤50），由 Service 层做 eCPM 排序与 pacing 准入 */
     @Select("SELECT c.* FROM t_ad_campaign c JOIN t_product p ON p.prod_id = c.prod_id"
             + " WHERE c.status = 'active' AND c.deleted = 0 AND c.end_time > NOW()"

@@ -5,9 +5,12 @@ import com.lanlink.shopping.common.R;
 import com.lanlink.shopping.config.UserContext;
 import com.lanlink.shopping.entity.User;
 import com.lanlink.shopping.service.SocialLoginService;
+import com.lanlink.shopping.social.AppleAuthHandoff;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,7 @@ import java.util.UUID;
  * 社交登录入口（公开，鉴权白名单仅放行 providers / authorize / callback）
  *  - GET  /auth/social/providers          渠道可用性（未配置也返回，前端据此渲染并提示）
  *  - GET  /auth/social/authorize/{p}      取平台授权地址（未配置→明确报错，不伪造登录）
+ *  - POST /auth/social/apple/return      Apple form_post 中转，302 回前端登录页
  *  - POST /auth/social/callback/{p}       前端带回授权码 → 换取身份 → 已绑定则建立会话登录
  *  - POST /auth/social/bind/{p}           已登录用户绑定第三方账号（需登录）
  */
@@ -26,10 +30,35 @@ public class SocialLoginController {
 
     private final SocialLoginService service;
     private final AuthController authController;
+    private final AppleAuthHandoff appleHandoff;
 
-    public SocialLoginController(SocialLoginService service, AuthController authController) {
+    /** Session 中保存的待校验 state（一次性）。 */
+    private static final String SOCIAL_STATE_KEY = "LL_SOCIAL_STATE";
+
+    public SocialLoginController(SocialLoginService service, AuthController authController,
+                                 AppleAuthHandoff appleHandoff) {
         this.service = service;
         this.authController = authController;
+        this.appleHandoff = appleHandoff;
+    }
+
+    /**
+     * 一次性消费并校验 OAuth state。
+     *
+     * <p>规则：Session 里没有待校验值 → 拒绝（必须先走 /authorize）；
+     * 值不匹配 → 拒绝；匹配 → 立即移除，防止重放。
+     */
+    private void consumeState(HttpServletRequest request, String state) {
+        jakarta.servlet.http.HttpSession session = request.getSession(false);
+        Object expected = session == null ? null : session.getAttribute(SOCIAL_STATE_KEY);
+        if (expected == null) {
+            throw new BusinessException("授权状态校验失败，请重新发起授权");
+        }
+        // 无论成功失败都先移除，保证 state 只能用一次
+        session.removeAttribute(SOCIAL_STATE_KEY);
+        if (state == null || !state.equals(String.valueOf(expected))) {
+            throw new BusinessException("授权状态校验失败，请重新发起授权");
+        }
     }
 
     @GetMapping("/providers")
@@ -39,16 +68,39 @@ public class SocialLoginController {
 
     @GetMapping("/authorize/{provider}")
     public R<Map<String, Object>> authorize(@PathVariable String provider,
-                                           @RequestParam(required = false) String state) {
-        // state：一次性防 CSRF 值；未传时由服务端生成，回调时需原样带回校验
-        String st = (state == null || state.isBlank())
-                ? UUID.randomUUID().toString().replace("-", "")
-                : state;
+                                           @RequestParam(required = false) String state,
+                                           HttpServletRequest request) {
+        // state：一次性防 CSRF 值。服务端生成并写入 Session，回调时一次性消费比对。
+        // 历史缺陷：state 由客户端传入且从不落库，回调只判非空——攻击者可用自己的
+        // 授权码 + 任意 state 诱导受害者会话完成登录（登录 CSRF / 账号混淆）。
+        String st = UUID.randomUUID().toString().replace("-", "");
+        String nonce = "apple".equals(provider) ? UUID.randomUUID().toString().replace("-", "") : null;
+        request.getSession(true).setAttribute(SOCIAL_STATE_KEY, st);
+        String url = service.authorizeUrl(provider, st, nonce);
+        if (nonce != null && url.startsWith("https://appleid.apple.com/")) {
+            appleHandoff.remember(st, nonce);
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("provider", provider);
         out.put("state", st);
-        out.put("authorizeUrl", service.authorizeUrl(provider, st));
+        out.put("authorizeUrl", url);
         return R.ok(out);
+    }
+
+    /**
+     * Apple 把 code、state、首次授权的 user JSON 以表单 POST 到这里。
+     * 不读登录会话（跨站 POST 带不过来），校验通过后 302 回前端登录页。
+     */
+    @PostMapping("/apple/return")
+    public void appleReturn(@RequestParam(required = false) String code,
+                             @RequestParam(required = false) String state,
+                             @RequestParam(required = false) String user,
+                             @RequestParam(required = false) String error,
+                             HttpServletResponse response) throws IOException {
+        String location = appleHandoff.relay(code, state, user, error);
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Referrer-Policy", "no-referrer");
+        response.sendRedirect(location);
     }
 
     /**
@@ -61,7 +113,11 @@ public class SocialLoginController {
                                           HttpServletRequest request) {
         String code = body == null ? null : body.get("code");
         String state = body == null ? null : body.get("state");
-        User u = service.callback(provider, code, state);
+        consumeState(request, state);
+        AppleAuthHandoff.Claim apple = takeAppleClaim(provider, state);
+        User u = service.callback(provider, code, state,
+                apple == null ? null : apple.nonce(),
+                apple == null ? null : apple.displayName());
         return R.ok("登录成功", authController.establishSessionAndView(u, provider + " 登录", request));
     }
 
@@ -74,7 +130,19 @@ public class SocialLoginController {
         if (me == null) throw new BusinessException(401, "请先登录后再绑定");
         String code = body == null ? null : body.get("code");
         String state = body == null ? null : body.get("state");
-        return R.ok("绑定成功", service.bindIdentity(me.getUserId(), provider, code, state));
+        consumeState(request, state);
+        AppleAuthHandoff.Claim apple = takeAppleClaim(provider, state);
+        return R.ok("绑定成功", service.bindIdentity(me.getUserId(), provider, code, state,
+                apple == null ? null : apple.nonce(),
+                apple == null ? null : apple.displayName()));
+    }
+
+    /** Apple 的 nonce 和首次姓名存在服务端短时缓存，必须和会话里的 state 一起消费。 */
+    private AppleAuthHandoff.Claim takeAppleClaim(String provider, String state) {
+        if (!"apple".equals(provider)) return null;
+        AppleAuthHandoff.Claim claim = appleHandoff.consume(state);
+        if (claim == null) throw new BusinessException("授权状态校验失败，请重新发起授权");
+        return claim;
     }
 
     /**

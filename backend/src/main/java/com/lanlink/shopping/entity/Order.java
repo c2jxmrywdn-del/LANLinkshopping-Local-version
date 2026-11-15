@@ -13,7 +13,16 @@ public class Order {
     private String orderNo;
     private Long userId;
     private Long entId;
+    /** 买家实付总额（语义保持：货款实付 + 运费；渠道/支付按此金额） */
     private BigDecimal totalAmount;
+    /**
+     * 货款实付（不含运费；= total_amount − freight_amount）。
+     * 存量库由 OrderAmountSchemaInitializer 幂等回填为 total_amount（当时无运费）；新单由下单链路写入。
+     * 佣金/分摊/包邮门槛/退款货款口径一律用它，禁止用 total_amount 代替。
+     */
+    private BigDecimal goodsAmount;
+    /** 运费（MVP：fixed/piece/region 三模式，平台代收后按物流结算支付给承运商；存量单为 0） */
+    private BigDecimal freightAmount;
     private String payType;
     /** 积分抵扣金额（元，整元） */
     private BigDecimal pointDeductAmount;
@@ -31,6 +40,10 @@ public class Order {
     private Long couponId;
     /** 下单归因直播间ID（t_live_room.room_id，直播带货复盘依据；非直播单为 null） */
     private Long liveId;
+    /** 来源询价单号（t_rfq.rfq_no；RFQ 接受转订单时回填，普通单为 null） */
+    private String rfqNo;
+    /** 来源报价ID（t_rfq_quote.quote_id；成交价=报价单价，普通单为 null） */
+    private Long rfqQuoteId;
     private Integer payStatus;
     private Integer orderStatus;
     private String receiver;
@@ -82,5 +95,20 @@ public class Order {
     private String inspectResult;
     /** 质检验货时间 */
     private LocalDateTime inspectTime;
+    // ===== 发票需求快照（P1-5；随单落库，供买家订单详情与平台运营核对开票） =====
+    /** 是否需要发票 0否 1是（历史单/未申请为 null） */
+    private Integer invoiceNeeded;
+    /** 抬头类型 personal 个人 / company 单位 */
+    private String invoiceTitleType;
+    /** 发票抬头名称 */
+    private String invoiceTitle;
+    /** 纳税人识别号（15-20 位大写字母数字；个人抬头为 null） */
+    private String invoiceTaxNo;
+    /** 发票内容 category 商品类别 / detail 开具明细 */
+    private String invoiceContentType;
+    /** 商品类别（contentType=category） */
+    private String invoiceCategory;
+    /** 开具明细（contentType=detail） */
+    private String invoiceDetail;
     private LocalDateTime updateTime;
 }

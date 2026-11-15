@@ -25,7 +25,7 @@ class SocialIdentityResolverTest {
     @BeforeEach
     void setUp() {
         http = new FakeHttp();
-        resolver = new SocialIdentityResolver(http, new JwtVerifier(), new AlipaySigner());
+        resolver = new SocialIdentityResolver(http, new JwtVerifier(), new AlipaySigner(), new AppleClientSecret());
     }
 
     private SocialLoginProperties.Provider cfg(String id, String secret) {
@@ -154,6 +154,34 @@ class SocialIdentityResolverTest {
         assertEquals("apple-sub-7", id.subject());
         assertEquals("u@privaterelay.appleid.com", id.email());
         assertTrue(id.emailVerified());
+        assertEquals("http://localhost:5173/login", http.lastForm().get("redirect_uri"));
+        assertEquals("jwt-secret", http.lastForm().get("client_secret"));
+    }
+
+    @Test
+    void appleChecksNonceAndKeepsFirstAuthorizationName() throws Exception {
+        java.security.KeyPair kp = AlipaySignerTest.keyPair();
+        String payload = JwtVerifierTest.payload(
+                Instant.now().getEpochSecond() + 600, "https://appleid.apple.com",
+                "com.lanlink.shopping.web", "apple-sub-7", "u@privaterelay.appleid.com");
+        payload = payload.substring(0, payload.length() - 1) + ",\"nonce\":\"nonce-1234567890abcd\"}";
+        String idToken = JwtVerifierTest.signJwt(kp, "k1", payload);
+        http.onPost("https://appleid.apple.com/auth/token", "{\"id_token\":\"" + idToken + "\"}")
+            .onGet("https://appleid.apple.com/auth/keys",
+                "{\"keys\":[{\"kty\":\"RSA\",\"kid\":\"k1\",\"n\":\"" + JwtVerifierTest.nB64(kp)
+                        + "\",\"e\":\"" + JwtVerifierTest.eB64(kp) + "\"}]}");
+
+        SocialIdentity id = resolver.resolve("apple", cfg("com.lanlink.shopping.web", "jwt-secret"),
+                "code-ap", "http://localhost:8080/api/auth/social/apple/return",
+                "nonce-1234567890abcd", "俊 杰");
+        assertEquals("俊 杰", id.nickname());
+        assertEquals("http://localhost:8080/api/auth/social/apple/return", http.lastForm().get("redirect_uri"));
+
+        BusinessException mismatch = assertThrows(BusinessException.class, () -> resolver.resolve(
+                "apple", cfg("com.lanlink.shopping.web", "jwt-secret"),
+                "code-ap", "http://localhost:8080/api/auth/social/apple/return",
+                "other-nonce-0000000000", null));
+        assertTrue(mismatch.getMessage().contains("nonce"));
     }
 
     @Test
@@ -176,6 +204,7 @@ class SocialIdentityResolverTest {
         private final Map<String, String> posts = new HashMap<>();
         private final List<String[]> gets = new ArrayList<>();
         private final List<String> calls = new ArrayList<>();
+        private Map<String, String> lastForm = Map.of();
 
         FakeHttp onPost(String key, String body) { posts.put(key, body); return this; }
 
@@ -185,8 +214,11 @@ class SocialIdentityResolverTest {
 
         String lastCall() { return calls.isEmpty() ? "" : calls.get(calls.size() - 1); }
 
+        Map<String, String> lastForm() { return lastForm; }
+
         @Override
         public String postForm(String url, Map<String, String> form, Map<String, String> headers) {
+            lastForm = form == null ? Map.of() : form;
             String key = form.getOrDefault("method", url);
             calls.add("POST " + key);
             String body = posts.get(key);

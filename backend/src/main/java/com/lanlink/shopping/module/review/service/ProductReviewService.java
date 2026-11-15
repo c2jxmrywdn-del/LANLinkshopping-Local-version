@@ -140,6 +140,11 @@ public class ProductReviewService {
         return out;
     }
 
+    /** 本人在该单已评过的订单行（订单详情据此渲染"已评价"，刷新后不丢失状态） */
+    public List<Long> reviewedItemIds(Long userId, String orderNo) {
+        return reviewMapper.reviewedItemIds(userId, orderNo);
+    }
+
     private ReviewView toView(ProductReview r) {
         String nickname = Integer.valueOf(1).equals(r.getAnonymous()) ? null : mask(r.getUserId());
         return new ReviewView(r.getReviewId(), r.getProdId(), r.getRating(), r.getContent(),

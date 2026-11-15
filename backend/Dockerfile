@@ -28,7 +28,7 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends wget \
+    && apt-get install -y --no-install-recommends wget fontconfig fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system app \
     && useradd --system --gid app --home-dir /app --no-create-home app

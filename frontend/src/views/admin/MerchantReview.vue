@@ -377,7 +377,9 @@
               <CheckCircleFilled v-if="detail.merchant?.hasSpecialPermit === 1" class="ck ok" />
               <InfoCircleOutlined v-else class="ck" style="color: #94a3b8;" />
               <span>特殊经营许可：{{ detail.merchant?.hasSpecialPermit === 1 ? (detail.merchant?.specialPermitName || '已备案') : '无特殊行政许可要求' }}</span>
-              <a v-if="detail.merchant?.specialPermitUrl" :href="detail.merchant.specialPermitUrl" target="_blank" style="margin-left: auto">查看证件 ↗</a>
+              <a v-if="detail.merchant?.specialPermitUrl"
+                 :href="`/api/merchant/admin/special-permit/${detail.merchant.merId}`"
+                 target="_blank" rel="noopener" style="margin-left: auto">查看证件 ↗</a>
             </div>
           </div>
         </div>
@@ -425,6 +427,17 @@
               show-count
             />
           </div>
+
+          <label class="invited-toggle">
+            <input
+              type="checkbox"
+              :checked="detail.merchant.platformInvited === 1"
+              :disabled="invitedSaving"
+              @change="togglePlatformInvited"
+            />
+            <span>平台特邀商户</span>
+            <small>审核通过并开通店铺后，店铺公开页会显示该标识</small>
+          </label>
 
           <div class="drawer-action-buttons">
             <a-button
@@ -982,6 +995,7 @@ const detailLoading = ref(false)
 const detail = ref(null)
 const drawerRejectReason = ref('')
 const drawerActionLoading = ref(false)
+const invitedSaving = ref(false)
 
 const flowStep = computed(() => (detail.value?.merchant?.reviewStatus === 0 ? 1 : 2))
 const readinessText = computed(() => {
@@ -1016,6 +1030,22 @@ async function openDetail(record) {
 
 function applyMerchantReason(text) {
   drawerRejectReason.value = text
+}
+
+async function togglePlatformInvited(event) {
+  const merchant = detail.value?.merchant
+  if (!merchant?.merId) return
+  const enabled = !!event.target.checked
+  invitedSaving.value = true
+  try {
+    const updated = await merchantApi.markPlatformInvited(merchant.merId, enabled)
+    merchant.platformInvited = updated?.platformInvited ?? (enabled ? 1 : 0)
+    message.success(enabled ? '已标记为平台特邀商户' : '已取消平台特邀标记')
+  } catch (e) {
+    event.target.checked = !enabled
+  } finally {
+    invitedSaving.value = false
+  }
 }
 
 async function submitDrawerReview(reviewStatus) {
@@ -1497,6 +1527,20 @@ onMounted(() => {
 .reason-input-area {
   margin-bottom: 14px;
 }
+.invited-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fff8e8;
+  border: 1px solid rgba(128, 96, 31, .28);
+  color: #6b4e16;
+  font-size: 13px;
+}
+.invited-toggle small { flex-basis: 100%; color: #8a6a2f; font-size: 12px; }
 .drawer-action-buttons {
   display: flex;
   gap: 10px;

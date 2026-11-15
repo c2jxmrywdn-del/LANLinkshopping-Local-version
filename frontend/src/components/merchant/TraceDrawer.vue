@@ -65,7 +65,7 @@
         <a-descriptions-item label="发货时间">
           {{ fmt(waybill.shipTime) }}
         </a-descriptions-item>
-        <a-descriptions-item label="收货地址" :span="2">
+        <a-descriptions-item label="收货地址">
           {{ waybill.receiverAddress }}
         </a-descriptions-item>
       </a-descriptions>
@@ -200,61 +200,93 @@ watch(() => props.open, async (v) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  margin-bottom: 14px;
 }
 .wb-no span {
   display: block;
   font-size: 11px;
-  color: var(--mc-muted2, #86868b);
+  color: var(--ll-muted, #6e6e73);
+  letter-spacing: 0.01em;
 }
 .wb-no b {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 14px;
-  color: var(--mc-ink, #1d1d1f);
+  font-family: var(--ll-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ll-ink, #1d1d1f);
+  font-variant-numeric: tabular-nums;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* 21st.dev 双模切换按钮栏 */
+/* iOS 分段控件（参数对齐 Apple 正宗规格，类名与结构不动） */
 .view-mode-tabs {
   display: flex;
-  gap: 8px;
-  background: #f1f5f9;
-  border-radius: 8px;
-  padding: 4px;
+  gap: 2px;
+  background: rgba(120, 120, 128, 0.14);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 12px;
+  padding: 2px;
   margin-bottom: 14px;
 }
 .mode-tab-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 7px 10px;
+  font-size: 13px;
   font-weight: 500;
-  border-radius: 6px;
+  border-radius: 10px;
   border: none;
   background: transparent;
-  color: #64748b;
+  color: var(--ll-muted, #6e6e73);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
   touch-action: manipulation;
 }
 .mode-tab-btn:hover {
-  color: #0f172a;
+  color: var(--ll-ink, #1d1d1f);
+  background: rgba(120, 120, 128, 0.08);
 }
 .mode-tab-btn.is-active {
   background: #ffffff;
   color: #0284c7;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.16);
 }
 
 .wb-desc {
   margin-bottom: 16px;
-  border-radius: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   overflow: hidden;
+}
+.wb-desc :deep(.ant-descriptions-view) {
+  border: none;
+}
+.wb-desc :deep(.ant-descriptions-item-label) {
+  background: transparent;
+  color: var(--ll-muted, #6e6e73);
+  font-size: 12px;
+  width: 96px;
+  padding: 10px 12px 10px 14px;
+}
+.wb-desc :deep(.ant-descriptions-item-content) {
+  background: transparent;
+  color: var(--ll-ink, #1d1d1f);
+  padding: 10px 14px 10px 0;
+  font-size: 13px;
+}
+.wb-desc :deep(.ant-descriptions-item) {
+  border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+.wb-desc .mono {
+  font-variant-numeric: tabular-nums;
 }
 
 .section-title {
@@ -283,8 +315,20 @@ watch(() => props.open, async (v) => {
 .tl-row {
   position: relative;
   padding: 0 0 18px 22px;
-  border-left: 2px solid var(--mc-border-soft, #eceae5);
+  border-left: 2px solid rgba(15, 23, 42, 0.10);
   margin-left: 5px;
+  transform-origin: top center;
+  animation: tl-in 0.4s var(--ll-ease-out) backwards;
+}
+.tl-row:nth-child(1) { animation-delay: 0s; }
+.tl-row:nth-child(2) { animation-delay: 0.06s; }
+.tl-row:nth-child(3) { animation-delay: 0.12s; }
+.tl-row:nth-child(4) { animation-delay: 0.18s; }
+.tl-row:nth-child(5) { animation-delay: 0.24s; }
+.tl-row:nth-child(6) { animation-delay: 0.30s; }
+.tl-row:nth-child(n+7) { animation-delay: 0.36s; }
+@keyframes tl-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
 }
 .tl-row:last-child {
   border-left-color: transparent;
@@ -292,22 +336,29 @@ watch(() => props.open, async (v) => {
 }
 .tl-dot {
   position: absolute;
-  left: -6px;
-  top: 2px;
-  width: 10px;
-  height: 10px;
+  left: -5px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: #cbd5e1;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
 }
 .tl-row.latest .tl-dot {
   background: #0284c7;
-  box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.2);
+  border-color: #0284c7;
+  box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.15);
+  animation: latest-pulse 2.4s ease-in-out infinite;
+}
+@keyframes latest-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(2, 132, 199, 0.15); }
+  50% { box-shadow: 0 0 0 7px rgba(2, 132, 199, 0.07); }
 }
 .tl-text {
   margin: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--mc-text2, #3a3a3c);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 .tl-row.latest .tl-text {
   color: var(--mc-ink, #1d1d1f);
@@ -316,5 +367,15 @@ watch(() => props.open, async (v) => {
 .tl-body small {
   color: var(--mc-faint, #a1a1a6);
   font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 动效降级：时间轴渐次入场与 latest 呼吸点 */
+@media (prefers-reduced-motion: reduce) {
+  .tl-row,
+  .tl-row.latest .tl-dot {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 </style>

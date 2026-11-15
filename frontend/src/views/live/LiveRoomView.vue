@@ -134,11 +134,15 @@
               </div>
               <a-button size="small" type="primary" ghost>去购买</a-button>
             </div>
-            <a-empty v-if="!products.length" description="本直播间暂无商品" style="padding: 32px 0" />
+            <a-empty v-if="!products.length" description="本直播间暂无商品" style="padding: 32px 0">
+              <a-button type="primary" @click="$router.push('/mall')">去逛逛</a-button>
+            </a-empty>
           </div>
         </a-drawer>
       </template>
-      <a-empty v-else-if="!loading" description="直播间不存在或已关闭" style="padding: 64px 0" />
+      <a-empty v-else-if="!loading" description="直播间不存在或已关闭" style="padding: 64px 0">
+        <a-button type="primary" @click="$router.push('/live')">返回直播广场</a-button>
+      </a-empty>
     </a-spin>
   </div>
 </template>

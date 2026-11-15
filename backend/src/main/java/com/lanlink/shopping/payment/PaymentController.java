@@ -27,9 +27,43 @@ import java.util.Map;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final PaymentProperties properties;
 
-    public PaymentController(PaymentService paymentService) {
+    public PaymentController(PaymentService paymentService, PaymentProperties properties) {
         this.paymentService = paymentService;
+        this.properties = properties;
+    }
+
+    /**
+     * 平台对公收款账户（公开只读）。
+     *
+     * <p>供收银台展示线下电汇信息。未配置时返回空对象，前端据此提示"平台暂未配置"，
+     * 而不是展示任何硬编码示例账号。
+     */
+    @GetMapping("/corporate-bank")
+    public R<PaymentProperties.CorporateBank> corporateBank() {
+        return R.ok(properties.getCorporateBank());
+    }
+
+    /**
+     * 钱包支付能力探测（公开只读）。
+     *
+     * <p>前端据此决定是否展示 Apple Pay / Google Pay 入口。返回 false 时不展示，
+     * 避免用户选了钱包才发现付不了——钱包可用性取决于 Stripe 账户激活状态
+     * 与 Apple Pay 域名验证，都不是前端能猜的。
+     */
+    @GetMapping("/wallet-capability")
+    public R<java.util.Map<String, Object>> walletCapability() {
+        java.util.Set<String> active = paymentService.stripeActivePaymentMethods();
+        boolean applePay = active.contains("apple_pay");
+        boolean googlePay = active.contains("google_pay");
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("applePay", applePay);
+        m.put("googlePay", googlePay);
+        // 任一钱包可用即可让前端展示钱包入口
+        m.put("walletReady", applePay || googlePay);
+        m.put("applePayDomains", paymentService.stripeApplePayDomainCount());
+        return R.ok(m);
     }
 
     @PostMapping("/create")
@@ -87,6 +121,18 @@ public class PaymentController {
             return org.springframework.http.ResponseEntity.badRequest().body("{\"error\": \"Missing Stripe-Signature header\"}");
         }
         String res = paymentService.handleStripeNotify(payload, sigHeader);
+        /*
+         * 验签/处理失败必须返回非 2xx。
+         *
+         * Stripe 以 HTTP 2xx 判定「事件已送达」：原来无论验签成功与否都返回 200，
+         * 一旦密钥轮换、时钟漂移或 SDK 版本不匹配导致验签失败，Stripe 会认为投递成功
+         * 而不再重试——事件静默丢失，订单永远停在未支付（钱已扣、状态不改），
+         * 且事后无法从 Stripe 侧补投。改成 400 后 Stripe 会按其重试策略重新投递。
+         */
+        if (res != null && res.startsWith("Signature verification failed")) {
+            return org.springframework.http.ResponseEntity.badRequest()
+                    .body("{\"error\": \"Signature verification failed\"}");
+        }
         return org.springframework.http.ResponseEntity.ok(res);
     }
 

@@ -118,6 +118,15 @@ public class TechP1SchemaInitializer implements ApplicationRunner {
     }
 
     private void addColumnIfMissing(String table, String column, String definition) {
+        // 先判表存在：prod profile 下 sql.init=never，若该表未建（例如只跑了部分迁移），
+        // 直接 ALTER 会抛 "Table doesn't exist" 并中断整个启动。
+        Long tableCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.TABLES "
+                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
+                Long.class, table);
+        if (tableCount == null || tableCount == 0) {
+            return;
+        }
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.COLUMNS "
                         + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",

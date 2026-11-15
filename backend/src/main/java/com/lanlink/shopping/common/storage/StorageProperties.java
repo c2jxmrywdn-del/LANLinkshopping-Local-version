@@ -44,6 +44,21 @@ public class StorageProperties {
     /** 出站公开 URL 基址（path-style 下含桶路径，如 http://localhost:9000/products），不带尾部斜杠 */
     private String publicBaseUrl = "http://localhost:9000/products";
 
+    /**
+     * 客服多模态私有桶：与商品桶物理隔离（只经后端中转读取），
+     * 商品桶保持匿名只读时也不会顺带放开聊天媒体。
+     */
+    private String supportBucket = "support-media";
+
+    /**
+     * 允许发起浏览器直传预签名的来源白名单（逗号分隔，如 http://localhost:5173）。
+     * 空列表时一律拒绝：预签名的 action 由请求 Origin 拼出，不校验白名单等于允许任意站点代传。
+     */
+    private java.util.List<String> presignOrigins = new java.util.ArrayList<>();
+
+    /** 预签名有效期（秒），默认 10 分钟：够一次直传，又短到泄露后几乎不可利用 */
+    private long presignTtlSeconds = 600L;
+
     /** enabled=false 时的本地盘回退分支（与 WebConfig 的 /uploads/** 静态映射等价） */
     private Local local = new Local();
 

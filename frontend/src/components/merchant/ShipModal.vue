@@ -151,6 +151,15 @@
       </div>
 
       <!-- Phase 3A: AI 运力多目标智能比价推荐卡片 -->
+      <div class="recommend-pref-row">
+        <span class="recommend-pref-label">推荐偏好：</span>
+        <a-radio-group v-model:value="form.priority" size="small" @change="fetchRecommendations">
+          <a-radio-button value="balanced">综合均衡</a-radio-button>
+          <a-radio-button value="cost">价格优先</a-radio-button>
+          <a-radio-button value="speed">时效优先</a-radio-button>
+          <a-radio-button value="service">服务优先</a-radio-button>
+        </a-radio-group>
+      </div>
       <CarrierRecommendationCards
         :recommend-result="recommendResult"
         :loading="loadingRecommend"
@@ -160,13 +169,16 @@
 
       <!-- 物流承运与运费 -->
       <div class="sender-title">物流承运与计费</div>
+      <a-alert v-if="selectedProviderInternational" type="warning" show-icon class="intl-block-alert"
+               :message="intlProviderNotes || '国际线路 · 报价联系客服'" />
       <a-row :gutter="12">
         <a-col :span="12">
           <a-form-item label="物流服务商" required>
             <a-select v-model:value="form.providerId" placeholder="选择服务商" :loading="loadingRef"
-                      @change="form.templateId = null">
-              <a-select-option v-for="p in providers" :key="p.providerId" :value="p.providerId">
-                {{ p.providerName }}
+                      @change="onProviderChange">
+              <a-select-option v-for="p in providers" :key="p.providerId" :value="p.providerId"
+                               :class="{ 'intl-option': p.scope === 'international' }">
+                {{ p.scope === 'international' ? '🌐 ' : '' }}{{ p.providerName }}
               </a-select-option>
             </a-select>
           </a-form-item>
@@ -182,8 +194,17 @@
           </a-form-item>
         </a-col>
       </a-row>
-      <a-form-item label="第三方货运单号（选填）">
-        <a-input v-model:value="form.logisticsNo" placeholder="如 SF1234567890 / DP987654321" maxlength="64" />
+      <a-form-item>
+        <a-checkbox v-model:checked="form.remote">偏远区域（加收附加费，按模板配置）</a-checkbox>
+      </a-form-item>
+      <a-form-item extra="大件货物（>50kg 或 >0.3m³ 或单件>2.5m）请如实填写重量体积与超长超重勾选，推荐引擎将为您匹配大件专线与叉车/上楼增值服务。">
+        <template #label>
+          <span>重量体积提示</span>
+        </template>
+        <span class="heavy-hint-text">
+          当前计费重 <b>{{ Number(form.weight || 10) }}kg</b> / 体积 <b>{{ Number(form.volume || 0.05) }}m³</b>，
+          默认 10kg/0.05m³ 不会触发大件推荐——大件请手动调高。
+        </span>
       </a-form-item>
       <a-row :gutter="12">
         <a-col :span="12">
@@ -225,9 +246,9 @@
 import { reactive, ref, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PackageCheck, FileText, UploadCloud, Trash2, FileCheck2, Forklift, Truck, Package } from 'lucide-vue-next'
-import { logisticsApi } from '../../api'
-import request from '../../api/request'
+import { logisticsApi, attachmentApi } from '../../api'
 import CarrierRecommendationCards from '../logistics/CarrierRecommendationCards.vue'
+import { provinceFromAddress } from './shipAddress'
 
 const props = defineProps({
   open: Boolean,
@@ -243,6 +264,7 @@ const providers = ref([])
 const templates = ref([])
 const orderItems = ref([])
 const existingWaybillsCount = ref(0)
+const orderWaybillAgg = ref(null)
 
 // Phase 3A: AI 运力推荐状态
 const recommendResult = ref(null)
@@ -254,6 +276,7 @@ const form = reactive({
   weight: null, volume: null, remote: false,
   senderName: '', senderPhone: '', senderAddress: '',
   transportMode: 'ltl',
+  priority: 'balanced',
   packageNo: 'PKG-01',
   packageIndex: 1,
   packageTotal: 1,
@@ -266,6 +289,31 @@ const form = reactive({
     oversize: false
   }
 })
+
+// 国际线路（询价制）选中态：提示条 + 提交阻断（不单点依赖后端防线）
+const selectedProviderInternational = computed(() => {
+  const p = providers.value.find(item => item.providerId === form.providerId)
+  return Boolean(p && p.scope === 'international')
+})
+const intlProviderNotes = computed(() => {
+  const p = providers.value.find(item => item.providerId === form.providerId)
+  return p?.routeNotes || ''
+})
+
+// 收件省份/城市：从订单聚合的首个运单回填（后端发货时已落 receiver_province/receiver_city）
+const receiverProvince = computed(() => {
+  const wb = orderWaybillAgg.value?.waybills?.[0]?.waybill
+  if (wb?.receiverProvince) return wb.receiverProvince
+  return provinceFromAddress(wb?.receiverAddress || '')
+})
+const receiverCity = computed(() => {
+  const wb = orderWaybillAgg.value?.waybills?.[0]?.waybill
+  return wb?.receiverCity || ''
+})
+
+function onProviderChange() {
+  form.templateId = null
+}
 
 const isSplitMode = computed(() => orderItems.value.length > 1 || existingWaybillsCount.value > 0)
 
@@ -286,10 +334,9 @@ async function handleCoaUpload(e) {
   try {
     const fd = new FormData()
     fd.append('file', file)
-    const res = await request.post('/attachment/upload?bizType=logistics-coa-doc', fd, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    const docData = res?.data || res
+    const res = await attachmentApi.uploadCoaDoc(fd)
+    // request.js 拦截器已剥壳：res 即 AttachmentView 本体（无 data 键，后端 AttachmentView 已核对）
+    const docData = res
     form.coaDocs.push({
       name: file.name,
       url: docData.fileUrl || docData.url || `/attachment/file/${docData.attachNo || docData.attachmentId}`,
@@ -320,6 +367,7 @@ watch(() => props.open, async (v) => {
     senderPhone: props.sender?.phone || '',
     senderAddress: props.sender?.address || '',
     transportMode: 'ltl',
+    priority: 'balanced',
     packageNo: 'PKG-01',
     packageIndex: 1,
     packageTotal: 1,
@@ -334,6 +382,7 @@ watch(() => props.open, async (v) => {
   })
   loadingRef.value = true
   loadingItems.value = true
+  orderWaybillAgg.value = null
   try {
     const [pList, tList, agg] = await Promise.all([
       logisticsApi.providers().catch(() => []),
@@ -344,6 +393,7 @@ watch(() => props.open, async (v) => {
     templates.value = tList || []
 
     if (agg) {
+      orderWaybillAgg.value = agg
       existingWaybillsCount.value = agg.totalWaybills || 0
       const nextIdx = (agg.totalWaybills || 0) + 1
       form.packageIndex = nextIdx
@@ -378,14 +428,16 @@ async function fetchRecommendations() {
     const res = await logisticsApi.recommendCarriers({
       weight: form.weight ? Number(form.weight) : 10,
       volume: form.volume ? Number(form.volume) : 0.05,
-      receiverProvince: '',
+      receiverProvince: receiverProvince.value,
+      receiverCity: receiverCity.value,
+      priority: form.priority,
       forklift: form.vas.forklift,
       upstairs: form.vas.upstairs,
       floorCount: form.vas.floorCount,
       woodenCrate: form.vas.woodenCrate,
       oversize: form.vas.oversize
     })
-    recommendResult.value = res?.data || res
+    recommendResult.value = res
   } catch (e) {
     recommendResult.value = null
   } finally {
@@ -406,6 +458,11 @@ watch([() => form.weight, () => form.volume, () => form.vas], debounceRecommend,
 
 async function submit() {
   if (!form.providerId) { message.error('请选择物流服务商'); return }
+  // 国际线路前端阻断（询价制，不依赖后端防线单点）
+  if (selectedProviderInternational.value) {
+    message.error('国际线路暂不支持线上发货，请联系客服询价')
+    return
+  }
   if (!form.senderName || !form.senderPhone || !form.senderAddress) {
     message.error('请补全发货人与发货仓地址')
     return
@@ -471,6 +528,16 @@ async function submit() {
 
 <style scoped>
 .tip { margin-bottom: 14px; }
+.intl-block-alert { margin-bottom: 10px; }
+.heavy-hint-text { font-size: 12px; color: var(--ll-muted, #64748B); }
+.recommend-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.recommend-pref-label { font-size: 12px; color: var(--ll-muted, #64748B); }
 .sender-title {
   font-size: 13px;
   font-weight: 600;

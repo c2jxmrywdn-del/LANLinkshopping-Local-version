@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
+
+// 默认 IP 探测已收口到封装层 i18nApi（原直连 fetch）：mock 掉 api 模块验证委托契约
+vi.mock('../api', () => ({ i18nApi: { localeHint: vi.fn() } }))
+
+import { i18nApi } from '../api'
 import {
   DEFAULT_LOCALE,
   detectLocale,
@@ -131,5 +136,25 @@ describe('语言自动识别（utils/localeDetect）', () => {
     const r = await detectLocale({ signals: {}, fetchHint: async () => null })
     expect(r.locale).toBe(DEFAULT_LOCALE)
     expect(r.source).toBe('default')
+  })
+
+  it('未注入 fetchHint：默认走封装层 i18nApi.localeHint（短超时委托，country 空值安全降级）', async () => {
+    i18nApi.localeHint.mockResolvedValueOnce({ country: 'CN', locale: 'zh-CN', source: 'geo' })
+    const r = await detectLocale({
+      signals: { timezone: 'Asia/Shanghai', languages: ['en-US'], intlLocale: 'en-US' }
+    })
+    expect(i18nApi.localeHint).toHaveBeenCalledTimes(1)
+    expect(i18nApi.localeHint).toHaveBeenCalledWith(1200)
+    expect(r.locale).toBe('zh-CN')
+    expect(r.source).toBe('offline+ip')
+  })
+
+  it('未注入 fetchHint 且封装层返回 null：静默降级离线结论', async () => {
+    i18nApi.localeHint.mockResolvedValueOnce(null)
+    const r = await detectLocale({
+      signals: { timezone: 'Asia/Shanghai', languages: ['en-US'], intlLocale: 'en-US' }
+    })
+    expect(r.locale).toBe('en-US')
+    expect(r.source).toBe('offline')
   })
 })

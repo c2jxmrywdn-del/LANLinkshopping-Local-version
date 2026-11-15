@@ -36,6 +36,20 @@ import java.util.concurrent.ConcurrentHashMap;
 public class AdCampaignService {
 
     private static final Logger log = LoggerFactory.getLogger("PAYMENT");
+
+    /**
+     * 自身代理：{@code resume/terminate/trackClick} 内部会调用带 {@code @Transactional} 的
+     * {@link #settle}，直接用 {@code this} 会绕过 Spring 事务代理——退款在事务外执行，
+     * 一旦退钱包成功后进程崩溃，会留下「已标记结算但没退款」的账。
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private AdCampaignService self;
+
+    /** 事务代理调用：未注入代理时（单测直接 new）退化为自身调用。 */
+    private AdCampaignService transactionalSelf() {
+        return self != null ? self : this;
+    }
     /** 演示定价：按点击计费 CPM 曝光不计费；商户可在创建时自定义出价（差异化出价是 GSP 拍卖的市场前提） */
     public static final BigDecimal DEFAULT_CPC = new BigDecimal("0.50");
     private static final BigDecimal MIN_CPC = new BigDecimal("0.10");
@@ -122,19 +136,30 @@ public class AdCampaignService {
         return c;
     }
 
-    /** 钱包支付：冻结总预算并开始投放（余额不足抛业务异常） */
+    /**
+     * 钱包支付：扣预算并开始投放（余额不足抛业务异常）。
+     *
+     * <p><b>并发安全</b>：先做 {@code pending_payment → active} 的条件更新抢占，
+     * 只有抢占成功的线程才扣钱包。原实现是「读状态 → 扣钱 → 写状态」，
+     * 双击/并发重放会让同一计划被扣两次预算——这是资金正确性问题，不是体验问题。
+     *
+     * <p>顺序上「先改状态、后扣钱」而不是反过来：抢占失败（0 行）时直接抛异常，
+     * 一分钱都不会动；若先扣钱再抢占，抢占失败就要走退款补偿，多一条可能失败的路径。
+     * 扣款失败会随 {@code @Transactional} 回滚，状态抢占同样回滚，不会留下"已激活但没扣钱"。
+     */
     @Transactional
     public AdCampaign pay(Long userId, Long campaignId) {
         AdCampaign c = mustOwn(userId, campaignId);
         if (!"pending_payment".equals(c.getStatus())) throw new BusinessException("该计划不在待支付状态");
+        // CAS 抢占：并发双击只有一个线程能拿到 1
+        int claimed = campaignMapper.activateFromPending(campaignId);
+        if (claimed == 0) {
+            throw new BusinessException(409, "该计划已完成支付或状态已变更，请刷新后重试");
+        }
+        // 抢到状态迁移才扣款；余额不足抛异常 → 整个事务回滚，状态回到 pending_payment
         walletService.payFromWallet(userId, c.getTotalBudget(), "AD-" + c.getCampaignId());
-        c.setStatus("active");
-        c.setStartTime(LocalDateTime.now());
-        c.setEndTime(LocalDateTime.now().plusDays(c.getDurationDays()));
-        c.setUpdateTime(LocalDateTime.now());
-        campaignMapper.updateById(c);
         log.info("[AD] 推广计划支付并开始投放 campaignId={} userId={} budget={}", campaignId, userId, c.getTotalBudget());
-        return c;
+        return campaignMapper.selectById(campaignId);
     }
 
     public AdCampaign pause(Long userId, Long campaignId) {
@@ -150,7 +175,7 @@ public class AdCampaignService {
         AdCampaign c = mustOwn(userId, campaignId);
         if (!"paused".equals(c.getStatus())) throw new BusinessException("仅已暂停的计划可恢复");
         if (c.getEndTime() != null && c.getEndTime().isBefore(LocalDateTime.now())) {
-            return settle(c, "expired");
+            return transactionalSelf().settle(c, "expired");
         }
         c.setStatus("active");
         c.setUpdateTime(LocalDateTime.now());
@@ -165,7 +190,7 @@ public class AdCampaignService {
         if (!"active".equals(c.getStatus()) && !"paused".equals(c.getStatus())) {
             throw new BusinessException("该计划已结束");
         }
-        return settle(c, "manual");
+        return transactionalSelf().settle(c, "manual");
     }
 
     // ===== 计费与广告位（商城侧，公开） =====
@@ -180,7 +205,7 @@ public class AdCampaignService {
         // 预算耗尽（SQL 已置 ended）→ 结算退回（spent 已截断到预算，剩余为 0，仅落结算字段）
         AdCampaign after = campaignMapper.selectById(campaignId);
         if ("ended".equals(after.getStatus()) && after.getSettled() == null) {
-            settle(after, "budget_exhausted");
+            transactionalSelf().settle(after, "budget_exhausted");
         }
         return true;
     }
@@ -415,7 +440,7 @@ public class AdCampaignService {
     public void expireCheck() {
         for (AdCampaign c : campaignMapper.expiredCampaigns()) {
             try {
-                settle(c, "expired");
+                transactionalSelf().settle(c, "expired");
             } catch (Exception e) {
                 log.warn("[AD] 到期结算失败 campaignId={}: {}", c.getCampaignId(), e.getMessage());
             }

@@ -38,8 +38,12 @@
         <div class="summary-right"><span>合计</span><strong>¥{{ Number(cart.total||0).toFixed(2) }}</strong><a-button type="primary" size="large" :disabled="!cart.checkedItems.length" @click="$router.push('/checkout')">去结算</a-button></div>
       </div>
     </a-card>
+    <!-- 空态：a-empty + 行动按钮（去逛逛/返回）；description 双语走 DOM 翻译层（zh-en-extra 购物车段成对词条） -->
     <a-empty v-else description="购物车是空的">
-      <a-button type="primary" @click="$router.push('/mall')">去逛逛</a-button>
+      <a-space direction="vertical" :size="8">
+        <a-button type="primary" @click="$router.push('/mall')">去逛逛</a-button>
+        <a-button type="link" @click="$router.back()">返回</a-button>
+      </a-space>
     </a-empty>
   </div>
 </template>

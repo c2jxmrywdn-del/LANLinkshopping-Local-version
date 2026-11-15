@@ -47,6 +47,11 @@
         <a-input v-model:value="form.brand" placeholder="如：华晨" maxlength="64" />
       </a-form-item>
 
+      <!-- ===== 阶梯批发价（P1-17）：动态档位行，走 publish 链路落 tierPriceJson ===== -->
+      <a-form-item>
+        <TierPriceEditor v-model="tierRows" :base-price="form.price" />
+      </a-form-item>
+
       <!-- ===== 规格参数（动态 KV，可扩展属性） ===== -->
       <a-form-item label="规格参数（选填）">
         <div v-for="(row, idx) in specRows" :key="idx" class="spec-row">
@@ -91,6 +96,7 @@ import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { productApi, homeApi } from '../../api'
 import AiTitlePolish from './AiTitlePolish.vue'
+import TierPriceEditor from './TierPriceEditor.vue'
 
 /**
  * 商户商品发布组件（Modal 形态，父组件 v-model:open 控制）。
@@ -98,6 +104,7 @@ import AiTitlePolish from './AiTitlePolish.vue'
  * 草稿：localStorage 暂存，支持保存/恢复/继续编辑。
  * AI 润色（out/ai-polish-design.md §2.4）：候选「应用」只回填 form.title，
  * 走既有 @finish → rules → 后端复检链路，无校验绕过；润色 pending 期间临时禁用提交。
+ * 阶梯批发价（P1-17）：动态档位行 → tierPrices 契约数组，随 publish 落 tierPriceJson。
  * 可扩展性：新增商品属性只需在 form + rules + 模板对应区块各加一项。
  */
 const props = defineProps({ open: Boolean })
@@ -121,6 +128,7 @@ const form = reactive({
   brand: '', detail: ''
 })
 const specRows = ref([{ k: '', v: '' }])   // 规格参数动态行 → 拼接为 spec
+const tierRows = ref([])                   // 阶梯批发价动态行（P1-17）→ [{minQty, price}]
 
 const rules = {
   title: [
@@ -169,6 +177,7 @@ const draftLoaded = ref(false)
 function draftPayload() {
   return {
     form: { ...form }, specRows: specRows.value.filter(r => r.k || r.v),
+    tierRows: tierRows.value.filter(r => r.minQty != null || r.price != null),
     imgFiles: imgFiles.value.length ? [{ uid: '-1', name: 'cover', status: 'done', url: form.coverUrl }] : []
   }
 }
@@ -186,6 +195,7 @@ function restoreDraft() {
     if (!d) return
     Object.assign(form, d.form || {})
     specRows.value = (d.specRows && d.specRows.length) ? d.specRows : [{ k: '', v: '' }]
+    tierRows.value = Array.isArray(d.tierRows) ? d.tierRows : []
     imgFiles.value = d.imgFiles || []
     draftLoaded.value = true
     message.success('已恢复上次草稿')
@@ -215,8 +225,35 @@ function buildSpec() {
     .join('；')
 }
 
+// ===== 阶梯批发价（P1-17）：行级校验 + 归一化（后端 encodeContract 终检） =====
+function buildTierPrices() {
+  const rows = tierRows.value.filter(r => r.minQty != null && r.price != null)
+  if (!rows.length) return []
+  // 客户端先行：数量正整数、单价 >0 且 ≤ 商品单价；档间关系由后端终检（重复/递增校验给可读文案）
+  const price = Number(form.price)
+  for (const r of rows) {
+    if (!Number.isInteger(r.minQty) || r.minQty < 1) {
+      throw new Error('阶梯价数量需为正整数（如 100）')
+    }
+    if (!(r.price > 0)) {
+      throw new Error('阶梯价单价需大于 0')
+    }
+    if (price > 0 && r.price > price) {
+      throw new Error('阶梯价单价不能高于商品单价 ' + price.toFixed(2) + ' 元')
+    }
+  }
+  return [...rows].sort((a, b) => a.minQty - b.minQty).map(r => ({ minQty: r.minQty, price: r.price }))
+}
+
 async function submit() {
   if (!form.coverUrl) { message.error('请上传商品主图'); return }
+  let tierPrices
+  try {
+    tierPrices = buildTierPrices()
+  } catch (e) {
+    message.error(e.message)
+    return
+  }
   submitting.value = true
   try {
     await productApi.publish({
@@ -225,6 +262,7 @@ async function submit() {
       price: form.price, stock: form.stock,
       brand: (form.brand || '').trim(),
       spec: buildSpec(),
+      tierPrices,
       coverUrl: form.coverUrl,
       detail: (form.detail || '').trim()
     })
@@ -241,6 +279,7 @@ async function submit() {
 function resetForm() {
   Object.assign(form, { title: '', indId: null, catId: null, price: null, stock: null, brand: '', detail: '', coverUrl: '' })
   specRows.value = [{ k: '', v: '' }]
+  tierRows.value = []
   imgFiles.value = []
   categories.value = []
   draftLoaded.value = false

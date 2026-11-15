@@ -134,8 +134,8 @@ defineExpose({ reset })
 
 <style scoped>
 /* 全部引用 theme.css 既有 --ll-* tokens，零硬编码色值；深色模式随 token 翻转自动生效 */
-.ai-polish { width: 100%; }
-.ai-polish-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.ai-polish { flex: 0 0 auto; min-width: 0; }
+.ai-polish-bar { display: flex; align-items: center; gap: 8px; margin-top: 0; }
 .ai-polish-bar .ant-btn { display: inline-flex; align-items: center; gap: 4px;
   color: var(--ll-primary); border-color: var(--ll-primary); }
 .ai-polish-panel {

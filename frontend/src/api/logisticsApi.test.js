@@ -40,6 +40,11 @@ describe('logisticsApi 商户端与运营后台接口隔离', () => {
     await logisticsApi.orderWaybills('ORD123')
     expect(request.get).toHaveBeenLastCalledWith('/logistics/order-waybills/ORD123')
   })
+
+  it('mapConfig 收口自组件直连：端点与 silent 语义与原调用逐字一致', async () => {
+    await logisticsApi.mapConfig()
+    expect(request.get).toHaveBeenLastCalledWith('/logistics/map-config', { silent: true })
+  })
 })
 
 describe('trackingApi 轨迹时间轴/地图与客服异常件看板', () => {
