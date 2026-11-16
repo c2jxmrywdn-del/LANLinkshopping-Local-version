@@ -22,6 +22,8 @@
 
 [功能特性](#-功能特性与业务矩阵) · [系统架构](#-系统架构与技术全景) · [开发文档](#-开发者工程手册与调试指南) · [快速开始](#-快速开始与环境部署) · [核心接口](#-核心接口速览) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证说明)
 
+**[English](./README.en.md)** · 简体中文
+
 </div>
 
 ---
@@ -403,6 +405,17 @@ sequenceDiagram
 | C 评价 | 独立订单评价模型（见第 15 节） |
 | D 出金 | merchant-finance 提现闭环（见第 14 节） |
 
+### 18. SQLBot 智能问数集成（LLM + RAG Text-to-SQL，2026-11）
+
+集成 [dataease/SQLBot](https://github.com/dataease/SQLBot) 作为平台智能问数引擎：对话式数据分析，自然语言直接生成 SQL 并执行（基于大模型与 RAG）。
+
+- **部署形态**：`dataease/sqlbot:latest` 容器（独立项目名 `shopping-sqlbot`，编排见 [`docker-compose.sqlbot.yml`](file:///d:/Desktop/LANLinkShopping/Shopping/docker-compose.sqlbot.yml)），UI `127.0.0.1:8000`、自带 MCP 服务 `8001`（SSE 传输，7 个工具）。
+- **本地补丁**（[`sqlbot-patches/`](file:///d:/Desktop/LANLinkShopping/Shopping/sqlbot-patches/)，只读挂载）：超管判定从「id+account 双条件」放宽为「仅 id==1」（`user.py`/`mcp.py` 两处），管理员账号可改为平台运营账号；**镜像升级后需重新提取原文件复核补丁适用性**。
+- **LLM 接线**：SQLBot 管理端模型指向 [`lanlink-ai-gateway`](file:///d:/Desktop/LANLinkShopping/Shopping/ai-gateway/)（OpenAI 兼容，`qwen2.5-7b`），模型高级参数 `config_list` 必须为 `extra_body: {"use_kb": false}`（JSON 字符串形态）——关闭网关侧 RAG 模板改写，防止污染 Text-to-SQL 提示词。
+- **数据源**：`shopping-mysql-1` 的 `lanlink_shopping` 库，专用只读账号 `sqlbot_ro`（仅 SELECT 业务表）；表结构元数据经 `chooseTables` 同步（6 张核心业务表 144 字段）。
+- **外部模型经 MCP 调用**：网关注册 `lanlink_ask_data` 工具（[`ai-gateway/app/sqlbot_tools.py`](file:///d:/Desktop/LANLinkShopping/Shopping/ai-gateway/app/sqlbot_tools.py)，`access_token → mcp_start → mcp_question` 链路），外部 AI 大模型经 `/v1/chat/completions`（tools=auto）即可对话式查询平台业务数据。
+- **稳定性加固**：网关语义缓存对 sql_gen 类请求关闭写入（`main.py` Step 4 写门）——同题重试不再命中缓存拒答话术，连续 10/10 验收达标（直连层与 MCP 链路层各 5 次）。
+
 ---
 
 ## 🛠️ 开发者工程手册与调试指南
@@ -425,6 +438,9 @@ sequenceDiagram
 | **18123** | llama.cpp 推理底座 | `llama-cpp` (Docker) | `127.0.0.1` | 容器内 8123 映射至宿主 18123，承载 GGUF 双模型推理 |
 | **1025** | Mailpit SMTP | `mailpit` (Docker) | `127.0.0.1` | 本地测试邮件投递端口 |
 | **8081** | Mailpit Web 邮箱 | `mailpit` (Docker) | `127.0.0.1` | 本地邮件网页收件箱（容器内 8025），实时拦截系统验证码邮件 |
+| **8000** | SQLBot 智能问数 UI + API | `sqlbot` (Docker) | `127.0.0.1` | 对话式数据分析（LLM + RAG Text-to-SQL），见能力矩阵第 18 节 |
+| **8001** | SQLBot MCP 服务 | `sqlbot` (Docker) | `127.0.0.1` | SQLBot 自带 MCP（SSE 传输），供外部 AI 大模型经 MCP 协议调用 |
+| **9093** | Alertmanager Web UI | `alertmanager` (Docker) | `127.0.0.1` | 告警管理控制台（静默/通知状态；告警送达经钉钉/飞书适配器双通道） |
 | **3000** | 批量导入 Workflow | Node.js Worker | `127.0.0.1` | 大宗商品与采购单批量导入工作流服务 |
 
 > [!IMPORTANT]
@@ -652,6 +668,8 @@ LANLinkshopping/
 │   ├── stress_benchmark.py       # 高并发压力测试脚本
 │   └── build_china_map.py        # 全国物流 GIS 拓扑图谱生成器
 ├── docker-compose.yml        # 全栈基础设施容器集群编排
+├── docker-compose.sqlbot.yml # SQLBot 智能问数容器编排（独立项目名，见能力矩阵第 18 节）
+├── sqlbot-patches/           # SQLBot 本地补丁（超管判定放宽，只读挂载）
 ├── start-local-env.ps1       # Windows PowerShell 自动化全栈启动脚本
 ├── 启动本地环境.bat            # Windows 批处理快速双击启动
 ├── LICENSE                   # GNU General Public License v3.0 协议文件
