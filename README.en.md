@@ -230,9 +230,197 @@ sequenceDiagram
 | 🛒 **Smart Cart** | [`Cart.vue`](frontend/src/views/Cart.vue) | Atomic spec-stock validation, bulk quantity edits, per-store selection, address-hub linkage & freight estimate. |
 | 📦 **Order & Payment** | [`OrderController.java`](backend/src/main/java/com/lanlink/shopping/controller/OrderController.java) | Distributed/transactional atomic stock deduction, full order snapshots, Alipay/WeChat/wallet sandbox payments, points deduction (1000 pts = ¥1), credit-term deferred settlement. |
 
-### 2–17. Mid-Platform Capabilities
+### 2. Industrial Technology-Service & Tech-Transfer Mid-Platform
 
-The platform carries **17 additional mid-platform capability sections** covering: industrial technology-service trading (contracts/milestones/escrow/experts/pilot/appraisal/hosting), logistics GIS dispatch (coordinate conversion/trunk routing/anomaly alerting/settlement), campaign venue & coupon center, enterprise subscription procurement & task center, credit-term calculator & risk engine, after-sale evidence chain, AI title polish, Apple UI component library, local dual-LLM orchestration & MCP, bidirectional compliance & penalty system, merchant exit governance, concurrency-correctness hardening (2026-11, each with falsifiable regression tests), merchant finance/withdrawal, order review closed loop, SEO baseline & per-route TDK, and SQLBot Text-to-SQL integration. See the [Chinese README](./README.md#-核心业务与高阶微中台能力矩阵) for the full per-section detail with code entry points.
+Module overview at [`com.lanlink.shopping.module.techservice`](backend/src/main/java/com/lanlink/shopping/module/techservice), frontend entry at [`frontend/src/views/techservice/`](frontend/src/views/techservice/) and admin console [`AdminTechService.vue`](frontend/src/views/admin/AdminTechService.vue):
+
+- **Industrial tech trading & contract lifecycle** ([`TechContracts.vue`](frontend/src/views/techservice/TechContracts.vue) & [`TechContractService.java`](backend/src/main/java/com/lanlink/shopping/module/techservice/service/TechContractService.java)): legally-binding e-contracts between industrial enterprises and tech-service vendors, staged technical milestones (`TechMilestone`), third-party escrow ledger (`TechEscrowLedger`), per-stage fund release upon node acceptance (`TechAcceptance`).
+- **Expert pool & online diagnostics** ([`TechExperts.vue`](frontend/src/views/techservice/TechExperts.vue) & `TechExpertService.java`): university researchers, master craftsmen and certified experts with online booking, working-condition pre-checks, technical solution authoring and paid Q&A.
+- **Pilot-line & shared lab reservations** ([`TechPilot.vue`](frontend/src/views/techservice/TechPilot.vue) & `TechPilotService.java`): large industrial pilot lines and precision instrument scheduling, online slot booking.
+- **"Bottleneck" demand bounty** ([`TechDemands.vue`](frontend/src/views/techservice/TechDemands.vue) & `TechDemandService.java`): publish technical-challenge and retrofit demands with bounty budgets & delivery deadlines, open to industry-wide bidding.
+- **Achievement appraisal** ([`TechAppraisal.vue`](frontend/src/views/techservice/TechAppraisal.vue) & `TechAppraisal`): TRL maturity, commercialization outlook and patent-value multi-dimensional assessment reports.
+- **Equipment full-lifecycle hosting** ([`TechHosting.vue`](frontend/src/views/techservice/TechHosting.vue)): equipment registry, periodic maintenance plans, work-order dispatch, spare-part replacement records and on-site service verification.
+
+---
+
+### 3. Logistics GIS Trajectory & Trunk Hub
+
+Frontend at [`logisticsGis.js`](frontend/src/utils/logisticsGis.js), [`logisticsRoute.js`](frontend/src/utils/logisticsRoute.js), [`chinaMapData.js`](frontend/src/utils/chinaMapData.js); backend at [`LogisticsAdminController.java`](backend/src/main/java/com/lanlink/shopping/controller/LogisticsAdminController.java):
+
+- **High-precision bidirectional coordinate conversion** ([`coordTransform.js`](frontend/src/utils/coordTransform.js)): WGS-84 (raw GPS), GCJ-02 (encrypted) and BD-09 (Baidu) high-accuracy mutual conversion with out-of-mainland boundary detection.
+- **National trunk topology routing**: Haversine great-circle distance with road-detour correction factors, inter-hub mileage computation and in-transit node timeline inference.
+- **Waybill anomaly & timeout warning hub** ([`AdminTrackingExceptions.vue`](frontend/src/views/admin/AdminTrackingExceptions.vue)): 24h dwell triggers yellow alert, 48h triggers red emergency dispatch; ops-side re-urge, reassignment and trunk redirection.
+- **Reconciliation statement automation**: aggregates signed waybills per carrier & billing cycle, batch statement audit, fee deductions and insurance claims.
+
+---
+
+### 4. Campaign Venue & Coupon Center
+
+- **Campaign venue aggregation** ([`CampaignVenue.vue`](frontend/src/views/CampaignVenue.vue)): per-industry hot products, limited-time spend-threshold venues, industrial new-release zones.
+- **High-concurrency coupon center** ([`CouponCenter.vue`](frontend/src/views/CouponCenter.vue) & [`AdCampaignController.java`](backend/src/main/java/com/lanlink/shopping/controller/AdCampaignController.java)): tiered spend-threshold, newcomer-exclusive and flash-discount coupons with one-click batch claiming via Redis atomic counters.
+- **Real-time checkout pricing facade** ([`PricingFacade.java`](backend/src/main/java/com/lanlink/shopping/integration/pricing/PricingFacade.java) & [`CouponQuoteDTO.java`](backend/src/main/java/com/lanlink/shopping/dto/CouponQuoteDTO.java)): auto-matches the optimal coupon pack at checkout, with post-payment status write-off via [`CampaignOrderListener.java`](backend/src/main/java/com/lanlink/shopping/integration/listener/CampaignOrderListener.java).
+
+---
+
+### 5. Enterprise Periodic Subscription Procurement & Task Center
+
+- **Periodic subscription procurement** ([`SubscriptionOrders.vue`](frontend/src/views/SubscriptionOrders.vue)): weekly/monthly auto-generated purchase-order drafts for high-frequency consumables (safety gear, machine lubricants, drive parts), one-click confirmation to avoid production line stoppage.
+- **Membership tasks & benefits** ([`TaskCenter.vue`](frontend/src/views/TaskCenter.vue) & [`MembershipOrderListener.java`](backend/src/main/java/com/lanlink/shopping/integration/listener/MembershipOrderListener.java)): tiered growth system (`BUYER` → `VIP`); first order, bulk purchase and review interactions unlock points rebates and credit-line boosts.
+
+---
+
+### 6. Enterprise Credit-Term Calculator & Risk Engine
+
+- **Precision credit-line calculator** ([`creditCalculator.js`](frontend/src/utils/creditCalculator.js) & [`CreditTermCenter.vue`](frontend/src/views/CreditTermCenter.vue)): multi-factor scoring matrix based on registered capital, invoicing history, fulfillment rating and purchase frequency, outputting dynamic credit-line suggestions (up to ¥5M).
+- **Billing calendar & tiered late-fee engine**: T+30 / T+60 / T+90 flexible terms (interest-free within term); overdue accounts accrue daily 0.05% tiered interest and are auto-blocked at checkout until settled.
+
+---
+
+### 7. After-Sale Negotiation & Multi-Media Evidence Chain
+
+- **Full-track dispute flows** ([`OrderDetail.vue`](frontend/src/views/OrderDetail.vue) & `components/refund/`): refund-only, return-and-refund, damaged-replacement and on-site repair flows.
+- **Compliant multi-media evidence storage** ([`refundEvidence.js`](frontend/src/utils/refundEvidence.js)): buyers, sellers and platform support upload damage photos, inspection reports and repair videos; attachments go directly to MinIO S3 private encrypted buckets with backend hotlink-protected proxy rendering — tamper-proof and confidential.
+
+---
+
+### 8. AI Product Title Polish & Selling-Point Highlights
+
+- **Industrial AI polish engine** ([`AiTitlePolish.vue`](frontend/src/components/merchant/AiTitlePolish.vue) & [`aiPolish.js`](frontend/src/utils/aiPolish.js)): powered by local Qwen2.5, solves non-standard industrial product naming. Auto-extracts "brand + core model + industrial spec + execution standard + use case", filters exaggerated claims, and restructures into B2B-SEO-weighted standardized titles with one-click selling-point highlight tags.
+
+---
+
+### 9. Apple UI Morphic Fluid Interaction & Next-Gen Component Library
+
+Following Apple Human Interface Guidelines industrial design philosophy, the site integrates a pure-vector morphic interaction system:
+
+- **macOS fluid Dock** ([`AppleDock.vue`](frontend/src/components/ui/AppleDock.vue)): fluid elastic scaling animation, smooth Bézier micro-interactions.
+- **iPhone Dynamic Island capsule** ([`AppleDynamicIsland.vue`](frontend/src/components/ui/AppleDynamicIsland.vue)): floating notification capsule with state-transition elastic motion.
+- **Fluid sliding tabs** ([`FluidAnimatedTabs.vue`](frontend/src/components/ui/FluidAnimatedTabs.vue)): physics-inertia adaptive slider background, seamless switching.
+- **Glow border cards** ([`GlowBorderCard.vue`](frontend/src/components/ui/GlowBorderCard.vue)): cursor-tracking luminous gradient borders.
+- **Radar pulse badges** ([`RadarPulseBadge.vue`](frontend/src/components/ui/RadarPulseBadge.vue)): dynamic pulse halos for live streaming, in-transit waybills and urgent work orders.
+- **Silky touch drawer** ([`SmoothMobileDrawer.vue`](frontend/src/components/ui/SmoothMobileDrawer.vue)): adaptive mobile/tablet gesture drawer with follow-and-bounce.
+- **3D depth card carousel** ([`AppleCardsCarousel.vue`](frontend/src/components/ui/AppleCardsCarousel.vue)): parallax dynamic lighting, gesture swipe support.
+- **Pure-vector icon governance** ([`AppleIcon.vue`](frontend/src/components/ui/AppleIcon.vue)): centralized Lucide SVG icon mapping — zero emoji.
+
+---
+
+### 10. Local Dual-LLM Orchestration & MCP Vector Hub
+
+- **Dual-model Router architecture**: Docker-hosted llama.cpp with per-request hot-swap between **Qwen2.5-7B (text)** and **Qwen2.5-VL (vision multimodal)**.
+- **Hardware VRAM-aware scheduler** ([`hardware_scheduler.py`](ai-gateway/app/hardware_scheduler.py)): real-time GPU VRAM & temperature sensing; full-VRAM loading first, automatic CPU offload when slightly short, proactive degradation on critical pressure; `GET /v1/hardware` exposes scheduling basis.
+- **Gateway-side read-only vector KB MCP tool** ([`ai-gateway/MCP_KB_SPEC.md`](ai-gateway/MCP_KB_SPEC.md)): exposes `lanlink_kb_search` standard MCP tool; external agents can query the shared vector index `aikb-idx` via the `/mcp` endpoint.
+
+> [!NOTE]
+> **💻 OS, CUDA & local hardware adaptation notes**:
+> 1. **Recommended environment**: **Ubuntu 22.04 LTS / 24.04 LTS** (native Linux or Windows 11 WSL2); **CUDA 12.4+ / 12.8 (`cu128`) / 13.0 (`cu130`)** with NVIDIA driver ≥ 550.x / 560.x.
+> 2. **Mobile hardware baseline**: developed and benchmarked on **Intel Core i7-14650HX / NVIDIA RTX 4070 Laptop 8GB / 24GB DDR5**. Within these constraints, local inference & fine-tuning defaults to **Qwen 2.5 7B** (`Qwen2.5-7B-Instruct-Q4_K_M` + `Qwen2.5-VL` dual-model hot-swap).
+> 3. **Scaling advice for larger hardware**: the model layer is fully decoupled and modular. With RTX 3090/4090 24G or A100/H100 clusters, seamlessly upgrade to Qwen 2.5 14B/32B/72B or FP16/BF16 — adjust model mounts in `.env` & `docker-compose.yml` only; zero business-code changes.
+
+---
+
+### 11. Bidirectional Compliance Terms & Penalty Governance Hub (Legal Compliance & Penalty System)
+
+Built on the legal terms center ([`LegalCenter.vue`](frontend/src/views/LegalCenter.vue) & [`legalDocs.js`](frontend/src/data/legalDocs.js)), establishing bidirectional admission thresholds, trading conduct norms and penalty closed loops:
+
+- **Merchant paid-in-capital hard threshold**: onboarding requires a limited-liability company or compliant individual-business entity with **paid-in capital ≥ ¥100,000**. Enforced across [`MerchantService.java`](backend/src/main/java/com/lanlink/shopping/service/MerchantService.java), frontend application forms and admin review — blocking shell companies.
+- **《Merchant Onboarding & Operation Compliance Code》**:
+  - **Authenticity & anti-counterfeit commitment**: genuine-guarantee (ten-times compensation), no counterfeit or infringing products.
+  - **Fulfillment & delivery guarantee**: in-stock orders ship within 48 hours; custom parts per agreed schedule; overdue triggers breach warning.
+  - **Annual 12-point dynamic scoring**: quantified deductions (minor 1–3, moderate 6, severe 12 points with node-level disposal).
+  - **Tiered penalties & exit**: warning demotion → forced delisting → withdrawal restriction → closure → deposit forfeiture.
+  - **Merchant appeal channel**: 5-working-day online evidence submission & legal arbitration.
+- **《Buyer Trading Rules & Penalty Code》**:
+  - **Honest trading**: no order farming, fake orders, malicious refunds or extortion via bad reviews.
+  - **Authentic evidence**: disputes require real unboxing photos, third-party inspection reports, etc.
+  - **Credit-term compliance**: repay on time; overdue incurs 0.05%/day penalty interest, frozen credit line and abnormal-fulfillment monitoring.
+  - **Buyer tiered penalties**: minor (credit deduction), moderate (order restriction), severe (permanent ban, asset freeze, industry blacklist).
+- **Bilingual & version-tracked**: all terms switch seamlessly between Chinese and English with last-updated timestamps; active opt-in throughout onboarding and trading.
+
+---
+
+### 12. Merchant Exit & Closure Lifecycle Governance Hub (Merchant Exit & Closure Governance)
+
+Module overview at [`com.lanlink.shopping.module.merchantexit`](backend/src/main/java/com/lanlink/shopping/module/merchantexit), merchant entry [`CenterExit.vue`](frontend/src/views/merchant/CenterExit.vue), ops entry [`AdminMerchantExit.vue`](frontend/src/views/admin/AdminMerchantExit.vue). Aligned with E-Commerce Law Art. 16 and Network Transaction Supervision Measures Art. 23, forming an irreversible soft-close loop of "Apply → Ops review → Public notice (withdrawable) → Freeze & liquidate → Formal closure":
+
+- **Five-state state machine with CAS protection** ([`MerchantExitService.java`](backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitService.java)): `ACTIVE (exit_status IS NULL) → EXIT_REQUESTED → PUBLIC_NOTICE → FROZEN → CLOSED`; only "ops rejection" and "notice-withdrawal" are reversible; every step is a conditional update (`WHERE exit_status=<prior>`), illegal jumps return `400`, all transitions logged to `t_merchant_exit_log`.
+- **Six exit gates** ([`MerchantExitGateService.java`](backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitGateService.java)): mandatory checks before notice and closure — no in-flight orders, no active after-sale, settlement fully cleared, all products delisted, no deposit arrears, order-completion time gate; returns `GateReport{ready, blockers[]}` for frontend ✅/❌ self-check.
+- **30-day statutory notice & auto-freeze** ([`MerchantExitNoticeJob.java`](backend/src/main/java/com/lanlink/shopping/module/merchantexit/job/MerchantExitNoticeJob.java)): notice period `app.merchant-exit.notice-days` (default 30, configurable); scheduled job + ops-triggered `run-notice` idempotently move expired merchants to `FROZEN`; merchants can withdraw anytime during notice to resume normal operation.
+- **Write-operation freeze** ([`MerchantExitGuard.java`](backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantExitGuard.java)): merchants in exit flow (non-null `exit_status`) are blocked from product publish/edit/listing, SKU maintenance, RFQ quotes and campaign registration (delisting unaffected); auto-unfrozen upon withdrawal.
+- **Deposit ledger** ([`MerchantDepositService.java`](backend/src/main/java/com/lanlink/shopping/module/merchantexit/service/MerchantDepositService.java)): append-only double-entry bookkeeping (`PAY` / `REFUND` / `DEDUCT`), each row with `balance_after` snapshot, `FOR UPDATE` row-lock serialization; closure deducts unsettled fees before refunding balance. **Deposit refund/deduction is ledger-only — no real fund transfers** (second-clearing boundary); full forfeiture (`FORFEIT`) is deferred, not applied by default.
+- **Reliable order-completion timestamp** ([`MerchantExitSchemaInitializer.java`](backend/src/main/java/com/lanlink/shopping/support/MerchantExitSchemaInitializer.java)): new `t_order.finish_time` column atomically written with `order_status=2`, as the sole reliable time-gate basis, avoiding `update_time` drift.
+- **Dual-end UI & bilingual i18n**: merchant status bar + six-gate self-check panel + apply/withdraw confirmations + deposit ledger; ops application list + detail drawer (gate report / ledger / transition timeline / pre-closure deposit preview) + approve/reject/close. Fully bilingual, zero CJK residue in templates.
+
+### 13. Concurrency Correctness & Architecture Governance (2026-11 Hardening)
+
+Systematic hardening against the "works single-instance, breaks multi-instance/high-concurrency" class of production-only defects, each with a falsifiable regression test:
+
+| Hardening point | Defect shape | Fix | Regression test |
+|:---|:---|:---|:---|
+| Ad campaign payment | read→deduct→write; concurrent double-click double-charges | `pending_payment → active` conditional-update抢占, deduct only if won | `AdCampaignPayGuardTest` |
+| Refund watchdog | wrote order total; partial refunds amplified to full | tracks cumulative refunded amount; `fullRefundSettle` only on `success` | `RefundSyncAmountTest` |
+| Cart add | `selectOne → in-memory add → updateById` lost update | `INSERT ... ON DUPLICATE KEY UPDATE` atomic accumulate + unique key `uk_cart_user_prod` | real-machine 5 concurrent ×100 → exactly 500 |
+| Logistics waybill status | in-memory state check only; delivered could be reverted | `AND status = expected` CAS; e-POD audit uses `pod_audit_status='pending'` CAS | `LogisticsStatusCasTest` |
+| Settlement sync | nested per-row queries, O(orders×items) | batch prefetch + 500-cap | `SettlementSyncServiceTest` |
+| Scheduled task mutex | RFM/recommend/index jobs clear each other's half-work | `DbJobLock` (MySQL named lock, `GET_LOCK`) | `DbJobLockTest` |
+| Settlement transaction | `terminate/resume` self-invocation bypasses Spring proxy | injected `self` self-proxy | `AdCampaignPayGuardTest` |
+| Price baseline | industry-mean only; 94.2% products misjudged URGENT | category-first + median; fallback to industry median when n<3 | real-machine URGENT 38→16, HOLD 0→14 |
+
+**Frontend resilience**: `app.mount` no longer blocked by language-detection requests; 401 clears both `ll_user` and Pinia store synchronously, eliminating the "pass-through → all-401 → kicked-to-login" loop; hls.js (595 KB) lazy-loaded.
+
+**Deployment resilience**: `nginx.conf.template` upstreams converted to variable form + `resolver`; downstream containers not ready no longer crash nginx startup; `start-local-env.ps1` auto-recycles stale same-name containers (by compose project label).
+
+---
+
+### 14. Merchant Fund Withdrawal & Finance Closed Loop (merchant-finance, 2026-11)
+
+Module overview at [`com.lanlink.shopping.module.finance`](backend/src/main/java/com/lanlink/shopping/module/finance), merchant entry [`CenterFinance.vue`](frontend/src/views/merchant/CenterFinance.vue), ops entry [`AdminWithdrawals.vue`](frontend/src/views/admin/AdminWithdrawals.vue):
+
+- **Withdrawal full state machine** ([`WithdrawalService.java`](backend/src/main/java/com/lanlink/shopping/module/finance/service/WithdrawalService.java)): `0 pending → 1 paid / 2 rejected / 3 withdrawn`, all transitions conditional updates (`WHERE status=<prior>`); returning 0 means a concurrent predecessor won. Payout is offline corporate-transfer registration + voucher upload; the platform initiates no outbound payment calls (second-clearing boundary).
+- **Append-only finance ledger** (`t_finance_ledger`): freeze/unfreeze each write one row (`withdraw_freeze` / `withdraw_reject_unrefreeze`), `amount` signed in/out, `balance_after` per-row snapshot; payout only changes document status (voucher + reviewer = audit trail), does not change merchant-side balance, hence no ledger row.
+- **Anti-double-spend concurrency discipline**: fund paths take a merchant-row exclusive lock (`SELECT ... FOR UPDATE` on `t_merchant`) as the **first statement** in the transaction to establish current-read ordering; all three balance aggregates (settled net / cumulative paid / in-flight frozen) use `FOR UPDATE` locked reads — avoiding the InnoDB RR read-view being pinned by the first plain read before a concurrent freeze commits. Real two-connection concurrent test [`WithdrawalConcurrencyTest.java`](backend/src/test/java/com/lanlink/shopping/module/finance/service/WithdrawalConcurrencyTest.java) asserts exactly one success and one rejection.
+- **Withdrawable balance formula**: `Σ settled net (SETTLED + REVERSED reversals as negative) − cumulative paid − in-flight frozen (pending)`; bank account stored masked (first-4/last-4 only, full number never persisted), encrypted merchant-profile fields never written back.
+- **Sensitive-data field-level JWE encryption** ([`crypto/`](backend/src/main/java/com/lanlink/shopping/crypto/)): RSA-2048 + A256GCM hybrid, `CryptoKeyGuard` startup key verification, schema migrated by [`CryptoFieldSchemaInitializer.java`](backend/src/main/java/com/lanlink/shopping/crypto/CryptoFieldSchemaInitializer.java).
+
+### 15. Order Review Closed Loop (independent order-dimension model, 2026-11)
+
+- **Dedicated `t_order_review` table** (multi-product orders split per `t_order_item`; `uk_order_review_item(order_id, order_item_id)` unique key prevents duplicate reviews; duplicates return business code 409).
+- **Same-transaction rating aggregation** ([`OrderReviewService.java`](backend/src/main/java/com/lanlink/shopping/module/review/service/OrderReviewService.java)): review insert and `t_product_rating_stat` average/count/good-count aggregation commit in one transaction; public endpoints expose rating summaries (average, good-rate, star distribution).
+- **Search-rank regression guarantee**: [`SearchRankScorerTest`](backend/src/test/java/com/lanlink/shopping/module/search/SearchRankScorerTest.java) stays green; rating aggregation is decoupled from search ranking.
+- **Buyer/merchant dual-end UI**: "Review" entry on My Orders (stars + text + anonymous toggle), product-detail review section showing aggregate score and details.
+
+### 16. SEO Baseline & Per-Route TDK Injection (CSR, 2026-11)
+
+- **Static SEO assets**: `frontend/public/robots.txt` (Disallow for private routes) and `sitemap.xml` (public routes only), unit-tested for route-table consistency.
+- **Per-route TDK injection** ([`seo.js`](frontend/src/utils/seo.js)): 34 public routes carry `meta.seo`, injected via router afterEach hook (`title/description/keywords/og`); product-detail pages rewrite with real product names after data load (no fabricated data); private routes fall back to `index.html` global defaults with zero route-value leakage.
+- **Alert-delivery dual channel** ([`monitoring/alertmanager/alertmanager.yml`](monitoring/alertmanager/alertmanager.yml)): Alertmanager email fallback + IM webhook parallel delivery (`continue: true`) via the [`monitoring/feishu-adapter/`](monitoring/feishu-adapter/) adapter; real addresses live only in root `.env`, never committed.
+
+### 17. Market-Readiness Batch Evolution Overview (Benchmarked against Taobao/1688/JD, 2026-11)
+
+| Batch | Deliverables |
+|:---|:---|
+| A Analytics | Amplitude dual-gate (Cookie consent + withdraw opt-out), six-funnel event wiring (view/detail/cart/checkout/payment/refund), graceful no-key degradation |
+| B Compliance | CSRF interceptor expansion (cart/checkin), login rate-limit patch, footer compliance placeholders (business license / ICP / platform qualification) |
+| E1 Flyway | Migration foundation (baseline 2026.11.1 reconciled), V2026_10/V2026_11 legacy migrations governed |
+| F Frontend resilience | Minimal error reporting (valid persists + 3 rejection classes), inline Splash |
+| G1 Compression | nginx dual gzip blocks, API proxy paths gzip-off, assets immutable caching |
+| H1 Tiered pricing | Write-side contract, merchant editor (TierPriceEditor), buyer display & MOQ, OrderService tier snapshots |
+| H2 Invoicing + multi-address | VAT invoice requirements (title/tax-ID 15–20 char validation/line items) into `invoice_*` columns, address-book checkout selector with default address |
+| G2 SEO | robots/sitemap/TDK global defaults + per-route injection (see §16), empty-state bilingual copy |
+| I Human handoff | Support "transfer to human" entry (Lucide Headphones), human-session state, `waiting_agent` DB persistence with admin claimable inbox |
+| C Reviews | Independent order-review model (see §15) |
+| D Withdrawal | merchant-finance closed loop (see §14) |
+
+### 18. SQLBot Intelligent Data-Query Integration (LLM + RAG Text-to-SQL, 2026-11)
+
+Integration of [dataease/SQLBot](https://github.com/dataease/SQLBot) as the platform's conversational data-analysis engine: ask questions in natural language, get generated SQL and executed results (powered by LLM + RAG).
+
+- **Deployment form**: `dataease/sqlbot:latest` container (independent compose project `shopping-sqlbot`, orchestration in [`docker-compose.sqlbot.yml`](docker-compose.sqlbot.yml)), UI at `127.0.0.1:8000`, built-in MCP service at `8001` (SSE transport, 7 tools).
+- **Local patches** ([`sqlbot-patches/`](sqlbot-patches/), read-only mounts): super-admin check relaxed from "id + account dual condition" to "id==1 only" (`user.py`/`mcp.py`); **re-verify patch applicability against original files after image upgrades**.
+- **LLM wiring**: SQLBot admin-side model points to [`lanlink-ai-gateway`](ai-gateway/) (OpenAI-compatible, `qwen2.5-7b`); the model's advanced-parameter `config_list` must be `extra_body: {"use_kb": false}` (JSON-string form) — disables gateway-side RAG template rewriting to protect Text-to-SQL prompts.
+- **Data source**: `shopping-mysql-1`'s `lanlink_shopping` database via dedicated read-only account `sqlbot_ro` (SELECT on business tables only); table metadata synced via `chooseTables` (6 core business tables, 144 fields).
+- **External models via MCP**: gateway registers the `lanlink_ask_data` tool ([`ai-gateway/app/sqlbot_tools.py`](ai-gateway/app/sqlbot_tools.py), `access_token → mcp_start → mcp_question` chain); external AI models query platform business data conversationally via `/v1/chat/completions` (tools=auto).
+- **Stability hardening**: gateway semantic-cache write gate disabled for sql_gen-class requests (`main.py` Step 4) — same-question retries no longer hit cached refusal texts; 10/10 consecutive acceptance (5 direct + 5 MCP-chain).
+- **Integration sequence diagram**: full "external model → AI gateway → MCP → SQLBot → MySQL" call chain at [`out/archify/sqlbot-integration.sequence.html`](out/archify/sqlbot-integration.sequence.html) (interactive HTML with anti-pollution / security-boundary / dual-access-path cards).
 
 ---
 
