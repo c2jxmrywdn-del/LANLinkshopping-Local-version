@@ -415,6 +415,7 @@ sequenceDiagram
 - **数据源**：`shopping-mysql-1` 的 `lanlink_shopping` 库，专用只读账号 `sqlbot_ro`（仅 SELECT 业务表）；表结构元数据经 `chooseTables` 同步（6 张核心业务表 144 字段）。
 - **外部模型经 MCP 调用**：网关注册 `lanlink_ask_data` 工具（[`ai-gateway/app/sqlbot_tools.py`](file:///d:/Desktop/LANLinkShopping/Shopping/ai-gateway/app/sqlbot_tools.py)，`access_token → mcp_start → mcp_question` 链路），外部 AI 大模型经 `/v1/chat/completions`（tools=auto）即可对话式查询平台业务数据。
 - **稳定性加固**：网关语义缓存对 sql_gen 类请求关闭写入（`main.py` Step 4 写门）——同题重试不再命中缓存拒答话术，连续 10/10 验收达标（直连层与 MCP 链路层各 5 次）。
+- **集成链路图**：完整的「外部模型 → AI 网关 → MCP → SQLBot → MySQL」调用时序图见 [`out/archify/sqlbot-integration.sequence.html`](out/archify/sqlbot-integration.sequence.html)（可交互 HTML，含防污染/安全边界/双访问路径三张说明卡）。
 
 ---
 
@@ -806,6 +807,7 @@ the Free Software Foundation, either version 3 of the License, or
 - [Microsoft Agent-Lightning](https://github.com/microsoft/agent-lightning) 团队对开源智能体生态的卓越贡献
 - **Qwen 大模型开发团队** 对开源基础模型与多模态社区的技术支持
 - [21st.dev](https://21st.dev) 提供的现代化交互设计灵感与开源组件支持
+- [SQLBot（dataease）](https://github.com/dataease/SQLBot) 开发团队对开源智能问数（Text-to-SQL）社区的贡献——本平台的对话式数据分析能力基于 SQLBot 构建
 
 Made with ❤️ for Modern B2B E-Commerce & Open Innovation · 2026
 

@@ -62,6 +62,7 @@ Integration of [dataease/SQLBot](https://github.com/dataease/SQLBot) as the plat
 - **Data source**: `shopping-mysql-1`'s `lanlink_shopping` database via dedicated read-only account `sqlbot_ro` (SELECT on business tables only); table metadata synced via `chooseTables` (6 core business tables, 144 fields).
 - **External models via MCP**: gateway registers the `lanlink_ask_data` tool ([`ai-gateway/app/sqlbot_tools.py`](ai-gateway/app/sqlbot_tools.py), `access_token → mcp_start → mcp_question` chain); external AI models query platform business data conversationally via `/v1/chat/completions` (tools=auto).
 - **Stability hardening**: gateway semantic-cache write gate disabled for sql_gen-class requests (`main.py` Step 4) — same-question retries no longer hit cached refusal texts; 10/10 consecutive acceptance (5 direct + 5 MCP-chain).
+- **Integration sequence diagram**: full "external model → AI gateway → MCP → SQLBot → MySQL" call chain at [`out/archify/sqlbot-integration.sequence.html`](out/archify/sqlbot-integration.sequence.html) (interactive HTML with anti-pollution / security-boundary / dual-access-path cards).
 
 ---
 
@@ -570,6 +571,7 @@ the Free Software Foundation, either version 3 of the License, or
 - [Microsoft Agent-Lightning](https://github.com/microsoft/agent-lightning) team for their contributions to the open agent ecosystem
 - **Qwen LLM team** for open foundation-model & multimodal support
 - [21st.dev](https://21st.dev) for modern interaction design inspiration & open components
+- [SQLBot (dataease)](https://github.com/dataease/SQLBot) team for their contribution to the open-source Text-to-SQL community — this platform's conversational data-analysis capability is built on SQLBot
 
 Made with ❤️ for Modern B2B E-Commerce & Open Innovation · 2026
 
