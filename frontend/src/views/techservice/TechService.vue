@@ -544,8 +544,15 @@ onMounted(async () => {
   padding: clamp(24px, 3.4vw, 42px);
   border-radius: 24px;
   color: #13233A;
-  background: linear-gradient(135deg, #F2F9FF, #DBEAFE 60%, #BAE6FD);
-  box-shadow: 0 24px 60px rgba(30, 110, 184, 0.14);
+  /* 对齐 AboutUs / tech-hero：静态垂直 5 段浅蓝渐变（与 hero 同底色系，无斜向分界） */
+  background: linear-gradient(180deg,
+    #F2F9FF 0%,
+    #E0F2FE 30%,
+    #BAE6FD 55%,
+    #E0F2FE 80%,
+    #F2F9FF 100%);
+  border: 1px solid #C9E2F6;
+  box-shadow: 0 26px 70px rgba(30, 110, 184, 0.14);
 }
 .tech-cta h2 { margin: 10px 0 8px; font-size: clamp(24px, 3vw, 34px); letter-spacing: -0.03em; }
 .tech-cta p { margin: 0; max-width: 620px; color: #475569; font-size: 14px; line-height: 1.8; }
