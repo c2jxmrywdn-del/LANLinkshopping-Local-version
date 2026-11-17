@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
  */
 class TrackingIngestWaybillResolveTest {
 
-    private static final String TOKEN = "dev-callback-token";
+    private static final String TOKEN = "unit-callback-token-0123456789abcdef";
     private static final String BODY =
             "{\"eventId\":\"EVT-RESOLVE-1\",\"logisticsNo\":\"LL202611060001\","
                     + "\"nodes\":[{\"time\":\"2026-11-06 12:30:00\",\"location\":\"苏州\","

@@ -48,13 +48,34 @@ public class AiApiKeyService {
 
     public Map<String, Object> create(String name, String provider, String permissions, LocalDateTime expiresAt,
                                        Long userId, HttpServletRequest request) {
+        String normalizedPermissions = normalizePermissions(permissions);
         String raw = "llk_" + randomToken(32);
         String prefix = raw.substring(0, 12);
         jdbc.update("INSERT INTO t_ai_api_key(name, key_prefix, key_hash, provider, permissions, status, expires_at, created_by, created_at) VALUES(?,?,?,?,?,'active',?,?,NOW())",
-                clean(name, 80), prefix, hash(raw), clean(provider, 40), clean(permissions, 500), expiresAt, userId);
+                clean(name, 80), prefix, hash(raw), clean(provider, 40), normalizedPermissions, expiresAt, userId);
         audit.record(userId, "AI_API_KEY_CREATED", "创建 AI 提供商密钥 " + prefix, request);
         return Map.of("name", clean(name, 80), "provider", clean(provider, 40), "key", raw, "keyPrefix", prefix,
-                "permissions", clean(permissions, 500), "expiresAt", expiresAt == null ? "" : expiresAt.toString());
+                "permissions", normalizedPermissions, "expiresAt", expiresAt == null ? "" : expiresAt.toString());
+    }
+
+    /**
+     * 拒绝管理端直接创建 `*` 通配 key（P2-3）。
+     *
+     * <p>`*` 等价于 internal secret 的全部工具权限；数据库已有一把历史通配 key，
+     * 但**新创建**不应再扩大这个面。需要跨 scope 的集成方应显式列出所需 scope，
+     * 例如 `products:read,knowledge:read`。历史 key 的处置见
+     * `docs/architecture-audit/_parts/security-hardening-p1p2.md`，不在代码里自动禁用。
+     */
+    private String normalizePermissions(String permissions) {
+        String cleaned = clean(permissions, 500);
+        if (cleaned.isBlank()) return "intent:analyze";
+        for (String token : cleaned.split(",")) {
+            if ("*".equals(token.trim())) {
+                throw new IllegalArgumentException(
+                        "不允许创建 * 通配权限的 AI Key；请显式列出 scope，例如 products:read,knowledge:read");
+            }
+        }
+        return cleaned;
     }
 
     public List<Map<String, Object>> list() {

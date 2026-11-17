@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { gzipSync, brotliCompressSync, constants } from 'node:zlib'
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { join, extname } from 'node:path'
+import { parseAllowedOrigins, proxyViolation } from './src/api/devProxyGuard.js'
 
 // 启动即加载仓库根 .env 到 process.env（仅填充缺失项，不覆盖真实环境变量）：
 // Vite 只把 .env 注入 import.meta.env，而本配置在 config 阶段读 process.env.SUPPORT_PROXY_SECRET
@@ -52,19 +53,67 @@ function precompressPlugin() {
 // /support/ask 并输出配置指引日志（fail-closed），避免弱口令默认密钥被外部利用。
 const LOCAL_DEV_PROXY_SECRET = process.env.SUPPORT_PROXY_SECRET || ''
 
+// 允许经本机 Vite 代理发起客服请求的来源白名单：与后端 presign 的
+// LANLINK_S3_PRESIGN_ORIGINS 默认值保持一致（localhost 与 127.0.0.1 两种写法）。
+const ALLOWED_PROXY_ORIGINS = parseAllowedOrigins(process.env.LANLINK_S3_PRESIGN_ORIGINS)
+
+/**
+ * 代理入口闸门（开发期安全边界）：
+ *
+ * 历史缺陷：`injectSupportProxyHeaders` 无条件把 Origin 改写成 127.0.0.1:5173，
+ * 于是任意站点（含局域网/隧道）都能借本机 Vite 代理拿到合法的客服媒体 presign，
+ * 绕过后端 `SupportMediaPresignService.requireAllowedOrigin` 的来源白名单；
+ * 同一 `/api` 代理还会把 `/api/actuator/prometheus` 透传到局域网。
+ *
+ * 现在在 proxy.web / proxy.ws 之前判定（比 proxyReq 事件更早，避免半转发）：
+ * 1. 只服务回环来源（本机浏览器），非回环直接 403；
+ * 2. 内部端点（/api/internal/**）与后端指标（/api/actuator/prometheus）直接 404，
+ *    与生产 nginx 的 `location ^~ /api/internal/` / `location = /api/actuator/prometheus` 对齐；
+ * 3. 客服链路的 Origin 必须命中白名单才放行；同源 GET 不带 Origin 时按同源处理，
+ *    不再无条件改写 Origin 让任意站点借用本机代理。
+ */
+function guardProxy(proxy, { requireAllowedOrigin = false } = {}) {
+  const deny = (res, status, message) => {
+    if (res && !res.headersSent) {
+      res.statusCode = status
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+      res.end(message)
+    }
+  }
+  /** 判定逻辑抽到 src/api/devProxyGuard.js，便于 vitest 覆盖 */
+  const violation = (req) => proxyViolation(req, { requireAllowedOrigin, allowedOrigins: ALLOWED_PROXY_ORIGINS })
+  const originalWeb = proxy.web.bind(proxy)
+  proxy.web = (req, res, options) => {
+    const bad = violation(req)
+    if (bad) {
+      deny(res, bad.status, bad.message)
+      return undefined
+    }
+    return originalWeb(req, res, options)
+  }
+  const originalWs = proxy.ws.bind(proxy)
+  proxy.ws = (req, socket, head, options) => {
+    if (violation(req)) {
+      socket.destroy()
+      return undefined
+    }
+    return originalWs(req, socket, head, options)
+  }
+}
+
 // 客服问答接口要求可信代理注入签名头（生产由 Vercel 代理函数负责）。
 // 本地 Vite 代理承担同等职责，否则后端守卫会返回 403，前端显示“客服暂时无法响应”。
 // 签名头用静态 headers 注入：http-proxy 在 setupOutgoing 中无条件合并 options.headers，
 // 比 proxyReq 事件（依赖 socket 时序）更可靠。客户端 IP 为动态值，走 proxyReq 事件补充，
 // 后端对缺失的 IP 头另有 getRemoteAddr 兜底，故偶发缺失也不会导致 403。
 function injectSupportProxyHeaders(proxy) {
+  guardProxy(proxy, { requireAllowedOrigin: true })
   proxy.on('proxyReq', (proxyReq, req) => {
     const rawIp = (req.socket && req.socket.remoteAddress) || 'unknown'
     proxyReq.setHeader('X-Support-Client-IP', rawIp.replace(/^::ffff:/, ''))
     // 归一化 Origin：后端 CORS 白名单只认可 localhost/127.0.0.1。
-    // 用户经局域网 IP（如 192.168.x.x:5173）访问时 Origin 不在白名单，
-    // 会被 Spring CORS 过滤器以 “Invalid CORS request” 403 拦截。本地 Vite 代理
-    // 作为可信代理，把 Origin/Referer 统一改写为白名单来源，使任意 IP 访问均可用。
+    // 注意：只有在 guardProxy 已确认原 Origin 命中白名单时才会走到这里，
+    // 因此改写不会成为「任意站点借用本机代理」的跳板。
     const localOrigin = 'http://127.0.0.1:5173'
     proxyReq.setHeader('Origin', localOrigin)
     const referer = proxyReq.getHeader('Referer')
@@ -85,6 +134,9 @@ const voiceStreamWsProxy = {
    * 前端表现为「语音连接异常」。改为在 upgrade 事件里显式写入。
    */
   configure: (proxy) => {
+    // 与 HTTP 客服链路同一道闸门：WS 升级也要求回环来源 + 白名单 Origin，
+    // 否则任意站点可借用本机 5173 建立语音通道（携带代理密钥）。
+    guardProxy(proxy, { requireAllowedOrigin: true })
     const secret = process.env.SUPPORT_PROXY_SECRET || LOCAL_DEV_PROXY_SECRET
     proxy.on('proxyReqWs', (proxyReq, req) => {
       if (secret) proxyReq.setHeader('X-Support-Proxy-Secret', secret)
@@ -142,6 +194,7 @@ function friendlyProxyError(proxy) {
 // 通用 /api 代理同样做 Origin 归一化，避免登录/注册等接口经局域网 IP 访问时被 CORS 拦截。
 function normalizeApiOrigin(proxy) {
   friendlyProxyError(proxy)
+  guardProxy(proxy)
   proxy.on('proxyReq', (proxyReq) => {
     const localOrigin = 'http://127.0.0.1:5173'
     proxyReq.setHeader('Origin', localOrigin)

@@ -445,8 +445,17 @@ async function speak(text, target) {
   let result
   try {
     result = await synthesize(plain.slice(0, TTS_MAX_CHARS))
-  } catch {
-    // TTS 是增强能力：失败保持静默，文字回答不受影响
+  } catch (err) {
+    // TTS 是增强能力，失败不能让文字回答受影响；但**必须给出可见反馈**。
+    // 历史实现是空 catch，用户点「朗读」完全没反应，只能判断为「朗读功能坏了」。
+    // 只在用户主动触发（target 非空 / 手动点击）时提示，避免自动播报失败刷屏。
+    if (target) {
+      const detail = String(err?.message || '').trim()
+      message.warning(detail && !/暂不可用/.test(detail)
+        ? `语音播报失败：${detail}`
+        : '语音播报暂不可用，请稍后重试或查看文字回答')
+      target.ttsBlocked = true
+    }
     return false
   }
   if (token !== playbackToken || !result?.audioBase64) return false

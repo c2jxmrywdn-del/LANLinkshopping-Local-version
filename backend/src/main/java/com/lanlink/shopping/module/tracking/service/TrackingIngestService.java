@@ -105,11 +105,22 @@ public class TrackingIngestService {
             return new CallbackAck(401, Map.of("success", false, "errorCode", "SIGN_INVALID"));
         }
 
+        // 1.5 渠道适配器可用性前置校验（审计 P1-3）：kdniao/track17/aftership 目前只有 P2 骨架，
+        // 没有适配器。此前实现会先写 PASS 审计再落 failed 事件，等于给"未实现的假通道"盖了
+        // 验签通过的章。这里改为验签后、审计前直接 404，绝不产生 PASS 行。
+        TrackingChannel channel = TrackingChannel.fromCode(providerCode);
+        if (channel == null || adapterRegistry.adapterFor(channel) == null) {
+            logCallback(providerCode, remoteIp, TrackingCallbackLog.VERIFY_FAIL, 404,
+                    desensitizer.summarize(rawBody, PASS_BODY_SNIPPET_CHARS),
+                    "channel adapter not implemented");
+            log.warn("[tracking] 渠道 {} 适配器未实现，拒绝回调（不写 PASS 审计）", providerCode);
+            return new CallbackAck(404, Map.of("success", false, "errorCode", "CHANNEL_NOT_IMPLEMENTED"));
+        }
+
         // 2. PASS 审计行（只存前 2KB 脱敏摘要）
         logCallback(providerCode, remoteIp, TrackingCallbackLog.VERIFY_PASS, 200,
                 desensitizer.summarize(rawBody, PASS_BODY_SNIPPET_CHARS), null);
 
-        TrackingChannel channel = TrackingChannel.fromCode(providerCode);
         // 快递100 官方推送是 application/x-www-form-urlencoded: param=<urlencoded JSON>&sign=...
         // 验签侧已解出 param，但解析侧历史实现只接受 JSON，导致所有真实回调验签通过后
         // 仍被判 failed 并回成功应答（渠道不再重推）。这里统一归一化为 JSON 后再解析。

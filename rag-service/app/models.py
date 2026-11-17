@@ -24,10 +24,18 @@ def _headers() -> dict[str, str]:
     }
 
 
-async def _post(path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
-    url = f"{settings.llm_base_url.rstrip('/')}/{path.lstrip('/')}"
+def _embed_headers() -> dict[str, str]:
+    """Embedding 用独立密钥：LLM 可能切到外部（如 DeepSeek），
+    而 embedding 必须留在本地 bge-m3（DeepSeek 没有 embeddings 端点）。"""
+    key = settings.embed_api_key or settings.llm_api_key
+    return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+
+async def _post(path: str, payload: dict[str, Any], timeout: int,
+                base_url: str | None = None, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    url = f"{(base_url or settings.llm_base_url).rstrip('/')}/{path.lstrip('/')}"
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(url, json=payload, headers=_headers())
+        resp = await client.post(url, json=payload, headers=headers or _headers())
         resp.raise_for_status()
         return resp.json()
 
@@ -63,6 +71,16 @@ async def llm_complete(
         "messages": _flatten_messages(prompt, system_prompt, history_messages),
         "temperature": float(kwargs.get("temperature", 0.2)),
         "stream": False,
+        # 必须关掉网关自带的知识库 RAG。
+        #
+        # 实测根因：ai-gateway 的 /v1/chat/completions 默认 use_kb=True，
+        # 此时它会用客服场景模板（13472 字符）**整段替换**调用方传入的 messages
+        # （ai-gateway/app/main.py 的 build_messages 分支）。
+        # 后果：RAG-Anything 精心拼好的检索上下文被丢弃，模型只能凭模板臆造，
+        # 表现为「答未明确」+ 编造《Platform Policy》来源，实体抽取也因格式不符而失败。
+        #
+        # 同一份文档对照：use_kb=true → graph 0 节点；use_kb=false → 6~13 节点，答案正确。
+        "use_kb": False,
     }
     data = await _post("chat/completions", payload, settings.llm_timeout)
     choices = data.get("choices") or []
@@ -181,6 +199,8 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
             "embeddings",
             {"model": settings.embed_model, "input": chunk},
             settings.embed_timeout,
+            base_url=settings.embed_base_url,
+            headers=_embed_headers(),
         )
         items = data.get("data") or []
         if len(items) != len(chunk):

@@ -651,6 +651,31 @@ export const UI_ZH_EN_EXTRA = {
   '当前设备或浏览器不支持 Google Pay（需 Chrome 且已登录 Google 账号），请改用银行卡支付。':
     'Google Pay is not available on this device/browser (requires Chrome signed in to a Google account). Please pay by card instead.',
   'Stripe 安全托管': 'Secured by Stripe',
+  // ===== 管理后台 · 多模态知识库（AdminMultimodalRag.vue）=====
+  '多模态知识库': 'Multimodal knowledge base',
+  '写入多模态索引': 'Ingest into multimodal index',
+  '文档 ID': 'Document ID',
+  '正文（空行分段，每段独立成块）': 'Body text (blank line separates chunks)',
+  '写入索引': 'Ingest',
+  '单篇约 10-60 秒（含实体抽取）': 'About 10-60s per document (includes entity extraction)',
+  '多模态检索': 'Multimodal retrieval',
+  '检索模式': 'Retrieval mode',
+  '向量': 'Vector',
+  '混合': 'Hybrid',
+  '实体邻域': 'Entity neighborhood',
+  '关系摘要': 'Relation summary',
+  '检索': 'Search',
+  '尚无检索结果': 'No results yet',
+  '最近一次写入': 'Last ingest',
+  '切块数': 'Chunks',
+  '改用文本知识库': 'Use text knowledge base',
+  '重新探测': 'Re-check',
+  '多模态知识库未启用（rag-service 未就绪或未配置密钥）。你仍可使用文本知识库问答。':
+    'Multimodal knowledge base is not enabled (rag-service not ready or missing secret). The text knowledge base is still available.',
+  '多模态知识库服务不可用。你仍可使用文本知识库问答。':
+    'Multimodal knowledge base service is unavailable. The text knowledge base is still available.',
+  '无法连接多模态知识库，请稍后重试。':
+    'Cannot reach the multimodal knowledge base. Please try again later.',
   '支付宝支付成功（模拟环境）': 'Alipay payment successful (sandbox)',
   '微信支付成功（模拟环境）': 'WeChat payment successful (sandbox)',
   '来自个人中心': 'From Account Center',

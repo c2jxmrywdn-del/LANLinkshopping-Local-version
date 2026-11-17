@@ -50,7 +50,7 @@ public class AiToolsInternalControllerTest {
     void testGetSpecs_ReturnsTenToolsForInternalSecret() {
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
         when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
-        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(request.getRemoteAddr()).thenReturn("172.19.0.10");
 
         R<List<Map<String, Object>>> specsResp = controller.getSpecs(request);
         assertNotNull(specsResp);
@@ -112,7 +112,7 @@ public class AiToolsInternalControllerTest {
     void testAuthorizedWithInternalSecret_Success() {
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
         when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
-        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(request.getRemoteAddr()).thenReturn("172.19.0.10");
 
         AiToolDto.SearchProductsRequest req = AiToolDto.SearchProductsRequest.builder()
                 .keyword("螺纹钢")
@@ -161,7 +161,7 @@ public class AiToolsInternalControllerTest {
     void testExecuteEndpoint_Success() {
         HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
         when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
-        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+        when(request.getRemoteAddr()).thenReturn("172.19.0.10");
 
         AiToolDto.GenericToolCallRequest req = AiToolDto.GenericToolCallRequest.builder()
                 .tool("lanlink_search_products")
@@ -179,5 +179,75 @@ public class AiToolsInternalControllerTest {
         assertNotNull(r);
         assertEquals(200, r.getCode());
         assertTrue(r.getData().getSuccess());
+    }
+
+    @Test
+    void testInternalSecretFromNonContainerSubnet_IsRejected() {
+        HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+        when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
+        when(request.getRemoteAddr()).thenReturn("10.1.2.3");
+
+        AiToolDto.SearchProductsRequest req = AiToolDto.SearchProductsRequest.builder()
+                .keyword("阀门")
+                .build();
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.searchProducts(req, request));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void testInternalSecretWithSpoofedForwardedFor_StillUsesRemoteAddr() {
+        HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+        when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
+        when(request.getHeader("X-Forwarded-For")).thenReturn("172.19.0.10");
+        when(request.getRemoteAddr()).thenReturn("10.1.2.3");
+
+        AiToolDto.SearchProductsRequest req = AiToolDto.SearchProductsRequest.builder()
+                .keyword("阀门")
+                .build();
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.searchProducts(req, request));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    void testAllowedCidrs_AreConfigurable() {
+        MockEnvironment custom = new MockEnvironment();
+        custom.setProperty("ai.internal-secret", "test-internal-secret-12345");
+        custom.setProperty("ai.internal.allowed-cidrs", "10.0.0.0/8,127.0.0.1");
+        custom.setProperty("ai.internal.denied-cidrs", "");
+        AiToolGuard guard = new AiToolGuard(custom, apiKeyService);
+        AiToolsInternalController customController = new AiToolsInternalController(toolExecutionService, guard);
+
+        HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+        when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
+        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
+
+        AiToolDto.SearchProductsRequest req = AiToolDto.SearchProductsRequest.builder()
+                .keyword("阀门")
+                .build();
+        when(toolExecutionService.searchProducts(any())).thenReturn(
+                AiToolDto.SearchProductsResponse.builder().total(0L).items(List.of()).keyword("阀门").build());
+
+        R<AiToolDto.SearchProductsResponse> r = customController.searchProducts(req, request);
+        assertEquals(200, r.getCode());
+    }
+
+    @Test
+    void testDockerBridgeGatewayAddress_IsRejectedByDefault() {
+        HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+        when(request.getHeader("X-Internal-Secret")).thenReturn("test-internal-secret-12345");
+        when(request.getRemoteAddr()).thenReturn("172.19.0.1");
+
+        AiToolDto.CreateCartDraftRequest req = AiToolDto.CreateCartDraftRequest.builder()
+                .productId(1L)
+                .quantity(1)
+                .build();
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> controller.createCartDraft(req, request));
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
     }
 }

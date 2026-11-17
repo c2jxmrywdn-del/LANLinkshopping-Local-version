@@ -72,6 +72,36 @@ jobs:
           python -m py_compile conversation_quality.py test_conversation_quality.py
           python -m json.tool conversation_regression_cases.json > /dev/null
 
+  # rag-service 单测：纯逻辑，不连真实 Redis（用 tests/support.py 的 fake 客户端）。
+  # 固定 3.14 是为了与 rag-service/Dockerfile 一致：raganything 的 mineru 依赖带
+  # `python_version < "3.14"` 条件，用 3.12 会拉入 torch+CUDA（数 GB），CI 直接超时。
+  rag-service:
+    name: RAG service unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: rag-service/requirements-dev.txt
+      - name: Install test dependencies
+        working-directory: rag-service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run unit tests
+        working-directory: rag-service
+        env:
+          # 显式给一个空值，确保「未配置密钥 → 503 fail-closed」用例不受宿主环境影响
+          RAG_INTERNAL_SECRET: ''
+        run: python -m pytest -v
+      - name: Enforce vector store coverage floor
+        working-directory: rag-service
+        run: python -m coverage report --include=app/redis_vector_store.py --fail-under=80
+
   ai-gateway:
     name: AI Gateway tests, watchdog self-check & stress benchmark
     runs-on: ubuntu-latest
@@ -99,7 +129,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi uvicorn pydantic jieba pymysql httpx "redis>=5.0" trafilatura pytest pytest-asyncio
+          pip install fastapi uvicorn pydantic jieba pymysql httpx "redis>=5.0" trafilatura protego pytest pytest-asyncio fakeredis
 
       - name: "Run Pytest test suite (153 tests: Hybrid RAG, Semantic Cache, Chaos & Hardening)"
         env:

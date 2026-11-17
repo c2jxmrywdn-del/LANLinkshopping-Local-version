@@ -17,8 +17,16 @@
         </div>
 
         <div class="tile-content">
-          <div class="tile-icon-wrap" :style="{ color: item.iconColor }">
-            <component :is="item.icon" :size="22" />
+          <div class="tile-icon-wrap" :class="item.media.kind === 'logo' ? 'is-logo' : 'is-icon'">
+            <img
+              v-if="item.media.kind === 'logo'"
+              class="brand-logo"
+              :class="item.media.logoClass"
+              :src="item.media.src"
+              :alt="item.media.alt"
+              draggable="false"
+            />
+            <component :is="item.media.icon" v-else :size="22" />
           </div>
 
           <div class="tile-meta">
@@ -29,6 +37,16 @@
               </span>
             </div>
             <p class="tile-desc">{{ item.desc }}</p>
+            <div v-if="item.networks" class="card-networks">
+              <img
+                v-for="n in item.networks"
+                :key="n.alt"
+                class="network-badge"
+                :src="n.src"
+                :alt="n.alt"
+                draggable="false"
+              />
+            </div>
           </div>
 
           <div class="tile-indicator">
@@ -45,11 +63,8 @@
 <script setup>
 import { computed } from 'vue'
 import {
-  CreditCard,
-  QrCode,
   Wallet,
   Building2,
-  Smartphone,
   CalendarCheck2,
   ShieldCheck
 } from 'lucide-vue-next'
@@ -113,16 +128,23 @@ const effectiveTotal = computed(() => {
   return Number(props.orderAmount || 0)
 })
 
+const BRAND = '/payment-brands'
+
 const paymentChannels = computed(() => {
   const channels = [
   {
     key: 'stripe',
     title: 'Stripe 国际卡',
     desc: 'Visa, Mastercard, Amex, 银联国际 (3DS2 强认证)',
-    icon: CreditCard,
-    iconColor: '#6366f1',
+    media: { kind: 'logo', src: `${BRAND}/stripe.svg`, alt: 'Stripe' },
+    networks: [
+      { src: `${BRAND}/visa.svg`, alt: 'Visa' },
+      { src: `${BRAND}/mastercard.svg`, alt: 'Mastercard' },
+      { src: `${BRAND}/americanexpress.svg`, alt: 'American Express' },
+      { src: `${BRAND}/unionpay.svg`, alt: 'UnionPay 银联' }
+    ],
     badge: '全球外卡',
-    badgeClass: 'badge-indigo',
+    badgeClass: 'badge-accent',
     recommended: true
   },
   {
@@ -131,10 +153,15 @@ const paymentChannels = computed(() => {
     desc: props.walletReady
       ? 'Safari / iOS 原生 Touch ID / Face ID 极速免密确认'
       : '需站点完成 Stripe Apple Pay 域名验证后启用（当前不可用）',
-    icon: Smartphone,
-    iconColor: '#0f172a',
+    media: {
+      kind: 'logo',
+      src: `${BRAND}/applepay.svg`,
+      alt: 'Apple Pay',
+      // 官方 glyph 纯黑 (#000000)：深色主题反白；未启用时叠加灰度弱化
+      logoClass: props.walletReady ? 'invert-in-dark' : 'invert-in-dark logo-muted'
+    },
     badge: props.walletReady ? 'iOS/Mac' : '未启用',
-    badgeClass: 'badge-slate',
+    badgeClass: 'badge-neutral',
     disabled: !props.walletReady
   },
   {
@@ -143,39 +170,40 @@ const paymentChannels = computed(() => {
     desc: props.walletReady
       ? 'Android / Chrome 浏览器绑定银行卡一键付款'
       : '需在 Stripe 后台开启 Google Pay 后启用（当前不可用）',
-    icon: Smartphone,
-    iconColor: '#2563eb',
+    media: {
+      kind: 'logo',
+      src: `${BRAND}/googlepay.svg`,
+      alt: 'Google Pay',
+      logoClass: props.walletReady ? '' : 'logo-muted'
+    },
     badge: props.walletReady ? 'Android' : '未启用',
-    badgeClass: 'badge-blue',
+    badgeClass: 'badge-neutral',
     disabled: !props.walletReady
   },
   {
     key: 'alipay',
     title: '支付宝 (Alipay)',
     desc: '电脑网站跳转收银台或手机支付宝 App 扫码',
-    icon: QrCode,
-    iconColor: '#1677ff',
+    media: { kind: 'logo', src: `${BRAND}/alipay.svg`, alt: '支付宝 Alipay' },
     badge: '即时到账',
-    badgeClass: 'badge-sky'
+    badgeClass: 'badge-neutral'
   },
   {
     key: 'wechat',
     title: '微信支付 (WeChat Pay)',
     desc: '微信原生 Native 动态扫码极速结算',
-    icon: QrCode,
-    iconColor: '#07c160',
+    media: { kind: 'logo', src: `${BRAND}/wechat.svg`, alt: '微信支付 WeChat Pay' },
     badge: '扫码付',
-    badgeClass: 'badge-emerald'
+    badgeClass: 'badge-neutral'
   },
   {
     key: 'balance',
     title: '企业钱包 (Wallet)',
     desc: `可用余额 ¥${Number(props.walletBalance || 0).toFixed(2)}`,
-    icon: Wallet,
-    iconColor: '#f59e0b',
+    media: { kind: 'icon', icon: Wallet },
     disabled: Number(props.walletBalance || 0) < effectiveTotal.value && Number(props.walletBalance || 0) <= 0,
     badge: '余额扣减',
-    badgeClass: 'badge-amber'
+    badgeClass: 'badge-neutral'
   },
   {
     key: 'term',
@@ -183,20 +211,18 @@ const paymentChannels = computed(() => {
     desc: props.creditStatus === 'ACTIVE'
       ? `可用授信额度 ¥${Number(props.creditAvailable || 0).toFixed(2)} · 7~15天免息周转`
       : '专属企业授信担保支付 · 需先开通账期',
-    icon: CalendarCheck2,
-    iconColor: '#0ea5e9',
+    media: { kind: 'icon', icon: CalendarCheck2 },
     badge: '先货后款',
-    badgeClass: 'badge-sky',
+    badgeClass: 'badge-neutral',
     disabled: props.creditStatus !== 'ACTIVE' || Number(props.creditAvailable || 0) < effectiveTotal.value
   },
   {
     key: 'corporate',
     title: '对公转账 (Corporate Wire)',
     desc: '大宗工业品银行电汇核验 · 展示供货商认证对公账户',
-    icon: Building2,
-    iconColor: '#0284c7',
+    media: { kind: 'icon', icon: Building2 },
     badge: 'B2B大宗',
-    badgeClass: 'badge-blue'
+    badgeClass: 'badge-accent'
   }
   ]
   return channels.filter((item) => !props.excludeChannels.includes(item.key))
@@ -222,8 +248,8 @@ function selectChannel(item) {
 
 .bento-tile {
   position: relative;
-  background: var(--mc-card, #ffffff);
-  border: 1.5px solid var(--mc-border, #e2e8f0);
+  background: var(--ll-card, #ffffff);
+  border: 1.5px solid var(--ll-border, #e5e7eb);
   border-radius: 14px;
   padding: 14px 16px;
   cursor: pointer;
@@ -256,7 +282,7 @@ function selectChannel(item) {
   position: absolute;
   top: 0;
   right: 0;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: linear-gradient(135deg, var(--ll-primary, #1e6eb8), var(--ll-primary-active, #155b9e));
   color: #ffffff;
   font-size: 10.5px;
   font-weight: 600;
@@ -278,7 +304,7 @@ function selectChannel(item) {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: rgba(241, 245, 249, 0.85);
+  background: var(--ll-surface-inset, rgba(15, 23, 42, 0.04));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -288,6 +314,25 @@ function selectChannel(item) {
 
 .bento-tile:hover .tile-icon-wrap {
   transform: scale(1.06);
+}
+
+/* 平台自有渠道（钱包/账期/对公）：lucide 线性图标统一中性色，不再各自彩色 */
+.tile-icon-wrap.is-icon {
+  color: var(--ll-muted, #64748b);
+}
+
+.brand-logo {
+  height: 22px;
+  width: auto;
+  max-width: 44px;
+  object-fit: contain;
+  display: block;
+}
+
+/* 未启用的钱包渠道：官方 LOGO 灰度弱化 */
+.brand-logo.logo-muted {
+  filter: grayscale(1);
+  opacity: 0.6;
 }
 
 .tile-meta {
@@ -304,7 +349,7 @@ function selectChannel(item) {
 .tile-title {
   font-size: 14px;
   font-weight: 650;
-  color: var(--mc-ink, #0f172a);
+  color: var(--ll-ink, #0f172a);
 }
 
 .tile-badge {
@@ -313,18 +358,70 @@ function selectChannel(item) {
   padding: 1px 7px;
   border-radius: 999px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
-.badge-indigo { background: #e0e7ff; color: #4338ca; }
-.badge-slate { background: #f1f5f9; color: #334155; }
-.badge-blue { background: #dbeafe; color: #1e40af; }
-.badge-sky { background: #e0f2fe; color: #0369a1; }
-.badge-emerald { background: #d1fae5; color: #065f46; }
-.badge-amber { background: #fef3c7; color: #92400e; }
+/* 统一中性 pill：底 inset 面、次级字色（随主题翻转） */
+.badge-neutral {
+  background: var(--ll-surface-inset, rgba(15, 23, 42, 0.04));
+  color: var(--ll-muted, #64748b);
+}
+
+/* 特殊状态（全球外卡 / B2B大宗）：品牌蓝强调 */
+.badge-accent {
+  background: rgba(30, 110, 184, 0.1);
+  color: var(--ll-primary, #1e6eb8);
+}
+
+/* 深色主题：token 之外的官方品牌字形与强调色补暗色适配 */
+[data-theme='dark'] .brand-logo.invert-in-dark {
+  filter: invert(1) brightness(1.55);
+}
+
+[data-theme='dark'] .brand-logo.invert-in-dark.logo-muted {
+  filter: invert(1) brightness(0.75);
+  opacity: 0.55;
+}
+
+[data-theme='dark'] .badge-accent {
+  color: var(--ll-primary-on-dark, #6fb1e4);
+}
+
+/* 深色卡面上垫白色小底，避免深色字标（Visa #1A1F71 等）隐入背景 */
+[data-theme='dark'] .network-badge {
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 3px;
+  padding: 1px 3px;
+  box-sizing: content-box;
+}
+
+/* Stripe 格卡组织小徽章：默认灰度，悬停整格恢复官方彩色 */
+.card-networks {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.network-badge {
+  height: 20px;
+  width: auto;
+  max-width: 40px;
+  object-fit: contain;
+  filter: grayscale(1);
+  opacity: 0.55;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+
+.bento-tile:hover .network-badge,
+.bento-tile.active .network-badge {
+  filter: none;
+  opacity: 1;
+}
 
 .tile-desc {
   font-size: 12px;
-  color: var(--mc-muted, #64748b);
+  color: var(--ll-muted, #64748b);
   margin: 3px 0 0 0;
   line-height: 1.35;
   white-space: nowrap;
@@ -343,7 +440,7 @@ function selectChannel(item) {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1.5px solid #cbd5e1;
+  border: 1.5px solid var(--ll-border-strong, #d5dae2);
   display: flex;
   align-items: center;
   justify-content: center;

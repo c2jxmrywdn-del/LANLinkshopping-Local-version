@@ -3,8 +3,16 @@
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
-      "Resource": ["arn:aws:s3:::products/*"]
+      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Resource": ["arn:aws:s3:::products/*", "arn:aws:s3:::support-media/support/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:DeleteObject"],
+      "Resource": [
+        "arn:aws:s3:::products/attachments/*",
+        "arn:aws:s3:::support-media/support/*"
+      ]
     }
   ]
 }

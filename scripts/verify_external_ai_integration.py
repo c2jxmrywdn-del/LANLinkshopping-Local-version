@@ -42,6 +42,17 @@ HEADERS = {
 }
 
 
+def role_headers(role: str) -> dict:
+    """带显式 Agent 角色的请求头。
+
+    网关 `/v1/ai/tools/execute` 现在有执行期角色校验：未声明角色的写工具
+    （建草稿/过审/审批）一律 403（fail-closed）。本脚本模拟外部采购助手，
+    因此写操作用 `buyer`；只读查询不带头也能过（只读白名单），但显式声明
+    更贴近真实调用方。
+    """
+    return {**HEADERS, "X-Agent-Role": role}
+
+
 def http_post(path: str, data: dict, headers=None) -> tuple[int, dict]:
     url = f"{GATEWAY_URL}{path}"
     h = headers or HEADERS
@@ -161,7 +172,7 @@ def test_3_mall_tools_execution():
         },
         "userId": 1,
         "apply_fence": True
-    })
+    }, role_headers("buyer"))
     assert status == 200, f"Draft failed: {res_draft}"
     dr_data = res_draft.get("data", {})
     draft_id = dr_data.get("draftId")

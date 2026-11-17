@@ -53,6 +53,10 @@
           <template #icon><LineChartOutlined /></template>
           <span>价格监控</span>
         </a-menu-item>
+        <a-menu-item key="admin-multimodal-rag">
+          <template #icon><DatabaseOutlined /></template>
+          <span>多模态知识库</span>
+        </a-menu-item>
         <a-menu-item key="admin-live">
           <template #icon><VideoCameraOutlined /></template>
           <span>直播管理</span>
@@ -215,6 +219,7 @@ import {
   AppstoreOutlined,
   GiftOutlined,
   LineChartOutlined,
+  DatabaseOutlined,
   VideoCameraOutlined,
   DollarCircleOutlined,
   SafetyCertificateOutlined,
@@ -276,6 +281,7 @@ const routeNameMap = {
   'admin-products': '商品管理',
   'admin-campaigns': '活动管理',
   'admin-price-monitor': '价格监控',
+  'admin-multimodal-rag': '多模态知识库',
   'admin-live': '直播管理',
   'admin-payments': '交易管理',
   'admin-credit-terms': '账期审核',

@@ -28,6 +28,10 @@ export class VoiceStreamClient {
     this.onStreamEnd = options.onStreamEnd
     this.onInterrupted = options.onInterrupted
     this.onError = options.onError
+    // 轻量提示（未识别到语音 / 识别超时 / 通道繁忙）：必须与 onError 分开存，
+    // 历史上这里漏了赋值，导致 setState 与 handleServerEvent 里的
+    // `this.onWarning(...)` 恒为 undefined，警告永远不弹，界面停在「正在思考」。
+    this.onWarning = options.onWarning
     this.onStateChange = options.onStateChange
 
     this.ws = null
@@ -97,6 +101,7 @@ export class VoiceStreamClient {
 
     this.ws.onopen = () => {
       this.setState('connected')
+      this.startHeartbeat()
     }
 
     this.ws.onmessage = (event) => {
@@ -116,7 +121,39 @@ export class VoiceStreamClient {
     }
 
     this.ws.onclose = () => {
+      this.stopHeartbeat()
       this.setState('disconnected')
+    }
+  }
+
+  /**
+   * 心跳保活：每 25s 发一次 ping。
+   *
+   * <p>后端 WebSocket 会话与 nginx/Vite 代理都设了读超时（600s）。用户开着对讲
+   * 长时间不说话时，中间设备会按「空闲连接」回收，前端却仍显示「对讲就绪」，
+   * 直到用户按住说话才报「语音连接已断开」。心跳让连接始终有流量，
+   * 同时服务端 `pong` 也顺带作为链路存活探针。
+   */
+  startHeartbeat() {
+    this.stopHeartbeat()
+    this.lastPongAt = Date.now()
+    this.heartbeatTimer = window.setInterval(() => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+      // 两个心跳周期都没有 pong：判定为半开连接（中间设备已回收但未发 FIN），
+      // 主动关闭并让 UI 回到「已断开」，避免用户以为还能说话。
+      if (Date.now() - (this.lastPongAt || 0) > 60000) {
+        console.warn('[voice-stream-client] 心跳超时，主动断开半开连接')
+        try { this.ws.close() } catch (e) { /* ignore */ }
+        return
+      }
+      this.sendJson({ action: 'ping' })
+    }, 25000)
+  }
+
+  stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      window.clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
     }
   }
 
@@ -164,6 +201,9 @@ export class VoiceStreamClient {
         this.player.clear()
         this.leaveThinking()
         if (this.onInterrupted) this.onInterrupted(msg)
+        break
+      case 'pong':
+        this.lastPongAt = Date.now()
         break
       case 'warning':
         this.emptyAsrPending = false
@@ -314,6 +354,7 @@ export class VoiceStreamClient {
   }
 
   close() {
+    this.stopHeartbeat()
     this.cleanupRecordNodes()
     this.player.destroy()
     if (this.ws) {

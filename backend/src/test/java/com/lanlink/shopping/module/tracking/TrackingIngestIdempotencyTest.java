@@ -39,7 +39,7 @@ import static org.mockito.Mockito.when;
  */
 class TrackingIngestIdempotencyTest {
 
-    private static final String TOKEN = "dev-callback-token";
+    private static final String TOKEN = "unit-callback-token-0123456789abcdef";
     private static final String BODY =
             "{\"eventId\":\"EVT-DUP-1\",\"logisticsNo\":\"SF123456789\","
                     + "\"nodes\":[{\"time\":\"2026-11-06 10:00:00\",\"location\":\"苏州\","

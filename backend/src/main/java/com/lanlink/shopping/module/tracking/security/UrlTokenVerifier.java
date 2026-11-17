@@ -32,7 +32,9 @@ public class UrlTokenVerifier implements WebhookVerifier {
     public VerifyResult verify(VerifyRequest request) {
         String expected = properties.getCallbackUrlToken();
         String provided = request.token();
-        if (expected == null || expected.isBlank()) {
+        // 弱 token（空 / dev-callback-token / 短于 16 位）一律 fail-closed：
+        // 历史默认值曾可被任意伪造者直接命中，审计 P1-3 要求不能再作为有效凭据。
+        if (TrackingProperties.isWeakCallbackToken(expected)) {
             return VerifyResult.fail("callback url token not configured");
         }
         if (provided == null || provided.isBlank()) {

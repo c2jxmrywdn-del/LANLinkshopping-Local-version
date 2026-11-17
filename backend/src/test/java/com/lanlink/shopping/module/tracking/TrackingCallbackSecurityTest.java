@@ -50,7 +50,7 @@ import static org.mockito.Mockito.when;
 class TrackingCallbackSecurityTest {
 
     private static final Pattern PHONE = Pattern.compile("1[3-9]\\d{9}");
-    private static final String TOKEN = "dev-callback-token";
+    private static final String TOKEN = "unit-callback-token-0123456789abcdef";
 
     private TrackingEventMapper eventMapper;
     private TrackingCallbackLogMapper callbackLogMapper;

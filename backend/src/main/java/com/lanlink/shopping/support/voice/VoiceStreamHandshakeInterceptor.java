@@ -47,12 +47,21 @@ public class VoiceStreamHandshakeInterceptor implements HandshakeInterceptor {
         String headerSecret = request.getHeaders().getFirst("X-Support-Proxy-Secret");
         String secret = StringUtils.hasText(headerSecret) ? headerSecret : queryParams.get("proxySecret");
 
-        if (StringUtils.hasText(expectedProxySecret)) {
-            if (!expectedProxySecret.equals(secret)) {
-                log.warn("[voice-stream-ws] 握手被拒：代理密钥不匹配或缺失 (remote={})", request.getRemoteAddress());
-                response.setStatusCode(HttpStatus.FORBIDDEN);
-                return false;
-            }
+        // fail-closed：服务端未配置密钥时一律拒绝，与 SupportRequestGuard 的语义保持一致。
+        //
+        // <p>历史实现是 fail-open（`if (hasText(expected)) {...}`）——运维漏配
+        // SUPPORT_PROXY_SECRET 时握手全部放行，等于把实时语音通道（可触发付费 ASR/TTS/LLM）
+        // 完全暴露给公网。这里改为拒绝并打印可操作日志。
+        if (!StringUtils.hasText(expectedProxySecret)) {
+            log.error("[voice-stream-ws] 握手被拒：服务端未配置 support.proxy-secret"
+                    + "（请在 .env 设置 SUPPORT_PROXY_SECRET），实时语音通道不可用");
+            response.setStatusCode(HttpStatus.FORBIDDEN);
+            return false;
+        }
+        if (!expectedProxySecret.equals(secret)) {
+            log.warn("[voice-stream-ws] 握手被拒：代理密钥不匹配或缺失 (remote={})", request.getRemoteAddress());
+            response.setStatusCode(HttpStatus.FORBIDDEN);
+            return false;
         }
 
         // 2. 限流校验

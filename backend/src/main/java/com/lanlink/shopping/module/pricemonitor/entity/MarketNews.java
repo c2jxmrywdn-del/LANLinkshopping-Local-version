@@ -1,6 +1,7 @@
 package com.lanlink.shopping.module.pricemonitor.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -19,6 +20,12 @@ public class MarketNews {
     private String category;
     private String source;
     private String url;
+    /** 原始来源 URL（重定向链首跳，版权溯源；资讯管线回填） */
+    @TableField("origin_url")
+    private String originUrl;
+    /** 正文 sha256 指纹（网关 news 管线判重；uk_news_fingerprint 唯一键兜底） */
+    @TableField("fingerprint")
+    private String fingerprint;
     /** 逗号分隔标签 */
     private String tags;
     /** 1普通 2重要 3头条 */

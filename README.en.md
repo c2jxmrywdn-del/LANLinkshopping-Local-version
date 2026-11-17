@@ -20,7 +20,7 @@
 [![Twitter / X](https://img.shields.io/badge/X-@Orion__Yves__Jude-000000?logo=x&logoColor=white)](https://x.com/Orion_Yves_Jude)
 [![Facebook](https://img.shields.io/badge/Facebook-Jason_Ouyang-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61590596057471)
 
-[Features](#-features--business-matrix) · [Architecture](#-system-architecture--technology-landscape) · [Developer Guide](#-developer-handbook--debugging-guide) · [Quick Start](#-quick-start--environment-setup) · [Core APIs](#-core-api-overview) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [Contact & Declaration](#-contact--originality-declaration) · [License](#-license)
+[Features](#-core-business--advanced-micro-mid-platform-matrix) · [Architecture](#-system-architecture--technology-landscape) · [Architecture Doctrine](#2--architectural-philosophy--design-doctrine) · [Interactive Diagram](./architecture-overview.html) · [Developer Guide](#-developer-handbook--debugging-guide) · [Quick Start](#-quick-start--environment-setup) · [Core APIs](#-core-api-overview-unified-prefix-api) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [Contact & Declaration](#-contact--originality-declaration) · [License](#-license)
 
 **English** · [简体中文](./README.md)
 
@@ -40,15 +40,86 @@ The 2026-11 market-readiness evolution additionally delivers: **merchant fund wi
 
 ### 1. Overall Architecture Topology
 
-- **Presentation layer**: desktop Web + mobile H5 (Vue 3 + Vite 6 + Ant Design Vue) with the Apple-morphic fluid interaction system (Dock / Dynamic Island / FluidTabs / GlowCard / 3D carousel).
-- **Gateway & ingress**: Nginx static acceleration & reverse proxy (ports 5173 / 5174) → Spring Boot `/api` pre-filters; security line of CSRF double-submit, TOTP 2FA, tiered rate-limit, AES-256-GCM and brute-force lockout.
-- **Core business & mid-platform layer**: 16 services from unified auth (RBAC 5-level / Google & Apple OAuth) through merchant onboarding, product & category, tech-service, logistics GIS, order & payment, campaign, subscription, after-sale, live commerce, risk control, A/B testing, legal compliance, merchant exit, finance to order review.
-- **Transactional middleware**: Outbox workers (OrderOutbox & NotifyOutbox) + RabbitMQ 4.0 (consumer dedup, `q.notify.dlq`) + MinIO S3 private-bucket proxy + Mailpit email sandbox.
-- **AI & multi-agent hub**: FastAPI AI gateway → llama.cpp dual-model router (Qwen2.5-7B + Qwen2.5-VL hot-swap) with hardware-aware scheduling; Dify workflows, MCP tool bridge, AI title polish, support RAG, SQLBot Text-to-SQL and local fine-tuning.
-- **Data & storage**: MySQL 8.0 (InnoDB row locks), Redis Stack 7.4 (HNSW vector index `aikb-idx` + cache + rate counters), bge-m3 local 1024-dim embeddings.
-- **Observability & resilience**: Prometheus metrics, Grafana dashboards, admin real-time metrics screen, chaos drills & daemon health watchdog across all layers.
+> 🌐 **Interactive Full-Stack Architecture Diagram (Archify Showcase)**:  
+> Built and validated with the built-in `archify` engine (100% pass across `validate`, `deliver`, `check`, and headless browser `browser-check` gates). Features **dark/light theme switching, live animated flows, path tracing, and exploration of 24 nodes across 7 security boundaries**. Open locally: [`architecture-overview.html`](file:///D:/Desktop/LANLinkShopping/Shopping/architecture-overview.html) (source candidate: [`.archify/architecture-overview/candidate.json`](file:///D:/Desktop/LANLinkShopping/Shopping/.archify/architecture-overview/candidate.json)).
 
-### 2. Technology Stack Summary
+```mermaid
+flowchart TD
+    subgraph Client["1. Presentation Tier · Industrial Ergonomics"]
+        WebDesktop["Desktop Web Mid-Platform (Vue 3 + Vite 6 + AntD 4.x)"]
+        WebMobile["Mobile H5 Mall (Fluid Adaptive)"]
+        AppleUI["Apple HIG Fluid Morphiology (Dock / Dynamic Island / FluidTabs / GlowCard)"]
+    end
+
+    subgraph Ingress["2. Security Ingress Tier"]
+        NginxProxy["Nginx Reverse Proxy (SSL Offloading & Static Acceleration)"]
+        SecurityGateway["Spring Boot Security Gateway (GATEWAY_STRICT_ROLE / CSRF / TOTP 2FA / Rate Limit)"]
+    end
+
+    subgraph BizHub["3. Business Mid-Platform (BizHub)"]
+        TradeCore["Core Commerce (Auth / Merchant Onboarding >= 100k Capital / 24-Sector Mall / Cart / Checkout / Live)"]
+        IndustryHub["Industrial Mid-Platform (Tech Contract Milestones / TRL Appraisal / Expert Consult / GIS Trunk Dispatch)"]
+        FinanceLedger["Finance & Compliance Hub (Escrow Ledger / Anti-Second-Clearing Payout / Order Review / Merchant Exit)"]
+    end
+
+    subgraph Middleware["4. Middleware & Async Pipeline"]
+        OutboxWorker["Transactional Outbox Worker (At-Least-Once Delivery)"]
+        RabbitMQCluster["RabbitMQ 4.0 Message Bus (Topic Exchange / Message ID Dedup / q.notify.dlq)"]
+        MinIOS3["MinIO S3 Storage (Private Buckets / Read-Only Pre-Signed Reverse Proxy)"]
+        MailpitSandbox["Mailpit Email Sandbox (Dev Verification Interception)"]
+    end
+
+    subgraph AIHub["5. AI & Multi-Agent Hub"]
+        FastApiGW["FastAPI AI Gateway (Port 8090 / OpenAI Spec / Tool Calling / Streaming Voice Sentence Boundary)"]
+        LlamaRouter["llama.cpp Dual-Model Router (Qwen2.5-7B Text + Qwen2.5-VL Visual Hot-Swap / Hardware Scheduler)"]
+        RagEngine["LightRAG & Redis Stack HNSW (BGE-M3 1024-dim Embeddings / KB Outbox Sync)"]
+        SQLBotEngine["SQLBot Data Analysis (Text-to-SQL Docker Network 8000 Isolation / Read-Only sqlbot_ro)"]
+        DifyOrchestrator["Dify Multi-Agent Workflows (Procurement Planning / Sourcing Comparison / After-Sale Triage)"]
+        McpBridge["Standard MCP Tool Bridge (lanlink_kb_search / lanlink_ask_data)"]
+    end
+
+    subgraph DataStore["6. Data Persistence Tier"]
+        MySQLPrimary["MySQL 8.0 Primary (InnoDB Row Locks / ACID Guarantees)"]
+        RedisCluster["Redis Stack 7.4 (HNSW Vector Index / Tier 1+2 Semantic Cache / Rate Limits)"]
+    end
+
+    subgraph SRE["7. Observability & Chaos Engineering"]
+        PrometheusObs["Prometheus (Metrics Scraping / SLO Rules)"]
+        AlertManagerObs["Alertmanager (DingTalk & Feishu Webhook Alerts)"]
+        GrafanaDashboard["Grafana Unified Dashboard (QPS / P99 Latency / GPU VRAM & Temp)"]
+        ChaosWatchdog["Daemon Watchdog & Chaos Drills (Self-Healing / Fault Injection)"]
+    end
+
+    Client --> Ingress
+    Ingress --> BizHub
+    Ingress -.-> AIHub
+    BizHub --> Middleware
+    Middleware --> BizHub
+    BizHub --> MinIOS3
+    BizHub --> MySQLPrimary
+    BizHub --> RedisCluster
+    BizHub <--> AIHub
+    AIHub --> RedisCluster
+    SQLBotEngine --> MySQLPrimary
+    BizHub -.-> SRE
+    AIHub -.-> SRE
+```
+
+---
+
+### 2. 💡 Architectural Philosophy & Design Doctrine
+
+1. **Aggregated Unified Industrial Mid-Platform**: Unifies bulk physical goods with high-stakes technology services (TRL appraisal, pilot testing, milestone-based escrow). Implements a high-cohesion **Modular Monolith** via DDD, preserving clear bounded contexts without premature microservice RPC latency.
+2. **Transactional Outbox & Eventual Consistency**: Atomically commits business mutations and outbox entries in single local transactions with deduplication (`ON DUPLICATE KEY UPDATE`), drained asynchronously by lease-locked background workers with exponential backoff and dead-letter queues (`q.notify.dlq`).
+3. **Hardware-Aware Adaptive Edge-Cloud AI**: Squeezes enterprise-grade multimodal AI onto consumer hardware (RTX 4070 Laptop 8GB VRAM) via live VRAM sensing, llama.cpp hot-swappable dual models (Qwen2.5-7B/VL), CPU offloading with 120s hysteresis cooling, two-tier semantic caching (<0.5ms SHA-256 + 0.96 cosine HNSW), and a lightweight ~334MB RAG container.
+4. **Zero-Trust Financial Boundary & Anti-Second-Clearing**: Maintains strict regulatory compliance with zero platform fund pooling. Escrow funds flow directly through third-party banking custody; merchant payouts use offline corporate bank records with pessimistic row locks (`SELECT ... FOR UPDATE`), append-only ledger entries (`balance_after`), and RSA-2048 + AES-256-GCM JWE envelope encryption.
+5. **Spatio-Temporal Logistics GIS & Observability**: Eliminates 100~700m coordinate drift via real-time WGS84-GCJ02-BD09 transformations on the client, predicts trunk timelines using Haversine formulas with detour factors, and enforces a multi-tier watchdog (>24h yellow warning, >48h red critical SLA ticket).
+6. **Strict Least-Privilege & Defense-in-Depth**: Closes agent privilege escalation with strict key-role bindings (`GATEWAY_STRICT_ROLE=1`), physically strips write tools from unauthenticated OpenAPI schemas, isolates SQLBot within an unmapped internal Docker bridge using a read-only DB account (`sqlbot_ro`), and enforces 6-gate exit verifications under e-commerce law.
+7. **Industrial Ergonomics & Apple HIG Fluid Aesthetics**: Redefines industrial software with Apple Human Interface Guidelines—fluid floating Dock, Dynamic Island status capsule, interactive GlowBorder cards, 100% pure-vector Lucide SVG governance, and full-duplex WebSocket streaming voice with low-latency sentence boundary detection (4ms barge-in).
+
+---
+
+### 3. Technology Stack Summary
 
 | Dimension | Technology | Version / Spec | Role |
 |------|---------|-----------|----------------|
@@ -181,10 +252,11 @@ Eleven hardening batches: analytics dual-gating (Amplitude consent + opt-out, si
 
 ### 18. SQLBot Intelligent Data-Query Integration (LLM + RAG Text-to-SQL, 2026-11)
 
-[dataease/SQLBot](https://github.com/dataease/SQLBot) as the platform's conversational data-analysis engine: ask questions in natural language, get generated SQL and executed results (container UI `127.0.0.1:8000`, built-in MCP at `8001`).
+[dataease/SQLBot](https://github.com/dataease/SQLBot) as the platform's conversational data-analysis engine: ask questions in natural language, get generated SQL and executed results. SQLBot's UI `8000` and built-in MCP `8001` are **not published to the host by default**; the gateway reaches it as `http://sqlbot:8000` inside `shopping_default`. Use `docker exec` for troubleshooting (`127.0.0.1:8000/8001` inside the container).
 
-- Data source: `lanlink_shopping` database via dedicated read-only account `sqlbot_ro` (SELECT on business tables only; 6 core tables, 144 fields synced); gateway registers the `lanlink_ask_data` MCP tool so external AI models query platform data via `/v1/chat/completions` (tools=auto).
-- LLM wiring: SQLBot model points to the local [`lanlink-ai-gateway`](ai-gateway/) with `extra_body: {"use_kb": false}` to protect Text-to-SQL prompts from gateway-side RAG rewriting; semantic-cache write gate disabled for sql_gen requests — 10/10 consecutive acceptance (5 direct + 5 MCP-chain).
+- Data source: `lanlink_shopping` via dedicated read-only account `sqlbot_ro` (`SELECT` only, password `SQLBOT_DB_PASSWORD`); gateway registers the `lanlink_ask_data` MCP tool so external AI models query platform data via `/v1/chat/completions` (tools=auto).
+- LLM wiring: SQLBot uses `SQLBOT_GATEWAY_KEY` — a separate gateway key bound to the read-only `support` role. Never reuse `AI_GATEWAY_API_KEY`: SQLBot's admin API returns `ai_model.api_key` in plaintext. The model points to [`lanlink-ai-gateway`](ai-gateway/) with `extra_body: {"use_kb": false}` to protect Text-to-SQL prompts from RAG rewriting.
+- Admin password: stored only in root `.env` as `SQLBOT_PASSWORD`. Change the image default through `POST /api/v1/login/change-pwd`; it persists in SQLBot's PostgreSQL across restarts.
 
 ---
 
@@ -203,8 +275,8 @@ Eleven hardening batches: analytics dual-gating (Amplitude consent + opt-out, si
 | **9001** | MinIO Web console | `minio` (Docker) | `127.0.0.1` | Object storage management panel |
 | **5672** | RabbitMQ AMQP | `rabbitmq` (Docker) | `127.0.0.1` | AMQP client connections |
 | **15672** | RabbitMQ management | `rabbitmq` (Docker) | `127.0.0.1` | Queue monitoring, DLQ `q.notify.dlq` visibility |
-| **8000** | SQLBot data-query UI + API | `sqlbot` (Docker) | `127.0.0.1` | Conversational data analysis (LLM + RAG Text-to-SQL) |
-| **8001** | SQLBot MCP service | `sqlbot` (Docker) | `127.0.0.1` | SQLBot MCP (SSE) for external AI model access |
+| **8000** | SQLBot data-query UI + API | `sqlbot` (Docker) | container network only | No host publish; gateway uses `sqlbot:8000` |
+| **8001** | SQLBot MCP service | `sqlbot` (Docker) | container network only | No host publish; use `docker exec` |
 | **9093** | Alertmanager UI | `alertmanager` (Docker) | `127.0.0.1` | Alert console (delivery via DingTalk/Feishu adapters) |
 | **18123** | llama.cpp inference | `llama-cpp` (Docker) | `127.0.0.1` | Container 8123 → host 18123, GGUF dual-model inference |
 | **1025** | Mailpit SMTP | `mailpit` (Docker) | `127.0.0.1` | Local test email delivery |
@@ -260,7 +332,7 @@ powershell -ExecutionPolicy Bypass -File start-local-env.ps1
 # 1. Start middleware containers (Redis Stack, MinIO, RabbitMQ, Mailpit)
 docker compose up -d
 
-# 2. (Optional) SQLBot data-query service — UI http://127.0.0.1:8000 (admin / SQLBot@123456), MCP :8001
+# 2. (Optional) SQLBot data-query service — no host ports; gateway reaches sqlbot:8000
 docker compose -f docker-compose.sqlbot.yml up -d
 
 # 3. Initialize database schema
@@ -298,7 +370,7 @@ Visit **`http://localhost:5174`** (or `http://localhost:5173`). Mobile devices o
 | **`13700000002`** | **Merchant (MERCHANT)** | Merchant center workbench, industrial product publishing, AI title polish, streaming console, outbound shipping & trajectory entry, finance reconciliation. |
 | **`13900000001`** | **Buyer (BUYER)** | Browse 24-industry mall, collaborative recommendations, live shop-while-streaming, campaign coupons & spend-threshold checkout, credit-term application, tech-service tickets & after-sale evidence. |
 
-> SQLBot data-query admin console uses a separate account: `admin / SQLBot@123456` (image default; not linked to platform demo accounts).
+> SQLBot's admin password is `SQLBOT_PASSWORD` in the root `.env` (change the image default via `/api/v1/login/change-pwd`). It is not linked to platform demo accounts.
 
 ---
 

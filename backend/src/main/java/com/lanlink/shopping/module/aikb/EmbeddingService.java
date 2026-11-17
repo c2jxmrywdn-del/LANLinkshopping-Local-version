@@ -516,7 +516,12 @@ public class EmbeddingService {
                     .timeout(Duration.ofSeconds(timeoutSeconds))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body), StandardCharsets.UTF_8));
-            if (bearer != null) b.header("Authorization", bearer);
+            // 统一补齐 Bearer 前缀：外部 OpenAI 兼容渠道（AI_CHAT_*）传的是裸 API Key，
+            // 而网关/嵌入链路传的已是 "Bearer xxx"。历史上这里直接写 header(bearer)，
+            // 导致 MiMo/DeepSeek 判定为无效密钥返回 401，日志刷成
+            // `[aikb] chat via mimo-v2.6-flash http 401`，资讯摘要与意图分类全部静默降级。
+            String authHeader = normalizeBearer(bearer);
+            if (authHeader != null) b.header("Authorization", authHeader);
             HttpRequest req = b.build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
@@ -526,13 +531,27 @@ public class EmbeddingService {
             JsonNode root = objectMapper.readTree(resp.body());
             String content = root.path("choices").path(0).path("message").path("content").asText("");
             if (content.isBlank()) return null;
-            provider = (bearer != null ? "gateway:" : "ollama:") + model;
+            provider = (authHeader != null ? "gateway:" : "ollama:") + model;
             lastChatBackend.set(provider);
             return content.trim();
         } catch (Exception e) {
             log.warn("[aikb] chat via {} failed: {}", model, e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * 归一化 Authorization 头：裸 Key 自动补 `Bearer `，已带前缀的保持原样，空白返回 null。
+     *
+     * <p>两套调用方口径不同：网关链路调用方手工拼了 "Bearer "，外部 OpenAI 兼容渠道
+     * 只传 env 里的裸 Key。集中归一化避免再出现「同一方法两处口径不一致」导致的 401。
+     */
+    static String normalizeBearer(String bearer) {
+        if (bearer == null) return null;
+        String trimmed = bearer.trim();
+        if (trimmed.isEmpty()) return null;
+        if (trimmed.regionMatches(true, 0, "Bearer ", 0, 7)) return trimmed;
+        return "Bearer " + trimmed;
     }
 
     // ==================== 嵌入缓存读写（Redis 不可用时透明降级） ====================

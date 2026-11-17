@@ -3,6 +3,7 @@ import { start } from "workflow/api";
 import { importProductsWorkflow } from "../../../workflows/import-products";
 import { normalizeItems, parseCsv } from "../../../lib/csv";
 import { corsHeaders } from "../../../lib/cors";
+import { authorizeImport } from "../../../lib/auth";
 import type { ImportItem } from "../../../lib/types";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +25,26 @@ function validateItems(items: ImportItem[]): string[] {
 }
 
 export async function OPTIONS(req: NextRequest) {
-  return new NextResponse(null, { status: 204, headers: corsHeaders(req.headers.get("origin")) });
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders(req.headers.get("origin")),
+      // 预检必须放行自定义头，否则浏览器会拦掉 X-Import-Token
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Import-Token",
+    },
+  });
 }
 
 export async function POST(req: NextRequest) {
   const origin = req.headers.get("origin");
+  // 鉴权先于任何解析：未认证请求不接触 JSON 解析、校验与工作流启动（审计 P1-4）
+  const denied = authorizeImport(req.headers);
+  if (denied) {
+    return NextResponse.json(
+      { error: denied.error },
+      { status: denied.status, headers: corsHeaders(origin) },
+    );
+  }
   try {
     const payload = (await req.json()) as { format?: string; data?: unknown };
     const items =

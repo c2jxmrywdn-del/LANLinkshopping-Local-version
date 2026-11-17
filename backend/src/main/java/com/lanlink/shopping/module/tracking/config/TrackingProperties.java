@@ -1,7 +1,12 @@
 package com.lanlink.shopping.module.tracking.config;
 
+import jakarta.annotation.PostConstruct;
 import lombok.Data;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -16,6 +21,26 @@ import java.util.Map;
 @Component
 @ConfigurationProperties(prefix = "logistics.tracking")
 public class TrackingProperties {
+
+    private static final Logger log = LoggerFactory.getLogger(TrackingProperties.class);
+
+    /** 历史默认值：仅用于识别"仍是演示默认值"，不再作为可用凭据（UrlTokenVerifier 会直接拒绝） */
+    public static final String LEGACY_DEV_TOKEN = "dev-callback-token";
+
+    /** 回调 URL token 最小长度：短于该值视为弱凭据 */
+    public static final int MIN_CALLBACK_TOKEN_LENGTH = 16;
+
+    /**
+     * 占位符标记：`.env.example` 里的 `your_callback_url_token_here` 这类值
+     * 长度足够但显然不是真实随机串。只做「明显占位」识别，不做熵估算——
+     * 熵估算容易把真实可用的 hex 误判。
+     */
+    private static final String[] PLACEHOLDER_MARKERS = {
+            "your_", "_here", "changeme", "change_me", "placeholder", "example.com",
+    };
+
+    @Autowired(required = false)
+    private Environment environment;
 
     /** 跟踪链路总开关（P4 灰度演练用：false 时回调 410/listener 短路，ship 主流程零影响） */
     private boolean enabled = true;
@@ -58,9 +83,10 @@ public class TrackingProperties {
 
     /**
      * 回调 URL 路径段共享 token（Mock/17TRACK 共用，UrlTokenVerifier 校验）。
-     * 默认值仅本地 dev 演示可用；生产必须经 TRACKING_CALLBACK_URL_TOKEN 换长随机 hex。
+     * 无内置默认值：未配置即 fail-closed（UrlTokenVerifier 拒绝全部 URL-token 渠道回调）。
+     * 生产必须经 TRACKING_CALLBACK_URL_TOKEN 注入 32 位以上随机 hex。
      */
-    private String callbackUrlToken = "dev-callback-token";
+    private String callbackUrlToken;
 
     /**
      * 承运商编码 → 渠道编码路由表（如 SF→kuaidi100）。
@@ -69,6 +95,52 @@ public class TrackingProperties {
     private Map<String, String> channelRoutes = new LinkedHashMap<>();
 
     private Kuaidi100 kuaidi100 = new Kuaidi100();
+
+    /**
+     * 弱 token 判定：空 / 历史默认值 / 短于 16 位。
+     *
+     * <p>静态方法便于单测直接断言，不依赖 Spring 上下文。
+     */
+    public static boolean isWeakCallbackToken(String token) {
+        if (token == null || token.isBlank()) {
+            return true;
+        }
+        String trimmed = token.trim();
+        if (LEGACY_DEV_TOKEN.equalsIgnoreCase(trimmed)) {
+            return true;
+        }
+        String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+        for (String marker : PLACEHOLDER_MARKERS) {
+            if (lower.contains(marker)) {
+                return true;
+            }
+        }
+        return trimmed.length() < MIN_CALLBACK_TOKEN_LENGTH;
+    }
+
+    /**
+     * 启动期校验：prod 下弱 token 直接 fail-fast；dev 下仅告警。
+     *
+     * <p>真正的拦截在 {@code UrlTokenVerifier}：无论 profile，弱 token 一律验签失败，
+     * 因此 dev 启动不会被打断，但历史默认值也无法再伪造回调（审计 P1-3）。
+     */
+    @PostConstruct
+    void validateCallbackToken() {
+        if (!enabled) {
+            return;
+        }
+        boolean prod = environment != null
+                && java.util.Arrays.asList(environment.getActiveProfiles()).contains("prod");
+        if (isWeakCallbackToken(callbackUrlToken)) {
+            String message = "logistics.tracking.callback-url-token 未配置或过弱（需 >= "
+                    + MIN_CALLBACK_TOKEN_LENGTH + " 位随机串，且不得为 " + LEGACY_DEV_TOKEN + "）；"
+                    + "URL-token 渠道（mock/track17）回调将被拒绝";
+            if (prod) {
+                throw new IllegalStateException(message + "。生产环境禁止使用默认/短 token。");
+            }
+            log.warn("[tracking] {}（当前 profile 非 prod，仅告警；回调仍会被验签拒绝）", message);
+        }
+    }
 
     @Data
     public static class Kuaidi100 {

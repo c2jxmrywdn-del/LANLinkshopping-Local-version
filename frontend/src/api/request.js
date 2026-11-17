@@ -118,7 +118,19 @@ request.interceptors.response.use(
         // 改为轻量 toast，用户可继续操作/重试（本地 AI 请求已单独放宽超时）。
         // silent 请求（埋点/遥测/错误上报）拥塞时不打扰用户。
         if (!res.config.silent) notify(body.message || '系统繁忙，请稍后重试', 'warning', 'll-api-error')
-        return Promise.reject(new Error(body.message || '系统繁忙'))
+        /*
+         * 必须把业务码挂到 error 上。
+         *
+         * 后端有些端点用 `HTTP 200 + body.code=503` 表达"依赖服务不可用"
+         * （例如多模态 RAG 的 /multimodal/*，因为它是可选增强能力）。
+         * 如果只 reject 一个 Error，调用方拿到的是纯字符串消息，
+         * 无法区分"真的系统繁忙"和"该功能未启用"，只能统一弹通用提示。
+         * 挂 bizCode 后，页面可以据此展示"改用文本知识库"这类可行动引导。
+         */
+        const busyErr = new Error(body.message || '系统繁忙')
+        busyErr.bizCode = Number(body.code)
+        busyErr.bizBody = body
+        return Promise.reject(busyErr)
       }
       // CSRF 令牌失效：换新后重放一次；覆盖账号中心与管理员营销邮件接口
       if (isCsrfFailure(body.code, body) && !res.config._retried && isCsrfProtectedMutation(res.config)) {
@@ -138,13 +150,21 @@ request.interceptors.response.use(
           router.push({ path: '/login', query: redirect ? { redirect } : {} })
         }
       }
-      return Promise.reject(new Error(body.message))
+      const bizErr = new Error(body.message)
+      bizErr.bizCode = Number(body.code)
+      bizErr.bizBody = body
+      return Promise.reject(bizErr)
     }
     hideBusyLoading(180)
     return body.data
   },
   (err) => {
     const resp = err.response
+    // 统一把业务码/HTTP 状态挂到 error 上，供调用方按码分流（见上方 2xx 分支的说明）
+    if (err.bizCode === undefined) {
+      const bodyCode = resp && resp.data && typeof resp.data === 'object' ? resp.data.code : undefined
+      err.bizCode = bodyCode !== undefined ? Number(bodyCode) : (resp ? Number(resp.status) : 0)
+    }
     // 局部超时/网络中断不再弹全屏"系统繁忙"遮罩：AI 推理本身可能较慢，超时只提示即可，
     // 只有服务端明确 429/502/503/504（真拥塞）才显示排队遮罩，避免误伤正常长请求。
     const isCongested = !!(resp && [429, 502, 503, 504].includes(Number(resp.status)))

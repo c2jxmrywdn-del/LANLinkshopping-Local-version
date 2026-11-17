@@ -19,6 +19,34 @@ public class SentenceBoundaryDetector {
     private static final int MIN_WEAK_CHARS = 14;
     private static final int MAX_HUNGER_CHARS = 30;
 
+    /**
+     * 弱标点切句的「伪边界」豁免。
+     *
+     * <p>回归缺陷：`:` / `,` 出现在 URL、端口、金额、时间里时会被当成句边界，
+     * 实测 `https://example.com:8080/a,b` 被切成 `https:` + `//example.com:` + `8080/a,`，
+     * `$1,299.99` 被切成 `$1,` + `299.99`。切碎后每片都单独送去 TTS，
+     * 播报会变成「https 冒号 斜杠 斜杠…」这种无法理解的读法。
+     *
+     * <p>判定规则：弱标点前后紧邻字母/数字/斜杠/点/美元符号时不切。
+     */
+    private static boolean isFalseWeakBoundary(CharSequence buf, int idx) {
+        char punct = buf.charAt(idx);
+        char prev = idx > 0 ? buf.charAt(idx - 1) : '\0';
+        char next = idx + 1 < buf.length() ? buf.charAt(idx + 1) : '\0';
+        if (punct == ':' || punct == ':') {
+            // 协议前缀 `https:` / 端口 `:8080` / 时间 `10:30`
+            boolean prevScheme = Character.isLetter(prev);
+            boolean nextDigit = Character.isDigit(next) || next == '/';
+            boolean prevDigit = Character.isDigit(prev);
+            return prevScheme || nextDigit || prevDigit;
+        }
+        if (punct == ',' || punct == '，') {
+            // 金额千分位 `1,299` / 列表分隔符后紧跟数字
+            return Character.isDigit(prev) && Character.isDigit(next);
+        }
+        return false;
+    }
+
     private final StringBuilder buffer = new StringBuilder();
     private boolean isFirstSentence = true;
 
@@ -91,7 +119,7 @@ public class SentenceBoundaryDetector {
             }
             // 弱标点：逗号、分号
             else if (isWeakPunctuation(c)) {
-                if (i + 1 >= weakThreshold) {
+                if (i + 1 >= weakThreshold && !isFalseWeakBoundary(buffer, i)) {
                     return i + 1;
                 }
             }
@@ -102,7 +130,7 @@ public class SentenceBoundaryDetector {
             // 优先在最近的空格或符号处截断
             for (int i = len - 1; i >= strongThreshold; i--) {
                 char c = buffer.charAt(i);
-                if (Character.isWhitespace(c) || isAnyPunctuation(c)) {
+                if ((Character.isWhitespace(c) || isAnyPunctuation(c)) && !isFalseWeakBoundary(buffer, i)) {
                     return i + 1;
                 }
             }

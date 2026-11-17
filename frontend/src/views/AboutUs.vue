@@ -440,8 +440,8 @@ const sections = [
   { key: 'company', index: '01', title: '平台定位' },
   { key: 'join', index: '04', title: '加入我们' },
   { key: 'contact', index: '05', title: '联系我们' },
-  { key: 'terms', index: '06', title: '服务条款' },
-  { key: 'ip', index: '07', title: '知识产权' }
+  { key: 'ip', index: '06', title: '知识产权' },
+  { key: 'terms', index: '07', title: '服务条款' }
 ]
 
 const capabilities = [

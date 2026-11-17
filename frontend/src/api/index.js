@@ -192,7 +192,20 @@ export const kbApi = {
   fetchExternal: (limit = 30) => request.post('/admin/kb/fetch-external', null, { params: { limit }, timeout: 180000 }),
   entries: (params) => request.get('/admin/kb/entries', { params }),
   addEntry: (payload) => request.post('/admin/kb/entry', payload),
-  deleteEntry: (id) => request.delete(`/admin/kb/entry/${encodeURIComponent(id)}`)
+  deleteEntry: (id) => request.delete(`/admin/kb/entry/${encodeURIComponent(id)}`),
+
+  // ===== 多模态 RAG（RAG-Anything，独立索引，与上面文本知识库并存）=====
+  //
+  // 注意三点（都踩过）：
+  //  1. `multimodalHealth` 用 silent：这个页面会在挂载时探测一次，
+  //     服务没启用是常态（可选增强能力），不该每次进页面都弹 toast；
+  //  2. 后端用 `HTTP 200 + body.code=503` 表达"rag-service 不可用"，
+  //     request.js 已把业务码挂到 `err.bizCode`，页面据此判断而非看 HTTP 状态；
+  //  3. 写入要过 LightRAG 的实体抽取（LLM 调用），单篇可能几十秒，
+  //     超时给到 330s；查询 180s 与现有 kbApi.ask 一致。
+  multimodalHealth: () => request.get('/admin/kb/multimodal/health', { silent: true, timeout: 20000 }),
+  multimodalIngest: (payload) => request.post('/admin/kb/multimodal/ingest', payload, { timeout: 330000 }),
+  multimodalQuery: (payload) => request.post('/admin/kb/multimodal/query', payload, { timeout: 180000 })
 }
 
 export const authApi = {
@@ -965,19 +978,28 @@ export const designApi = {
 // 独立 Next.js 应用（仓库内 workflow/ 子目录），基址由 VITE_WORKFLOW_URL 配置。
 // 该服务用浏览器原生 fetch 调用，不复用 Spring Boot 的 axios request（不同域、无 Cookie）。
 const WORKFLOW_BASE = import.meta.env.VITE_WORKFLOW_URL || 'http://localhost:3000'
+// 导入接口鉴权（审计 P1-4）：workflow 侧 WORKFLOW_IMPORT_TOKEN 的同一值。
+// 本地开发写在 frontend/.env.local；生产由 nginx 反代注入 X-Import-Token，
+// 此时这里保持为空即可（服务端会补头）。
+const WORKFLOW_IMPORT_TOKEN = import.meta.env.VITE_WORKFLOW_IMPORT_TOKEN || ''
+const workflowHeaders = () => ({
+  ...(WORKFLOW_IMPORT_TOKEN ? { 'X-Import-Token': WORKFLOW_IMPORT_TOKEN } : {}),
+})
 export const workflowApi = {
   // 启动商品批量导入工作流：payload = { format: 'json' | 'csv', data: 数组 或 CSV 文本 }
   startProductImport: async (payload) => {
     const res = await fetch(`${WORKFLOW_BASE}/api/import`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...workflowHeaders() },
       body: JSON.stringify(payload),
     })
     return res.json()
   },
   // 查询工作流运行状态：{ runId, status, result?, error? }
   importStatus: async (runId) => {
-    const res = await fetch(`${WORKFLOW_BASE}/api/import/${encodeURIComponent(runId)}`)
+    const res = await fetch(`${WORKFLOW_BASE}/api/import/${encodeURIComponent(runId)}`, {
+      headers: workflowHeaders(),
+    })
     return res.json()
   },
 }

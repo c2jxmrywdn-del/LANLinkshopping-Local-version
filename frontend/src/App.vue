@@ -15,6 +15,8 @@
       </Transition>
     </router-view>
     <CookieConsent />
+    <!-- 全站底部署名水印：固定在视口底部，覆盖主站/后台/商户中心/登录页等所有路由 -->
+    <AppWatermark />
     <!-- 语言切换：过渡动画页与登录/注册页不提供手动入口，由多维特征自动识别（见 main.js → applyAutoLocale）；
          登录进入主系统后，切换控件在各布局头部内保持正常可用 -->
     <SplashScreen v-if="showSplash" @done="showSplash = false" />
@@ -29,6 +31,7 @@ import enUS from 'ant-design-vue/es/locale/en_US'
 import { locale } from './i18n'
 import SplashScreen from './components/SplashScreen.vue'
 import CookieConsent from './components/CookieConsent.vue'
+import AppWatermark from './components/ui/AppWatermark.vue'
 import { useUserStore } from './store/user'
 import { useSettingsStore } from './store/settings'
 // 豁免封装收口：fetchCsrfToken 是 request.js 显式导出的引导期接口（封装层自身公共面），非绕行直连

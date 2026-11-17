@@ -30,6 +30,41 @@ GATEWAY_KEY = (
     or "lanlink-local-ai-gateway"
 ).strip()
 
+
+def env_value(name: str) -> str:
+    """从根 .env 读一个变量（脚本常在宿主直接跑，环境变量未必导出）。"""
+    if os.environ.get(name):
+        return os.environ[name].strip()
+    try:
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               ".env"), encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if line.strip().startswith(f"{name}="):
+                    return line.split("=", 1)[1].strip()
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def role_key(role: str) -> str:
+    """按角色取「已绑定该角色的网关 key」。
+
+    `GATEWAY_STRICT_ROLE=1` 后，未绑定 key 的 `X-Agent-Role` 不再被采纳，
+    多角色验证必须每个角色一把 key；缺失时回落到主 key 并在输出里提示
+    （回落到主 key 时写工具会 403，这是预期行为，不是脚本 bug）。
+    """
+    explicit = {
+        "buyer": env_value("GATEWAY_BUYER_KEY"),
+        "finance": env_value("GATEWAY_FINANCE_KEY"),
+        "fulfillment": env_value("GATEWAY_FULFILLMENT_KEY"),
+        "support": env_value("GATEWAY_SUPPORT_KEY"),
+    }.get(role, "")
+    return explicit or GATEWAY_KEY
+
+
+def role_headers(role: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {role_key(role)}", "X-Agent-Role": role}
+
 def http_get(path, headers=None):
     url = f"{GATEWAY_URL}{path}"
     req_headers = {"User-Agent": "lanlink-multi-agent-verifier/1.0"}
@@ -59,13 +94,19 @@ def print_banner(msg):
 
 def main():
     print_banner("LANLink B2B 多 Agent 智能协同采购工作流端到端验收实测")
+    # 网关 `/v1/ai/tools/execute` 有执行期角色校验（P0-A）：写工具必须显式声明
+    # 角色，否则 403（fail-closed）。严格角色模式下角色还必须由 key 绑定，
+    # 因此每个 Agent 用自己那把 key，而不是「主 key + 改请求头」。
     auth_headers = {"Authorization": f"Bearer {GATEWAY_KEY}"}
+    buyer_headers = role_headers("buyer")
+    finance_headers = role_headers("finance")
+    fulfillment_headers = role_headers("fulfillment")
 
     # -------------------------------------------------------------
     # 1. 验证角色工具发现与最小权限隔离
     # -------------------------------------------------------------
     print("\n--- 1. 验证按 Agent 角色隔离最小权限工具集 ---")
-    status, buyer_tools = http_get("/v1/ai/tools?role=buyer", auth_headers)
+    status, buyer_tools = http_get("/v1/ai/tools?role=buyer", buyer_headers)
     assert status == 200, f"获取 buyer 工具失败: {status}"
     b_names = {t["function"]["name"] for t in buyer_tools["data"]}
     print(f" 采购助手 Agent (Buyer) 可用工具数: {len(b_names)} -> {sorted(b_names)}")
@@ -73,7 +114,7 @@ def main():
     assert "lanlink_create_cart_draft" in b_names
     assert "lanlink_approve_procurement_flow" not in b_names, "越权漏洞: 采购助手不应拥有财务审批权限!"
 
-    status, finance_tools = http_get("/v1/ai/tools?role=finance", auth_headers)
+    status, finance_tools = http_get("/v1/ai/tools?role=finance", finance_headers)
     assert status == 200, f"获取 finance 工具失败: {status}"
     f_names = {t["function"]["name"] for t in finance_tools["data"]}
     print(f" 财务审核 Agent (Finance) 可用工具数: {len(f_names)} -> {sorted(f_names)}")
@@ -81,7 +122,7 @@ def main():
     assert "lanlink_approve_procurement_flow" in f_names
     assert "lanlink_search_products" not in f_names, "权限扩散: 财务助手无需包含商品检索工具"
 
-    status, ful_tools = http_get("/v1/ai/tools?role=fulfillment", auth_headers)
+    status, ful_tools = http_get("/v1/ai/tools?role=fulfillment", fulfillment_headers)
     assert status == 200, f"获取 fulfillment 工具失败: {status}"
     ful_names = {t["function"]["name"] for t in ful_tools["data"]}
     print(f" 履约追踪 Agent (Fulfillment) 可用工具数: {len(ful_names)} -> {sorted(ful_names)}")
@@ -100,7 +141,7 @@ def main():
         "tool": "lanlink_search_products",
         "arguments": {"keyword": "钢", "limit": 2},
         "apply_fence": True
-    }, auth_headers)
+    }, buyer_headers)
     assert status == 200 and search_res["success"], f"检索失败: {search_res}"
     items = search_res["data"]["items"]
     assert len(items) > 0, "未检索到在售测试商品"
@@ -113,7 +154,7 @@ def main():
         "tool": "lanlink_calculate_quotation",
         "arguments": {"productId": prod_id, "quantity": 50},
         "apply_fence": True
-    }, auth_headers)
+    }, buyer_headers)
     assert status == 200 and quote_res["success"]
     quote = quote_res["data"]
     print(f" 采购助手阶梯报价试算: 采购数量={quote['quantity']}, 优惠单价=¥{quote['effectiveUnitPrice']}, 总金额=¥{quote['finalTotalAmount']}, 节约=¥{quote['totalSavings']}")
@@ -125,7 +166,7 @@ def main():
         "arguments": {"productId": prod_id, "quantity": 50, "userId": 888, "remark": "项目急件，需增值税专票"},
         "user_id": 888,
         "apply_fence": True
-    }, auth_headers)
+    }, buyer_headers)
     assert status == 200 and draft_res["success"]
     draft = draft_res["data"]
     draft_id = draft["draftId"]
@@ -163,7 +204,7 @@ def main():
             "enterpriseId": 1
         },
         "apply_fence": True
-    }, auth_headers)
+    }, finance_headers)
     assert status == 200 and audit_res["success"], f"财务审核失败: {audit_res}"
     audit_data = audit_res["data"]
     print(f" 财务审核初审结论: auditStatus={audit_data['auditStatus']}, riskLevel={audit_data['riskLevel']}")
@@ -180,7 +221,7 @@ def main():
             "comment": "企业授信充足，大宗采购阶梯折扣在合规区间，同意放行"
         },
         "apply_fence": True
-    }, auth_headers)
+    }, finance_headers)
     assert status == 200 and appr_res["success"], f"审批放行失败: {appr_res}"
     appr_data = appr_res["data"]
     approval_token = appr_data["approvalToken"]
@@ -202,7 +243,7 @@ def main():
         "arguments": {"orderNo": real_order_no},
         "user_id": real_user_id,
         "apply_fence": True
-    }, auth_headers)
+    }, fulfillment_headers)
     assert status == 200 and sla_res["success"], f"SLA 监控失败: {sla_res}"
     sla_data = sla_res["data"]
     print(f" 履约时效 SLA 诊断: 订单={sla_data['orderNo']}, 运单={sla_data['waybillNo']}")
@@ -215,7 +256,7 @@ def main():
         "arguments": {"orderNo": real_order_no},
         "user_id": real_user_id,
         "apply_fence": True
-    }, auth_headers)
+    }, fulfillment_headers)
     assert status == 200 and trace_res["success"], f"物流轨迹查询失败: {trace_res}"
     tr_data = trace_res["data"]
     print(f" 收货人脱敏校验: 姓名={tr_data['receiverName']}, 电话={tr_data['receiverPhone']}, 地址={tr_data['destination']}")
@@ -229,7 +270,7 @@ def main():
         "arguments": {"orderNo": real_order_no},
         "user_id": 99999,  # 非订单所有者
         "apply_fence": True
-    }, auth_headers)
+    }, fulfillment_headers)
     assert idor_res["success"] is False, "越权安全漏洞: 异主查询订单未被拦截!"
     print(f" IDOR 越权攻击拦截验证: {idor_res['error']}")
     print(" [PASS] 履约追踪 Agent 时效监控、PII 脱敏与防 IDOR 越权拦截 100% 达标!")
@@ -241,13 +282,22 @@ def main():
     mcp_script = os.path.join(os.path.dirname(__file__), "mcp_stdio_bridge.py")
 
     def run_mcp_query(role, rpc_dict):
+        # 子进程不会继承本脚本「从 .env 读到」的 key（那只在内存里），
+        # 必须显式注入；严格模式下还要求 key 与角色绑定，否则桥接会 401/403。
+        child_env = {
+            **os.environ,
+            "LANLINK_GATEWAY_KEY": role_key(role),
+            "LANLINK_AGENT_ROLE": role,
+            "LANLINK_MCP_URL": f"{GATEWAY_URL}/mcp",
+        }
         proc = subprocess.Popen(
             [sys.executable, mcp_script, "--role", role],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            encoding="utf-8"
+            encoding="utf-8",
+            env=child_env,
         )
         out, err = proc.communicate(input=json.dumps(rpc_dict) + "\n", timeout=10)
         return json.loads(out.strip())

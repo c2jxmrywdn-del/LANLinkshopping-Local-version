@@ -18,6 +18,7 @@ import uuid
 
 import jieba
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 import threading
@@ -29,16 +30,22 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .llm import LLMClient
+from .llm import ContextOverflowError as LLM_CONTEXT_OVERFLOW
 from .model_manager import KIND_TEXT, KIND_VL, model_kind
 from .prompts import build_messages, detect_scene
 from .redis_kb import MAX_EMBED_BATCH, HybridKB, OllamaEmbedder
 from .retriever import default_kb_path, embed, tokenize
 from . import tools as TOOLBOX
 from .kb_tools import DATA_NOTE as LOCAL_TOOL_DATA_NOTE, KB_TOOL_DEF, make_kb_search
+from .sqlbot_tools import SQLBOT_TOOL_DEF, make_sqlbot_ask
+from .rag_tools import RAG_TOOL_DEF, make_rag_search
+from . import mcp_client_tools as MCP_CLIENT_TOOLS
+from . import external_tool_llm as EXTERNAL_TOOLS
 from .rate_limiter import RATE_LIMITER, client_fingerprint
 from .metrics import REGISTRY
 from .semantic_cache import SemanticCache
 from .perception import router as perception_router
+from .news.routes import register_news_routes
 
 logger = logging.getLogger("lanlink.ai-gateway")
 
@@ -65,7 +72,131 @@ def _parse_gateway_keys() -> tuple[str, list[str]]:
 PRIMARY_GATEWAY_KEY, VALID_GATEWAY_KEYS = _parse_gateway_keys()
 GATEWAY_API_KEY = PRIMARY_GATEWAY_KEY  # 保持向下兼容
 
+
+def _parse_key_roles() -> dict[str, str]:
+    """解析「API Key → 业务角色」绑定表。
+
+    为什么必须有这个映射
+    --------------------
+    修复前的角色完全由客户端自报：`X-Agent-Role: buyer` 就能拿到建草稿权限。
+    实测同一把 gateway key 改个请求头即可从 support（403）变成 buyer（放行）——
+    等于 P0 只挡住了「不带角色」，没挡住「冒充角色」。
+
+    格式（环境变量 `GATEWAY_KEY_ROLES`，逗号分隔的 `key:role`）：
+        GATEWAY_KEY_ROLES="sk-buyer-xxx:buyer,sk-finance-yyy:finance"
+
+    设计取舍
+    --------
+    - **角色由服务端决定，客户端不可覆盖**：绑定后请求头里的 `X-Agent-Role` 被忽略
+      （日志会记一条 mismatch，便于发现越权尝试）。
+    - **未绑定的 key 保持原行为**：只读 fail-closed，不破坏现有单 key 部署。
+    - **主 key 可显式绑定**：把 `AI_GATEWAY_API_KEY` 的值也写进映射即可，
+      例如本地开发用主 key 绑 `buyer`。
+    - key 里可能含冒号（base64 风格），所以用 **rsplit(':', 1)** 从右侧切分。
+    """
+    raw = ""
+    for var in ("GATEWAY_KEY_ROLES", "AI_GATEWAY_KEY_ROLES"):
+        val = (os.environ.get(var) or "").strip()
+        if val:
+            raw = val
+            break
+    mapping: dict[str, str] = {}
+    if not raw:
+        return mapping
+    for item in raw.split(","):
+        entry = item.strip()
+        if not entry or ":" not in entry:
+            continue
+        key, _, role = entry.rpartition(":")
+        key, role = key.strip(), role.strip().lower()
+        if key and role:
+            mapping[key] = role
+    return mapping
+
+
+KEY_ROLE_MAP: dict[str, str] = _parse_key_roles()
+
+#: 允许客户端用 `X-Agent-Role` 自报角色的白名单 key。
+#:
+#: 默认**空**：所有 key 的角色由 `KEY_ROLE_MAP` 决定，客户端不可覆盖。
+#: 需要保留「一个 key 多角色」的调试/内部场景时，把 key 写进
+#: `GATEWAY_SELF_ASSERT_KEYS`（逗号分隔）显式开启。
+SELF_ASSERT_KEYS: set[str] = {
+    k.strip()
+    for k in (os.environ.get("GATEWAY_SELF_ASSERT_KEYS") or "").split(",")
+    if k.strip()
+}
+
+#: 严格角色模式：未绑定的 key 不采纳 `X-Agent-Role`，只能拿只读工具。
+#:
+#: 生产应开（`GATEWAY_STRICT_ROLE=1`）。默认关闭只为不破坏既有部署与测试——
+#: 那些场景依赖「单 key + 请求头」的多角色切换。开了严格模式后，
+#: 需要写能力的外部集成方**必须**配 `GATEWAY_KEY_ROLES`。
+STRICT_ROLE = (os.environ.get("GATEWAY_STRICT_ROLE", "0").strip().lower()
+               in ("1", "true", "yes", "on"))
+
+
+def resolve_role(request: Request, default: str = "") -> str:
+    """解析本次请求的业务角色，**以服务端绑定为准**。
+
+    优先级：
+      1. `KEY_ROLE_MAP[api_key]` —— 服务端绑定，最高优先级
+      2. `X-Agent-Role` / `?role=` —— 未绑定的 key 保持原行为（向后兼容）
+      3. `default`
+
+    返回空串表示「未声明角色」，由 `is_tool_allowed_for_role` 走只读 fail-closed。
+
+    **严格模式**（`GATEWAY_STRICT_ROLE=1`）：
+    未绑定的 key 不再采纳请求头，只能拿到只读工具。生产环境应开启——
+    否则任何拿到 gateway key 的人都能自称 `buyer` 调写工具。
+    默认关闭是为了不破坏现有部署与既有测试（它们依赖「单 key + 请求头」）。
+    """
+    api_key = getattr(request.state, "api_key", "") or ""
+    bound = KEY_ROLE_MAP.get(api_key, "")
+    if bound:
+        asserted = (request.headers.get("X-Agent-Role")
+                    or request.query_params.get("role") or "").strip().lower()
+        if asserted and asserted != bound:
+            # 越权尝试：记录但不采纳。用 warning 是为了能在日志里做安全审计。
+            logger.warning(
+                "[auth] 拒绝角色覆盖：key_prefix=%s 已绑定 role=%s，"
+                "客户端试图声明 role=%s（path=%s）",
+                api_key[:8], bound, asserted, request.url.path,
+            )
+        return bound
+    asserted = (request.headers.get("X-Agent-Role")
+                or request.query_params.get("role") or "").strip().lower()
+    if STRICT_ROLE:
+        if asserted:
+            # 严格模式下未绑定 key 的请求头不被采纳，且记一条告警便于运维发现漏配。
+            logger.warning(
+                "[auth] 严格模式：key_prefix=%s 未绑定角色，忽略客户端声明的 role=%s（path=%s）",
+                api_key[:8], asserted, request.url.path,
+            )
+        return default
+    if api_key in SELF_ASSERT_KEYS and asserted:
+        return asserted
+    if asserted:
+        return asserted
+    return default
+
+#: 未认证可访问的白名单。
+#:
+#: `/v1/ai/openapi.json` 曾在此集合里，因为 Dify / Coze / GPTs 导入时不会带
+#: API Key。但该端点直接返回 10 个商城工具的完整 schema，其中包含 3 个写工具
+#: （建草稿 / 财务过审 / 审批签发），等于把「往哪打、打什么参数」公开给未认证方。
+#:
+#: 现在的取舍：**保留免认证导入能力，但公开版只保留只读工具**。完整版（含写
+#: 工具）仍可通过 `?full=1` + 有效网关 key 获取，供有写能力的集成方导入。
 _PUBLIC_PATHS = {"/", "/health", "/v1/ai/openapi.json", "/metrics"}
+
+#: 公开 OpenAPI 文档中必须移除的写工具（权限边界与 `ROLE_TOOL_MAP` 的
+#: support 角色一致：客服/匿名集成方只能看到只读能力）。
+_OPENAPI_WRITE_TOOL_NAMES = frozenset({
+    "lanlink_create_cart_draft",
+    "lanlink_audit_procurement_draft",
+    "lanlink_approve_procurement_flow",
+})
 
 # 限流绕过头只允许在显式开启时生效：外部客户端可通过伪造 X-Bypass-Rate-Limit 绕过令牌桶，
 # 边缘 nginx 会剥离该头，这里再做一次服务端兜底。
@@ -83,6 +214,18 @@ def _bearer_key(request: Request) -> str:
     return param.strip() if scheme.strip().lower() == "bearer" else ""
 
 
+def _match_gateway_key(request: Request) -> str:
+    """返回请求携带的有效网关 Key；缺失或无效时返回空串。"""
+    provided = (request.headers.get("X-API-Key") or "").strip() or _bearer_key(request)
+    if not provided:
+        return ""
+    prov_bytes = provided.encode("utf-8")
+    for key in VALID_GATEWAY_KEYS:
+        if secrets.compare_digest(prov_bytes, key.encode("utf-8")):
+            return key
+    return ""
+
+
 async def require_gateway_key(request: Request):
     """全局 API Key 校验依赖：基于密钥环常量时间多 Key 比较（支持平滑过渡）。"""
     if request.url.path in _PUBLIC_PATHS:
@@ -94,12 +237,7 @@ async def require_gateway_key(request: Request):
             "error": {"message": "未授权：缺少 API Key（Authorization: Bearer <AI_GATEWAY_API_KEY>）",
                       "type": "authentication_error"}})
 
-    prov_bytes = provided.encode("utf-8")
-    matched_key = None
-    for k in VALID_GATEWAY_KEYS:
-        if secrets.compare_digest(prov_bytes, k.encode("utf-8")):
-            matched_key = k
-            break
+    matched_key = _match_gateway_key(request)
 
     if not matched_key:
         logger.warning("[auth] 请求未携带有效 API Key: path=%s", request.url.path)
@@ -145,17 +283,28 @@ async def rate_limit_guard(request: Request, response: Response):
         REGISTRY.rate_limit_hits_total.inc({"client_id": cid, "role": role})
         logger.warning("[rate-limit] 请求频次超出配额: cid=%s, path=%s, retry_after=%ds",
                        cid, request.url.path, retry_after)
-        response.headers["Retry-After"] = str(retry_after)
+        # 必须 `raise HTTPException` 且**在异常上携带 headers**。
+        #
+        # 两个坑都踩过：
+        #   1. 只在这里 `response.headers[...]` 设头 → 抛异常时那个 response 对象被丢弃
+        #      （FastAPI 用异常处理器新建响应），429 里的 Retry-After /
+        #      X-RateLimit-Limit / X-RateLimit-Remaining 全部丢失；
+        #   2. 改成 `return JSONResponse(...)` → 本函数是 `Depends` 依赖，
+        #      返回值会被 FastAPI 忽略，请求照常放行（实测限流直接失效，返回 200）。
+        # 正确做法：异常携带 headers，异常处理器原样转发（见 http_error）。
         raise HTTPException(
             status_code=429,
-            detail={
-                "error": {
-                    "message": f"请求过于频繁，触发多租户令牌桶限流保护，请在 {retry_after} 秒后重试",
-                    "type": "rate_limit_error",
-                    "code": 429
-                }
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(RATE_LIMITER.rate_per_min),
+                "X-RateLimit-Remaining": "0",
             },
-            headers={"Retry-After": str(retry_after)}
+            detail={"error": {
+                "message": f"请求过于频繁，触发多租户令牌桶限流保护，请在 {retry_after} 秒后重试",
+                "type": "rate_limit_error",
+                "code": 429,
+                "retry_after": retry_after,
+            }},
         )
 
 
@@ -168,6 +317,10 @@ app = FastAPI(
 
 # 多模态感知路由（MiMo 视觉/ASR/TTS + 本地 ASR/OCR 兜底）：鉴权与限流沿用上面的 app 级依赖。
 app.include_router(perception_router)
+
+# 资讯处理管线路由（POST /v1/news/extract[:batch]）：app 级鉴权/限流依赖同样生效；
+# LANLINK_NEWSPIPELINE_ENABLED=0 时端点 404，既有链路零行为变化。
+register_news_routes(app)
 
 
 @app.middleware("http")
@@ -339,9 +492,26 @@ GATEWAY_START = time.time()
 # 契约见 ai-gateway/MCP_KB_SPEC.md。
 TOOLBOX.register_local_tool(KB_TOOL_DEF, make_kb_search(KB))
 
+# SQLBot 只读问数工具：经 SQLBot MCP API 生成并执行只读 SQL，返回 SQL 与结果。
+TOOLBOX.register_local_tool(SQLBOT_TOOL_DEF, make_sqlbot_ask())
+
+# RAG-Anything 多模态文档检索（独立 Redis 索引 rag-idx:*）。
+# 与 lanlink_kb_search 是**两套不同数据**：前者查多模态文档库（图文表混排、实体关系图），
+# 后者查结构化政策库（aikb-idx）。外部大模型经 /mcp tools/call 可分别调用并交叉验证。
+TOOLBOX.register_local_tool(RAG_TOOL_DEF, make_rag_search())
+
+# MCP fetch/playwright 工具桥（LANLINK_MCP_ENABLED=0 时零连接零注册，见 .env.example）。
+# 注册成功后由 startup 的健康重探线程负责摘除/恢复。
+MCP_CLIENT_TOOLS.register_mcp_tools()
+
 
 @app.on_event("startup")
 def _init_distributed_rate_limiter():
+    # MCP 工具桥健康重探：不可达时摘除工具、恢复后自动重注册（内部自防异常）。
+    try:
+        MCP_CLIENT_TOOLS.start_health_loop()
+    except Exception as exc:  # noqa: BLE001 - 降级绝不影响主链路
+        logger.warning("[startup] MCP 健康重探线程启动失败（MCP 工具保持注册期状态）: %s", exc)
     try:
         if KB and hasattr(KB, "redis_kb") and KB.redis_kb:
             c = KB.redis_kb._connect()
@@ -349,8 +519,23 @@ def _init_distributed_rate_limiter():
                 RATE_LIMITER.bind_redis(c)
                 CACHE._client = c
                 CACHE._ensure_index(c)
+                logger.info(
+                    "[startup] Redis 已绑定：限流 capacity=%s rate_per_ms=%s，语义缓存索引就绪",
+                    RATE_LIMITER.capacity, RATE_LIMITER.rate_per_ms,
+                )
+            else:
+                # 原来是静默跳过：`_connect()` 返回 None 时什么都不打印，
+                # 运维根本不知道限流退化成了单机内存桶（多实例部署时限流形同虚设）。
+                logger.warning(
+                    "[startup] Redis 连接不可用：限流降级为**单机内存桶**、语义缓存降级为进程内。"
+                    "多实例部署时这会失去全局限流能力，请检查 REDIS_HOST/REDIS_PASSWORD。"
+                )
+        else:
+            logger.warning("[startup] KB.redis_kb 未初始化：限流与语义缓存均为单机内存模式")
     except Exception as exc:
-        logger.debug("[startup] 跳过 Redis 限流与缓存绑定: %s", exc)
+        # 原来是 debug 级，默认日志级别下完全不可见。
+        # 限流/缓存绑定失败属于**功能性降级**，必须是 warning 且带堆栈。
+        logger.warning("[startup] Redis 限流与缓存绑定失败（降级单机模式）: %s", exc, exc_info=True)
 
 # 语义重排开关（KB_RERANK=0 可关闭，省一次模型调用；VL 请求不重排，避免模型来回切换）
 _KB_RERANK = os.environ.get("KB_RERANK", "1") == "1"
@@ -422,8 +607,22 @@ def _agent_loop(model_for_call: str, messages: list, tools_defs: list, tool_choi
         for call in calls:
             fn = call.get("function") or {}
             name = fn.get("name") or ""
-            result = TOOLBOX.execute_tool(name, fn.get("arguments") or "{}",
-                                          summarize=_tool_summarizer())
+            # 执行期角色校验：**清单过滤不等于执行期校验**。
+            #
+            # 历史缺陷：这里直接执行模型返回的任何 tool_call。即使下发的 tools 清单
+            # 只有 8 个只读工具，模型仍可越界调 `lanlink_create_cart_draft` 并成功
+            # （实测建出真实草稿 dft_b8bd705d06d34fc2）。严格模式 + 绑定 support key
+            # 完全挡不住——因为这道门根本没查角色。
+            if not TOOLBOX.is_tool_allowed_for_role(name, role):
+                logger.warning(
+                    "[agent-loop] 越权工具调用被拒 role=%r tool=%s（模型越界）", role, name)
+                result = {"ok": False, "error": {
+                    "type": "permission_denied",
+                    "message": f"角色 {role or '(未声明)'} 无权调用工具 {name}",
+                }}
+            else:
+                result = TOOLBOX.execute_tool(name, fn.get("arguments") or "{}",
+                                              summarize=_tool_summarizer())
             payload = json.dumps(result, ensure_ascii=False)
             if len(payload) > _TOOL_RESULT_MAX_CHARS:
                 payload = payload[:_TOOL_RESULT_MAX_CHARS] + "…(截断)"
@@ -553,6 +752,78 @@ def _usage(prompt: str, completion: str, model: str = "qwen2.5-7b", role: str = 
     return {"prompt_tokens": pt, "completion_tokens": ct, "total_tokens": pt + ct}
 
 
+def _sse(payload: dict) -> str:
+    """序列化一个 OpenAI 兼容 SSE 分片（`data: {...}\\n\\n`）。"""
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+_LINE_PREFIX_RE = re.compile(r"^[\d.\s、]+")
+
+
+class _StreamPolisher:
+    """`_polish` 的流式版本：按行增量去重 + 清理提问回声 + 结尾补来源。
+
+    为什么需要它：`_polish` 必须在全文上跑（它要跨行去重、按全文统计主导行），
+    真流式下拿不到全文。若直接跳过 `_polish`，小模型的退化复读会被原样推给前端，
+    而 RAG 链路的「来源」引用也会消失。这里保留两条对用户可见的语义：
+      1. 丢掉 `用户问题：...` 回声行；
+      2. 丢掉重复行（首见保留）。
+    唯一放弃的是「某行出现 >2 次则整段剔除」——那需要全文计数，流式下无法回溯
+    已发出的分片；逐行去重已能拦住复读，代价是首个重复行仍会出现一次。
+
+    缓冲策略：按换行切行；单行过长时**按字符阈值直接放行**（不再等句末标点）。
+    早期版本要求「先攒够 24 字且遇到句末标点」才放行，实测首片被额外拖了 ~0.5s：
+    中文长句里标点稀疏，等价于把首片压到 200 字符的硬上限。现在阈值到点就切，
+    首片延迟≈后端首 token 延迟。
+    """
+
+    def __init__(self, docs: list | None, flush_chars: int = 16):
+        self.docs = docs or []
+        self.flush_chars = flush_chars
+        self._buf = ""
+        self._seen: set[str] = set()
+
+    def _take_line(self, line: str) -> str | None:
+        """按 `_polish` 的规则判定一行是否保留；保留则返回 `line + "\\n"`。"""
+        if line.strip().startswith("用户问题："):
+            return None
+        key = _LINE_PREFIX_RE.sub("", line).strip()
+        if not key:
+            return None
+        if key in self._seen:
+            return None
+        self._seen.add(key)
+        return line + "\n"
+
+    def feed(self, delta: str) -> str:
+        self._buf += delta or ""
+        out: list[str] = []
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            kept = self._take_line(line)
+            if kept:
+                out.append(kept)
+        # 单行过长时按阈值直接放行（不参与去重：这是半行）
+        while len(self._buf) >= self.flush_chars:
+            out.append(self._buf[:self.flush_chars])
+            self._buf = self._buf[self.flush_chars:]
+        return "".join(out)
+
+    def flush(self) -> str:
+        rest, self._buf = self._buf.strip(), ""
+        if not rest:
+            return ""
+        kept = self._take_line(rest)
+        return kept.rstrip("\n") if kept else ""
+
+    def source_suffix(self, full_text: str) -> str:
+        """补齐 `_polish` 的强制来源引用（RAG 链路可溯源）。"""
+        if not self.docs or "来源" in (full_text or ""):
+            return ""
+        titles = "、".join(f"《{d['title']}》" for d in self.docs[:2])
+        return f"\n来源：{titles}"
+
+
 def _polish(text: str, docs: list) -> str:
     """回答后处理：小模型退化重复句去重 + 强制来源引用（保证回答可溯源）。"""
     import re as _re
@@ -594,6 +865,34 @@ _THINKING_NOTE_EN = (
     "1. Intent & Safety; 2. Fact Grounding; 3. Rule Deduction; 4. Answer Planning.\n"
     "Close the </think> tag before providing the final answer. The final answer must not contain the reasoning process."
 )
+
+
+# ----------------------------- 推理后端不可用 → 503（绝不 500） -----------------------------
+# llama.cpp 停机且 `LLM_REQUIRE_GPU=1` 时，`llm.py:616` / `:702` 抛 RuntimeError
+# （拒绝静默降级到 CPU）。历史缺陷：`/v1/chat/completions` 没有捕获它，直接冒泡到
+# 全局兜底 handler 变成 500「服务内部错误」——调用方无法区分「网关 bug」和
+# 「推理后端停机」，运维只能翻日志。现在显式转 503 + backend_unavailable。
+#
+# 关键顺序：`ContextOverflowError` 是 `RuntimeError` 子类，**必须先放行**，
+# 否则超长 prompt 会被误报成 503，调用方会去重启 GPU 而不是裁剪上下文。
+def _backend_unavailable(exc: Exception, stage: str) -> HTTPException:
+    logger.error("[llm] 推理后端不可用 stage=%s: %s", stage, exc)
+    return HTTPException(status_code=503, detail={"error": {
+        "message": f"本地推理后端暂不可用（{stage}）：{exc}",
+        "type": "backend_unavailable",
+        "stage": stage,
+    }})
+
+
+@contextmanager
+def _llm_runtime_guard(stage: str):
+    """把 RuntimeError 统一转成 503，但放行 ContextOverflowError（→ 413）。"""
+    try:
+        yield
+    except LLM_CONTEXT_OVERFLOW:
+        raise
+    except RuntimeError as exc:
+        raise _backend_unavailable(exc, stage) from exc
 
 
 def _has_cjk(text: str) -> bool:
@@ -706,6 +1005,17 @@ def _harden_system(messages: list) -> list:
 
 # ----------------------------- OpenAI 兼容接口 -----------------------------
 
+# SQLBot 问数链路请求特征：messages[0].content 恒以 SQLBot 系统模板开头，实测三种形态
+# （"<Instruction>\n  你是智能问数小助手："SQLBot"..."、无 <Instruction> 前缀的 sql_gen/chart 同模板、
+# 以及关键词提取等辅助助手 "你是智能问数小助手：SQLBot。..."——冒号后无引号）。
+# 该链路是「同 prompt → 同 SQL」的确定性生成，绝不能被通用语义缓存短路回放历史答案——
+# 2026-11-16 故障：缓存中的偶发拒答文本被反复回放，失败簇 41 条全部为 <300ms 缓存命中。
+# SQLBot 侧已配 ai_model default_headers Cache-Control: no-cache（主防线）；
+# 此处按调用方内容特征在网关再设一道门：读写均绕开语义缓存。
+# 若 SQLBot 升级改掉模板措辞此门自动失效，届时 no-cache 头仍兜底，并按 trace 重新校准。
+_SQLBOT_MSG_RE = re.compile(r'智能问数小助手：["\u201c\u201d]?SQLBot')
+
+
 @app.post("/v1/chat/completions")
 def chat_completions(req: ChatCompletionRequest, request: Request, response: Response):
     """OpenAI Chat Completions 兼容接口（支持 stream / 非 stream，按 model 路由 text/vl）。"""
@@ -714,18 +1024,32 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
     if not question.strip():
         raise HTTPException(status_code=400, detail={"error": {"message": "messages 中必须包含 user 消息", "type": "invalid_request_error"}})
 
-    agent_role = (request.headers.get("X-Agent-Role") or request.query_params.get("role") or "buyer").strip().lower()
+    # 角色以服务端绑定为准（见 resolve_role 注释）：未绑定的 key 仍按原逻辑
+    # 读请求头，但已绑定的 key 无法通过改头冒充别的角色。
+    # 默认**空**角色（只读 fail-closed），不是 "buyer"。
+    # 历史缺陷：这里 default="buyer"，于是「不带任何角色头」的请求直接拿到
+    # 建草稿权限——绑定 key + 严格模式都拦不住，因为兜底值就是 buyer。
+    # 内部链路（Java 客服）显式带 `X-Agent-Role`，不受影响。
+    agent_role = resolve_role(request, default="")
 
     requested_kind = model_kind(req.model)
+
+    # SQLBot 调用方特征门：命中即整体绕开语义缓存（不读不写，含偶发拒答文本，
+    # 防止「同 prompt 回放历史答案」类故障；缓存仅服务 buyer 等自然语言问答链路）。
+    sqlbot_request = bool(_SQLBOT_MSG_RE.search(req.messages[0].content or ""))
 
     # ----------------- 语义缓存拦截 (Semantic Cache Interceptor) -----------------
     cache_eligible = (
         req.tools is None
         and requested_kind != KIND_VL
-        and SemanticCache.is_cacheable(question)
+        # use_kb 是缓存隔离维度：RAG 模式会重建 messages，与非 RAG 的 prompt 完全不同，
+        # 两者共用键会把「带知识库上下文的答案」回放给「尊重调用方 messages」的请求。
+        and SemanticCache.is_cacheable(question, use_kb=req.use_kb)
         and (request.headers.get("Cache-Control") != "no-cache")
+        and not sqlbot_request
     )
-    hit = CACHE.get(question, role=agent_role, model=req.model) if cache_eligible else None
+    hit = CACHE.get(question, role=agent_role, model=req.model,
+                    use_kb=req.use_kb) if cache_eligible else None
     if hit is not None:
         REGISTRY.cache_hits_total.inc({"type": hit.hit_type, "role": agent_role})
         cache_headers = {
@@ -745,8 +1069,11 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
             result = _completion_shell(req.model, hit.content, "stop", usage, hit.latency_ms / 1000.0, backend="semantic_cache")
             result["lanlink"].update(_route_summary())
             result["lanlink"].update({
-                # 语义缓存命中的内容同样由本地模型生成过：仍标注 local:，供客服侧来源校验。
-                "answer_generator": "local:semantic_cache",
+                # 按缓存条目的原始生成后端如实标注：本地来源 → local:semantic_cache，
+                # 外部模型（MiMo/DeepSeek）生成的答案 → external:semantic_cache。
+                # 历史缺陷：此处恒写 local:semantic_cache，会骗过 Java 侧
+                # SupportAnswerPolicy.assertLocal，把外部答案冒充成本地结果。
+                "answer_generator": hit.answer_generator,
                 "tool_trace": [],
                 "agent_role": agent_role,
                 "cached": True,
@@ -783,8 +1110,36 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
                 tools_defs = TOOLBOX.TOOL_DEFS + TOOLBOX.local_tool_defs()
         else:
             tools_defs = req.tools
-        tc = req.tool_choice if isinstance(req.tool_choice, str) else "required"
-        tool_choice_eff = tc if tc in ("auto", "required", "none") else "auto"
+            # 执行期角色校验（P0）：调用方自带 tools 数组时，同样不能越过角色边界。
+            # 历史缺陷：`support` 角色通过自定义 tools 数组成功调用写工具并签发审批。
+            denied = [
+                d["function"]["name"] for d in (tools_defs or [])
+                if not TOOLBOX.is_tool_allowed_for_role(
+                    (d.get("function") or {}).get("name") or "", agent_role)
+            ]
+            if denied:
+                raise HTTPException(status_code=403, detail={"error": {
+                    "message": f"角色 {agent_role} 无权使用工具: {', '.join(sorted(denied))}",
+                    "type": "permission_denied",
+                    "denied_tools": sorted(denied),
+                }})
+        # tool_choice 归一化，三种来源分别处理：
+        #
+        # 1. **缺省**（None）→ `auto`。OpenAI 的默认语义就是 auto。
+        #    历史缺陷：这里默认成 `required`，等于强制模型必须先调一次工具——
+        #    问「你好」也会先跑一轮检索，既慢又可能把无关结果塞进上下文。
+        # 2. **对象形式**（`{"type":"function","function":{"name":...}}`）→ `required`。
+        #    调用方指名了具体函数，意图是「必须调这个」，而 llama.cpp 只认
+        #    none/auto/required 三个字符串，对象会被 400，故降级为 required。
+        # 3. **字符串** → 取白名单内的值，其余回落 `auto`。
+        raw_tc = req.tool_choice
+        if raw_tc is None:
+            tool_choice_eff = "auto"
+        elif isinstance(raw_tc, str):
+            tool_choice_eff = raw_tc if raw_tc in ("auto", "required", "none") else "auto"
+        else:
+            # dict / list 等非字符串形式 = 指名函数，降级为 required
+            tool_choice_eff = "required"
     # 标记进行中的 text 请求：并发 VL 请求据此让行（单 GPU 串行，避免 text 被 VL 冷加载拖慢）
     LLM.begin_text_request()
     try:
@@ -813,37 +1168,254 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
         if requested_kind == KIND_VL:
             schedule = LLM.schedule_vision()
             model_for_call = req.model
+        elif EXTERNAL_TOOLS.external_provider_for(req.model) is not None:
+            # 调用方**显式**指定了外部 provider（mimo-* / deepseek-*）：
+            # 不能再走硬件调度，否则 `decide_text()` 会无条件返回本地
+            # `text_model`（qwen2.5-7b），把请求静默改路由到本地 GPU。
+            #
+            # 历史缺陷：`model=mimo-v2.6-flash` 的纯文本请求实测返回
+            # `backend=llamacpp:qwen2.5-7b`——调用方以为在用 MiMo，实际跑的是本地 7B。
+            # 只有带 tools 时才走外部通道（见下方 tools_mode 分支），
+            # 不带 tools 就完全没生效。
+            schedule = {"mode": "external", "model": req.model,
+                        "reason": "explicit_external_model", "allow": True}
+            model_for_call = req.model
         else:
             schedule = LLM.schedule_text(prompt_chars, req.model)
             model_for_call = schedule.get("model") or req.model
 
-        # 思考模式（单阶段端到端 CoT）：模型在单个前向推理中完成 <think>...</think> 内部推理并连续生成答案。
-        # 彻底消除旧两阶段推理导致的 2x 时延与断流问题；解析后的 reasoning_content 遵循 OpenAI/DeepSeek 标准。
-        reasoning = ""
-        if tools_mode:
-            text, finish_reason_eff, tool_trace, backend, infer_latency = _agent_loop(
-                model_for_call, messages, tools_defs, tool_choice_eff,
-                req.temperature, req.max_tokens or 1024, role=agent_role)
-            if tool_choice_eff == "none":
-                # tool_choice=none 时 llama.cpp 会让裸 <tool_call> 标签漏进 content（排查缺口 6）
-                text = re.sub(r"</?tool_call>", "", text)
-        else:
-            try:
-                text, backend, infer_latency = LLM.chat(
+        # ------------------------- 真流式分支（llama.cpp SSE 边收边发） -------------------------
+        # 只有「本地文本 + 无 tools + 非思考 + 非外部 provider」才走增量流：
+        #   - tools_mode 需要 tool_calls 循环，本来就只能整段生成后再切句（合理）；
+        #   - thinking 需要先拿到 <think>...</think> 全文才能剥离出 reasoning_content；
+        #   - VL 走视觉超时/图片编码，不复用文本 SSE 通道；
+        #   - 外部 provider（mimo/deepseek…）是外部 tool_loop，非流式。
+        # 其余 stream=true 组合仍走下方「整段生成 + 切句」的兼容分支。
+        stream_real = (
+            bool(req.stream)
+            and not tools_mode
+            and not thinking_requested
+            and requested_kind != KIND_VL
+            and EXTERNAL_TOOLS.external_provider_for(req.model) is None
+        )
+        if stream_real:
+            with _llm_runtime_guard("chat_stream"):
+                stream = LLM.chat_stream(
                     messages,
                     temperature=req.temperature,
                     max_tokens=req.max_tokens or 1024,
                     model=model_for_call,
                     role=agent_role,
                 )
-            except TypeError:
-                text, backend, infer_latency = LLM.chat(
+            backend = stream.backend
+            # 路由信息必须在这里**快照**：last_route 是 LLM 上的共享可变字段，
+            # 流式生成期间其它并发请求会覆盖它，等到 tail 时再读会串到别人的路由。
+            route_snapshot = _route_summary()
+            fallback_active = (str(backend).startswith("mock")
+                               or route_snapshot.get("fallback") == "heuristic")
+            fb_reason = (route_snapshot.get("fallback_reason")
+                         or ("mock_preference" if str(backend).startswith("mock")
+                             else "llm_unavailable"))
+            stream_headers = {
+                "X-Lanlink-Cache": "MISS",
+                "X-Lanlink-Agent-Role": agent_role,
+                # incremental=逐 token 下发；buffered=后端无增量接口（mock/Ollama 降级）
+                "X-Lanlink-Stream-Mode": stream.mode,
+            }
+            if fallback_active:
+                stream_headers["X-Lanlink-Fallback"] = "heuristic"
+                stream_headers["X-Lanlink-Fallback-Reason"] = fb_reason
+                REGISTRY.fallback_total.inc({"reason": fb_reason, "role": agent_role,
+                                             "strategy": "heuristic"})
+            else:
+                stream_headers["X-Lanlink-Fallback"] = "normal"
+
+            def gen():
+                # 外层 handler 的 finally 在 return 时已经把计数减掉了（此时流还没开始），
+                # 这里重新登记，让 ModelCallGate 的 text 优先级在整段流期间都生效。
+                LLM.begin_text_request()
+                chunk_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+                created = int(time.time())
+                polisher = _StreamPolisher(docs)
+                emitted: list[str] = []
+                chunks = 0
+                first_chunk_at = None
+
+                def content_chunk(piece: str) -> str:
+                    return _sse({
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{"index": 0, "delta": {"content": piece},
+                                     "finish_reason": None}],
+                    })
+
+                try:
+                    yield _sse({
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{"index": 0, "delta": {"role": "assistant"},
+                                     "finish_reason": None}],
+                    })
+                    for piece, _backend in stream:
+                        if first_chunk_at is None:
+                            first_chunk_at = time.time()
+                        out = polisher.feed(piece)
+                        if not out:
+                            continue
+                        emitted.append(out)
+                        chunks += 1
+                        yield content_chunk(out)
+                    tail_piece = polisher.flush()
+                    if tail_piece:
+                        emitted.append(tail_piece)
+                        chunks += 1
+                        yield content_chunk(tail_piece)
+                    text = "".join(emitted)
+                    source = polisher.source_suffix(text)
+                    if source:
+                        emitted.append(source)
+                        chunks += 1
+                        text = "".join(emitted)
+                        yield content_chunk(source)
+
+                    usage = _usage(question, text)
+                    latency = time.time() - t0
+                    route = dict(route_snapshot)
+                    route["requested_model"] = req.model
+                    route["model_kind"] = route.get("model_kind") or requested_kind
+                    route["schedule"] = schedule
+                    route["thinking"] = False
+                    route["reasoning_chars"] = 0
+                    route["tools"] = {"enabled": False, "choice": None,
+                                      "count": 0, "trace": []}
+                    route["answer_generator"] = f"local:{backend}"
+                    route["tool_trace"] = []
+                    route["agent_role"] = agent_role
+                    route["stream"] = {
+                        "mode": stream.mode,
+                        "chunks": chunks,
+                        "ttft_ms": int((first_chunk_at - t0) * 1000) if first_chunk_at else None,
+                    }
+                    if fallback_active:
+                        route["fallback"] = "heuristic"
+                        route["fallback_reason"] = fb_reason
+                    if cache_eligible and text:
+                        CACHE.set_async(
+                            question, text,
+                            reasoning_content="",
+                            role=agent_role,
+                            model=req.model,
+                            scene=scene,
+                            docs=docs,
+                        )
+                    yield _sse({
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{"index": 0, "delta": {},
+                                     "finish_reason": stream.finish_reason}],
+                        "usage": usage,
+                        "lanlink": dict(route, backend=backend),
+                    })
+                    yield "data: [DONE]\n\n"
+                except Exception as exc:  # 响应头已发出，只能以错误分片收尾
+                    logger.error("[stream] 增量流中断 backend=%s: %s", backend, exc,
+                                 exc_info=True)
+                    yield _sse({
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": req.model,
+                        "choices": [{"index": 0, "delta": {},
+                                     "finish_reason": "error"}],
+                        "lanlink": {"backend": backend,
+                                    "stream_error": str(exc)[:200],
+                                    "answer_generator": f"local:{backend}"},
+                    })
+                    yield "data: [DONE]\n\n"
+                finally:
+                    stream.close()
+                    LLM.end_text_request()
+
+            return StreamingResponse(gen(), media_type="text/event-stream",
+                                     headers=stream_headers)
+
+        # 思考模式（单阶段端到端 CoT）：模型在单个前向推理中完成 <think>...</think> 内部推理并连续生成答案。
+        # 彻底消除旧两阶段推理导致的 2x 时延与断流问题；解析后的 reasoning_content 遵循 OpenAI/DeepSeek 标准。
+        reasoning = ""
+        if tools_mode:
+            # 外部模型分流：llama.cpp 上的 qwen2.5-7b 不产出 tool_calls（实测把
+            # 工具定义当普通上下文，直接编自然语言回答，tool_trace 恒空），
+            # 所以「外部大模型经网关调 MCP」在本地模型上根本走不通。
+            # 这里按 model 前缀判定：显式指向 mimo-*/deepseek-* 时交给外部模型
+            # 承载 tool_calls，网关执行工具后回灌再总结；其余仍走本地 GPU 路径，
+            # 不违反「平台自身推理必须挂 4070」的约束。
+            external = EXTERNAL_TOOLS.external_provider_for(req.model)
+            if external is not None:
+                text, finish_reason_eff, tool_trace, backend, infer_latency = EXTERNAL_TOOLS.run_tool_loop(
+                    external,
+                    req.model,
                     messages,
-                    temperature=req.temperature,
-                    max_tokens=req.max_tokens or 1024,
-                    model=model_for_call,
+                    tools_defs,
+                    tool_choice_eff,
+                    req.temperature,
+                    req.max_tokens or 1024,
+                    execute_tool=lambda name, raw: TOOLBOX.execute_tool(
+                        name, raw, summarize=_tool_summarizer()),
+                    wrap_fence=TOOLBOX.wrap_data_fence,
+                    allowed_check=lambda name: TOOLBOX.is_tool_allowed_for_role(name, agent_role),
                 )
-            tool_trace, finish_reason_eff = [], "stop"
+                schedule = {"mode": "external", "model": req.model, "reason": "tool_calls_require_external"}
+            else:
+                # 工具 agent 循环同样可能撞上后端停机（每轮 chat_raw 都会走到
+                # `require_gpu` 分支），统一转 503 而不是 500。
+                with _llm_runtime_guard("agent_loop"):
+                    text, finish_reason_eff, tool_trace, backend, infer_latency = _agent_loop(
+                        model_for_call, messages, tools_defs, tool_choice_eff,
+                        req.temperature, req.max_tokens or 1024, role=agent_role)
+            if tool_choice_eff == "none":
+                # tool_choice=none 时 llama.cpp 会让裸 <tool_call> 标签漏进 content（排查缺口 6）
+                text = re.sub(r"</?tool_call>", "", text)
+        else:
+            external_plain = EXTERNAL_TOOLS.external_provider_for(req.model)
+            if external_plain is not None:
+                # 显式外部模型的**纯文本**路径（无 tools）：直接调外部 provider，
+                # 不经过本地 llama.cpp，保证 `backend=external:*` 名副其实。
+                text, finish_reason_eff, tool_trace, backend, infer_latency = EXTERNAL_TOOLS.run_tool_loop(
+                    external_plain,
+                    req.model,
+                    messages,
+                    [],                 # 无工具
+                    "none",
+                    req.temperature,
+                    req.max_tokens or 1024,
+                    execute_tool=lambda name, raw: TOOLBOX.execute_tool(
+                        name, raw, summarize=_tool_summarizer()),
+                    wrap_fence=TOOLBOX.wrap_data_fence,
+                )
+            else:
+                with _llm_runtime_guard("chat_completions"):
+                    try:
+                        text, backend, infer_latency = LLM.chat(
+                            messages,
+                            temperature=req.temperature,
+                            max_tokens=req.max_tokens or 1024,
+                            model=model_for_call,
+                            role=agent_role,
+                        )
+                    except TypeError:
+                        text, backend, infer_latency = LLM.chat(
+                            messages,
+                            temperature=req.temperature,
+                            max_tokens=req.max_tokens or 1024,
+                            model=model_for_call,
+                        )
+                tool_trace, finish_reason_eff = [], "stop"
 
         if thinking_requested:
             visible, extracted_reasoning = _extract_thinking(text)
@@ -851,6 +1423,26 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
                 reasoning = extracted_reasoning
             text = visible or reasoning or "（思考完成，但模型未返回最终答案，请重试）"
         text = _polish(text, docs)
+        # 外部模型空答案必须显式失败，不能包装成 200。
+        #
+        # 历史缺陷：外部 provider 超时 / 401 / 被 max_tokens 截断时 `text` 为空，
+        # 这里照样走「200 + 空 content」返回，调用方只能看到一片空白，
+        # 而 `answer_generator` 还被标成 `local:external:*`——Java 的
+        # `SupportAnswerPolicy.assertLocal` 因此误判为「本地已产出」，跳过知识库兜底。
+        # 现在：外部通道空答案 → 502，让调用方明确知道上游失败。
+        external_backend = str(backend or "").startswith("external:")
+        if external_backend and not (text or "").strip():
+            logger.warning(
+                "[external-tool] 空答案 backend=%s finish=%s tools=%d",
+                backend, finish_reason_eff, len(tool_trace),
+            )
+            raise HTTPException(status_code=502, detail={"error": {
+                "message": "外部模型未返回可用回答（上游超时/鉴权失败/被截断）",
+                "type": "upstream_empty_answer",
+                "backend": backend,
+                "finish_reason": finish_reason_eff,
+                "tool_count": len(tool_trace),
+            }})
         latency = time.time() - t0
         usage = _usage(question, text)
         route = _route_summary()
@@ -863,7 +1455,13 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
                           "count": len(tool_trace), "trace": tool_trace}
         # 答案来源审计：客服链路（Java SupportAnswerPolicy）只接受 local: 前缀，
         # 因此无论是否 tools 模式都必须显式回报实际推理后端与工具轨迹。
-        route["answer_generator"] = f"local:{backend}"
+        # 只有真正跑在本地推理栈上才允许带 `local:` 前缀（Java 侧据此判断
+        # 「本地已生成，无需知识库兜底」）。外部 provider 用 `external:` 前缀，
+        # 避免冒充本地结果。
+        route["answer_generator"] = (
+            f"external:{backend[len('external:'):]}" if external_backend
+            else f"local:{backend}"
+        )
         route["tool_trace"] = tool_trace
         route["agent_role"] = agent_role
 
@@ -891,6 +1489,9 @@ def chat_completions(req: ChatCompletionRequest, request: Request, response: Res
                 model=req.model,
                 scene=scene,
                 docs=docs,
+                use_kb=req.use_kb,
+                # 记录原始生成后端，命中时据此还原 answer_generator，不再冒充 local。
+                generator=backend,
             )
 
         if req.stream:
@@ -1121,12 +1722,15 @@ def cache_stats():
 @app.exception_handler(HTTPException)
 async def http_error(request: Request, exc: HTTPException):
     # 统一错误格式与 OpenAI 对齐：{"error": {message, type}}
+    # headers 必须转发：429 限流响应靠这里的 Retry-After / X-RateLimit-* 告诉
+    # 调用方何时重试；不转发的话这些头会随异常一起丢掉（实测全为 None）。
     detail = exc.detail
     if isinstance(detail, dict) and "error" in detail:
         content = detail
     else:
         content = {"error": {"message": str(detail), "type": "invalid_request_error"}}
-    return JSONResponse(status_code=exc.status_code, content=content)
+    return JSONResponse(status_code=exc.status_code, content=content,
+                        headers=getattr(exc, "headers", None))
 
 
 @app.exception_handler(RequestValidationError)
@@ -1135,6 +1739,45 @@ async def validation_error(request: Request, exc: RequestValidationError):
     msg = "; ".join(f"{'.'.join(str(x) for x in e.get('loc', []))}: {e.get('msg')}" for e in exc.errors())
     return JSONResponse(status_code=422, content={
         "error": {"message": msg, "type": "invalid_request_error", "param": None, "code": "invalid_value"}})
+
+
+@app.exception_handler(LLM_CONTEXT_OVERFLOW)
+async def context_overflow_handler(request: Request, exc):
+    """Prompt 超出模型上下文窗口 → 413，而不是伪装成 500。
+
+    历史缺陷：`llama.cpp` 对超长 prompt 返回 400
+    `exceed_context_size_error`，网关吞掉后落到 `require_gpu` 分支，
+    抛出「GPU 推理不可用」，最终被下面的兜底 handler 变成 500
+    「服务内部错误，请稍后重试」。
+
+    后果：SQLBot 的 Text-to-SQL 带 155 张表 schema（约 73k tokens）
+    稳定触发，调用方只看到 500，完全无从判断是 prompt 太长——
+    会误以为「网关挂了 / GPU 不可用」，实际 GPU 一直正常。
+
+    现在返回 413 + 明确的 `context_overflow` 类型与 token 数，
+    调用方可据此裁剪上下文（例如减少绑定表数量）后重试。
+    """
+    request_id = uuid.uuid4().hex
+    logger.warning(
+        "[gateway] 上下文超限 request_id=%s path=%s actual=%s limit=%s model=%s",
+        request_id, request.url.path,
+        getattr(exc, "actual_tokens", None),
+        getattr(exc, "limit_tokens", None),
+        getattr(exc, "model", None),
+    )
+    return JSONResponse(
+        status_code=413,
+        headers={"X-Request-Id": request_id},
+        content={"error": {
+            "message": str(exc),
+            "type": "context_overflow",
+            "request_id": request_id,
+            "actual_tokens": getattr(exc, "actual_tokens", None),
+            "limit_tokens": getattr(exc, "limit_tokens", None),
+            "model": getattr(exc, "model", None),
+            "hint": "请减少上下文（如降低绑定表数量 / 截断历史）或提高 n_ctx 后重试",
+        }},
+    )
 
 
 @app.exception_handler(Exception)
@@ -1200,7 +1843,11 @@ def vision(req: VisionRequest):
             "schedule": schedule,
         })
         return JSONResponse(result)
-    text, backend, _ = LLM.chat_vision(req.prompt, img, req.mime, req.temperature, req.max_tokens)
+    # `chat_vision` 内部把后端不可用折叠成明确错误文本（HTTP 200，前端不会看到
+    # Network Error，见 llm.py 的说明）；但若仍有 RuntimeError 漏出，统一转 503，
+    # 不让它退化成 500。
+    with _llm_runtime_guard("vision"):
+        text, backend, _ = LLM.chat_vision(req.prompt, img, req.mime, req.temperature, req.max_tokens)
     result = _completion_shell(model_name, text, "stop",
                                _usage(req.prompt, text), time.time() - t0, backend=backend)
     route = _route_summary()
@@ -1257,9 +1904,11 @@ def chat_session(req: SessionChatRequest, request: Request):
         # 多轮会话天然长文本：同样走硬件调度（长文本 → qwen2.5-7b，GPU 优先）
         prompt_chars = sum(len(str(m.get("content") or "")) for m in msgs)
         schedule = LLM.schedule_text(prompt_chars, LLM.text_model)
-        text, backend, _ = LLM.chat(msgs, temperature=req.temperature,
-                                    max_tokens=req.max_tokens,
-                                    model=schedule.get("model") or LLM.text_model)
+        # 多轮会话同样依赖本地推理：后端停机时必须 503（而不是 500）。
+        with _llm_runtime_guard("chat_session"):
+            text, backend, _ = LLM.chat(msgs, temperature=req.temperature,
+                                        max_tokens=req.max_tokens,
+                                        model=schedule.get("model") or LLM.text_model)
     finally:
         LLM.end_text_request()
     _memory.append_turn(req.session_id, "assistant", text)
@@ -1304,10 +1953,16 @@ class ToolExecutionRequest(BaseModel):
 
 
 @app.get("/v1/ai/tools")
-def list_ai_tools(category: str | None = None, role: str | None = None):
+def list_ai_tools(request: Request, category: str | None = None, role: str | None = None):
     """返回符合 OpenAI Function Calling 标准的工具元数据列表，支持按 Agent 角色 (buyer/finance/fulfillment) 过滤最小权限工具集。"""
-    if role:
-        tools_list = TOOLBOX.get_tools_by_role(role)
+    # 角色来源优先级：`X-Agent-Role` 头 > query `role`。
+    #
+    # 历史缺陷：这里只认 query `role`，而网关其他端点（/mcp、/v1/chat/completions）
+    # 都以 `X-Agent-Role` 头为准。结果是带 `X-Agent-Role: support` 的调用方
+    # 拿到**全量**工具清单（含建草稿、财务审批），清单与执行期权限完全不一致。
+    effective_role = (resolve_role(request) or role or "").strip().lower()
+    if effective_role:
+        tools_list = TOOLBOX.get_tools_by_role(effective_role)
     elif category == "mall":
         tools_list = TOOLBOX.MALL_TOOL_DEFS
     elif category == "builtin":
@@ -1315,13 +1970,18 @@ def list_ai_tools(category: str | None = None, role: str | None = None):
     elif category == "local":
         tools_list = TOOLBOX.local_tool_defs()
     else:
-        tools_list = TOOLBOX.TOOL_DEFS + TOOLBOX.local_tool_defs()
+        # 严格模式下未声明角色只给只读清单：执行期本来就会拒绝写工具，
+        # 继续下发写 schema 只会暴露能力并制造「看得见、调必 403」的假象。
+        tools_list = (
+            TOOLBOX.readonly_tool_defs() if STRICT_ROLE
+            else TOOLBOX.TOOL_DEFS + TOOLBOX.local_tool_defs()
+        )
 
     return {
         "object": "list",
         "data": tools_list,
         "count": len(tools_list),
-        "role": role or "all",
+        "role": effective_role or "all",
         "lanlink": {
             "mall_tools_count": len(TOOLBOX.MALL_TOOL_DEFS),
             "local_tools_count": len(TOOLBOX.local_tool_defs()),
@@ -1330,10 +1990,56 @@ def list_ai_tools(category: str | None = None, role: str | None = None):
     }
 
 
+def _resolve_tool_role(request: Request | None, body_role: str | None = None,
+                       default: str = "") -> str:
+    """工具端点的角色解析：`X-Agent-Role` 头 > 请求体 role > query role > 默认值。
+
+    统一入口的原因：`/v1/ai/tools/execute` 与 `/v1/ai/tools/{short_name}` 的
+    角色来源不一致，历史上只有后者读了头、前者完全没校验，导致只读客服
+    角色可以直接调写工具。
+    """
+    # 服务端绑定优先（见 resolve_role）：已绑定 key 的 `X-Agent-Role` 不再生效。
+    bound = resolve_role(request) if request else ""
+    if bound:
+        return bound.strip().lower()
+    # 严格模式：未绑定的 key 也不能靠 header/body/query 自报角色——
+    # 历史缺陷：`/v1/ai/tools/execute?role=buyer` 在严格模式下仍放行写工具。
+    if STRICT_ROLE:
+        return default.strip().lower()
+    header = (request.headers.get("X-Agent-Role") or "").strip() if request else ""
+    query = (request.query_params.get("role") or "").strip() if request else ""
+    return (header or (body_role or "").strip() or query or default).strip().lower()
+
+
+def _deny_tool(role: str, tool: str) -> HTTPException:
+    """构造统一的 403 越权响应（与 /mcp、/v1/chat/completions 的 permission_denied 同形）。"""
+    logger.warning("[tools] 越权工具调用被拒 role=%r tool=%s", role or None, tool)
+    # 审计埋点：拒绝次数按角色/工具维度计数，便于发现「某个集成方一直越权」。
+    try:
+        REGISTRY.tool_calls_total.inc({
+            "tool": tool, "role": role or "unknown", "success": "false"})
+    except Exception:  # noqa: BLE001 - 指标失败不能影响拒绝响应
+        pass
+    detail = {
+        "message": f"角色 {role or '(未声明)'} 无权使用工具: {tool}",
+        "type": "permission_denied",
+        "denied_tools": [tool],
+    }
+    return HTTPException(status_code=403, detail={"error": detail})
+
+
 @app.post("/v1/ai/tools/execute")
-def execute_ai_tool(req: ToolExecutionRequest):
+def execute_ai_tool(req: ToolExecutionRequest, request: Request):
     """统一工具执行中继端点：支持 9 大电商核心工具及 4 大本地内置工具。"""
     t0 = time.time()
+    # 执行期角色校验（P0）：清单过滤（GET /v1/ai/tools）只是「告诉调用方有哪些工具」，
+    # 调用方完全可以指定任意工具名。历史缺陷：`support`（只读客服）实测在这里
+    # 成功建出真实草稿单 dft_7c8e80d8cb3247ae，而同一工具走 /mcp 与
+    # /v1/chat/completions 都被正确拒绝——只有这个集成端点漏了校验。
+    agent_role = _resolve_tool_role(request, req.role)
+    if not TOOLBOX.is_tool_allowed_for_role(req.tool, agent_role):
+        raise _deny_tool(agent_role, req.tool)
+
     result = TOOLBOX.execute_tool(
         req.tool,
         req.arguments,
@@ -1347,7 +2053,7 @@ def execute_ai_tool(req: ToolExecutionRequest):
     data = result.get("data") if "data" in result else {k: v for k, v in result.items() if k not in ("ok", "tool", "elapsedMs", "error")}
 
     # 记录 Prometheus 工具执行指标
-    agent_role = req.role or "general"
+    agent_role = agent_role or "general"
     REGISTRY.tool_calls_total.inc({
         "tool": req.tool,
         "role": agent_role,
@@ -1373,28 +2079,53 @@ def execute_ai_tool(req: ToolExecutionRequest):
 
 
 @app.post("/v1/ai/tools/{short_name}")
-def execute_specific_tool(short_name: str, body: dict = None, request: Request = None):
+def execute_specific_tool(short_name: str, request: Request, body: dict = None):
     """单独工具调用路径：供 OpenAPI 单 Action 平台（如 GPTs）直接调用。"""
     full_name = f"lanlink_{short_name}" if not short_name.startswith("lanlink_") else short_name
-    role = request.headers.get("X-Agent-Role") if request else "general"
-    return execute_ai_tool(ToolExecutionRequest(tool=full_name, arguments=body or {}, role=role))
+    # 这里同样先解析角色再交给 execute_ai_tool；后者内部还会再校验一次
+    # （幂等），保证任何内部复用路径都绕不过执行期校验。
+    role = _resolve_tool_role(request)
+    return execute_ai_tool(
+        ToolExecutionRequest(tool=full_name, arguments=body or {}, role=role),
+        request,
+    )
 
 
 @app.get("/v1/ai/openapi.json")
-def get_ai_openapi_spec(request: Request):
-    """动态生成符合 OpenAPI 3.0.3 标准的元数据文档，支持 Dify/Coze/GPTs 一键导入。"""
+def get_ai_openapi_spec(request: Request, full: bool = False):
+    """动态生成符合 OpenAPI 3.0.3 标准的元数据文档，支持 Dify/Coze/GPTs 一键导入。
+
+    匿名请求只会拿到**只读版**：写工具（建草稿 / 财务过审 / 审批签发）的 path
+    与参数 schema 一律不出现，避免未认证方枚举写能力。需要导入写工具的有权
+    集成方带有效网关 key 并显式传 `?full=1`，才能拿到完整版。
+    """
     base_url = str(request.base_url).rstrip("/")
     paths = {
         "/v1/ai/tools/execute": {
             "post": {
                 "summary": "统一电商原子工具调度接口",
                 "operationId": "executeTool",
+                "description": (
+                    "执行任一已授权工具。只读版文档不列出写工具 schema；"
+                    "写能力需由 GATEWAY_KEY_ROLES 绑定角色后调用。"
+                ),
                 "requestBody": {
                     "required": True,
                     "content": {
                         "application/json": {
                             "schema": {
-                                "$ref": "#/components/schemas/ToolExecutionRequest"
+                                "type": "object",
+                                "required": ["tool"],
+                                "properties": {
+                                    "tool": {
+                                        "type": "string",
+                                        "description": "工具名称（见 /v1/ai/tools 按角色过滤后的清单）",
+                                    },
+                                    "arguments": {
+                                        "type": "object",
+                                        "description": "工具参数，结构由具体工具定义决定",
+                                    },
+                                },
                             }
                         }
                     }
@@ -1416,9 +2147,16 @@ def get_ai_openapi_spec(request: Request):
     }
 
     # 为每个商城工具暴露单独的 operation 路径
+    #
+    # 公开版过滤写工具；完整版需带 key 且显式 `?full=1`（见函数 docstring）。
+    # `request.state.api_key` 只会在 require_gateway_key 通过后被设置，因此匿名
+    # 请求即使伪造 `?full=1` 也拿不到写工具 schema。
+    include_write_tools = bool(full and _match_gateway_key(request))
     for tool_def in TOOLBOX.MALL_TOOL_DEFS:
         fn = tool_def["function"]
         name = fn["name"]
+        if name in _OPENAPI_WRITE_TOOL_NAMES and not include_write_tools:
+            continue
         short_name = name.replace("lanlink_", "")
         paths[f"/v1/ai/tools/{short_name}"] = {
             "post": {
@@ -1450,7 +2188,11 @@ def get_ai_openapi_spec(request: Request):
         "openapi": "3.0.3",
         "info": {
             "title": "LANLink B2B Industrial Mall AI Tools",
-            "description": "LANLink 工业品电商核心 AI 工具集：提供商品搜索、规格详情、阶梯报价计算、人在回路意向草稿、政策问答及物流追踪。",
+            "description": (
+                "LANLink 工业品电商核心 AI 工具集：提供商品搜索、规格详情、阶梯报价计算、"
+                "政策问答及物流追踪。公开文档只包含只读工具；写工具（建草稿 / 财务过审 / "
+                "审批签发）需使用已绑定角色的网关 key，并以 `?full=1` 获取完整 schema。"
+            ),
             "version": "1.1.0"
         },
         "servers": [
@@ -1470,7 +2212,6 @@ def get_ai_openapi_spec(request: Request):
                 }
             },
             "schemas": {
-                "ToolExecutionRequest": ToolExecutionRequest.model_json_schema(),
                 "ToolExecutionResponse": {
                     "type": "object",
                     "properties": {
@@ -1502,9 +2243,26 @@ async def mcp_endpoint(request: Request):
             "error": {"code": -32700, "message": "Parse error: Invalid JSON"}
         })
 
+    # JSON-RPC 2.0 规定请求必须是**对象**。历史缺陷：直接对 list / null / 字符串
+    # 调 `.get()` 抛 AttributeError → 500。按规范回 -32600（Invalid Request）。
+    if not isinstance(body, dict):
+        return JSONResponse(status_code=400, content={
+            "jsonrpc": "2.0", "id": None,
+            "error": {"code": -32600,
+                      "message": "Invalid Request: JSON-RPC 请求必须是对象"},
+        })
+
     req_id = body.get("id")
     method = body.get("method")
     params = body.get("params") or {}
+
+    # `params` 也必须是对象（或省略）。数组/字符串会让后续 `params.get` 抛异常。
+    if not isinstance(params, dict):
+        return JSONResponse(status_code=400, content={
+            "jsonrpc": "2.0", "id": req_id,
+            "error": {"code": -32602,
+                      "message": "Invalid params: params 必须是对象"},
+        })
 
     # 1. initialize 握手
     if method == "initialize":
@@ -1529,8 +2287,18 @@ async def mcp_endpoint(request: Request):
 
     # 3. tools/list 工具清单（转换为 MCP inputSchema 规范，支持按角色过滤）
     elif method == "tools/list":
-        agent_role = request.headers.get("X-Agent-Role") or params.get("role")
-        source_defs = TOOLBOX.get_tools_by_role(agent_role)
+        # 严格模式下**不能**再从 JSON-RPC params 读角色——那是客户端可控的。
+        # 历史缺陷：`resolve_role(request) or params.get("role")` 让
+        # `/mcp {"params":{"role":"buyer"}}` 在严格模式 + 绑定 support key 下
+        # 仍能拿到 buyer 的写权限。
+        agent_role = resolve_role(request)
+        if not STRICT_ROLE and not agent_role:
+            agent_role = params.get("role")
+        # 严格模式下未绑定 key（agent_role 为空）只下只读清单，与执行期一致。
+        source_defs = (
+            TOOLBOX.readonly_tool_defs() if STRICT_ROLE and not agent_role
+            else TOOLBOX.get_tools_by_role(agent_role)
+        )
         mcp_tools = []
         for d in source_defs:
             fn = d["function"]
@@ -1552,6 +2320,42 @@ async def mcp_endpoint(request: Request):
     elif method == "tools/call":
         tool_name = params.get("name")
         tool_args = params.get("arguments") or {}
+
+        # 严格模式下「未声明角色」不是「无限制角色」：/mcp 没有 body/header 的
+        # 默认角色，`_resolve_tool_role(request)` 只读 header/query（与
+        # /v1/ai/tools/execute 一致），不会把 JSON-RPC `params.role` 当身份。
+        # 未绑定 key 在严格模式下得到空角色，写工具按 fail-closed 拒绝。
+        #
+        # 这里显式再校验一次：MCP 端点历史上曾用 `params.role` 兜底，若未来
+        # 有人把 STRICT_ROLE 判断写错，这层仍能挡住。
+        if STRICT_ROLE and not resolve_role(request):
+            logger.warning(
+                "[mcp] 严格模式未绑定角色的 key 尝试调用工具，按未声明角色处理: tool=%s",
+                tool_name,
+            )
+
+        # 执行期角色校验（P0）：`tools/list` 只是「下发什么清单」，调用方可以直接
+        # 指定任意工具名绕过清单。历史缺陷：`support` 角色实测成功
+        # `lanlink_create_cart_draft`（建草稿）/ `lanlink_audit_procurement_draft`
+        # （过审 PASSED）/ `lanlink_approve_procurement_flow`（签发 approvalToken）。
+        # 同 tools/list：严格模式下不采信 JSON-RPC params 里的角色（客户端可控）。
+        call_role = resolve_role(request)
+        if not STRICT_ROLE and not call_role:
+            call_role = params.get("role") or ""
+        if not TOOLBOX.is_tool_allowed_for_role(tool_name, call_role):
+            logger.warning(
+                "[mcp] 越权工具调用被拒 role=%r tool=%s", call_role or None, tool_name
+            )
+            return {
+                "jsonrpc": "2.0", "id": req_id,
+                "result": {
+                    "content": [{"type": "text", "text": json.dumps({
+                        "error": f"角色 {call_role or '(未声明)'} 无权调用工具 {tool_name}",
+                        "type": "permission_denied",
+                    }, ensure_ascii=False)}],
+                    "isError": True,
+                },
+            }
 
         # 工具里含 FT.SEARCH + 嵌入调用，属阻塞 I/O：放线程池，避免卡住事件循环
         result = await run_in_threadpool(

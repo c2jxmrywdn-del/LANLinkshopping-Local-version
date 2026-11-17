@@ -195,9 +195,9 @@ watch(
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ll-border, #e2e8f0);
   border-radius: 12px;
-  background: #fff;
+  background: var(--ll-card, #fff);
 }
 .stripe-express-wrapper.is-hidden {
   padding: 10px 16px;
@@ -208,7 +208,7 @@ watch(
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--ll-ink, #0f172a);
 }
 .stripe-express-title {
   flex: 1;
@@ -227,7 +227,7 @@ watch(
 .stripe-express-skeleton {
   height: 44px;
   border-radius: 8px;
-  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
+  background: linear-gradient(90deg, var(--ll-surface-inset, rgba(15, 23, 42, 0.04)) 25%, var(--ll-border, #e2e8f0) 37%, var(--ll-surface-inset, rgba(15, 23, 42, 0.04)) 63%);
   background-size: 400% 100%;
   animation: ll-express-shimmer 1.4s ease infinite;
 }
@@ -239,10 +239,10 @@ watch(
   margin: 0;
   font-size: 11px;
   line-height: 1.5;
-  color: #94a3b8;
+  color: var(--ll-text-tertiary, #94a3b8);
 }
 .stripe-express-msg--ok {
-  color: #64748b;
+  color: var(--ll-muted, #64748b);
 }
 .stripe-express-msg--error {
   color: #e4393c;

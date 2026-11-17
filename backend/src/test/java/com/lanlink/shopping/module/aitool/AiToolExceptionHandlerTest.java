@@ -59,6 +59,9 @@ public class AiToolExceptionHandlerTest {
 
         MockEnvironment environment = new MockEnvironment();
         environment.setProperty("ai.internal-secret", INTERNAL_SECRET);
+        // MockMvc 默认 remoteAddr=127.0.0.1，不在默认容器网段白名单内；
+        // 只在这些 HTTP 契约测试里显式放开 loopback，生产默认仍只认 172.19.0.0/16。
+        environment.setProperty("ai.internal.allowed-cidrs", "172.19.0.0/16,127.0.0.1");
 
         AiToolsInternalController controller = new AiToolsInternalController(
                 toolExecutionService, new AiToolGuard(environment, apiKeyService));

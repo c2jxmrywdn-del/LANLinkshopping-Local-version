@@ -48,6 +48,15 @@ public class SupportAiAnswerService {
     /** 思考模式：模型先在网关内部推理，最终回答不显示思考过程/来源（SUPPORT_AI_THINKING=false 可关）。 */
     @Value("${SUPPORT_AI_THINKING:true}")
     private boolean thinkingEnabled = true;
+    /**
+     * 语音链路优先渠道（逗号分隔，按序尝试）。
+     *
+     * <p>产品约束：语音对话必须由 MiMo 语音类大模型承载，不能落到本地 qwen2.5-7b
+     * （本地 7B 首 token 需 6s+，且用户明确要求用 MiMo）。默认 `mimo,mimosa,deepseek`：
+     * MiMo 优先，未启用时按序降级，最终仍能出声而不是直接失败。
+     */
+    @Value("${SUPPORT_VOICE_CHANNEL_ORDER:mimo,mimosa,deepseek}")
+    private String voiceChannelOrder = "mimo,mimosa,deepseek";
     private volatile long disabledUntil = 0;
 
     public SupportAiAnswerService(OutboundModelConfigService configService) {
@@ -292,6 +301,130 @@ public class SupportAiAnswerService {
         }
     }
 
+    /**
+     * 逐 token 流式生成（供语音全双工链路使用）。
+     *
+     * <p>与 {@link #answerStream} 的区别：不写 SSE、不依赖 Web 容器，只把每个 delta 回调给调用方，
+     * 让 WebSocket 处理器可以「边生成边切句边合成 TTS」，首句延迟从「整段生成完」降到「首个句号」。
+     *
+     * <p>降级语义与 {@code answerStream} 一致：网关不可达 / 熔断 / 全部渠道失败时，
+     * 回调一次 grounding 或兜底文案，保证调用方永远能拿到可朗读文本。
+     *
+     * @param question      用户问题
+     * @param grounding     平台侧已检索到的事实（可为空）
+     * @param onDelta       每个增量文本片段的回调（在 HTTP 读线程执行，调用方需自行保证线程安全）
+     * @param shouldCancel  返回 true 时尽快停止读流（用于 barge-in 打断）
+     * @return 完整回答文本（失败时为空串）
+     */
+    public String answerStreamTokens(String question, String grounding,
+                                     Consumer<String> onDelta, java.util.function.BooleanSupplier shouldCancel) {
+        return answerStreamTokens(question, grounding, onDelta, shouldCancel, thinkingEnabled);
+    }
+
+    /**
+     * 同上，显式指定是否开启思考模式。
+     *
+     * <p>语音全双工必须传 {@code false}：实测 MiMo 云端 thinking=true 的首 token 延迟
+     * 约 16.6s，thinking=false 约 5.6s（同一问题）。语音用户等 16 秒才听到第一句
+     * 是不可接受的，且语音回答通常短、不需要多步推理。
+     */
+    public String answerStreamTokens(String question, String grounding,
+                                     Consumer<String> onDelta, java.util.function.BooleanSupplier shouldCancel,
+                                     boolean enableThinking) {
+        if (!StringUtils.hasText(question)) return "";
+        if (System.currentTimeMillis() < disabledUntil || channels().isEmpty()) {
+            String fallbackText = StringUtils.hasText(grounding)
+                    ? grounding : "您好！当前客服仅能解答平台知识库相关问题。";
+            if (onDelta != null) onDelta.accept(fallbackText);
+            return fallbackText;
+        }
+
+        boolean english = !containsCjk(question);
+        String systemPrompt = buildSystemPrompt(english);
+        String userContent = buildUserContent(question, grounding, english);
+        StringBuilder accumulator = new StringBuilder();
+
+        // 语音链路走 voiceChannels()：MiMo 优先（产品要求语音由 MiMo 承载）
+        for (OutboundModelConfigService.ChannelConfig ch : voiceChannels()) {
+            if (shouldCancel != null && shouldCancel.getAsBoolean()) return accumulator.toString();
+            // 已向调用方吐出过 token 就不能再换渠道重试：TTS 已经按前一个渠道的文本
+            // 合成并下发了音频，再补一遍完整答案会让用户听到两段内容。
+            if (accumulator.length() > 0) break;
+            try {
+                String url = OutboundModelConfigService.chatCompletionsEndpoint(ch.baseUrl());
+                String model = StringUtils.hasText(ch.modelName())
+                        ? ch.modelName() : OutboundModelConfigService.defaultModelFor(ch.channel());
+
+                ObjectNode body = JSON.createObjectNode();
+                body.put("model", model);
+                body.put("temperature", 0.3);
+                body.put("stream", true);
+                body.put("thinking", enableThinking);
+                body.put("include_reasoning", enableThinking);
+                body.put("use_kb", false);
+                var messages = body.putArray("messages");
+                messages.addObject().put("role", "system").put("content", systemPrompt);
+                messages.addObject().put("role", "user").put("content", userContent);
+
+                HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                        .timeout(Duration.ofSeconds(TIMEOUT_SECONDS))
+                        .header("Content-Type", "application/json")
+                        .header("Authorization", "Bearer " + ch.apiKey())
+                        .header("X-Agent-Role", "buyer")
+                        .POST(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body)))
+                        .build();
+
+                HttpResponse<java.util.stream.Stream<String>> resp =
+                        HTTP.send(req, HttpResponse.BodyHandlers.ofLines());
+                if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
+                    log.warn("[support-ai-voice] provider {} HTTP {}", ch.channel(), resp.statusCode());
+                    continue;
+                }
+
+                accumulator.setLength(0);
+                try (var lines = resp.body()) {
+                    var it = lines.iterator();
+                    while (it.hasNext()) {
+                        if (shouldCancel != null && shouldCancel.getAsBoolean()) break;
+                        String trimmed = it.next().trim();
+                        if (!trimmed.startsWith("data:")) continue;
+                        String data = trimmed.substring(5).trim();
+                        if (data.isEmpty() || "[DONE]".equals(data)) continue;
+                        try {
+                            JsonNode chunk = JSON.readTree(data);
+                            String delta = chunk.path("choices").path(0).path("delta").path("content").asText("");
+                            if (!StringUtils.hasText(delta)) continue;
+                            accumulator.append(delta);
+                            if (onDelta != null) onDelta.accept(delta);
+                        } catch (Exception ignored) {
+                            // 单行解析失败不影响后续 token
+                        }
+                    }
+                }
+
+                String full = accumulator.toString();
+                if (StringUtils.hasText(full)) {
+                    if (com.lanlink.shopping.module.pricemonitor.service.AnalysisSafetyFilter
+                            .containsInjectionEcho(full)) {
+                        log.warn("[support-ai-voice] provider {} answer dropped: prompt-injection echo", ch.channel());
+                        accumulator.setLength(0);
+                        continue;
+                    }
+                    disabledUntil = 0;
+                    return cleanAnswer(full.trim());
+                }
+            } catch (Exception e) {
+                log.warn("[support-ai-voice] provider {} failed: {}", ch.channel(), e.getMessage());
+            }
+        }
+
+        disabledUntil = System.currentTimeMillis() + BREAKER_MS;
+        String fallbackText = StringUtils.hasText(grounding)
+                ? grounding : "您好！客服暂时无法响应，请稍后重试。";
+        if (onDelta != null && accumulator.length() == 0) onDelta.accept(fallbackText);
+        return fallbackText;
+    }
+
     /** 模拟 SSE 流式直出：用于问候、自我介绍或本地知识库兜底，符合 OpenAI SSE 协议 */
     public static void sendSimulatedStream(SseEmitter emitter, String text, String source) {
         try {
@@ -443,6 +576,29 @@ public class SupportAiAnswerService {
                 "mimosa".equalsIgnoreCase(a.channel()) ? 0 : 1,
                 "mimosa".equalsIgnoreCase(b.channel()) ? 0 : 1));
         return list;
+    }
+
+    /**
+     * 语音链路渠道顺序：按 {@code SUPPORT_VOICE_CHANNEL_ORDER} 显式排序。
+     *
+     * <p>默认 `mimo,mimosa,deepseek`：MiMo 云优先（语音场景要求），本地网关次之，
+     * 最后是 DeepSeek。未在列表中的渠道排在末尾，保证「配置写错也不至于完全不出声」。
+     */
+    List<OutboundModelConfigService.ChannelConfig> voiceChannels() {
+        List<String> order = new ArrayList<>();
+        for (String token : (voiceChannelOrder == null ? "" : voiceChannelOrder).split(",")) {
+            String t = token.trim().toLowerCase();
+            if (!t.isEmpty()) order.add(t);
+        }
+        List<OutboundModelConfigService.ChannelConfig> list =
+                new ArrayList<>(configService.activeChannels());
+        list.sort((a, b) -> Integer.compare(rank(order, a.channel()), rank(order, b.channel())));
+        return list;
+    }
+
+    private static int rank(List<String> order, String channel) {
+        int idx = order.indexOf(channel == null ? "" : channel.trim().toLowerCase());
+        return idx < 0 ? order.size() : idx;
     }
 
     /** 去掉模型在回答尾部自行附带的"来源：《…》"、Source 以及"知识库/参考资料"等元话术。 */

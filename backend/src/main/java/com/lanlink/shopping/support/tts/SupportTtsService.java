@@ -42,9 +42,24 @@ public class SupportTtsService {
             .connectTimeout(Duration.ofSeconds(3))
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    /**
+     * 网关合成超时。
+     *
+     * <p>实测 MiMo 合成速率约 45–50ms/字：258 字 ≈ 14.8s、400 字 ≈ 20s、500 字 ≈ 48s。
+     * 原值 30s 会让 400 字以上的回答在网关仍在合成时被客户端中断，前端只看到
+     * `code:503`，配合 `SupportChat.vue` 的静默 catch 表现为「点朗读没反应」。
+     * 90s 给足 500 字上限 + 网络抖动余量，且仍小于 nginx/Vite 的 600s 代理超时。
+     */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(90);
     private static final int MAX_TEXT_LENGTH = 500;
     private static final int CACHE_CAPACITY = 200;
+    /**
+     * 缓存字节上限（约 48MB 的 base64 字符）。
+     *
+     * <p>按条数限流不够：500 字回答的 base64 约 2MB，200 条最坏可达 400MB，
+     * 足够把 2g 堆的容器打爆。这里同时按字符量封顶，超出即淘汰最旧条目。
+     */
+    private static final long CACHE_MAX_CHARS = 48L * 1024 * 1024;
     public static final String SUPPORTED_FORMAT = "mp3";
 
     public static final String DEFAULT_VOICE = "茉莉";
@@ -58,11 +73,19 @@ public class SupportTtsService {
     private final String voice;
     private final String style;
 
+    /** 缓存当前占用的 base64 字符总量（配合 CACHE_MAX_CHARS 做字节级封顶）。 */
+    private long cacheChars = 0L;
+
     private final Map<String, TtsResult> cache = Collections.synchronizedMap(
             new LinkedHashMap<>(16, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, TtsResult> eldest) {
-                    return size() > CACHE_CAPACITY;
+                    if (size() <= CACHE_CAPACITY && cacheChars <= CACHE_MAX_CHARS) {
+                        return false;
+                    }
+                    String dropped = eldest.getValue().audioBase64();
+                    cacheChars -= dropped == null ? 0 : dropped.length();
+                    return true;
                 }
             });
 
@@ -74,7 +97,9 @@ public class SupportTtsService {
             @Value("${SUPPORT_TTS_STYLE:" + DEFAULT_STYLE + "}") String style) {
         this.gatewayBaseUrl = normalizeGatewayUrl(gatewayBaseUrl);
         this.gatewayApiKey = gatewayApiKey;
-        this.voice = sanitizeVoice(voice);
+        // 白名单收敛：只接受实测可用的 MiMo 音色，其余（晓晓/云希/Molly 等）一律回退「茉莉」，
+        // 避免上游 400 导致整条朗读链路 100% 失败。
+        this.voice = sanitizeVoiceByWhitelist(voice, DEFAULT_VOICE);
         // 风格同样做乱码兜底：GBK 写坏的长串会命中「?」/替换符/超长，回退内置常量
         this.style = sanitizeStyleOrFallback(style, DEFAULT_STYLE);
     }
@@ -133,6 +158,21 @@ public class SupportTtsService {
      */
     private static final String MOJIBAKE_MARKERS = "鑼帢閼煎甯閹劗閺鍟鍕鍨鎷欒鍙鍞鍜鍝";
 
+    /**
+     * MiMo TTS 合法音色白名单（实测唯一可用值）。
+     *
+     * <p>实测：`茉莉` 返回 200；`晓晓`/`云希`/`女声`/`Molly`/`male`/`female`/`alloy`
+     * 全部返回 502（上游 400）。原实现只过滤乱码、不校验合法性，
+     * 一旦运维把 `SUPPORT_TTS_VOICE` 填成常见音色名，整条朗读链路 100% 失败且
+     * 前端静默——所以这里显式收敛到白名单，非法值直接回退默认音色。
+     */
+    private static final java.util.Set<String> ALLOWED_VOICES = java.util.Set.of("茉莉");
+
+    static String sanitizeVoiceByWhitelist(String voice, String fallback) {
+        String sanitized = sanitizeVoiceOrFallback(voice, fallback);
+        return ALLOWED_VOICES.contains(sanitized) ? sanitized : fallback;
+    }
+
     static boolean containsMojibakeMarker(String text) {
         if (text == null || text.isEmpty()) return false;
         for (int i = 0; i < MOJIBAKE_MARKERS.length(); i++) {
@@ -175,7 +215,17 @@ public class SupportTtsService {
         }
 
         TtsResult result = requestGateway(taggedText, effectiveVoice, format, effectiveStyle);
-        cache.put(cacheKey, result);
+        // 字节级封顶：按「新值 - 旧值」增量记账，同 key 覆盖不会重复计数
+        // （removeEldestEntry 里按被淘汰条目的长度回扣）。
+        String audio = result.audioBase64();
+        long incoming = audio == null ? 0 : audio.length();
+        synchronized (cache) {
+            TtsResult previous = cache.get(cacheKey);
+            long outgoing = previous == null || previous.audioBase64() == null
+                    ? 0 : previous.audioBase64().length();
+            cacheChars += incoming - outgoing;
+            cache.put(cacheKey, result);
+        }
         return result;
     }
 

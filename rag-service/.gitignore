@@ -1,0 +1,6 @@
+# 本地测试虚拟环境（`python -m venv .venv-test`）
+.venv*/
+# coverage 数据文件
+.coverage
+.coverage.*
+htmlcov/

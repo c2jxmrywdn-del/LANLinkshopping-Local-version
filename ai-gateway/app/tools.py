@@ -15,6 +15,7 @@
 import html
 import ipaddress
 import json
+import logging
 import os
 import re
 import socket
@@ -22,6 +23,8 @@ import time
 from urllib.parse import quote, urljoin, urlparse
 
 import httpx
+
+logger = logging.getLogger("lanlink.ai-gateway")
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
@@ -221,6 +224,9 @@ ROLE_TOOL_MAP = {
         "web_search",
         "fetch_page",
         "think",
+        # 资讯结构化抓取（/v1/news/extract 同名门禁）：出站抓取过 robots+SSRF 守卫，
+        # 网关侧不落任何库，仅返回结构化正文与判重结论。
+        "news_extract",
     },
     "finance": {
         "lanlink_audit_procurement_draft",
@@ -244,19 +250,258 @@ ROLE_TOOL_MAP = {
         "lanlink_query_knowledge",
         "lanlink_track_logistics",
     },
+    # 平台内部服务账号（Java 后端自己的 AI 调用：客服 MCP 编排、知识库
+    # `chatViaGatewayTools`、媒体感知、TTS 等）。这些链路只需要「查而不改」，
+    # 但覆盖范围比 support 宽：既查商品/知识，也要查物流 SLA、跑 web_search。
+    # 引入它的原因：`GATEWAY_STRICT_ROLE=1` 后未绑定 key 会退化成空角色，
+    # 而主 key 又是后端所有内部调用的唯一凭据；不给主 key 绑定一个明确角色，
+    # 开严格模式就会把客服/知识库链路一起打挂。
+    # **刻意不含** 3 个写工具（建草稿/过审/审批签发）。
+    "service": {
+        "lanlink_search_products",
+        "lanlink_get_product_detail",
+        "lanlink_calculate_quotation",
+        "lanlink_query_knowledge",
+        "lanlink_search_knowledge",
+        "lanlink_track_logistics",
+        "lanlink_monitor_delivery_sla",
+        "web_search",
+        "fetch_page",
+        "think",
+        # 与 buyer 同口径：后端资讯编排（AI_NEWS_PIPELINE）走 service 角色调
+        # /v1/news/extract:batch；不出 READONLY_BACKEND_TOOLS（空/未知角色仍 fail-closed）。
+        "news_extract",
+    },
 }
 
+#: 显式只读的后端工具白名单。
+#
+# 用途：调用方未声明角色（`role` 为空）时，仍允许这些「查而不改」的工具，
+# 避免把现有客服/巡检链路打挂；其余未声明角色一律拒绝（fail-closed）。
+# 注意：`lanlink_calculate_quotation` 只做计算不落库，`lanlink_track_logistics` /
+# `lanlink_monitor_delivery_sla` 只读物流状态，`*_knowledge` / `*_products` 只读检索。
+# **不包含** `lanlink_create_cart_draft` / `lanlink_audit_procurement_draft` /
+# `lanlink_approve_procurement_flow`——这三个是写操作/审批签发。
+READONLY_BACKEND_TOOLS = frozenset({
+    "lanlink_search_products",
+    "lanlink_get_product_detail",
+    "lanlink_calculate_quotation",
+    "lanlink_query_knowledge",
+    "lanlink_search_knowledge",
+    "lanlink_track_logistics",
+    "lanlink_monitor_delivery_sla",
+    "lanlink_ask_data",
+    "web_search",
+    "fetch_page",
+    "context7_docs",
+    "think",
+})
 
-def get_tools_by_role(role: str | None = None) -> list[dict]:
-    """根据多 Agent 角色筛选输出最小权限工具集（支持 buyer / finance / fulfillment / support / all）。"""
-    # 网关本地只读工具（如向量库检索）对任何角色都可见：它不经后端、不改数据，
-    # 且各角色本来就带 lanlink_query_knowledge，只是那条要绕 Java，这条直接读索引。
+
+#: 网关**本地**工具（`LOCAL_HANDLERS`）的可访问角色白名单。
+#:
+#: 为什么需要单独一张表：本地工具不经过 Java 后端，`ROLE_TOOL_MAP` 原本只覆盖
+#: 后端工具，本地工具靠 `is_local_tool()` 无条件放行。实测 `lanlink_ask_data`
+#: 因此对未声明/未知角色也开放——只读但会暴露业务库聚合结果。
+#:
+#: 未在此表出现的本地工具，按「已识别角色放行、空/未知角色拒绝」处理。
+#:
+#: **重要边界**：只有「会读取业务库聚合数据」的工具才需要收紧。
+#: `lanlink_kb_search` / `lanlink_rag_search` 查的是**平台公开文档**
+#: （政策/商品快照/多模态文档），与 `lanlink_query_knowledge` 同类，
+#: 对任何角色开放是既有约定（`test_local_readonly_tools_open_to_all_roles`
+#: 明确锁住）。把它们也收紧会打挂客服链路。
+#: 特殊值：`None` 表示「不限制角色」，任何角色（含空/未知）都可访问。
+#: 与 `frozenset()`（谁都不许）区分开，避免「空集合 = 全拒」和「不设限」混淆。
+UNRESTRICTED: None = None
+
+LOCAL_TOOL_ROLES: dict[str, frozenset[str] | None] = {
+    # SQLBot 只读问数：**会查业务库聚合结果**（订单数/商品数/金额等），
+    # 只给明确角色。不含空角色与未知角色——这正是本次要堵的口子。
+    # `service` 是平台内部服务账号（见 ROLE_TOOL_MAP 同名角色）：后端自己的
+    # AI 链路（知识库问答、客服编排）需要只读问数，且它本来就持有网关主 key。
+    "lanlink_ask_data": frozenset({"buyer", "finance", "fulfillment", "support", "service"}),
+    # 下面两个是**平台公开文档**检索，与 lanlink_query_knowledge 同类：
+    # 不读业务库、不涉及用户数据。用 `UNRESTRICTED` 显式表达「对任何角色开放」，
+    # 包括空角色与未知角色（既有约定，`test_every_role_sees_the_read_only_tool` 锁住）。
+    "lanlink_rag_search": UNRESTRICTED,
+    "lanlink_kb_search": UNRESTRICTED,
+}
+
+# ============================ MCP fetch/playwright 工具桥 ============================
+# 名字登记与角色映射放本文件（而非 mcp_client_tools.py），避免循环导入：
+# mcp_client_tools 依赖本文件的 register_local_tool/_ssrf_guard，
+# 而本文件的 is_tool_allowed_for_role 需要 MCP 工具名集合做执行期门禁。
+
+#: 当前已注册的 MCP 工具名（mcp_fetch / mcp_browser_*）。由 mcp_client_tools 在
+#: 注册成功/健康摘除时调 register_mcp_tool_name/unregister_mcp_tool_name 维护；
+#: is_tool_allowed_for_role 对命中集合的工具按 MCP_ROLE_TOOL_MAP 显式判定，
+#: 不落入下面「未在表内声明的本地工具对已识别角色放行」的兜底。
+MCP_TOOL_NAMES: set[str] = set()
+
+
+def register_mcp_tool_name(name: str) -> None:
+    MCP_TOOL_NAMES.add(name)
+
+
+def unregister_mcp_tool_name(name: str) -> None:
+    MCP_TOOL_NAMES.discard(name)
+
+
+def _parse_mcp_role_tools() -> dict[str, frozenset[str]]:
+    """解析 LANLINK_MCP_ROLE_TOOLS（格式 `角色:工具1|工具2`，逗号分隔多条目）。
+
+    默认空 = fail-closed：所有角色（含未声明角色）都调不到 MCP 工具。
+    support 条目在解析期直接丢弃并告警——客服不开放外部网页（见上方
+    ROLE_TOOL_MAP["support"] 的注释口径），执行期映射无 support 键自然拒绝，
+    双层保证。
+    """
+    raw = (os.environ.get("LANLINK_MCP_ROLE_TOOLS") or "").strip()
+    mapping: dict[str, frozenset[str]] = {}
+    for entry in raw.split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        role, _, tools_part = entry.rpartition(":")
+        role = role.strip().lower()
+        tool_set = frozenset(t.strip() for t in tools_part.split("|") if t.strip())
+        if role == "support":
+            if tool_set:
+                logger.warning("[mcp] LANLINK_MCP_ROLE_TOOLS 含 support 条目，已丢弃"
+                               "（客服不开放外部网页）: %s", tools_part)
+            continue
+        if role and tool_set:
+            mapping[role] = tool_set
+    return mapping
+
+
+MCP_ROLE_TOOL_MAP: dict[str, frozenset[str]] = _parse_mcp_role_tools()
+
+
+def readonly_tool_defs() -> list[dict]:
+    """只读工具清单（清单下发与执行期校验共用同一口径）。
+
+    <p>为什么需要这个函数：`GET /v1/ai/tools` 与 `/mcp` 的 `tools/list` 只是
+    「告诉调用方有哪些工具」，真正能不能用由执行期校验决定。历史上两者口径
+    不一致：未知角色在清单里拿到全量工具（fail-open），执行时却全部被拒——
+    调用方看到 `lanlink_create_cart_draft` 却永远调不通，只能反复重试。
+
+    <p>现在未知角色统一按最小权限处理：只下发 `READONLY_BACKEND_TOOLS` 内的
+    只读后端工具 + 网关本地只读工具，与 `is_tool_allowed_for_role()` 完全一致。
+
+    <p>**本地工具也要按角色过滤**：`lanlink_ask_data` 虽然只读，但会查业务库聚合
+    结果，对未知角色应当拒绝。如果这里无条件带上 `LOCAL_TOOL_DEFS`，清单里会出现
+    「能看见但调用必 403」的假能力——正是本函数要消除的不一致。
+    """
+    backend = [t for t in TOOL_DEFS if t["function"]["name"] in READONLY_BACKEND_TOOLS]
+    local = [t for t in LOCAL_TOOL_DEFS
+             if is_tool_allowed_for_role(t["function"]["name"], "unknown-role")]
+    return backend + local
+
+
+def get_tools_by_role(role: str | None = None, include_unscoped: bool = True) -> list[dict]:
+    """根据多 Agent 角色筛选输出最小权限工具集（支持 buyer / finance / fulfillment / support / all）。
+
+    未知角色（拼错、伪造的 role 字符串）**不再全量放行**，而是退化为只读工具集：
+    清单与执行期校验必须一致，否则调用方会看到「清单里有、调用必 403」的假能力。
+    """
+    # `role=None`（未声明）返回**全量清单**，这是 MCP 协议语义：
+    # 客户端需要知道服务端有哪些能力才能决定调什么。
+    #
+    # 安全性由**执行期**保证（`is_tool_allowed_for_role`），不靠清单隐藏。
+    # 之前我一度改成「无角色 → 只读清单」，但那会让 MCP 客户端看不到能力，
+    # 与协议习惯冲突，且与既有测试（期望 17 个）不符。
     if not role or role in ("all", "*"):
+        # 网关严格模式 + 未绑定 key：清单也要 fail-closed。
+        # 历史行为是返回全量（MCP 客户端需要知道能力），但在
+        # `GATEWAY_STRICT_ROLE=1` 下，未绑定 key 的执行期只能调只读工具；
+        # 若仍下发写工具 schema，调用方会看到「看得见但永远 403」的假能力，
+        # 同时把写工具参数结构暴露给匿名/未绑定调用方。`include_unscoped=True`
+        # 只给显式需要完整清单的内部调用方（当前没有生产调用）。
+        if not role and not include_unscoped:
+            return readonly_tool_defs()
         return TOOL_DEFS + LOCAL_TOOL_DEFS
     allowed = ROLE_TOOL_MAP.get(role.lower().strip())
     if not allowed:
-        return TOOL_DEFS + LOCAL_TOOL_DEFS
-    return [t for t in TOOL_DEFS if t["function"]["name"] in allowed] + LOCAL_TOOL_DEFS
+        return readonly_tool_defs()
+    # 本地工具同样要按该角色过滤：`lanlink_ask_data` 只对 4 个明确角色开放，
+    # 无条件带上 LOCAL_TOOL_DEFS 会让清单里出现「看得见但调用必 403」的工具。
+    local = [t for t in LOCAL_TOOL_DEFS
+             if is_tool_allowed_for_role(t["function"]["name"], role)]
+    return [t for t in TOOL_DEFS if t["function"]["name"] in allowed] + local
+
+
+def is_tool_allowed_for_role(tool_name: str, role: str | None) -> bool:
+    """判断某角色能否调用指定工具（**执行期**校验，不只是清单过滤）。
+
+    <p>为什么需要这个函数：`get_tools_by_role()` 只过滤「下发给模型的工具清单」，
+    但 MCP 的 `tools/call` 与 `/v1/chat/completions` 的调用方可以直接指定任意工具名，
+    完全绕过清单。历史缺陷：`support` 角色实测成功调用
+    `lanlink_create_cart_draft`（建草稿）、`lanlink_audit_procurement_draft`（过审
+    `auditStatus=PASSED`）、`lanlink_approve_procurement_flow`（签发
+    `approvalToken`）——只读客服角色完成了写操作与审批签发。
+
+    <p>规则：
+      - 本地只读工具（`LOCAL_HANDLERS`）对所有角色开放（不碰后端、不改数据）；
+      - 其余按 `ROLE_TOOL_MAP` 精确匹配；
+      - 未配置角色的工具一律拒绝（fail-closed），而不是像 `get_tools_by_role`
+        那样「未知角色 = 全量放行」。
+    """
+    # 本地工具不能无条件放行。
+    #
+    # 历史缺陷：这里 `if is_local_tool(tool_name): return True` 短路，
+    # 于是 `lanlink_ask_data`（SQLBot 只读问数）对**未声明角色**和**未知角色**
+    # 一律放行——实测 `role=""` 与 `role="unknown-role"` 都能成功问数。
+    # 它虽然只读，但会把业务库聚合结果暴露给任何持有 gateway key 的调用方，
+    # 与「未知角色 fail-closed」的整体策略矛盾。
+    #
+    # 新规则：本地工具按 `LOCAL_TOOL_ROLES` 显式声明可访问角色；
+    # 未声明的本地工具默认只对已识别角色开放。
+    # MCP 工具（mcp_fetch / mcp_browser_*）的执行期门禁必须放在 LOCAL_TOOL_ROLES
+    # 逻辑之前：否则会命中下方「未在映射里声明的本地工具：已识别角色放行」的兜底
+    # （mcp_fetch 不在 LOCAL_TOOL_ROLES 表内，等于对所有已识别角色放开）。
+    # 判定规则：all/* 沿既有超管口径放行；未声明角色拒绝；已识别角色仅当
+    # LANLINK_MCP_ROLE_TOOLS 有映射条目时放行。support 的拒绝由
+    # 「解析期丢弃条目（_parse_mcp_role_tools）+ 映射无该键自然落 frozenset()」
+    # 双层保证。本函数是清单与执行的单一真值源：get_tools_by_role 与
+    # readonly_tool_defs 的本地过滤都调它，清单自动与执行同口径。
+    if tool_name in MCP_TOOL_NAMES:
+        normalized_mcp = (role or "").strip().lower()
+        if normalized_mcp in ("all", "*"):
+            return True
+        if not normalized_mcp:
+            return False
+        return tool_name in MCP_ROLE_TOOL_MAP.get(normalized_mcp, frozenset())
+    if is_local_tool(tool_name):
+        normalized_local = (role or "").strip().lower()
+        if normalized_local in ("all", "*"):
+            return True
+        # 用哨兵区分「未声明」与「显式不设限」：
+        #   - 表里没有该工具 → 走下面的「已识别角色放行」兜底
+        #   - 表里是 UNRESTRICTED(None) → 任何角色都放行
+        #   - 表里是 frozenset → 精确匹配
+        # 注意不能用 `LOCAL_TOOL_ROLES.get(...) is not None` 判存在性，
+        # 因为 UNRESTRICTED 本身就是 None。
+        if tool_name in LOCAL_TOOL_ROLES:
+            allowed_local = LOCAL_TOOL_ROLES[tool_name]
+            if allowed_local is None:
+                return True
+            return normalized_local in allowed_local
+        # 未在映射里声明的本地工具：已识别角色放行，空/未知角色拒绝。
+        return normalized_local in ROLE_TOOL_MAP
+    normalized = (role or "").strip().lower()
+    if normalized in ("all", "*"):
+        return True
+    if not normalized:
+        # 未声明角色的调用按最小权限处理：只允许只读工具（上面已放行本地工具）。
+        # 这里再放行显式标记为只读的后端工具，避免把现有客服链路打挂。
+        return tool_name in READONLY_BACKEND_TOOLS
+    allowed = ROLE_TOOL_MAP.get(normalized)
+    if not allowed:
+        # 未知角色与未声明角色同口径：只读工具放行、写工具/审批工具拒绝。
+        # 与 `get_tools_by_role()` 的未知角色分支保持一致，避免清单与执行期打架。
+        return tool_name in READONLY_BACKEND_TOOLS
+    return tool_name in allowed
 
 BUILTIN_TOOL_DEFS = [
     {
@@ -377,6 +622,25 @@ INTERNAL_GATEWAY_SECRET = (
     or "lanlink-internal-dev-secret"
 ).strip()
 
+#: 写通道独立密钥（与后端 `AI_INTERNAL_WRITE_SECRET` 同源）。
+#:
+#: 后端已做读写分离：只读 secret 不能调建草稿/过审/审批。网关若继续用只读
+#: secret 转发**所有**工具，合法 buyer 的写请求也会被后端 403（实测
+#: `buyer_write` 网关放行、后端拒绝）。这里按工具名切换 secret，未配置写
+#: secret 时回退只读 secret，保持单密钥部署兼容。
+INTERNAL_GATEWAY_WRITE_SECRET = (
+    os.environ.get("AI_INTERNAL_WRITE_SECRET")
+    or os.environ.get("INTERNAL_GATEWAY_WRITE_SECRET")
+    or INTERNAL_GATEWAY_SECRET
+).strip()
+
+#: 需要写 secret 的工具；与后端 `AiToolGuard.WRITE_ONLY_SCOPES` 一一对应。
+WRITE_TOOL_NAMES = frozenset({
+    "lanlink_create_cart_draft",
+    "lanlink_audit_procurement_draft",
+    "lanlink_approve_procurement_flow",
+})
+
 DATA_FENCE_START = "<<<LANLINK_PROTECTED_DATA_START:{tool}>>>"
 DATA_FENCE_END = "<<<LANLINK_PROTECTED_DATA_END:{tool}>>>"
 DATA_FENCE_WARNING = (
@@ -422,9 +686,16 @@ def forward_to_backend(name: str, args: dict, user_id=None, user_auth_token=None
         return _mk_result(False, error="本地知识库暂时不可用（熔断保护开启中，稍后自动重试）", circuit_open=True)
 
     url = f"{BACKEND_INTERNAL_URL}/api/internal/ai/tools/execute"
+    internal_secret = (
+        INTERNAL_GATEWAY_WRITE_SECRET if name in WRITE_TOOL_NAMES
+        else INTERNAL_GATEWAY_SECRET
+    )
     headers = {
         "Content-Type": "application/json",
-        "X-Internal-Secret": INTERNAL_GATEWAY_SECRET,
+        "X-Internal-Secret": internal_secret,
+        # 审计归因：后端把所有 internal-secret 调用都记为同一个 keyPrefix，
+        # 只有这个头能区分「网关转发」与「本机脚本/其它容器直连」。
+        "X-Caller-Service": "lanlink-ai-gateway",
         "User-Agent": "lanlink-ai-gateway/1.1.0",
     }
     if user_auth_token:
@@ -590,12 +861,22 @@ def _assert_safe_peer(resp) -> None:
 
 
 def _guarded_get(url: str, *, timeout: float, max_bytes: int,
-                 headers: dict | None = None) -> tuple[int, str, bytes]:
+                 headers: dict | None = None, on_hop=None,
+                 max_redirects: int | None = None) -> tuple[int, str, bytes]:
     """逐跳 SSRF 校验的 GET：follow_redirects=False + 每跳重过守卫 + 连接后对端 IP 复核，
     流式读取并以 max_bytes 截断（防超大响应打爆网关容器内存）。
-    返回 (status_code, content_type, body_bytes)；拦截抛 SSRFGuardError。"""
+    返回 (status_code, content_type, body_bytes)；拦截抛 SSRFGuardError。
+
+    <p>on_hop：可选逐跳回调（资讯管线重定向留痕用，缺省 None 行为零变化）。
+    每跳拿到响应后、跟进下一跳之前调用
+    on_hop(hop序号, 当前URL, 状态码, 原始Location头, 解析后的下一跳绝对URL)：
+    重定向跳 next_url 非空（已 urljoin 成绝对地址，调用方无需再拼相对 Location），
+    最终响应跳 location/next_url 均为 None。回调抛出的异常（如 robots 拒抓）原样
+    传播并中止整个重定向链——保证跨 origin 复查发生在抓取下一跳之前，而非先抓后查。
+    max_redirects：跳数上限覆盖（None = 既有 LANLINK_FETCH_MAX_REDIRECTS 常量）。"""
+    limit = MAX_REDIRECTS if max_redirects is None else max(0, int(max_redirects))
     current = url
-    for _hop in range(MAX_REDIRECTS + 1):
+    for _hop in range(limit + 1):
         guard = _ssrf_guard(current)
         if guard:
             raise SSRFGuardError(guard)
@@ -606,8 +887,13 @@ def _guarded_get(url: str, *, timeout: float, max_bytes: int,
                     loc = r.headers.get("location", "")
                     if not loc:
                         raise SSRFGuardError("重定向缺少 Location")
-                    current = urljoin(current, loc)
+                    next_url = urljoin(current, loc)
+                    if on_hop is not None:
+                        on_hop(_hop + 1, current, r.status_code, loc, next_url)
+                    current = next_url
                     continue
+                if on_hop is not None:
+                    on_hop(_hop + 1, current, r.status_code, None, None)
                 _assert_safe_peer(r)
                 buf = bytearray()
                 for chunk in r.iter_bytes(64 * 1024):
@@ -615,7 +901,7 @@ def _guarded_get(url: str, *, timeout: float, max_bytes: int,
                     if len(buf) > max_bytes:
                         raise SSRFGuardError(f"响应超过大小上限 {max_bytes} 字节")
                 return r.status_code, r.headers.get("content-type", ""), bytes(buf)
-    raise SSRFGuardError(f"重定向次数超过上限 {MAX_REDIRECTS}")
+    raise SSRFGuardError(f"重定向次数超过上限 {limit}")
 
 
 def _decode_body(content_type: str, body: bytes) -> str:

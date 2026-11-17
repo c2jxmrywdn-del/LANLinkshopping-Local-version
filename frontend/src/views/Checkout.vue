@@ -32,6 +32,7 @@
             :credit-status="creditStatus"
             :credit-available="creditAvailable"
             :payable-total="payableTotal"
+            :wallet-ready="walletReady"
           />
 
           <!-- 国际信用卡/借记卡（Stripe）：卡号在「立即支付」后由 Stripe Elements 采集，
@@ -42,6 +43,16 @@
               show-icon
               message="银行卡信息在点击「立即支付」后录入"
               description="卡号 / 有效期 / 安全码由 Stripe Elements 在加密 iframe 内采集，平台服务器不接触原始卡数据。"
+            />
+          </div>
+
+          <!-- 钱包渠道（Apple Pay / Google Pay）：clientSecret 下单后才产生，表单阶段先给预期说明 -->
+          <div v-else-if="form.payType === 'apple_pay' || form.payType === 'google_pay'" class="stripe-embed-box mt-3">
+            <a-alert
+              type="info"
+              show-icon
+              :message="`提交订单后将唤起 ${form.payType === 'apple_pay' ? 'Apple Pay' : 'Google Pay'} 原生钱包确认`"
+              description="钱包认证由 Stripe 在加密环境内托管（免密免卡号），平台不接触生物识别数据。"
             />
           </div>
 
@@ -91,7 +102,7 @@
       <div class="coupon-box" v-if="coupons.length">
         <div class="coupon-head">
           <span class="coupon-title">
-            <Ticket :size="15" class="inline-block mr-1.5 align-middle text-amber-500" />
+            <Ticket :size="15" class="coupon-ico" aria-hidden="true" />
             <span>优惠券</span>
           </span>
           <span class="coupon-count">{{ usableCoupons.length }} 张可用</span>
@@ -109,9 +120,7 @@
               <span class="opt-name">
                 <a-tag v-if="cp.scope === 'prod'" class="opt-stag" color="red">店铺券</a-tag>{{ cp.title }}
               </span>
-              <span class="opt-sub">
-                {{ cp.threshold > 0 ? `满¥${trimZero(cp.threshold)}可用` : '无门槛' }}{{ cp.indName ? ' · ' + cp.indName : '' }}
-              </span>
+              <span class="opt-sub" :title="couponSubText(cp)">{{ couponSubText(cp) }}</span>
             </span>
             <span class="opt-side">
               <template v-if="cp.applicable"><i class="opt-benefit">-¥{{ trimZero(cp.benefit) }}</i></template>
@@ -212,6 +221,31 @@
         />
       </div>
     </a-modal>
+
+    <!-- 钱包支付弹窗（Apple Pay / Google Pay）：Stripe Express Checkout 原生按钮，
+         钱包认证在 Stripe 跨域 iframe 内完成，不复用卡号确认弹窗 -->
+    <a-modal
+      v-model:open="walletPayOpen"
+      :title="walletPayTitle"
+      :width="480"
+      :mask-closable="false"
+      :footer="null"
+      destroy-on-close
+      @cancel="cancelWalletPay"
+    >
+      <div class="stripe-pay-body">
+        <p class="stripe-pay-amount">本单应付 <b>¥{{ walletPayAmount }}</b></p>
+        <StripeExpressCheckout
+          :publishable-key="walletPublishableKey"
+          :client-secret="walletClientSecret"
+          :channel="walletPayChannel"
+          :disabled="walletPaying"
+          @processing="walletPaying = true"
+          @succeeded="onWalletSucceeded"
+          @failed="onWalletFailed"
+        />
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -233,7 +267,9 @@ import CreditInterestCalculator from '../components/credit/CreditInterestCalcula
 import PaymentMethodSelector from '../components/payment/PaymentMethodSelector.vue'
 import MerchantCorporateBankCard from '../components/payment/MerchantCorporateBankCard.vue'
 import StripeCardElement from '../components/payment/StripeCardElement.vue'
+import StripeExpressCheckout from '../components/payment/StripeExpressCheckout.vue'
 import { loadStripeOnce } from '../utils/stripeLoader'
+import { describeStripePaymentResult } from '../components/payment/stripeConfirm'
 import { waitForOrderPaid } from '../utils/waitForOrderPaid'
 import InvoiceRequestForm from '../components/order/InvoiceRequestForm.vue'
 
@@ -269,6 +305,15 @@ async function showWechatQr(codeUrl, orderNo) {
 // → 成功后才提示成功；3DS/银行拒绝/未配置均给出可行动错误，不再把"预授权已创建"当成功。
 const stripePayOpen = ref(false)
 const stripePaying = ref(false)
+// 钱包渠道（Apple Pay / Google Pay）：Express Checkout 原生按钮链路状态
+const walletPayOpen = ref(false)
+const walletPaying = ref(false)
+const walletPayChannel = ref('')
+const walletPublishableKey = ref('')
+const walletClientSecret = ref('')
+const walletPayOrderNo = ref('')
+const walletPayAmount = ref(0)
+const walletPayTitle = computed(() => (walletPayChannel.value === 'apple_pay' ? 'Apple Pay 极速支付' : 'Google Pay 极速支付'))
 const stripeCardComplete = ref(false)
 const stripeCardRef = ref(null)
 const stripePublishableKey = ref('')
@@ -368,6 +413,70 @@ function cancelStripePay() {
   router.push('/orders')
 }
 
+/**
+ * 钱包渠道（Apple Pay / Google Pay）：与 MyOrders/OrderDetail 同口径的两段式——
+ * 先预下单拿 clientSecret，再在弹窗内挂 Express Checkout 原生按钮，
+ * 真正扣款由用户点钱包按钮触发，结果走 onWalletSucceeded / onWalletFailed。
+ */
+async function openWalletPay(orderNo, totalAmount, payInfo, channel) {
+  const clientSecret = String(payInfo?.clientSecret || '').trim()
+  const publishableKey = String(payInfo?.publishableKey || '').trim()
+  if (!clientSecret) {
+    throw new Error('Stripe 预下单未返回 clientSecret：请确认后端已配置 STRIPE_SECRET_KEY，且 LANLINK_PAYMENT_MOCK=false')
+  }
+  if (!publishableKey) {
+    throw new Error('Stripe 支付公钥未配置：请在后端 .env 填写 VITE_STRIPE_PUBLISHABLE_KEY（或 STRIPE_PUBLISHABLE_KEY），重启后端后重试')
+  }
+  walletPayOrderNo.value = orderNo
+  walletPayAmount.value = Number(totalAmount || 0).toFixed(2)
+  walletPayChannel.value = channel
+  walletPublishableKey.value = publishableKey
+  walletClientSecret.value = clientSecret
+  walletPaying.value = false
+  walletPayOpen.value = true
+}
+
+/**
+ * 与卡支付同一口径：Stripe 侧 succeeded 只是渠道确认，平台订单是否已结算
+ * 仍以 webhook 为准，因此先等服务端 payStatus=1 再给成功提示。
+ */
+async function onWalletSucceeded(status) {
+  try {
+    const result = describeStripePaymentResult(status)
+    if (result.ok) {
+      const paid = await waitForOrderPaid(walletPayOrderNo.value, (no) => paymentApi.query(no))
+      walletPayOpen.value = false
+      if (paid) {
+        trackEvent('payment_success', { order_no: walletPayOrderNo.value, channel: walletPayChannel.value })
+        message.success(result.message)
+      } else {
+        message.warning('钱包已扣款，但订单状态同步有延迟，请稍后在「我的订单」查看；长时间未更新请联系客服')
+      }
+      router.push('/orders')
+    } else if (result.processing) {
+      message.info(result.message)
+      walletPayOpen.value = false
+      router.push('/orders')
+    } else {
+      message.error(result.message)
+    }
+  } finally {
+    walletPaying.value = false
+  }
+}
+
+/** 钱包支付失败/取消：空字符串表示用户主动取消，不打扰 */
+function onWalletFailed(msg) {
+  walletPaying.value = false
+  if (msg) message.error(msg)
+}
+
+function cancelWalletPay() {
+  // 订单已创建，取消支付只是离开弹窗；后续可在「我的订单」继续支付
+  walletPayOpen.value = false
+  router.push('/orders')
+}
+
 // ===== 个人中心地址联动：默认地址自动带入，点击卡片一键填充 =====
 const addrList = ref([])
 const addrLoaded = ref(false)
@@ -412,6 +521,9 @@ const settleBase = computed(() => {
 })
 const trimZero = (v) => Number(v) % 1 === 0 ? String(Number(v)) : String(v)
 const rateText = (r) => trimZero(Number(r) * 10)
+// 副标题在窄卡片里单行省略（CSS ellipsis），完整文案挂到 title 供悬停查看。
+const couponSubText = (cp) =>
+  `${cp.threshold > 0 ? `满¥${trimZero(cp.threshold)}可用` : '无门槛'}${cp.indName ? ' · ' + cp.indName : ''}`
 const unableReason = (cp) => {
   if (cp.applicable) return ''
   if (cp.threshold > 0 && cart.total < Number(cp.threshold)) return '未满门槛'
@@ -496,6 +608,8 @@ async function runQuote() {
 // 余额校验基准与应付合计同口径：促销/会员取优 + 券抵扣与积分抵扣均计入
 const walletLoaded = ref(false)
 const walletBalance = ref(0)
+// 钱包渠道（Apple Pay/Google Pay）能力：与我的订单/订单详情同源探测，未就绪时收银台置灰钱包渠道
+const walletReady = ref(false)
 const walletInsufficient = computed(() => walletBalance.value < (settleBase.value - couponBenefit.value - redeemAmount.value))
 const creditLoaded = ref(false)
 const creditStatus = ref('NOT_APPLIED')
@@ -540,6 +654,11 @@ onMounted(async () => {
     walletBalance.value = Number(w?.balance || 0)
   } catch (e) { walletBalance.value = 0 }
   finally { walletLoaded.value = true }
+  // 钱包渠道能力探测：失败按"不可用"处理，只影响钱包渠道展示，不阻断收银台
+  try {
+    const cap = await paymentApi.walletCapability()
+    walletReady.value = !!cap?.walletReady
+  } catch (e) { walletReady.value = false }
   // 加载账期额度（账期支付方式实时校验）
   try {
     const c = await creditTermApi.overview()
@@ -623,7 +742,21 @@ async function submit() {
               if (!vo?.payInfo?.paid) throw new Error('钱包支付未确认')
               trackEvent('payment_success', { order_no: order.orderNo, channel: 'wallet' })
               message.success('钱包支付成功')
-            } else if (['stripe', 'apple_pay', 'google_pay'].includes(form.payType)) {
+            } else if (form.payType === 'apple_pay' || form.payType === 'google_pay') {
+              /*
+               * 钱包渠道：与 MyOrders/OrderDetail 同款 Express Checkout 链路——
+               * 预下单拿 clientSecret 后弹窗挂原生钱包按钮，不复用卡号确认弹窗。
+               */
+              const vo = await paymentApi.create(order.orderNo, 'stripe')
+              if (vo?.mock) {
+                await paymentApi.mockConfirm(order.orderNo)
+                trackEvent('payment_success', { order_no: order.orderNo, channel: form.payType })
+                message.success('钱包支付成功（模拟环境）')
+              } else {
+                await openWalletPay(order.orderNo, order.totalAmount, vo?.payInfo, form.payType)
+                return // 支付结果由钱包弹窗处理，成功后自行跳转「我的订单」
+              }
+            } else if (form.payType === 'stripe') {
               const vo = await paymentApi.create(order.orderNo, 'stripe')
               if (vo?.mock) {
                 // 后端显式返回 mock 标记（LANLINK_PAYMENT_MOCK=true / 未配密钥的开发环境）才允许模拟确认；
@@ -717,11 +850,18 @@ async function submit() {
 /* 优惠券选择：mini 票券 */
 .coupon-box { background: rgba(155, 45, 32, .04); border: 1px dashed rgba(155, 45, 32, .22);
               border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
-.coupon-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
-.coupon-title { font-weight: 600; font-size: 13px; }
-.coupon-count { font-size: 12px; color: var(--ll-muted, #64748b); }
+.coupon-head { display: flex; justify-content: space-between; align-items: center;
+               gap: 8px 12px; margin-bottom: 10px; }
+/* 项目没有 Tailwind：图标原来挂 inline-block/mr-1.5/align-middle 全是无效类，
+   文字紧贴图标。改用 flex 基线对齐 + gap 显式控距。 */
+.coupon-title { display: inline-flex; align-items: center; gap: 6px;
+                font-weight: 600; font-size: 13px; line-height: 1.4;
+                color: var(--ll-ink, #0f172a); white-space: nowrap; }
+.coupon-ico { flex-shrink: 0; color: #f59e0b; }
+.coupon-count { flex-shrink: 0; font-size: 12px; line-height: 1.4;
+                color: var(--ll-muted, #64748b); white-space: nowrap; }
 .coupon-list { display: flex; flex-direction: column; gap: 7px; }
-.coupon-opt { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 12px;
+.coupon-opt { display: flex; align-items: center; gap: 10px; padding: 9px 12px 9px 9px; border-radius: 12px;
               border: 1.5px solid var(--ll-border, #e5e7eb); cursor: pointer;
               transition: border-color .2s, background-color .2s, transform .2s; }
 .coupon-opt:hover:not(.off) { border-color: var(--ll-skyblue-border, #5b8fb5); transform: translateY(-1px); }
@@ -735,13 +875,17 @@ async function submit() {
             background: linear-gradient(150deg, #f0566a, #c22a3e); }
 .opt-face b { font-size: 19px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
 .opt-face i { font-style: normal; font-size: 11px; font-weight: 600; }
-.opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .opt-name { font-size: 13px; font-weight: 500; color: var(--ll-ink, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opt-stag { margin-right: 6px; font-size: 10px; line-height: 16px; padding: 0 5px; border-radius: 4px; }
-.opt-sub { font-size: 11.5px; color: var(--ll-muted, #64748b); }
-.opt-side { flex-shrink: 0; }
+/* 副标题原来会换行成两行，把右侧状态挤到边缘。这里单行省略，
+   完整文案仍可通过 title 属性查看（模板已补）。 */
+.opt-sub { font-size: 11.5px; line-height: 1.5; color: var(--ll-muted, #64748b);
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opt-side { flex-shrink: 0; margin-left: 4px; text-align: right; }
 .opt-benefit { font-style: normal; color: #10b981; font-weight: 700; font-size: 14px; }
-.opt-unable { font-style: normal; color: var(--ll-muted, #64748b); font-size: 11.5px; }
+.opt-unable { display: inline-block; font-style: normal; color: var(--ll-muted, #64748b);
+              font-size: 11.5px; line-height: 1.4; white-space: nowrap; }
 .coupon-opt.none { padding-left: 12px; }
 .coupon-opt.none .opt-name { color: var(--ll-muted, #64748b); }
 .coupon-deduct { color: var(--ll-gray, #4b5563); font-size: 13px; }
@@ -756,11 +900,22 @@ async function submit() {
 .pay-note { font-size: 11.5px; color: var(--ll-muted, #64748b); }
 /* 企业钱包余额提示 */
 .wallet-tip { font-size: 12px; color: var(--ll-muted, #64748b); }
-.wallet-warn { margin-top: 6px; font-size: 12px; color: #b45309; }
+.wallet-warn { margin-top: 12px; font-size: 12px; color: #b45309; }
 .wallet-warn a { color: var(--ll-primary, #1e6eb8); cursor: pointer; }
+/* 支付方式网格下方按渠道展开的说明/表单容器。
+ *
+ * 项目没有 Tailwind，模板里那串 `mt-3` 是无效类，历史上完全靠
+ * Ant Design 表单项自身的行距撑着，导致「对公转账」选中后
+ * 收款账户卡片直接贴在支付方式网格下面。这里给容器补真实上边距，
+ * 模板里的 mt-3 保留不动（无害），间距由本规则统一负责。
+ */
+.stripe-embed-box,
+.corporate-embed-box {
+  margin-top: 16px;
+}
 /* 企业账期支付提示横幅与 44px 触控试算按钮 */
 .credit-checkout-banner {
-  margin-top: 8px;
+  margin-top: 12px;
   background: #f0f9ff;
   border: 1px solid #bae6fd;
   border-radius: 8px;

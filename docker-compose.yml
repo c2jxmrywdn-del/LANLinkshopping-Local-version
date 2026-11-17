@@ -174,11 +174,18 @@ services:
       - ./frontend/public/products:/images:ro
       - ./docker/minio/products-anonymous-policy.json:/policy.json:ro
       - ./docker/minio/lanlink-app-policy.json:/app-policy.json:ro
+      # 按用途拆分的两条最小权限策略（可选启用，见 minio-webhook-vite-hardening.md）
+      - ./docker/minio/lanlink-products-rw-policy.json:/products-policy.json:ro
+      - ./docker/minio/lanlink-support-rw-policy.json:/support-policy.json:ro
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}
       LANLINK_S3_ACCESS_KEY: ${LANLINK_S3_ACCESS_KEY:?Set LANLINK_S3_ACCESS_KEY in .env (must differ from MINIO_ROOT_USER)}
       LANLINK_S3_SECRET_KEY: ${LANLINK_S3_SECRET_KEY:?Set LANLINK_S3_SECRET_KEY in .env (must differ from MINIO_ROOT_PASSWORD)}
+      LANLINK_S3_PRODUCTS_ACCESS_KEY: ${LANLINK_S3_PRODUCTS_ACCESS_KEY:-}
+      LANLINK_S3_PRODUCTS_SECRET_KEY: ${LANLINK_S3_PRODUCTS_SECRET_KEY:-}
+      LANLINK_S3_SUPPORT_ACCESS_KEY: ${LANLINK_S3_SUPPORT_ACCESS_KEY:-}
+      LANLINK_S3_SUPPORT_SECRET_KEY: ${LANLINK_S3_SUPPORT_SECRET_KEY:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -200,6 +207,18 @@ services:
         mc admin policy create local lanlink-app-policy /app-policy.json || echo "[minio-init] policy lanlink-app-policy already exists"
         mc admin user add local "$$LANLINK_S3_ACCESS_KEY" "$$LANLINK_S3_SECRET_KEY" || echo "[minio-init] user already exists (secret unchanged on rerun; rotate via mc admin user set)"
         mc admin policy attach local lanlink-app-policy --user "$$LANLINK_S3_ACCESS_KEY" || echo "[minio-init] policy attach skipped"
+        # 可选的按用途拆分（默认不创建）：设置了对应 *_ACCESS_KEY 才建用户，
+        # 后端当前仍用 lanlink-app 单账号，切换步骤见 docs/architecture-audit/_parts/minio-webhook-vite-hardening.md。
+        if [ -n "$$LANLINK_S3_PRODUCTS_ACCESS_KEY" ]; then
+          mc admin policy create local lanlink-products-rw-policy /products-policy.json || echo "[minio-init] policy lanlink-products-rw-policy already exists"
+          mc admin user add local "$$LANLINK_S3_PRODUCTS_ACCESS_KEY" "$$LANLINK_S3_PRODUCTS_SECRET_KEY" || echo "[minio-init] products user already exists"
+          mc admin policy attach local lanlink-products-rw-policy --user "$$LANLINK_S3_PRODUCTS_ACCESS_KEY" || echo "[minio-init] products policy attach skipped"
+        fi
+        if [ -n "$$LANLINK_S3_SUPPORT_ACCESS_KEY" ]; then
+          mc admin policy create local lanlink-support-rw-policy /support-policy.json || echo "[minio-init] policy lanlink-support-rw-policy already exists"
+          mc admin user add local "$$LANLINK_S3_SUPPORT_ACCESS_KEY" "$$LANLINK_S3_SUPPORT_SECRET_KEY" || echo "[minio-init] support user already exists"
+          mc admin policy attach local lanlink-support-rw-policy --user "$$LANLINK_S3_SUPPORT_ACCESS_KEY" || echo "[minio-init] support policy attach skipped"
+        fi
         echo "[minio-init] objects:"; mc ls --recursive local/products | wc -l
     logging: *default-logging
 
@@ -337,9 +356,8 @@ services:
     configs:
       - source: dingtalk_adapter_config
         target: /etc/prometheus-webhook-dingtalk/config.yml
-    ports:
-      # 仅回环：宿主机 curl 自测适配器 /dingtalk/ops/send 用；容器内走服务名 8060
-      - "127.0.0.1:8060:8060"
+    # 不映射宿主端口：该第三方镜像无入站认证，回环映射仍让本机任意进程可伪造告警外发。
+    # 排障改用 `docker exec lanlink-dingtalk-webhook-adapter ...`，Alertmanager 走服务名 8060。
     restart: unless-stopped
 
   # 飞书自建应用告警送达适配器：Alertmanager ops-feishu receiver 指向这里（alertmanager.yml）。
@@ -366,6 +384,16 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # 本地离线快速路径：宿主先 `mvn -o package`，再设 BACKEND_JAR_PREBUILT=1。
+      # 未设置时 target 为空，保留默认的容器内 Maven 全构建（CI/普通环境）。
+      target: ${BACKEND_JAR_PREBUILT:+runtime-prebuilt}
+      args:
+        JAR_FILE: ${BACKEND_JAR_FILE:-target/lanlink-shopping.jar}
+        # 本机 Docker Hub 不可达，Compose 默认走已验证可达的 daocloud 加速地址。
+        # 需要官方 tag 时用 BACKEND_MAVEN_IMAGE / BACKEND_JRE_IMAGE 覆盖。
+        # Dockerfile 自身仍以官方 tag 为默认，CI 的 docker/build-push-action 不受影响。
+        MAVEN_IMAGE: ${BACKEND_MAVEN_IMAGE:-docker.m.daocloud.io/library/maven:3.9.11-eclipse-temurin-17}
+        JRE_IMAGE: ${BACKEND_JRE_IMAGE:-docker.m.daocloud.io/library/eclipse-temurin:17-jre}
     image: lanlink-backend:local
     logging: *default-logging
     # 24GB 宿主机：JVM 堆上限固定为 1.2g（MaxRAMPercentage 60% of 2g），避免默认 75% 预留过大
@@ -388,6 +416,40 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
       LANLINK_CACHE_TYPE: redis
       SUPPORT_PROXY_SECRET: ${SUPPORT_PROXY_SECRET:?Set SUPPORT_PROXY_SECRET in .env}
+      # 内部 AI 工具通道的来源白名单：只接受 compose 网段，单独排除宿主机
+      # bridge 地址 172.19.0.1（从 127.0.0.1:8080 进来时就是这个地址）。
+      # 本地调试如需放行，显式覆盖这两个变量，不要改代码默认值。
+      AI_INTERNAL_ALLOWED_CIDRS: ${AI_INTERNAL_ALLOWED_CIDRS:-172.19.0.0/16}
+      AI_INTERNAL_DENIED_CIDRS: ${AI_INTERNAL_DENIED_CIDRS:-172.19.0.1/32}
+      # ---- 物流回调验签（P1-3）----
+      # 历史缺陷：.env 里有这组变量，但 compose 没有注入，Spring 回落到
+      # application.yml 的默认值 `dev-callback-token`，实测可伪造 PASS 审计。
+      # 现在显式注入；缺失时后端按 fail-fast/告警策略处理（见 TrackingProperties）。
+      TRACKING_ENABLED: ${TRACKING_ENABLED:-true}
+      TRACKING_POLL_INTERVAL_MS: ${TRACKING_POLL_INTERVAL_MS:-600000}
+      TRACKING_CALLBACK_URL_TOKEN: ${TRACKING_CALLBACK_URL_TOKEN:-}
+      TRACKING_KUAIDI100_KEY: ${TRACKING_KUAIDI100_KEY:-}
+      TRACKING_KUAIDI100_CUSTOMER: ${TRACKING_KUAIDI100_CUSTOMER:-}
+      TRACKING_KUAIDI100_SALT: ${TRACKING_KUAIDI100_SALT:-}
+      TRACKING_KUAIDI100_SIGN_TYPE: ${TRACKING_KUAIDI100_SIGN_TYPE:-SHA256}
+      # ---- AI 工具内部通道：读写分离 ----
+      #
+      # 为什么需要：内部 secret 通道原先 `hasPermission()` 直接 return true，
+      # 一个 64 字符共享密钥 = 全部工具 + 全部租户（实测可建草稿/过审/签发审批）。
+      # 而网关自己就是用这把 secret 调后端的，网关侧的角色校验对它完全不生效。
+      # 更糟的是 `SUPPORT_PROXY_SECRET` 是 fallback——客服代理密钥同样具备写权限。
+      #
+      # 配置 AI_INTERNAL_WRITE_SECRET 后：
+      #   AI_INTERNAL_SECRET       → 只能调只读工具（客服/巡检代理用它）
+      #   AI_INTERNAL_WRITE_SECRET → 只读 + 写工具（仅授给真正需要的服务）
+      # 留空 = 保持向后兼容（单 secret 全权限），启动期打 WARN 提醒。
+      # 注意：**不再**回退到 SUPPORT_PROXY_SECRET。
+      #
+      # 历史缺陷：默认接客服代理密钥，导致「客服代理密钥 = AI 工具全权限」，
+      # 且 `AiToolGuard` 读 `support.proxy-secret` 时把这条通路再次放大。
+      # 现在必须显式配置；留空则内部通道关闭（走 API Key 通道），fail-closed。
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
+      AI_INTERNAL_WRITE_SECRET: ${AI_INTERNAL_WRITE_SECRET:-}
       SUPPORT_SANDBOX_URL: http://support-learning-sandbox:8080
       SUPPORT_SANDBOX_TOKEN: ${SUPPORT_SANDBOX_TOKEN:?Set SUPPORT_SANDBOX_TOKEN in .env}
       SUPPORT_SANDBOX_MODE: container
@@ -485,7 +547,7 @@ services:
       # 基址走服务名；密钥必须与 rag-service 的 RAG_INTERNAL_SECRET 同源，
       # 否则 /ingest 与 /query 会被服务端 403 拒绝（fail-closed）。
       RAG_SERVICE_BASE_URL: ${RAG_SERVICE_BASE_URL:-http://lanlink-rag-service:8093}
-      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:-lanlink-rag-internal}
+      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:?Set RAG_INTERNAL_SECRET in .env (must be identical in backend and rag-service)}
       RAG_INGEST_TIMEOUT_SECONDS: ${RAG_INGEST_TIMEOUT_SECONDS:-300}
       RAG_QUERY_TIMEOUT_SECONDS: ${RAG_QUERY_TIMEOUT_SECONDS:-120}
       # 本地演示允许空值回退到现有默认；生产 profile 会 fail-fast。显式设置后可与 AI 网关轮换同值。
@@ -527,6 +589,11 @@ services:
       AI_EXTERNAL_MAX_AGE_DAYS: ${AI_EXTERNAL_MAX_AGE_DAYS:-7}
       # 抓取周期（毫秒）：默认 15 分钟，与首页 120s 刷新配合保证「实时」
       AI_EXTERNAL_POLL_MS: ${AI_EXTERNAL_POLL_MS:-900000}
+      # ---- 资讯管线 Java 编排灰度（POST /admin/kb/fetch-external?pipeline=1）----
+      # ENABLED=false 时编排方法直接走既有 RSS 直抓，网关新链路零调用；
+      # FALLBACK=true 时网关不可达/5xx 回退 fetchNow 既有链路（false=仅记 gatewayFailed 跳过本轮）。
+      AI_NEWS_PIPELINE_ENABLED: ${AI_NEWS_PIPELINE_ENABLED:-false}
+      AI_NEWS_PIPELINE_FALLBACK: ${AI_NEWS_PIPELINE_FALLBACK:-true}
       # ---- 意图理解增强（向量 KNN + 本地 7B 模型，失败回退关键词规则）----
       AI_INTENT_LLM_ENABLED: ${AI_INTENT_LLM_ENABLED:-true}
       AI_INTENT_VECTOR_MIN_SCORE: ${AI_INTENT_VECTOR_MIN_SCORE:-0.55}
@@ -719,8 +786,17 @@ services:
   # MinerU 的 GPU 模式需要数 GB，必然 OOM。本服务只做 CPU 侧的索引与向量检索，
   # LLM/VLM/Embedding 全部复用 ai-gateway（那里有显存调度器）。
   #
-  # 存储独立：LightRAG 1.4.16 的 Redis 只覆盖 KV 与 DocStatus，没有 vector 实现，
-  # 无法复用现有 aikb-idx（Redis HNSW），因此索引落在独立卷 rag-storage。
+  # 存储：LightRAG 1.4.16 的 Redis 只覆盖 KV 与 DocStatus，**没有 vector 实现**，
+  # 因此本项目自研了 `app/redis_vector_store.py`（RediSearch HNSW 适配器），
+  # 并注册进 lightrag 的 STORAGES / STORAGE_IMPLEMENTATIONS（见 app/lightrag_registry.py）。
+  #
+  # 索引名与 key 前缀完全独立，三套向量索引互不连坐：
+  #   aikb-idx                          / aikb:vblob:              Java 知识库
+  #   prod-idx                          / prod:vblob:              Java 商品向量
+  #   rag-idx:<workspace>:<namespace>    / rag:vblob:<ws>:<ns>:     本服务（entities/relationships/chunks）
+  # 所以 DROPINDEX 任一索引都不会连带删除另外两套数据。
+  #
+  # 回滚：RAG_VECTOR_BACKEND=nano 即可退回 rag-storage 卷里的 NanoVectorDB 文件。
   # ============================================================
   rag-service:
     build:
@@ -736,16 +812,42 @@ services:
       RAG_PORT: "8093"
       RAG_WORKING_DIR: /data/rag_storage
       # 复用 ai-gateway 的 OpenAI 兼容端点；容器名是 lanlink-ai-gateway（不是 ai-gateway）
-      RAG_LLM_BASE_URL: http://lanlink-ai-gateway:8090/v1
-      RAG_LLM_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env}
-      RAG_LLM_MODEL: qwen2.5-7b
+      # 生成层可切换：默认走本地网关（llama.cpp 7B），
+      # 需要更强生成质量时把 RAG_LLM_PROVIDER=deepseek 打开。
+      #
+      # 为什么可以这样切：rag-service 的 LLM 调用就是标准 OpenAI 兼容协议
+      # （见 app/models.py），换 base_url/key/model 即可，不需要改代码。
+      # 实测对比：同一个 RAG 问题（"商品总数是多少"），
+      #   本地 7B → "信息不足，无法回答"（幻觉式拒答）
+      #   DeepSeek → "商品总数是 383 个"（正确）
+      # 原因不是 7B 弱，而是它在 3000+ 字符的 RAG prompt 下会丢掉关键句；
+      # DeepSeek 的指令遵循明显更稳。
+      #
+      # 注意：切到 DeepSeek 后，索引写入（实体抽取）也会走外部 API，
+      # 有 token 成本与数据外发。若只想要"查询用外部、索引用本地"，
+      # 需要进一步拆分两套模型配置（当前未做，见 rag-improvement-plan.md）。
+      RAG_LLM_BASE_URL: ${RAG_LLM_BASE_URL:-http://lanlink-ai-gateway:8090/v1}
+      RAG_LLM_API_KEY: ${RAG_LLM_API_KEY:-${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env}}
+      RAG_LLM_MODEL: ${RAG_LLM_MODEL:-qwen2.5-7b}
+      # Embedding 必须独立配置：DeepSeek 没有 embeddings 端点（实测 404），
+      # 所以即使 LLM 切到 DeepSeek，embedding 也要留在本地 bge-m3。
+      RAG_EMBED_BASE_URL: ${RAG_EMBED_BASE_URL:-http://lanlink-ai-gateway:8090/v1}
+      RAG_EMBED_API_KEY: ${RAG_EMBED_API_KEY:-${AI_GATEWAY_API_KEY:-}}
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-bge-m3}
       RAG_VISION_MODEL: qwen2.5-vl
-      RAG_EMBED_MODEL: bge-m3
       # 维度必须与既有 aikb 索引一致（bge-m3 = 1024），否则向量不可比
       RAG_EMBED_DIM: "1024"
       RAG_TOP_K: "20"
+      # 向量存储后端：redis（RediSearch HNSW，默认）/ nano（本地 JSON，回滚用）
+      RAG_VECTOR_BACKEND: ${RAG_VECTOR_BACKEND:-redis}
+      # Redis 连接：复用 shopping-redis-1（Redis Stack，已加载 RediSearch）。
+      # 密码由 config.resolved_redis_uri() 做 URL 编码后拼进连接串。
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      RAG_REDIS_DB: ${RAG_REDIS_DB:-0}
       # 内部调用密钥：未配置时服务会拒绝 /ingest 与 /query（fail-closed）
-      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:-lanlink-rag-internal}
+      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:?Set RAG_INTERNAL_SECRET in .env (must be identical in backend and rag-service)}
     volumes:
       - rag-storage:/data/rag_storage
     # 只做 CPU 侧索引与检索；不吃 GPU，避免与 llama-cpp 抢显存
@@ -787,6 +889,27 @@ services:
       # 网关 API Key：与后端侧 AI_GATEWAY_API_KEY 同源（根 .env），后端与直连脚本带同一值。
       GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
       AI_GATEWAY_API_KEY: ${AI_GATEWAY_API_KEY:?Set AI_GATEWAY_API_KEY in .env; the backend and AI gateway must use one rotated key}
+      # ---- 外部集成方（Dify/Coze/GPTs）的 API Key → 业务角色绑定 ----
+      #
+      # 为什么需要：角色若由客户端用 `X-Agent-Role` 自报，任何人拿到 gateway key
+      # 都能自称 `buyer` 调写工具（实测 support→403、buyer→放行，同一把 key）。
+      # 绑定后角色由**服务端**决定，客户端改头无效（会记一条 mismatch 警告）。
+      #
+      # 格式：逗号分隔的 `key:role`，role 取值见 ai-gateway/app/tools.py 的 ROLE_TOOL_MAP
+      #   GATEWAY_KEY_ROLES="sk-buyer-xxx:buyer,sk-finance-yyy:finance,sk-support-zzz:support"
+      # 未绑定的 key 保持只读 fail-closed（不破坏现有单 key 部署）。
+      GATEWAY_KEY_ROLES: ${GATEWAY_KEY_ROLES:-}
+      # 需要「一个 key 多角色」的调试/内部场景时，把 key 列进来显式放开自报。
+      # 生产环境应保持为空——放开即等于允许该 key 冒充任意角色。
+      GATEWAY_SELF_ASSERT_KEYS: ${GATEWAY_SELF_ASSERT_KEYS:-}
+      # 严格角色模式：未绑定的 key 不采纳任何客户端自报角色（header / query / JSON-RPC params），
+      # 只能拿只读工具。生产应设 1；默认 0 仅为兼容既有单 key 部署。
+      GATEWAY_STRICT_ROLE: ${GATEWAY_STRICT_ROLE:-0}
+      # RAG-Anything 检索通道：把 lanlink_rag_search 暴露成 MCP 工具，供外部大模型经网关调用。
+      # 服务名是 lanlink-rag-service（compose 里写了 container_name），端口 8093 只绑回环，
+      # 容器内直接走服务名即可。密钥与后端 RAG_INTERNAL_SECRET 同源（rag-service fail-closed）。
+      RAG_SERVICE_BASE_URL: ${RAG_SERVICE_BASE_URL:-http://lanlink-rag-service:8093}
+      RAG_INTERNAL_SECRET: ${RAG_INTERNAL_SECRET:?Set RAG_INTERNAL_SECRET in .env (must be identical in backend, rag-service and ai-gateway)}
       INTERNAL_GATEWAY_SECRET: ${INTERNAL_GATEWAY_SECRET:-}
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:8080}
       GATEWAY_ADMIN_KEY: ${GATEWAY_ADMIN_KEY:-}
@@ -843,6 +966,34 @@ services:
       KB_PATH: /app/kb_data/ecommerce_kb.json
       SESSION_TOKEN_BUDGET: "12000"
       HARDWARE_GPU_METRICS_FILE: /metrics/gpu.txt
+      # ---- SQLBot 只读问数（lanlink_ask_data 本地工具经 SQLBot MCP API）----
+      # 真实凭据在根 .env（SQLBOT_USERNAME/SQLBOT_PASSWORD），compose 只做显式列管；
+      # .env.example 有占位说明。改 .env 后需 up -d --build ai-gateway 重建（env 是容器创建时固化）。
+      SQLBOT_MCP_URL: ${SQLBOT_MCP_URL:-http://sqlbot:8000}
+      SQLBOT_USERNAME: ${SQLBOT_USERNAME:-}
+      SQLBOT_PASSWORD: ${SQLBOT_PASSWORD:-}
+      # ---- MCP fetch/playwright 工具桥（默认关；键值详见 .env.example 末尾同名组）----
+      LANLINK_MCP_ENABLED: ${LANLINK_MCP_ENABLED:-0}
+      LANLINK_MCP_FETCH_URL: ${LANLINK_MCP_FETCH_URL:-http://mcp-fetch:8781/mcp}
+      LANLINK_MCP_PLAYWRIGHT_URL: ${LANLINK_MCP_PLAYWRIGHT_URL:-http://mcp-playwright:8782/mcp}
+      LANLINK_MCP_FETCH_TIMEOUT_MS: ${LANLINK_MCP_FETCH_TIMEOUT_MS:-30000}
+      LANLINK_MCP_PLAYWRIGHT_TIMEOUT_MS: ${LANLINK_MCP_PLAYWRIGHT_TIMEOUT_MS:-60000}
+      LANLINK_MCP_HEALTH_INTERVAL_SEC: ${LANLINK_MCP_HEALTH_INTERVAL_SEC:-30}
+      LANLINK_MCP_ROLE_TOOLS: ${LANLINK_MCP_ROLE_TOOLS:-}
+      LANLINK_MCP_BLOCKED_HOSTS: ${LANLINK_MCP_BLOCKED_HOSTS:-}
+      # ---- 资讯处理管线（/v1/news/extract；键值详见 .env.example 同名组）----
+      # ENABLED=0 时端点 404、既有链路零行为变化；改 .env 后需 up -d --build ai-gateway 重建。
+      LANLINK_NEWSPIPELINE_ENABLED: ${LANLINK_NEWSPIPELINE_ENABLED:-0}
+      LANLINK_NEWSPIPELINE_UA: ${LANLINK_NEWSPIPELINE_UA:-LanlinkNewsPipeline/1.0 (+https://www.lanlink.shopping/contact)}
+      LANLINK_NEWSPIPELINE_ROBOTS_TTL_SECONDS: ${LANLINK_NEWSPIPELINE_ROBOTS_TTL_SECONDS:-86400}
+      LANLINK_NEWSPIPELINE_ROBOTS_TIMEOUT_MS: ${LANLINK_NEWSPIPELINE_ROBOTS_TIMEOUT_MS:-5000}
+      LANLINK_NEWSPIPELINE_MAX_BYTES: ${LANLINK_NEWSPIPELINE_MAX_BYTES:-2097152}
+      LANLINK_NEWSPIPELINE_MAX_REDIRECTS: ${LANLINK_NEWSPIPELINE_MAX_REDIRECTS:-5}
+      LANLINK_NEWSPIPELINE_DEDUP_TTL_SECONDS: ${LANLINK_NEWSPIPELINE_DEDUP_TTL_SECONDS:-2592000}
+      LANLINK_NEWSPIPELINE_WINDOW_HOURS: ${LANLINK_NEWSPIPELINE_WINDOW_HOURS:-72}
+      LANLINK_NEWSPIPELINE_SIMHASH_BITS: ${LANLINK_NEWSPIPELINE_SIMHASH_BITS:-20}
+      LANLINK_NEWSPIPELINE_TITLE_RATIO: ${LANLINK_NEWSPIPELINE_TITLE_RATIO:-0.9}
+      LANLINK_NEWSPIPELINE_TIMEOUT_MS: ${LANLINK_NEWSPIPELINE_TIMEOUT_MS:-8000}
       # ---- env_file 爆炸半径收敛（A2③）：env_file 注入整个根 .env，但网关只用 REDIS_PASSWORD。
       # environment 优先级高于 env_file，以下显式清空网关用不到的敏感变量，缩小万一出现
       # 本地文件读取/信息回显类漏洞时可被外带的密钥面（新增密钥请在此补列）。
@@ -866,6 +1017,83 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+
+  # ============================================================
+  # MCP fetch/playwright 工具桥（ai-gateway LANLINK_MCP_ENABLED=1 时启用）
+  #   - 两个服务都**不映射宿主端口**：纯 shopping_default 内网可达，0 公网面；
+  #   - 网关经服务名直连（LANLINK_MCP_FETCH_URL=http://mcp-fetch:8781/mcp 等）；
+  #   - 启用流程：.env 设 LANLINK_MCP_ENABLED=1 → `docker compose up -d --build
+  #     mcp-fetch mcp-playwright ai-gateway`（env 是容器创建时固化，必须重建网关）；
+  #   - 关闭流程：.env 置 LANLINK_MCP_ENABLED=0 → 重建 ai-gateway（工具从注册表
+  #     消失）→ `docker compose stop mcp-fetch mcp-playwright` 回收内存。
+  # ============================================================
+  mcp-fetch:
+    build:
+      context: ./ai-gateway/mcp-bridge
+      dockerfile: Dockerfile
+    image: lanlink-mcp-fetch:latest
+    container_name: lanlink-mcp-fetch
+    logging: *default-logging
+    # 官方 fetch server + uvicorn + SDK 常态 80-150MB；fetch server 对超大页面
+    # 全量读入内存（max_length 只作用于返回截断），按峰值估算给 256m。
+    mem_limit: 256m
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    environment:
+      PORT: "8781"
+      LANLINK_FETCH_USER_AGENT: ${LANLINK_MCP_USER_AGENT:-lanlink-ai-gateway (+internal bridge)}
+      LANLINK_FETCH_IGNORE_ROBOTS: ${LANLINK_MCP_IGNORE_ROBOTS:-0}
+    healthcheck:
+      # 自建桥自带 /healthz；python:3.12-slim 基底用 python urllib 探活
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8781/healthz', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  mcp-playwright:
+    # 官方 playwright MCP 镜像（streamable HTTP 模式）。不用 daocloud 代理：
+    # daocloud 不代理 mcr 域名（实测 denied），mcr.microsoft.com 国内可直连。
+    # digest pin 纪律：镜像 tag 可被覆盖，digest 不可变；升级时先在测试环境
+    # 验证新 digest 的 tools/list schema，再同步更新本行与 mcp_client_tools.py 白名单。
+    image: mcr.microsoft.com/playwright/mcp:v0.0.85@sha256:cc70a6922ff856f3aba0fe97d0d94220dc9a7f367f6d332facc6d81d9a91e60e
+    container_name: lanlink-mcp-playwright
+    logging: *default-logging
+    # 官方镜像 ENTRYPOINT 自带参数不适合 server 场景，覆盖为显式 CLI：
+    # --no-sandbox 是容器内 chromium 必需；
+    # --isolated 浏览器 profile 留内存不落盘：默认磁盘 profile 有单例锁（跟随
+    #   JSON-RPC 会话），网关每次 execute 新建会话，第二个会话 navigate 即撞
+    #   "Browser is already in use"（实测复现）；--isolated 后两会话并行不撞锁
+    #   （双会话 navigate/snapshot/find 探针实测全 OK）。代价是页面状态不跨
+    #   execute 保留——网关本来就每次 execute 新会话，快照链须三步在同一个
+    #   MCP 会话内完成才能复用页面，属协议语义非缺陷；
+    # --allowed-hosts 放行网关容器经服务名直连的 Host: mcp-playwright:8782
+    # （默认仅 localhost 系，实测 403；CLI 是精确匹配，裸主机名 mcp-playwright
+    # 放行不了带端口的 Host——临时容器探针实测 host:port 形态 initialize 200）。
+    entrypoint: ["node", "/app/cli.js", "--headless", "--browser", "chromium",
+                 "--no-sandbox", "--isolated", "--port", "8782", "--host", "0.0.0.0",
+                 "--allowed-hosts", "mcp-playwright:8782",
+                 "--idle-timeout", "900000"]
+    # chromium 需写 /tmp 与自身内存，read_only 不适用；以 mem/pids 收敛。
+    mem_limit: 1g
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # 官方镜像无 /healthz（GET /mcp 非 MCP 请求回 400），无 python/wget/curl，
+      # 有 /usr/bin/bash：用 bash TCP 探活（容器内实测通过）
+      test: ["CMD-SHELL", "bash -c \"exec 3<>/dev/tcp/127.0.0.1/8782\""]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   frontend:

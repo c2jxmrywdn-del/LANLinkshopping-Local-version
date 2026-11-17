@@ -140,34 +140,49 @@ public class OutboundModelConfigService {
                             + "（兼容旧名 OUTBOUND_KEY_SECRET，二者取一即可），"
                             + "并注意主密钥更换后旧密文不可解，需在管理端重新录入全部渠道 API Key");
         }
-        try {
-            if (envMimoApiKey != null && !envMimoApiKey.isBlank()) {
+        // 逐渠道隔离：某个渠道的旧密文解不开（主密钥轮换过）只跳过该渠道，
+        // 不能让整段 env 同步中断——历史实现是单个 try 包住全部渠道，
+        // 一条坏密文就让 mimo/deepseek/mimosa 全部失去 env 自愈能力。
+        if (envMimoApiKey != null && !envMimoApiKey.isBlank()) {
+            try {
                 if (storedChannel("mimo") == null) {
                     upsert("mimo", envMimoBaseUrl, envMimoApiKey, "mimo-v2.6-flash", true, 0L, null);
                     log.info("[outbound-config] MIMO API Key auto-configured from AI_OUTBOUND_MIMO_API_KEY");
                 }
+            } catch (Exception e) {
+                log.warn("[outbound-config] mimo env sync skipped: {}", e.getMessage());
             }
-            if (envQwenApiKey != null && !envQwenApiKey.isBlank()) {
+        }
+        if (envQwenApiKey != null && !envQwenApiKey.isBlank()) {
+            try {
                 if (storedChannel("qwen") == null) {
                     upsert("qwen", envQwenBaseUrl, envQwenApiKey, "qwen-plus", true, 0L, null);
                     log.info("[outbound-config] Qwen API Key auto-configured from AI_QWEN_API_KEY");
                 }
+            } catch (Exception e) {
+                log.warn("[outbound-config] qwen env sync skipped: {}", e.getMessage());
             }
-            if (envDeepseekApiKey != null && !envDeepseekApiKey.isBlank()) {
+        }
+        if (envDeepseekApiKey != null && !envDeepseekApiKey.isBlank()) {
+            try {
                 if (storedChannel("deepseek") == null) {
                     upsert("deepseek", envDeepseekBaseUrl, envDeepseekApiKey, "deepseek-chat", true, 0L, null);
                     log.info("[outbound-config] DeepSeek API Key auto-configured from AI_DEEPSEEK_API_KEY");
                 }
+            } catch (Exception e) {
+                log.warn("[outbound-config] deepseek env sync skipped: {}", e.getMessage());
             }
-            // 本地 AI 网关渠道：每次启动按共享环境变量对齐（base/model/启用状态以 .env 为准）。
-            if (envGatewayEnabled && envGatewayBaseUrl != null && !envGatewayBaseUrl.isBlank()
-                    && envGatewayApiKey != null && !envGatewayApiKey.isBlank()) {
+        }
+        // 本地 AI 网关渠道：每次启动按共享环境变量对齐（base/model/启用状态以 .env 为准）。
+        if (envGatewayEnabled && envGatewayBaseUrl != null && !envGatewayBaseUrl.isBlank()
+                && envGatewayApiKey != null && !envGatewayApiKey.isBlank()) {
+            try {
                 upsert("mimosa", envGatewayBaseUrl, envGatewayApiKey, envGatewayModel, true, 0L, null);
                 log.info("[outbound-config] AI gateway channel (mimosa) configured: base={} model={}",
                         envGatewayBaseUrl, envGatewayModel);
+            } catch (Exception e) {
+                log.warn("[outbound-config] mimosa env sync skipped: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("[outbound-config] env channels init skipped: {}", e.getMessage());
         }
     }
 

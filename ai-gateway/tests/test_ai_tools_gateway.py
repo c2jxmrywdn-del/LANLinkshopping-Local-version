@@ -34,7 +34,7 @@ class TestAiToolsGateway(unittest.TestCase):
         self.assertEqual(resp.status_code, 401)
 
     def test_list_tools_all(self):
-        """携带 API Key 访问 /v1/ai/tools 返回全部工具定义（商城 + 内置 + 网关本地只读）。"""
+        """非严格模式（测试默认）下携带 API Key 返回全部工具定义。"""
         resp = self.client.get("/v1/ai/tools", headers=self.auth_headers)
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
@@ -51,6 +51,17 @@ class TestAiToolsGateway(unittest.TestCase):
         self.assertIn("lanlink_kb_search", names)
         self.assertIn("web_search", names)
         self.assertIn("think", names)
+
+    def test_list_tools_unscoped_is_readonly_in_strict_mode(self):
+        """严格模式下未绑定角色的 key 只拿只读清单，写工具 schema 不下发。"""
+        with patch("app.main.STRICT_ROLE", True):
+            resp = self.client.get("/v1/ai/tools", headers=self.auth_headers)
+        self.assertEqual(resp.status_code, 200)
+        names = {t["function"]["name"] for t in resp.json().get("data", [])}
+        self.assertIn("lanlink_search_products", names)
+        self.assertNotIn("lanlink_create_cart_draft", names)
+        self.assertNotIn("lanlink_audit_procurement_draft", names)
+        self.assertNotIn("lanlink_approve_procurement_flow", names)
 
     def test_list_tools_category_filter(self):
         """按 category 过滤商城工具或内置工具。"""
@@ -163,16 +174,40 @@ class TestAiToolsGateway(unittest.TestCase):
         self.assertFalse(res_json.get("success"))
         self.assertIn("连接商城后端服务失败", res_json.get("error"))
 
-    def test_openapi_spec_public_access(self):
-        """OpenAPI 规范文档无需 API Key，公开供 Dify / Coze 一键导入。"""
+    def test_openapi_spec_public_access_is_read_only(self):
+        """OpenAPI 文档仍免 Key 供 Dify / Coze 导入，但公开版不含写工具 schema。"""
         resp = self.client.get("/v1/ai/openapi.json")
         self.assertEqual(resp.status_code, 200)
         spec = resp.json()
         self.assertEqual(spec.get("openapi"), "3.0.3")
         self.assertIn("info", spec)
-        self.assertIn("/v1/ai/tools/execute", spec.get("paths", {}))
-        self.assertIn("/v1/ai/tools/search_products", spec.get("paths", {}))
-        self.assertIn("/v1/ai/tools/calculate_quotation", spec.get("paths", {}))
+        paths = spec.get("paths", {})
+        self.assertIn("/v1/ai/tools/execute", paths)
+        self.assertIn("/v1/ai/tools/search_products", paths)
+        self.assertIn("/v1/ai/tools/calculate_quotation", paths)
+        for write_tool in (
+            "create_cart_draft",
+            "audit_procurement_draft",
+            "approve_procurement_flow",
+        ):
+            self.assertNotIn(f"/v1/ai/tools/{write_tool}", paths)
+        # 通用 execute 入口也不能通过 $ref 泄露写工具的请求模型
+        execute_schema = paths["/v1/ai/tools/execute"]["post"]["requestBody"]["content"][
+            "application/json"]["schema"]
+        self.assertNotIn("$ref", execute_schema)
+
+    def test_openapi_spec_full_requires_gateway_key(self):
+        """匿名伪造 ?full=1 仍只拿公开只读版；带 key 才能拿到写工具 schema。"""
+        anon = self.client.get("/v1/ai/openapi.json?full=1")
+        self.assertEqual(anon.status_code, 200)
+        self.assertNotIn("/v1/ai/tools/create_cart_draft", anon.json()["paths"])
+
+        full = self.client.get("/v1/ai/openapi.json?full=1", headers=self.auth_headers)
+        self.assertEqual(full.status_code, 200)
+        full_paths = full.json()["paths"]
+        self.assertIn("/v1/ai/tools/create_cart_draft", full_paths)
+        self.assertIn("/v1/ai/tools/audit_procurement_draft", full_paths)
+        self.assertIn("/v1/ai/tools/approve_procurement_flow", full_paths)
 
     def test_mcp_initialize(self):
         """MCP 握手 initialize 请求。"""

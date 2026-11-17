@@ -2,7 +2,7 @@
   <div class="inv-box" data-testid="invoice-box">
     <div class="inv-head">
       <a-checkbox v-model:checked="inv.needed" data-testid="invoice-needed">
-        <span class="inv-head-label"><FileText :size="15" class="inline-block mr-1 align-middle text-slate-500" aria-hidden="true" />需要开发票</span>
+        <span class="inv-head-label"><FileText :size="15" class="inv-ico" aria-hidden="true" />需要开发票</span>
       </a-checkbox>
       <span class="inv-sub">增值税发票，随单登记开票需求</span>
     </div>
@@ -98,9 +98,14 @@ watch(() => inv.contentType, (t) => {
 <style scoped>
 .inv-box { background: rgba(30, 110, 184, .04); border: 1px dashed rgba(30, 110, 184, .25);
            border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-.inv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.inv-head-label { font-weight: 600; font-size: 13px; color: var(--ll-ink, #0f172a); }
-.inv-sub { font-size: 12px; color: var(--ll-muted, #64748b); }
+.inv-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+/* 图标与文字同一基线：项目没有 Tailwind，原来的 inline-block/mr-1/align-middle 全是无效类，
+   导致图标和文字贴在一起。这里用 flex + gap 显式控制间距，不依赖任何工具类。 */
+.inv-head-label { display: inline-flex; align-items: center; gap: 6px;
+                  font-weight: 600; font-size: 13px; line-height: 1.4;
+                  color: var(--ll-ink, #0f172a); white-space: nowrap; }
+.inv-ico { flex-shrink: 0; color: var(--ll-muted, #64748b); }
+.inv-sub { font-size: 12px; line-height: 1.5; color: var(--ll-muted, #64748b); }
 .inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin-top: 10px; }
 .inv-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .inv-span2 { grid-column: span 2; }

@@ -79,7 +79,7 @@
 
         <!-- 21st.dev 风格支付方式多通道选择器 -->
         <div class="selector-container">
-          <div class="selector-title">选择支付方式（支持 7 种主流与国际结算）</div>
+          <div class="selector-title">选择支付方式（支持 8 种主流与国际结算）</div>
           <PaymentMethodSelector
             v-model="selectedPayMethod"
             :wallet-balance="walletBalance"
@@ -130,14 +130,9 @@
           </div>
         </div>
 
-        <!--
-          说明：Apple Pay / Google Pay 目前**没有**接入原生钱包按钮。
-          全仓无 ExpressCheckoutElement / paymentRequest / canMakePayment 调用，
-          选这两个方式时走的仍是上面的 Stripe 卡表单（Stripe 会在支持的设备上
-          于卡表单内提供钱包入口）。原本文案声称"Express Checkout 引擎驱动、
-          支持 Touch ID / Face ID"，属于不存在的功能承诺，已改为如实说明。
-          同时该分支原先被上面的 v-if 吃掉、永不渲染，一并清理。
-        -->
+        <!-- 钱包渠道链路：选中 apple_pay/google_pay 时仅预下单拿 clientSecret，
+             Express Checkout 原生按钮在上方 extra-panel 挂载（Stripe 托管 Touch ID / Face ID），
+             真正扣款由用户点钱包按钮触发，结果回调 onWalletSucceeded / onWalletFailed。 -->
 
         <!-- 确认支付大按钮 -->
         <div class="pay-submit-bar">
@@ -711,10 +706,10 @@ onMounted(() => {
   margin: 0;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
+  background: var(--ll-card-soft, #fbfcfe);
+  border: 1px dashed var(--ll-border-strong, #d5dae2);
   font-size: 12px;
-  color: #64748b;
+  color: var(--ll-muted, #64748b);
 }
 .gateway-preview-panel {
   display: flex;

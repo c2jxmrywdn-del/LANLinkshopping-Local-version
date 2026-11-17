@@ -39,7 +39,18 @@ public class RagServiceClient {
     private static final Logger log = LoggerFactory.getLogger(RagServiceClient.class);
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    /*
+     * 必须显式指定 HTTP/1.1。
+     *
+     * 根因（实测）：JDK HttpClient 默认 `Version.HTTP_2`，会先发 `Upgrade: h2c` 探测；
+     * 而 rag-service 的 uvicorn/h11 不支持 h2c 升级，日志里表现为
+     * `WARNING: Unsupported upgrade request` / `Invalid HTTP request received`，
+     * 最终 FastAPI 收到空 body → 422 `{"loc":["body"],"msg":"Field required"}`。
+     *
+     * 同一个请求用 curl（HTTP/1.1）从后端容器内发是 200，这是最直接的反证。
+     */
     private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(3))
             .build();
 
@@ -117,9 +128,19 @@ public class RagServiceClient {
      * 检索并生成答案。
      *
      * @param question 用户问题
-     * @param mode     LightRAG 检索模式。**当前实测只有 naive 可靠**：
-     *                 hybrid/local/global 依赖实体抽取，而本地 qwen2.5-7b 无法稳定
-     *                 输出 LightRAG 要求的 `entity<|#|>...` 格式，导致 graph 为空。
+     * @param mode     LightRAG 检索模式。**五种模式均已实测可用**：
+     *                 naive（纯向量）/ local（实体邻域）/ global（关系摘要）/
+     *                 hybrid（两者融合）/ mix（+图结构）。
+     *
+     *                 <p>此前注释写「只有 naive 可靠」是**错的**。当时图检索失效的
+     *                 真实原因不是 7B 模型能力不足，而是 ai-gateway 默认
+     *                 `use_kb=true`，会用 13472 字符的客服模板整段替换调用方 messages，
+     *                 导致实体抽取拿不到正确指令、graph 为空。
+     *                 在 rag-service 侧固定 `use_kb=false` 后，实体抽取恢复正常
+     *                 （实测 8 实体 / 6738 字节 graph），四种图检索模式全部答对。
+     *
+     *                 <p>默认仍用 naive：它不依赖实体抽取，索引成本最低、延迟最稳，
+     *                 适合作为兜底；需要跨模态/多跳推理时再切 hybrid。
      * @param topK     召回数量
      * @return 答案文本；失败返回 null（调用方回退现有 RAG）
      */

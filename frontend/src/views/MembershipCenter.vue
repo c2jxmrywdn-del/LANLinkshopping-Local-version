@@ -34,6 +34,7 @@
         <div class="pay-price">¥{{ formatPrice(payPlan?.priceCents) }}</div>
       </div>
       <PaymentMethodSelector v-model="payChannel" :payable-total="payPlan?.priceCents || 0"
+                             :wallet-balance="walletBalance"
                              :exclude-channels="SUBSCRIPTION_UNSUPPORTED_CHANNELS" />
       <p class="pay-hint">支付成功后订阅立即生效；连续包月方案到期将自动续费，可随时取消续费（权益保留至到期日）。</p>
       <a-button type="primary" size="large" block class="vip-cta" :loading="paying" @click="confirmPay">去支付</a-button>
@@ -74,7 +75,7 @@
   <a-card :bordered="false" class="levels" title="等级速览"><a-steps :current="currentIndex" responsive size="small"><a-step v-for="l in (data?.levels||[])" :key="l.levelId" :title="l.levelName" :description="l.minGrowth+' 成长值'"/></a-steps><p v-if="!hasActiveSub" class="sub-hint">需有效订阅方可升级</p></a-card>
 </div></template>
 <script setup>
-import {ref,computed,onMounted,onUnmounted,watch} from 'vue';import {message,Modal} from 'ant-design-vue';import {membershipApi,subscriptionApi,paymentApi} from '../api';import {ShieldCheck} from 'lucide-vue-next'
+import {ref,computed,onMounted,onUnmounted,watch} from 'vue';import {message,Modal} from 'ant-design-vue';import {membershipApi,subscriptionApi,paymentApi,walletApi} from '../api';import {ShieldCheck} from 'lucide-vue-next'
 import MembershipIcon from '../components/ui/MembershipIcon.vue'
 import MembershipBadge from '../components/ui/MembershipBadge.vue'
 import VipIdentityBar from '../components/membership/VipIdentityBar.vue'
@@ -131,16 +132,33 @@ function formatPrice(n){return n==null?'—':Number(n).toLocaleString('zh-CN')}
 // ===== P1 支付流：卡片选择 → 支付确认弹窗（PaymentMethodSelector）→ 两段式下单 → 渠道分发 → 轮询支付结果 =====
 // 会员订阅暂不支持 Stripe 卡支付（订阅单无卡控件挂载位，且未做 confirmCardPayment 确认链）：
 // 显式禁用卡渠道并给可行动提示，避免"预授权已创建"被误当支付成功；商品订单收银台已支持真实卡支付。
-const SUBSCRIPTION_UNSUPPORTED_CHANNELS = ['stripe', 'apple_pay', 'google_pay']
+const SUBSCRIPTION_UNSUPPORTED_CHANNELS = ['stripe', 'apple_pay', 'google_pay', 'term', 'corporate']
 const payOpen=ref(false);const payPlan=ref(null);const payChannel=ref('alipay');const paying=ref(false);let payTimer=null
-function buy(p){if(!p||purchasing.value)return;payPlan.value=p;payChannel.value='alipay';payOpen.value=true}
+// 企业钱包余额：弹窗内展示真实可用余额并据此启用/禁用 balance 渠道（后端 decideChannel 经 balance→wallet 映射结算）
+const walletBalance=ref(0)
+function buy(p){if(!p||purchasing.value)return;payPlan.value=p;payChannel.value='alipay';payOpen.value=true;refreshWalletBalance()}
+// 弹窗每次打开都刷新余额：失败按 0 处理（余额卡禁用，不影响支付宝/微信）
+async function refreshWalletBalance(){try{const w=await walletApi.my();walletBalance.value=Number(w?.balance||0)}catch(e){walletBalance.value=0}}
 function renew(){if(!sub.value)return;const p=plans.value.find(x=>String(x.planId)===String(sub.value.planId));buy(p||{planId:sub.value.planId,planName:sub.value.planName||'当前方案',durationDays:null,priceCents:null})}
 function closePay(){payOpen.value=false}
 // 渠道分发：wallet/mock 同步确认；alipay 表单跳转；wechat/stripe 拉起后轮询 /payment/query/{SUB单号}
 async function confirmPay(){
   if(paying.value||!payPlan.value)return
   if(SUBSCRIPTION_UNSUPPORTED_CHANNELS.includes(payChannel.value)){message.warning('会员订阅暂不支持 Stripe 卡支付，请选择企业钱包 / 支付宝 / 微信');return}
-  if(['term','corporate'].includes(payChannel.value)){message.warning('订阅暂不支持该支付方式，请选择外卡/支付宝/微信/钱包');return}
+  // 企业钱包：与商品收银台同口径，结算时把 balance 映射为后端结算渠道 wallet
+  if(payChannel.value==='balance'){
+    if(walletBalance.value<(payPlan.value?.priceCents||0)){message.warning('钱包余额不足，请先充值或改用支付宝 / 微信');return}
+    paying.value=true
+    try{
+      const vo=await subscriptionApi.purchase(payPlan.value.planId,'wallet')
+      if(!vo||!vo.orderNo)throw new Error('订阅单创建失败')
+      if(vo.channel==='wallet'&&vo.payInfo?.paid){finishPay();return}
+      if(vo.mock){await paymentApi.mockConfirm(vo.orderNo);finishPay();return}
+      throw new Error('钱包支付未确认，请稍后在订阅记录中查看')
+    }catch(e){message.error(e?.message||'支付失败，请重试')}finally{paying.value=false}
+    return
+  }
+  if(['term','corporate'].includes(payChannel.value)){message.warning('订阅暂不支持该支付方式，请选择支付宝 / 微信 / 企业钱包');return}
   paying.value=true
   try{
     const vo=await subscriptionApi.purchase(payPlan.value.planId,payChannel.value)

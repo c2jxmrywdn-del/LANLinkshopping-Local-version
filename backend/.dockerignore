@@ -1,0 +1,4 @@
+# Maven 构建产物很大；离线快速路径只需要最终可执行 jar。
+# 排除其余 target 内容，避免每次 build 都把整个 target 目录传给 BuildKit。
+target/*
+!target/lanlink-shopping.jar

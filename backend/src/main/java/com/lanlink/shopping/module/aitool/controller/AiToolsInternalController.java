@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,7 +75,8 @@ public class AiToolsInternalController {
         if (auditService == null) return;
         auditService.record(null, "AI_TOOL_CALL_DENIED",
                 "reason=" + reason + " scope=" + permission + " keyPrefix=" + auth.keyPrefix()
-                        + " tenant=" + auth.tenantId() + " remote=" + request.getRemoteAddr(),
+                        + " tenant=" + auth.tenantId() + " caller=" + callerService(request)
+                        + " remote=" + request.getRemoteAddr(),
                 request);
     }
 
@@ -83,8 +85,22 @@ public class AiToolsInternalController {
         if (auditService == null) return;
         auditService.record(null, "AI_TOOL_CALL",
                 "requestId=" + requestId + " keyPrefix=" + auth.keyPrefix() + " tool=" + safeAuditField(tool)
-                        + " tenant=" + auth.tenantId() + " outcome=" + safeAuditField(outcome),
+                        + " tenant=" + auth.tenantId() + " caller=" + callerService(request)
+                        + " remote=" + request.getRemoteAddr()
+                        + " outcome=" + safeAuditField(outcome),
                 request);
+    }
+
+    /**
+     * 调用方主体：网关转发时注入 `X-Caller-Service`，直连脚本没有这个头。
+     *
+     * <p>这个头是**归因信息**，不是授权依据（授权仍靠 secret + 来源网段）。
+     * 它只用于把「网关转发」和「本机脚本/其它容器」区分开；恶意方当然可以伪造，
+     * 但伪造者仍受来源白名单约束，且审计里同时有不可伪造的 remoteAddr。
+     */
+    private static String callerService(HttpServletRequest request) {
+        String caller = request.getHeader("X-Caller-Service");
+        return StringUtils.hasText(caller) ? safeAuditField(caller) : "unknown";
     }
 
     /** tool 名来自请求体，去掉换行与控制字符，避免伪造审计记录（detail 列定长 500）。 */

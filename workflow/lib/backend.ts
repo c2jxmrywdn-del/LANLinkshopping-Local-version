@@ -4,6 +4,11 @@ const API_BASE = process.env.BACKEND_API_BASE ?? "http://localhost:8080/api";
 const SVC_PHONE = process.env.WORKFLOW_BACKEND_PHONE ?? "";
 const SVC_PASSWORD = process.env.WORKFLOW_BACKEND_PASSWORD ?? "";
 
+/** 服务账号密码最小长度：弱口令会在启动首个导入任务时告警（审计 P1-4） */
+const MIN_SERVICE_PASSWORD_LENGTH = 12;
+
+let weakPasswordWarned = false;
+
 export interface BackendAuth {
   cookie: string;
   csrf: string;
@@ -19,6 +24,15 @@ export async function loginToBackend(): Promise<BackendAuth> {
 
   if (!SVC_PHONE || !SVC_PASSWORD) {
     throw new Error("未配置 WORKFLOW_BACKEND_PHONE / WORKFLOW_BACKEND_PASSWORD");
+  }
+  // 审计 P1-4：历史上该账号是 6 位纯数字弱口令。入口已由 WORKFLOW_IMPORT_TOKEN 收紧，
+  // 这里再做一次弱口令告警，避免"凭据泄露即全量发布"在无人察觉的情况下长期存在。
+  if (!weakPasswordWarned && SVC_PASSWORD.length < MIN_SERVICE_PASSWORD_LENGTH) {
+    weakPasswordWarned = true;
+    console.warn(
+      `[workflow] WORKFLOW_BACKEND_PASSWORD 长度 ${SVC_PASSWORD.length} < ${MIN_SERVICE_PASSWORD_LENGTH}，` +
+        "属于弱口令；请改用随机强密码或专用低权限服务令牌（审计 P1-4）",
+    );
   }
 
   const csrfRes = await fetch(`${API_BASE}/user/csrf-token`, { credentials: "include" });

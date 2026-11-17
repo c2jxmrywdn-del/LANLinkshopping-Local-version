@@ -340,6 +340,8 @@
   --ll-text-tertiary: #7d8ea6;
   --ll-separator: rgba(255, 255, 255, 0.10);
   --ll-separator-strong: rgba(255, 255, 255, 0.20);
+  /* 品牌蓝在深色卡面上的提亮变体（浅底强调文字直接用 --ll-primary） */
+  --ll-primary-on-dark: #6fb1e4;
 
   /* 物流地图深色覆盖（深色主题下地图本为夜航基调，仅微调画布） */
   --ll-success: #10b981;
@@ -623,3 +625,23 @@ a:active { color: var(--ll-skyblue-active); }
 [data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item a { color: #f5f5f7; }
 [data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item-active { background: #f5f5f7; }
 [data-theme='dark'] #app .ant-table-wrapper .ant-pagination .ant-pagination-item-active a { color: #1d1d1f; }
+
+/* =====================================================
+   全站背景水印：Dev of Jason ouyang · Since 2026.09.12
+   铺在 body 上（fixed 伪元素），所有页面共用；纯装饰层，
+   不拦截点击。200×100 瓦片内两枚错位小字（砖缝排布），
+   -20° 斜排，铺满全屏；深浅主题各给一档透明度。
+   ===================================================== */
+body::before {
+  content: 'Dev of Jason ouyang · Since 2026.09.12';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Ctext x='8' y='34' font-family='-apple-system,'Segoe UI',Arial,sans-serif' font-size='9.5' fill='%230f172a' fill-opacity='0.07' transform='rotate(-20 8 34)'%3EDev of Jason ouyang %C2%B7 Since 2026.09.12%3C/text%3E%3Ctext x='108' y='84' font-family='-apple-system,'Segoe UI',Arial,sans-serif' font-size='9.5' fill='%230f172a' fill-opacity='0.07' transform='rotate(-20 108 84)'%3EDev of Jason ouyang %C2%B7 Since 2026.09.12%3C/text%3E%3C/svg%3E");
+  background-size: 200px 100px;
+  background-repeat: repeat;
+}
+[data-theme='dark'] body::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='100'%3E%3Ctext x='8' y='34' font-family='-apple-system,'Segoe UI',Arial,sans-serif' font-size='9.5' fill='%23f5f5f7' fill-opacity='0.09' transform='rotate(-20 8 34)'%3EDev of Jason ouyang %C2%B7 Since 2026.09.12%3C/text%3E%3Ctext x='108' y='84' font-family='-apple-system,'Segoe UI',Arial,sans-serif' font-size='9.5' fill='%23f5f5f7' fill-opacity='0.09' transform='rotate(-20 108 84)'%3EDev of Jason ouyang %C2%B7 Since 2026.09.12%3C/text%3E%3C/svg%3E");
+}

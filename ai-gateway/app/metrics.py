@@ -225,7 +225,25 @@ class MetricsRegistry:
         )
         self.gpu_utilization_percent = Gauge(
             "ai_gateway_gpu_utilization_percent",
-            "GPU core compute utilization percentage"
+            "GPU core compute utilization in percent"
+        )
+
+        # 7. 资讯管线指标（/v1/news/extract；LANLINK_NEWSPIPELINE_ENABLED=0 时不产生数据）
+        self.news_fetch_total = Counter(
+            "ai_gateway_news_fetch_total",
+            "Total news pipeline fetch attempts by source site and result",
+            labelnames=("source", "result")
+        )
+        self.news_dedup_total = Counter(
+            "ai_gateway_news_dedup_total",
+            "Total news dedup verdicts by verdict and source site",
+            labelnames=("verdict", "source")
+        )
+        self.news_pipeline_latency = Histogram(
+            "ai_gateway_news_pipeline_latency_seconds",
+            "News pipeline end-to-end latency in seconds",
+            labelnames=("stage",),
+            buckets=DEFAULT_BUCKETS
         )
 
     def update_gpu_metrics(self) -> None:
@@ -288,6 +306,9 @@ class MetricsRegistry:
             self.circuit_breaker_state,
             self.cache_hits_total,
             self.cache_misses_total,
+            self.news_fetch_total,
+            self.news_dedup_total,
+            self.news_pipeline_latency,
             self.gpu_memory_total_mb,
             self.gpu_memory_used_mb,
             self.gpu_utilization_percent,

@@ -167,7 +167,8 @@ def test_gateway_chat_completions_cache_e2e(clean_cache):
         q_text = payload["messages"][0]["content"]
         cached = False
         for _ in range(20):
-            if CACHE.get(q_text, role="buyer") is not None:
+            # use_kb 是隔离维度：本次请求是 use_kb=False，必须按同一维度查询
+            if CACHE.get(q_text, role="buyer", model="qwen2.5-7b", use_kb=False) is not None:
                 cached = True
                 break
             time.sleep(0.1)
@@ -179,6 +180,8 @@ def test_gateway_chat_completions_cache_e2e(clean_cache):
         assert resp2.headers.get("X-Lanlink-Cache") in ("HIT-EXACT", "HIT-SEMANTIC")
         data2 = resp2.json()
         assert data2["lanlink"]["cached"] is True
+        # mock 后端属于本地来源，命中回填仍应是 local: 前缀
+        assert data2["lanlink"]["answer_generator"] == "local:semantic_cache"
 
         # 3. 统计接口与主动失效校验
         stat_resp = client.post("/cache/invalidate", json={"role": "buyer"}, headers=headers)
@@ -189,6 +192,112 @@ def test_gateway_chat_completions_cache_e2e(clean_cache):
         resp3 = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp3.status_code == 200
         assert resp3.headers.get("X-Lanlink-Cache") == "MISS"
+    finally:
+        LLM.backend_pref = orig_pref
+
+
+def test_gateway_use_kb_toggle_does_not_cross_hit(clean_cache):
+    """网关层：同问题先 use_kb=true 再 use_kb=false，第二次不得命中缓存。"""
+    from app.main import LLM
+    orig_pref = LLM.backend_pref
+    LLM.backend_pref = "mock"
+    try:
+        client = TestClient(app)
+        headers = {
+            "Authorization": f"Bearer {PRIMARY_GATEWAY_KEY}",
+            "X-Agent-Role": "buyer",
+        }
+        question = "企业采购账期最长可以申请多少天"
+        base = {
+            "model": "qwen2.5-7b",
+            "messages": [{"role": "user", "content": question}],
+        }
+
+        resp1 = client.post("/v1/chat/completions",
+                            json=dict(base, use_kb=True), headers=headers)
+        assert resp1.status_code == 200
+        assert resp1.headers.get("X-Lanlink-Cache") == "MISS"
+
+        for _ in range(20):
+            if CACHE.get(question, role="buyer", model="qwen2.5-7b", use_kb=True) is not None:
+                break
+            time.sleep(0.1)
+
+        # use_kb=false：prompt 形态不同，必须重新生成而不是回放 RAG 答案
+        resp2 = client.post("/v1/chat/completions",
+                            json=dict(base, use_kb=False), headers=headers)
+        assert resp2.status_code == 200
+        assert resp2.headers.get("X-Lanlink-Cache") == "MISS"
+        assert resp2.json()["lanlink"]["backend"] != "semantic_cache"
+
+        # 回到 use_kb=true：应当命中
+        resp3 = client.post("/v1/chat/completions",
+                            json=dict(base, use_kb=True), headers=headers)
+        assert resp3.headers.get("X-Lanlink-Cache") in ("HIT-EXACT", "HIT-SEMANTIC")
+    finally:
+        LLM.backend_pref = orig_pref
+
+
+def test_gateway_cache_control_no_cache_bypasses_hit(clean_cache):
+    """`Cache-Control: no-cache` 仍必须绕过缓存读取。"""
+    from app.main import LLM
+    orig_pref = LLM.backend_pref
+    LLM.backend_pref = "mock"
+    try:
+        client = TestClient(app)
+        headers = {
+            "Authorization": f"Bearer {PRIMARY_GATEWAY_KEY}",
+            "X-Agent-Role": "buyer",
+        }
+        question = "会员积分如何兑换优惠券"
+        payload = {
+            "model": "qwen2.5-7b",
+            "messages": [{"role": "user", "content": question}],
+            "use_kb": False,
+        }
+
+        assert client.post("/v1/chat/completions", json=payload,
+                           headers=headers).headers.get("X-Lanlink-Cache") == "MISS"
+        for _ in range(20):
+            if CACHE.get(question, role="buyer", model="qwen2.5-7b", use_kb=False) is not None:
+                break
+            time.sleep(0.1)
+
+        bypass = dict(headers, **{"Cache-Control": "no-cache"})
+        resp = client.post("/v1/chat/completions", json=payload, headers=bypass)
+        assert resp.status_code == 200
+        assert resp.headers.get("X-Lanlink-Cache") == "MISS"
+        assert resp.json()["lanlink"].get("cached") is not True
+    finally:
+        LLM.backend_pref = orig_pref
+
+
+def test_gateway_external_cached_answer_never_reports_local_prefix(clean_cache):
+    """外部模型生成并写入缓存后，命中时 answer_generator 绝不能带 local: 前缀。"""
+    from app.main import LLM
+    orig_pref = LLM.backend_pref
+    LLM.backend_pref = "mock"
+    try:
+        client = TestClient(app)
+        headers = {
+            "Authorization": f"Bearer {PRIMARY_GATEWAY_KEY}",
+            "X-Agent-Role": "buyer",
+        }
+        question = "支持哪些跨境结算币种"
+        # 直接以外部后端身份写入缓存，模拟 MiMo 生成过的答案
+        CACHE.set(question, "支持 USD / EUR / JPY 结算。", role="buyer",
+                  model="mimo-v2.6-flash", use_kb=False, generator="external:mimo")
+
+        resp = client.post("/v1/chat/completions", json={
+            "model": "mimo-v2.6-flash",
+            "messages": [{"role": "user", "content": question}],
+            "use_kb": False,
+        }, headers=headers)
+        assert resp.status_code == 200
+        assert resp.headers.get("X-Lanlink-Cache") in ("HIT-EXACT", "HIT-SEMANTIC")
+        generator = resp.json()["lanlink"]["answer_generator"]
+        assert generator == "external:semantic_cache"
+        assert not generator.startswith("local:")
     finally:
         LLM.backend_pref = orig_pref
 
@@ -357,9 +466,12 @@ def test_cache_stats_endpoint_returns_200(no_pubsub):
 class _RecordingRedis:
     """记录命令序列的 Redis 替身，用于验证索引维度不一致时会 DROP 后重建。"""
 
-    def __init__(self, index_dim: int):
+    def __init__(self, index_dim: int, fields=("role", "model", "use_kb", "query", "generator",
+                                               "qvec", "created_at")):
         self.commands: list[str] = []
         self._index_dim = index_dim
+        # 字段集合可配置：老索引缺 use_kb/generator 时必须走重建分支
+        self._fields = list(fields)
 
     def execute_command(self, *args):
         name = args[0]
@@ -367,9 +479,14 @@ class _RecordingRedis:
         if name == "FT._LIST":
             return [b"aigateway:scache:idx"]
         if name == "FT.INFO":
-            return [b"attributes",
-                    [[b"identifier", b"qvec", b"type", b"VECTOR",
-                      b"DIM", str(self._index_dim).encode()]]]
+            attrs = []
+            for field in self._fields:
+                if field == "qvec":
+                    attrs.append([b"identifier", b"qvec", b"type", b"VECTOR",
+                                  b"DIM", str(self._index_dim).encode()])
+                else:
+                    attrs.append([b"identifier", field.encode(), b"type", b"TAG"])
+            return [b"attributes", attrs]
         if name == "FT.DROPINDEX":
             self._index_dim = 1024
             return b"OK"
@@ -495,3 +612,195 @@ def test_no_index_created_while_dim_unknown(no_pubsub, monkeypatch):
     cache._last_index_check = 0.0
     assert cache._ensure_index(redis) is True
     assert "FT.CREATE" in redis.commands
+
+
+# --------------------- 回归：use_kb / model 隔离与 answer_generator 溯源 ---------------------
+# 历史缺陷（两类串味）：
+#   1) 精确键只有 sha256(role:query)，Tier-2 也只按 @role 过滤 —— use_kb 与 model
+#      都没参与隔离。use_kb=true 会用 RAG 模板重建 messages，与 use_kb=false 是完全
+#      不同的 prompt，却共用同一个键，RAG 答案会被回放给非 RAG 请求（反之亦然）；
+#   2) 命中时无条件写 `local:semantic_cache`，而缓存内容可能来自 MiMo/DeepSeek，
+#      会骗过 Java 侧 SupportAgentPolicy.assertLocal，把外部答案冒充成本地结果。
+
+
+def test_use_kb_dimension_isolates_cache(clean_cache):
+    """同一问题在 use_kb=True / False 下必须互不命中（prompt 形态完全不同）。"""
+    cache = clean_cache
+    query = "企业采购账期最长可以申请多少天"
+
+    assert cache.set(query, "RAG 模板答案：最长 60 天。", role="buyer",
+                     model="qwen2.5-7b", use_kb=True, generator="llamacpp:qwen2.5-7b") is True
+
+    # 同一问题、同一模型，仅 use_kb 不同 → 不得命中 RAG 答案
+    assert cache.get(query, role="buyer", model="qwen2.5-7b", use_kb=False) is None
+    # 同维度仍可命中，确认隔离没有把正常命中一起关掉
+    hit = cache.get(query, role="buyer", model="qwen2.5-7b", use_kb=True)
+    assert hit is not None and "RAG 模板答案" in hit.content
+
+    # 反向：先写非 RAG，再用 RAG 维度查，同样不得命中
+    assert cache.set(query, "调用方自带 grounding 的答案。", role="buyer",
+                     model="qwen2.5-7b", use_kb=False,
+                     generator="llamacpp:qwen2.5-7b") is True
+    assert cache.get(query, role="buyer", model="qwen2.5-7b", use_kb=True).content \
+        == "RAG 模板答案：最长 60 天。"
+
+
+def test_use_kb_isolation_holds_on_tier2_semantic_path(no_pubsub):
+    """Tier-2 近似命中同样受 use_kb 约束，不能绕过 Tier-1 的隔离维度。"""
+    cache = SemanticCache(embedder=_FixedDimEmbedder(768), dim=768,
+                          similarity_threshold=0.96)
+    assert cache.set("七天无理由退货运费谁承担", "买家原因由买家承担运费。", role="buyer",
+                     model="qwen2.5-7b", use_kb=True) is True
+
+    # _FixedDimEmbedder 对所有文本返回同一向量 → 相似度恒为 1.0，
+    # 若缺 use_kb 过滤就会在这里语义命中
+    assert cache.get("完全不同的另一个问题", role="buyer",
+                     model="qwen2.5-7b", use_kb=False) is None
+    hit = cache.get("完全不同的另一个问题", role="buyer", model="qwen2.5-7b", use_kb=True)
+    assert hit is not None and hit.hit_type == "semantic"
+
+
+def test_model_dimension_isolates_cache(clean_cache):
+    """model=qwen2.5-7b 与 model=mimo-v2.6-flash 的同一问题不得互相命中。"""
+    cache = clean_cache
+    query = "平台支持哪些对公结算方式"
+
+    assert cache.set(query, "本地 7B 生成的答案。", role="buyer",
+                     model="qwen2.5-7b", use_kb=False,
+                     generator="llamacpp:qwen2.5-7b") is True
+
+    assert cache.get(query, role="buyer", model="mimo-v2.6-flash", use_kb=False) is None
+    hit = cache.get(query, role="buyer", model="qwen2.5-7b", use_kb=False)
+    assert hit is not None and hit.content == "本地 7B 生成的答案。"
+
+
+def test_model_isolation_holds_on_tier2_semantic_path(no_pubsub):
+    """Tier-2 向量兜底也必须按 model 过滤。"""
+    cache = SemanticCache(embedder=_FixedDimEmbedder(768), dim=768,
+                          similarity_threshold=0.96)
+    assert cache.set("对公转账多久到账", "T+1 到账。", role="buyer",
+                     model="qwen2.5-7b", use_kb=True) is True
+
+    assert cache.get("换一个说法的问题", role="buyer",
+                     model="mimo-v2.6-flash", use_kb=True) is None
+
+
+def test_cache_hit_reports_provenance_of_original_backend(clean_cache):
+    """命中时的 answer_generator 必须按原始生成后端标注，不能一律冒充 local:。"""
+    cache = clean_cache
+    query = "售后退款多久原路返回"
+
+    # 1) 本地生成 → local:semantic_cache
+    cache.set(query, "本地答案：1-3 个工作日。", role="buyer", model="qwen2.5-7b",
+              use_kb=True, generator="llamacpp:qwen2.5-7b")
+    local_hit = cache.get(query, role="buyer", model="qwen2.5-7b", use_kb=True)
+    assert local_hit.answer_generator == "local:semantic_cache"
+
+    # 2) 外部模型生成 → external:semantic_cache，绝不能带 local: 前缀
+    cache.set(query, "外部模型答案：1-3 个工作日。", role="buyer",
+              model="mimo-v2.6-flash", use_kb=True, generator="external:mimo")
+    external_hit = cache.get(query, role="buyer", model="mimo-v2.6-flash", use_kb=True)
+    assert external_hit.answer_generator == "external:semantic_cache"
+    assert not external_hit.answer_generator.startswith("local:")
+
+    # 3) 来源缺失（老条目）按外部处理：宁可让 Java 侧拒答，也不冒充本地
+    cache.set(query, "来源未知的答案。", role="buyer", model="deepseek-v4", use_kb=True)
+    unknown_hit = cache.get(query, role="buyer", model="deepseek-v4", use_kb=True)
+    assert unknown_hit.answer_generator == "external:semantic_cache"
+
+
+@pytest.mark.parametrize("backend,expected", [
+    ("llamacpp:qwen2.5-7b", "local:semantic_cache"),
+    ("ollama:qwen2.5", "local:semantic_cache"),
+    ("mock:heuristic", "local:semantic_cache"),
+    ("local:qwen2.5-7b", "local:semantic_cache"),
+    ("external:mimo", "external:semantic_cache"),
+    ("external:deepseek", "external:semantic_cache"),
+    ("", "external:semantic_cache"),
+    ("mimo-v2.6-flash", "external:semantic_cache"),
+])
+def test_cache_answer_generator_prefix_mapping(backend, expected):
+    """来源前缀映射表：只有确属本地的后端才允许 `local:` 前缀。"""
+    from app.semantic_cache import cache_answer_generator
+
+    assert cache_answer_generator(backend) == expected
+
+
+def test_tier2_redis_resp3_hit_carries_content_and_generator():
+    """RESP3 返回体必须解析出 content/generator，否则 Tier-2 命中会回放空答案。"""
+    raw = {
+        b"results": [{
+            b"id": b"aigateway:scache:doc:abc123",
+            b"extra_attributes": {
+                b"distance": b"0.0100",
+                b"content": "七天无理由退货运费由买家承担。".encode("utf-8"),
+                b"reasoning_content": b"",
+                b"generator": b"external:mimo",
+                b"scene": b"aftersales",
+                b"docs": b"[]",
+            },
+        }],
+    }
+    parsed = SemanticCache._parse_redisearch_hit(raw)
+    assert parsed is not None
+    assert parsed["content"] == "七天无理由退货运费由买家承担。"
+    assert parsed["generator"] == "external:mimo"
+    assert parsed["distance"] == pytest.approx(0.01)
+
+
+def test_legacy_index_without_isolation_fields_is_rebuilt(no_pubsub):
+    """老索引缺 use_kb 字段时 `@use_kb` 过滤会报 Unknown field，必须重建而不是复用。"""
+    redis = _RecordingRedis(index_dim=768, fields=("role", "model", "query", "qvec"))
+    cache = SemanticCache(redis_client=redis)
+    cache.dim = 768
+
+    assert cache._ensure_index(redis) is True
+    assert "FT.DROPINDEX" in redis.commands, f"老 schema 未重建: {redis.commands}"
+    assert "FT.CREATE" in redis.commands
+
+
+def test_index_with_isolation_fields_is_reused(no_pubsub):
+    """schema 已含 role/model/use_kb 时不得重建（避免每次启动清空缓存）。"""
+    redis = _RecordingRedis(index_dim=768)
+    cache = SemanticCache(redis_client=redis)
+    cache.dim = 768
+
+    assert cache._ensure_index(redis) is True
+    assert "FT.DROPINDEX" not in redis.commands
+    assert "FT.CREATE" not in redis.commands
+
+
+def test_invalidate_blocks_concurrent_async_writeback(no_pubsub):
+    """失效时间戳必须先于键删除落位，否则并发写回会在删除后补写、失效后仍能命中。
+
+    历史缺陷：`invalidate()` 先扫键删除、最后才写 `_last_invalidate_time`。而 `set()`
+    是「写 exact → 算 embedding（网络往返）→ 写 doc」，写回线程在时间戳落位前通过
+    `_is_invalidated_since` 检查后，hset 会落在删除之后，导致失效后仍语义命中旧答案。
+    """
+    observations = {}
+
+    class _OrderProbe:
+        """删除发生的那一刻，回读失效时间戳，验证它是否已经落位。"""
+
+        def __init__(self, cache):
+            self.cache = cache
+
+        def scan_iter(self, match=None, count=None):
+            return iter([b"aigateway:scache:doc:probe"])
+
+        def get(self, key):
+            return json.dumps({"role": "buyer"}).encode("utf-8")
+
+        def hget(self, key, field):
+            return b"buyer"
+
+        def delete(self, key):
+            observations["stamp_at_delete"] = dict(self.cache._last_invalidate_time)
+            return 1
+
+    cache = SemanticCache(embedder=_FixedDimEmbedder(768), dim=768)
+    cache._client = _OrderProbe(cache)
+    cache.invalidate(role="buyer")
+
+    stamp = observations.get("stamp_at_delete", {})
+    assert "buyer" in stamp, "失效时间戳必须在删除键之前写入，否则并发写回会漏过检查"

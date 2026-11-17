@@ -73,10 +73,18 @@ public class KnowledgeAdminController {
         return R.ok(m);
     }
 
-    /** 立即抓取外部 RSS 资讯（手动触发；limit 为本轮最多入库条数，最终受 AI_EXTERNAL_LIMIT 限制） */
+    /**
+     * 立即抓取外部 RSS 资讯（手动触发；limit 为本轮最多入库条数，最终受 AI_EXTERNAL_LIMIT 限制）。
+     *
+     * <p>pipeline=true 时改走网关资讯管线编排（AI_NEWS_PIPELINE_ENABLED=false 时方法内
+     * 直接回退本方法既有行为，零行为变化）；默认 false 保持既有 RSS 直抓。
+     */
     @PostMapping("/fetch-external")
-    public R<Map<String, Object>> fetchExternal(@RequestParam(defaultValue = "30") int limit) {
-        Map<String, Object> stats = externalInfoFetchService.fetchNow(limit);
+    public R<Map<String, Object>> fetchExternal(@RequestParam(defaultValue = "30") int limit,
+                                                @RequestParam(defaultValue = "false") boolean pipeline) {
+        Map<String, Object> stats = pipeline
+                ? externalInfoFetchService.runGatewayPipeline()
+                : externalInfoFetchService.fetchNow(limit);
         return R.ok("外部资讯抓取完成", stats);
     }
 
@@ -239,9 +247,13 @@ public class KnowledgeAdminController {
     /**
      * 多模态 RAG 检索问答。
      *
-     * <p><b>mode 默认 naive</b>：实测 hybrid/local/global 依赖实体抽取，
-     * 而本地 qwen2.5-7b 无法稳定输出 LightRAG 的实体格式，graph 为空。
-     * 保留 mode 参数是为了换更大模型后可直接切换，无需改代码。
+     * <p><b>mode 默认 naive</b>：五种模式实测均可用（见 RagServiceClient 的说明）。
+     * 默认选 naive 是因为它不依赖实体抽取——索引成本最低、延迟最稳，适合兜底；
+     * 需要跨模态/多跳推理时由调用方显式传 `hybrid`。
+     *
+     * <p>历史误判记录：此前这里写「hybrid/local/global 不可用、graph 为空」，
+     * 真实原因是 ai-gateway 的 `use_kb=true` 覆盖了 messages，不是模型能力问题。
+     * 在 rag-service 固定 `use_kb=false` 后实体抽取恢复正常。
      */
     @PostMapping("/multimodal/query")
     public R<Map<String, Object>> multimodalQuery(@RequestBody Map<String, Object> body) {

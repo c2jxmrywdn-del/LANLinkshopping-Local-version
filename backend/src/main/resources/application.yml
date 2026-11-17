@@ -289,8 +289,11 @@ logistics:
     metrics-window-hours: 24
     # 回调审计日志保留天数（防表膨胀）
     callback-log-retention-days: 30
-    # 回调 URL 路径段共享 token（Mock/17TRACK 共用；默认值仅 dev 演示可用，生产必须覆盖）
-    callback-url-token: ${TRACKING_CALLBACK_URL_TOKEN:dev-callback-token}
+    # 回调 URL 路径段共享 token（Mock 共用）。无内置默认值：未配置即拒绝全部 URL-token 回调，
+    # 避免 compose 漏注入 TRACKING_* 时静默退回可猜的 dev-callback-token（审计 P1-3）。
+    # 生产/联调必须注入 >= 16 位随机串，建议 32 位 hex：
+    #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    callback-url-token: ${TRACKING_CALLBACK_URL_TOKEN:}
     kuaidi100:
       key: ${TRACKING_KUAIDI100_KEY:}
       customer: ${TRACKING_KUAIDI100_CUSTOMER:}

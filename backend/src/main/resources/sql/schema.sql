@@ -606,6 +606,19 @@ CREATE TABLE IF NOT EXISTS t_market_news (
   KEY idx_news_cat (category, published_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='B2B市场资讯';
 
+-- 幂等升级：t_market_news 补齐资讯管线溯源两列（网关 /v1/news/extract 结构化抓取回填；
+-- application-dev.yml ddl-auto=always 每次启动重放本文件，裸 ALTER 第二次必炸 Duplicate column）。
+SET @mn1 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_market_news ADD COLUMN origin_url VARCHAR(500) NULL COMMENT ''原始来源 URL（重定向链首跳，版权溯源）''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_market_news' AND COLUMN_NAME='origin_url');
+PREPARE mn_stmt1 FROM @mn1; EXECUTE mn_stmt1; DEALLOCATE PREPARE mn_stmt1;
+SET @mn2 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_market_news ADD COLUMN fingerprint CHAR(64) NULL COMMENT ''正文 sha256 指纹（网关 news 管线判重）''', 'SELECT 1')
+            FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_market_news' AND COLUMN_NAME='fingerprint');
+PREPARE mn_stmt2 FROM @mn2; EXECUTE mn_stmt2; DEALLOCATE PREPARE mn_stmt2;
+-- 幂等升级：uk_news_fingerprint 单列唯一索引（真重发兜底；索引存在时跳过）
+SET @mn3 = (SELECT IF(COUNT(*) = 0, 'ALTER TABLE t_market_news ADD UNIQUE KEY uk_news_fingerprint (fingerprint)', 'SELECT 1')
+            FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='lanlink_shopping' AND TABLE_NAME='t_market_news' AND INDEX_NAME='uk_news_fingerprint');
+PREPARE mn_stmt3 FROM @mn3; EXECUTE mn_stmt3; DEALLOCATE PREPARE mn_stmt3;
+
 INSERT IGNORE INTO t_market_news (title, summary, category, source, tags, importance, published_at) VALUES
  ('建材行业：水泥价格连续三周上行，华东地区领涨', '受错峰生产与基建开工回暖影响，P.O42.5 袋装水泥现货均价环比上涨 3.2%，华东区域涨幅居前。', 'price', '中国建材报', '水泥,建材,华东', 3, DATE_SUB(NOW(), INTERVAL 2 HOUR)),
  ('多地发布秋冬错峰生产通知，部分化工品供给收紧', '北方多地启动错峰生产，纯碱、甲醇等基础化工品开工率下降，短期供给偏紧。', 'policy', '行业观察', '错峰生产,化工,供给', 3, DATE_SUB(NOW(), INTERVAL 5 HOUR)),

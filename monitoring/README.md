@@ -36,6 +36,9 @@
    docker compose up -d dingtalk-webhook-adapter
    ```
 
+   > 钉钉适配器不映射宿主端口（该第三方镜像无入站认证，`127.0.0.1:8060` 会让本机任意进程伪造告警外发）。
+   > 只能在容器网络内按服务名调用；排障用 `docker logs lanlink-dingtalk-webhook-adapter`。
+
 > 地址不作为容器环境变量注入：该镜像内无 shell 也不展开配置里的 `$VAR`（实测报 `unsupported scheme ""`），
 > 因此由 compose 在宿主机侧把 `.env` 的值渲染进 `configs.content` 再挂载给容器。
 
@@ -55,16 +58,24 @@
 4. 发现群 chat_id 并回填：
 
    ```bash
-   curl http://127.0.0.1:8061/feishu/health   # 返回机器人所在群列表（chat_id + 群名）
+   # health 只回布尔状态（不再回显群列表，避免无认证端点泄露内部群拓扑）
+   curl http://127.0.0.1:8061/feishu/health
+   # chat_id 用飞书开放平台「获取群信息」接口查；配置了 ALERT_ADAPTER_TOKEN 后也可：
+   curl -H "X-Adapter-Token: $ALERT_ADAPTER_TOKEN" \
+     http://127.0.0.1:8061/feishu/health?chats=1
    # 把目标群 chat_id 填进 .env 的 FEISHU_CHAT_ID 后重建：
    docker compose up -d feishu-webhook-adapter
    ```
 
-   `FEISHU_CHAT_ID` 留空时适配器照常启动，告警外发会跳过并在健康端点/日志里列出可选群（邮件通道不受影响）。
+   `FEISHU_CHAT_ID` 留空时适配器照常启动，告警外发会跳过（邮件通道不受影响）。
 5. 手测一条消息（Alertmanager JSON 与 `{"text": ...}` 透传均可）：
 
    ```bash
+   # 写入通道有入站校验：
+   #  - 配置了 ALERT_ADAPTER_TOKEN → 必须带 X-Adapter-Token
+   #  - 未配置 → 只接受容器网段（宿主机 127.0.0.1 会被 401 拒绝）
    curl -X POST http://127.0.0.1:8061/feishu/ops/send -H 'Content-Type: application/json' \
+     -H "X-Adapter-Token: $ALERT_ADAPTER_TOKEN" \
      -d '{"text":"告警通道自测"}'
    ```
 

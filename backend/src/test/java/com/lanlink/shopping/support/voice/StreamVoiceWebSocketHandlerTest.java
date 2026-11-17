@@ -21,6 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -104,5 +105,49 @@ class StreamVoiceWebSocketHandlerTest {
             }
         }
         assertTrue(sawInterrupted, "应下发 interrupted 事件确认打断");
+    }
+
+    /**
+     * 知识库精确命中：必须直接使用知识库答案，且**不得**调用大模型。
+     *
+     * <p>回归背景：历史实现用 `!hasText(answerService.answer(q))` 判断是否该走模型，
+     * 但未命中时 answer() 返回的是非空兜底文案，导致模型分支永远进不去。这里锁住语义：
+     * 命中 → KB 原文；未命中 → 模型。
+     */
+    @Test
+    void resolveAnswerUsesKnowledgeBaseWhenEntryMatched() {
+        when(answerService.matchedEntryId("如何退款？")).thenReturn("refund-flow");
+        when(answerService.answer("如何退款？")).thenReturn("您可以在订单页面发起退款申请。");
+
+        assertEquals("您可以在订单页面发起退款申请。", handler.resolveAnswer("如何退款？"));
+        verify(aiAnswerService, never()).answer(anyString(), anyString());
+    }
+
+    /**
+     * 未命中知识库：必须走大模型生成，而不是直接回退兜底文案。
+     *
+     * <p>这是本轮修复的核心断言——修复前该用例会拿到兜底文案（模型从未被调用）。
+     */
+    @Test
+    void resolveAnswerFallsBackToModelWhenNoKnowledgeBaseEntry() {
+        when(answerService.matchedEntryId("你们支持哪些支付方式？")).thenReturn("");
+        when(answerService.answer("你们支持哪些支付方式？")).thenReturn("兜底文案");
+        when(aiAnswerService.available()).thenReturn(true);
+        when(aiAnswerService.answer("你们支持哪些支付方式？", "兜底文案"))
+                .thenReturn(Optional.of("我们支持银行卡、钱包余额与 Stripe 在线支付。"));
+
+        assertEquals("我们支持银行卡、钱包余额与 Stripe 在线支付。",
+                handler.resolveAnswer("你们支持哪些支付方式？"));
+    }
+
+    /** 模型不可用且未命中知识库：仍要返回可朗读文本（兜底），不能空串。 */
+    @Test
+    void resolveAnswerFallsBackToDefaultTextWhenModelUnavailable() {
+        when(answerService.matchedEntryId(anyString())).thenReturn("");
+        when(answerService.answer(anyString())).thenReturn("兜底文案");
+        when(aiAnswerService.available()).thenReturn(false);
+        when(answerService.fallback()).thenReturn("兜底文案");
+
+        assertEquals("兜底文案", handler.resolveAnswer("一个知识库没有的问题"));
     }
 }

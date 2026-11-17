@@ -7,9 +7,12 @@
 # 启动（仓库根目录）：
 #   docker compose -f docker-compose.sqlbot.yml up -d
 # 访问：
-#   http://127.0.0.1:8000/  （UI + API，登录账号与平台运营管理员一致：13800000000，
-#                            密码同平台 demo 密码；不再使用 README 默认 admin 账号）
-#   http://127.0.0.1:8001/  （SQLBot 自带 MCP 服务）
+#   宿主机默认不映射 8000/8001。后端与网关都走 shopping_default 的 `sqlbot:8000`，
+#   不需要宿主端口；确需临时打开 UI 时，用 `docker compose ... run` 或临时加
+#   `ports` 后立即移除，避免把 SQLBot 管理端暴露给本机其它进程/LAN。
+#   登录账号见根 .env 的 SQLBOT_USERNAME / SQLBOT_PASSWORD（真实值不入库/仓库）。
+#   sqlbot-patches 将超管判定放宽为 id==1；首次部署必须改掉镜像默认密码，
+#   走 `/api/v1/login/change-pwd`，密码会写入 SQLBot 的 PostgreSQL 并跨重启持久化。
 # 停止：
 #   docker compose -f docker-compose.sqlbot.yml down
 #
@@ -33,9 +36,9 @@ services:
     image: dataease/sqlbot:latest
     container_name: sqlbot
     privileged: true
-    ports:
-      - "127.0.0.1:8000:8000"
-      - "127.0.0.1:8001:8001"
+    # 不映射宿主端口：UI/API 与自带 MCP 都只在 shopping_default 内网可达。
+    # 网关使用 http://sqlbot:8000；需要排障时用 `docker exec` 进入容器访问
+    # 127.0.0.1:8000/8001，避免默认暴露管理端。
     volumes:
       # 与原 docker run 完全一致的 WSL 数据目录（内置 PostgreSQL 数据也在其中）
       - /root/data/sqlbot/excel:/opt/sqlbot/data/excel

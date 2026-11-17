@@ -9,3 +9,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
 pydantic>=2.7
+# Redis Stack 客户端：RediSearch（FT.CREATE / FT.SEARCH）与异步连接池。
+# redis-py 8.x 的 asyncio 客户端支持 execute_command 直接下发 FT.* 原始命令，
+# 不需要额外装 redisearch 客户端（那个包已停止维护且与 redis-py 5+ 冲突）。
+redis>=5.0

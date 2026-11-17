@@ -328,7 +328,7 @@
 
         <!-- 21st.dev 风格支付方式多通道选择器 -->
         <div class="selector-container">
-          <div class="selector-title">选择支付方式（支持 7 种主流与国际结算）</div>
+          <div class="selector-title">选择支付方式（支持 8 种主流与国际结算）</div>
           <PaymentMethodSelector
             v-model="selectedPayMethod"
             :wallet-balance="walletBalance"
@@ -1356,10 +1356,10 @@ watch(
   margin: 0;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
+  background: var(--ll-card-soft, #fbfcfe);
+  border: 1px dashed var(--ll-border-strong, #d5dae2);
   font-size: 12px;
-  color: #64748b;
+  color: var(--ll-muted, #64748b);
 }
 .gateway-preview-panel {
   display: flex;

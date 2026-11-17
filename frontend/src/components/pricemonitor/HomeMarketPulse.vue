@@ -159,6 +159,13 @@
           <button type="button" class="mp-text-link" @click="router.push('/price-monitor')">{{ isEn ? 'All news' : '全部资讯' }} →</button>
         </header>
 
+        <!-- 资讯来源说明：当前条目来自公开信息聚合，后续接入权威媒体机构。
+             单独一行、字号低于正文，避免抢走资讯标题的视觉重心。 -->
+        <p class="mp-news-source-note">
+          <i aria-hidden="true">ⓘ</i>
+          <span>{{ isEn ? 'News will be sourced in partnership with authoritative media organizations.' : '本板块资讯未来会与权威媒体机构展开合作' }}</span>
+        </p>
+
         <div v-if="dailyNews.length" class="mp-ticker">
           <span class="mp-ticker-label"><i></i>{{ isEn ? 'BRIEF' : '快讯' }}</span>
           <Marquee :repeat="2" gap="2.6rem" duration="34s" pause-on-hover>
@@ -995,6 +1002,18 @@ onBeforeUnmount(() => {
 .mp-card-head h3 { margin: 0; font-size: 17px; letter-spacing: -.02em; color: var(--ll-brand-base, #13233A); }
 .mp-chip { font-size: 10.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
 .mp-chip.subtle { background: rgba(19, 35, 58, .055); color: var(--ll-muted, #64748B); }
+/* 资讯来源说明：与卡片正文同色系但更淡，只做提示不抢焦点 */
+.mp-news-source-note {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 12px; padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(128, 96, 31, .05);
+  border: 1px dashed rgba(128, 96, 31, .22);
+  font-size: 11.5px; line-height: 1.5;
+  color: var(--ll-brand-gold-strong, #80601F);
+}
+.mp-news-source-note i { flex-shrink: 0; font-style: normal; font-size: 12px; opacity: .85; }
+.mp-news-source-note span { min-width: 0; }
 
 /* 图表卡 */
 .mp-identity { min-width: 0; }
@@ -1223,6 +1242,11 @@ a.news-src:hover { color: var(--ll-brand-blue, #1E6EB8); text-decoration: underl
 [data-theme='dark'] .mp-news-list li { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .10); }
 [data-theme='dark'] .mp-news-list li:hover { border-color: rgba(200, 164, 92, .35); }
 [data-theme='dark'] .mp-chip.subtle { background: rgba(255, 255, 255, .08); }
+[data-theme='dark'] .mp-news-source-note {
+  background: rgba(200, 164, 92, .10);
+  border-color: rgba(200, 164, 92, .28);
+  color: #D9B36C;
+}
 [data-theme='dark'] .ai-preview div { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .08); }
 [data-theme='dark'] .ask-box :deep(.ant-input-affix-wrapper) { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .14); }
 [data-theme='dark'] .quick-asks button { border-color: rgba(255, 255, 255, .12); background: rgba(255, 255, 255, .06); color: var(--ll-muted, #8fa0b5); }
@@ -1266,6 +1290,9 @@ a.news-src:hover { color: var(--ll-brand-blue, #1E6EB8); text-decoration: underl
   .mp-head-side { width: 100%; }
   .mp-card { padding: 18px; border-radius: 22px; }
   .mp-card-head { flex-direction: column; gap: 10px; }
+  /* 窄屏说明文案会折成两行，图标改为顶部对齐，避免与首行基线错位 */
+  .mp-news-source-note { align-items: flex-start; padding: 7px 10px; }
+  .mp-news-source-note i { margin-top: 1px; }
   .mp-factor-tags { flex-direction: row; flex-wrap: wrap; align-items: center; }
   .mp-quote b { font-size: 25px; }
   .mp-title-row h3 { white-space: normal; max-width: none; }

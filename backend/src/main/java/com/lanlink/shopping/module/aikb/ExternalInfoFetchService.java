@@ -3,6 +3,8 @@ package com.lanlink.shopping.module.aikb;
 import com.lanlink.shopping.entity.Category;
 import com.lanlink.shopping.entity.Industry;
 import com.lanlink.shopping.entity.Product;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lanlink.shopping.mapper.CategoryMapper;
 import com.lanlink.shopping.mapper.IndustryMapper;
 import com.lanlink.shopping.mapper.ProductMapper;
@@ -390,6 +392,285 @@ public class ExternalInfoFetchService {
         }
         return result;
     }
+
+    // ==================== 资讯管线编排（ai-gateway /v1/news/extract:batch） ====================
+
+    /** 网关管线灰度开关（AI_NEWS_PIPELINE_ENABLED，默认 false：编排方法零调用既有链路不变） */
+    @Value("${AI_NEWS_PIPELINE_ENABLED:false}")
+    private boolean newsPipelineEnabled;
+    /** 网关不可达/5xx 时是否回退既有 RSS 直抓（AI_NEWS_PIPELINE_FALLBACK，默认 true） */
+    @Value("${AI_NEWS_PIPELINE_FALLBACK:true}")
+    private boolean newsPipelineFallback;
+    /** 网关管线单轮统计（stats() 里随 externalFetch 一并展示） */
+    private volatile int gatewayProcessed;
+    private volatile int gatewayDropped;
+    private volatile int gatewayReview;
+    private volatile int gatewayFailed;
+    // ---- 单测注入点（生产恒 null/false）：postGatewayBatch/collectPipelineCandidates 优先读它们 ----
+    List<String> stubCandidates;
+    List<String> stubResults;
+    boolean stubBatchFail;
+
+    /**
+     * 网关资讯管线编排（POST /admin/kb/fetch-external?pipeline=1）：
+     * 从既有 RSS 源取候选 URL → 调网关 /v1/news/extract:batch（≤5 条/批）→
+     * 按 verdict/flags.stored 决定入库。
+     *
+     * <p>入库放行矩阵（与网关 outputSchema 的 flags.stored 单一口径）：
+     * <ul>
+     *   <li>verdict∈{unique, unavailable} 且 flags.stored=true → existsByTitle 精确快查
+     *       （拦同题重发；变体标题拦不住为已知缺口，Redis 恢复后由窗内比对覆盖）
+     *       → toMarketNews（填 originUrl/fingerprint）→ saveExternal → ingestNews → gatewayProcessed++；</li>
+     *   <li>verdict=needs_review → 不落库（审计由网关 LPUSH newsp:review 完成），gatewayReview++；</li>
+     *   <li>verdict=exact_duplicate/near_duplicate → 不落库，gatewayDropped++；</li>
+     *   <li>网关连接失败/5xx/超时 → gatewayFailed++，FALLBACK=true 时回退 fetchNow 既有 RSS 直抓。</li>
+     * </ul>
+     *
+     * <p>与 {@link #fetchNow(int)} 共用 {@code running} 互斥（同轮不会双跑）。
+     */
+    public Map<String, Object> runGatewayPipeline() {
+        if (!newsPipelineEnabled) {
+            // 开关关闭：与改前行为一致，直接走既有 RSS 直抓
+            return fetchNow(maxPerRun);
+        }
+        if (!running.compareAndSet(false, true)) {
+            return statsWithNotice("已有外部资讯抓取任务正在进行，请稍后重试");
+        }
+        long start = System.currentTimeMillis();
+        gatewayProcessed = 0;
+        gatewayDropped = 0;
+        gatewayReview = 0;
+        gatewayFailed = 0;
+        int inserted = 0;
+        int ingested = 0;
+        String error = null;
+        List<Map<String, Object>> items = new ArrayList<>();
+        try {
+            List<String> candidates = collectPipelineCandidates(Math.min(maxPerRun, 30));
+            for (int from = 0; from < candidates.size(); from += GATEWAY_BATCH_SIZE) {
+                List<String> batch = candidates.subList(from, Math.min(from + GATEWAY_BATCH_SIZE, candidates.size()));
+                JsonNode results = postGatewayBatch(batch);
+                if (results == null) {
+                    gatewayFailed++;
+                    if (error == null) error = "网关资讯管线调用失败";
+                    break;
+                }
+                for (JsonNode wrapped : results) {
+                    // batch 响应的 results 元素是 {"ok": true, "data": {...}} 包装（ok=false
+                    // 表示该条管线内部异常，跳过不计任何统计维度）
+                    if (!wrapped.path("ok").asBoolean(true)) {
+                        gatewayFailed++;
+                        continue;
+                    }
+                    JsonNode item = wrapped.path("data");
+                    String verdict = item.path("dedup").path("verdict").asText("");
+                    boolean stored = item.path("flags").path("stored").asBoolean(false);
+                    if (!stored) {
+                        if ("needs_review".equals(verdict)) gatewayReview++;
+                        else gatewayDropped++;
+                        continue;
+                    }
+                    if (persistGatewayArticle(item)) {
+                        inserted++;
+                        if (items.size() < MAX_ITEMS_KEPT) {
+                            items.add(toGatewayView(item));
+                        }
+                    } else {
+                        gatewayDropped++;
+                    }
+                }
+            }
+            if (inserted > 0) {
+                try {
+                    ingested = ingestService.ingestNews();
+                } catch (Exception e) {
+                    log.warn("[external-fetch] gateway pipeline vector refresh failed: {}", e.getMessage());
+                    if (error == null) error = "向量库刷新失败: " + e.getMessage();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[external-fetch] gateway pipeline failed: {}", e.getMessage());
+            gatewayFailed++;
+            error = e.getMessage();
+        } finally {
+            running.set(false);
+            lastRunAt = LocalDateTime.now();
+            lastElapsedMs = System.currentTimeMillis() - start;
+            lastIngested = ingested;
+            lastError = error;
+            lastItems = items.size() > MAX_ITEMS_KEPT
+                    ? List.copyOf(items.subList(0, MAX_ITEMS_KEPT)) : List.copyOf(items);
+            log.info("[external-fetch] gateway pipeline done: processed={} dropped={} review={} failed={} inserted={} ingested={} elapsed={}ms",
+                    gatewayProcessed, gatewayDropped, gatewayReview, gatewayFailed, inserted, ingested, lastElapsedMs);
+        }
+        Map<String, Object> result = stats();
+        // 网关不可达且允许回退：走既有 RSS 直抓兜底（stats 以 fetchNow 的为准）
+        if (gatewayFailed > 0 && gatewayProcessed == 0 && newsPipelineFallback) {
+            log.info("[external-fetch] gateway unavailable, falling back to legacy RSS fetch");
+            return fetchNow(maxPerRun);
+        }
+        return result;
+    }
+
+    /** 从既有 RSS 源收集候选文章 URL（复用 fetchFeed 解析，取每源前几条 link）。 */
+    List<String> collectPipelineCandidates(int cap) {
+        if (stubCandidates != null) {
+            return stubCandidates;
+        }
+        List<String> out = new ArrayList<>();
+        List<CompletableFuture<List<Map<String, String>>>> pending = new ArrayList<>(feedUrls.size());
+        for (String feedUrl : feedUrls) {
+            pending.add(CompletableFuture.supplyAsync(() -> fetchFeed(feedUrl), feedPool));
+        }
+        for (int i = 0; i < pending.size() && out.size() < cap; i++) {
+            List<Map<String, String>> parsed;
+            try {
+                parsed = pending.get(i).get(45, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("[external-fetch] pipeline feed {} failed: {}", feedUrls.get(i), e.getMessage());
+                continue;
+            }
+            for (Map<String, String> row : parsed) {
+                String url = row == null ? null : row.get("url");
+                if (url != null && !url.isBlank() && httpUri(url) != null) {
+                    out.add(url);
+                    if (out.size() >= cap) break;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 调网关 /v1/news/extract:batch；返回 results 数组，失败返回 null（不抛出）。 */
+    JsonNode postGatewayBatch(List<String> urls) {
+        if (stubResults != null || stubBatchFail) {
+            // 单测注入路径：不发真实 HTTP
+            if (stubBatchFail) return null;
+            try {
+                return new ObjectMapper().readTree("[" + String.join(",", stubResults) + "]");
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            List<Map<String, String>> items = new ArrayList<>(urls.size());
+            for (String url : urls) {
+                items.add(Map.of("url", url, "sourceHint", authoritativeSource(url, "")));
+            }
+            body.put("items", items);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(gatewayNewsBatchUrl()))
+                    .timeout(Duration.ofSeconds(20))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + gatewayApiKey())
+                    .header("X-Agent-Role", "service")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            new ObjectMapper().writeValueAsString(body), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = gatewayHttp.send(req, HttpResponse.BodyHandlers.ofString());
+            if (resp.statusCode() != 200) {
+                log.warn("[external-fetch] gateway news batch http {}", resp.statusCode());
+                return null;
+            }
+            return new ObjectMapper().readTree(resp.body()).path("results");
+        } catch (Exception e) {
+            log.warn("[external-fetch] gateway news batch failed: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 放行集条目落库：existsByTitle 快查 → toMarketNews → saveExternal。
+     * saveExternal 返回 false（uk_news_title/uk_news_fingerprint 冲突）计 dropped，不重复入库。
+     */
+    boolean persistGatewayArticle(JsonNode item) {
+        JsonNode article = item.path("article");
+        String title = clip(article.path("headline").asText(""), MAX_TITLE);
+        if (title.isBlank()) return false;
+        if (newsService.existsByTitle(title)) {
+            return false;
+        }
+        MarketNews news = toMarketNews(article, item);
+        if (news == null) return false;
+        if (newsService.saveExternal(news)) {
+            gatewayProcessed++;
+            return true;
+        }
+        return false;
+    }
+
+    /** 网关 article → MarketNews 实体（headline→title、excerpt/body 前 1000 字→summary、
+     *  publishedAt→published_at、article.url→url、originUrl→origin_url、fingerprint.bodySha256→fingerprint）。 */
+    MarketNews toMarketNews(JsonNode article, JsonNode item) {
+        String title = clip(article.path("headline").asText(""), MAX_TITLE);
+        String summary = clip(article.path("excerpt").asText(""),
+                article.path("excerpt").asText("").isBlank()
+                        ? 0 : MAX_SUMMARY);
+        if (summary.isBlank()) {
+            summary = clip(article.path("body").asText(""), MAX_SUMMARY);
+        }
+        String publishedIso = article.path("publishedAt").asText("");
+        LocalDateTime publishedAt = parseIsoDate(publishedIso);
+        if (publishedAt == null) {
+            publishedAt = LocalDateTime.now();
+        }
+        MarketNews news = new MarketNews();
+        news.setTitle(title);
+        news.setSummary(summary);
+        news.setCategory("market");
+        String source = clip(item.path("source").path("originSite").asText(DEFAULT_SOURCE), MAX_SOURCE);
+        news.setSource(source.isBlank() ? DEFAULT_SOURCE : source);
+        news.setUrl(clip(article.path("url").asText(""), 500));
+        news.setOriginUrl(clip(article.path("originUrl").asText(""), 500));
+        news.setFingerprint(clip(item.path("fingerprint").path("bodySha256").asText(""), 64));
+        news.setImportance(1);
+        news.setPublishedAt(publishedAt);
+        news.setCreatedAt(LocalDateTime.now());
+        return news;
+    }
+
+    /** ISO8601（含时区）→ LocalDateTime（按系统时区；解析失败返回 null）。 */
+    static LocalDateTime parseIsoDate(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try {
+            return OffsetDateTime.parse(iso).toLocalDateTime();
+        } catch (Exception e) {
+            try {
+                return LocalDateTime.parse(iso);
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+    }
+
+    private Map<String, Object> toGatewayView(JsonNode item) {
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("title", item.path("article").path("headline").asText(""));
+        view.put("source", item.path("source").path("originSite").asText(""));
+        view.put("category", "market");
+        view.put("url", item.path("article").path("url").asText(""));
+        return view;
+    }
+
+    /** 网关资讯批次端点地址：AI_GATEWAY_BASE_URL + /news/extract:batch。 */
+    private String gatewayNewsBatchUrl() {
+        String base = System.getenv("AI_GATEWAY_BASE_URL");
+        if (base == null || base.isBlank()) base = "http://lanlink-ai-gateway:8090/v1";
+        return base.replaceAll("/+$", "") + "/news/extract:batch";
+    }
+
+    /** 网关 API Key：与 EmbeddingService 同源变量；未注入时回退本地默认（仅本地演示）。 */
+    private String gatewayApiKey() {
+        String key = System.getenv("AI_GATEWAY_API_KEY");
+        return (key == null || key.isBlank()) ? "lanlink-local-ai-gateway" : key;
+    }
+
+    /** 网关管线专用 HTTP 客户端（12s 连接超时独立于 RSS 抓取的 {@link #http}）。 */
+    private final HttpClient gatewayHttp = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(12))
+            .build();
+    /** 单批最多条数（网关 /v1/news/extract:batch 上限 5） */
+    static final int GATEWAY_BATCH_SIZE = 5;
 
     // ==================== 抓取 → 解析 → 去重入库 ====================
 
@@ -918,6 +1199,12 @@ public class ExternalInfoFetchService {
         m.put("enabled", enabled);
         m.put("relevanceFilter", relevanceFilter);
         m.put("running", running.get());
+        // 资讯管线灰度统计（runGatewayPipeline 写入；RSS 直抓轮次不清零）
+        m.put("gatewayProcessed", gatewayProcessed);
+        m.put("gatewayDropped", gatewayDropped);
+        m.put("gatewayReview", gatewayReview);
+        m.put("gatewayFailed", gatewayFailed);
+        m.put("newsPipelineEnabled", newsPipelineEnabled);
         return m;
     }
 

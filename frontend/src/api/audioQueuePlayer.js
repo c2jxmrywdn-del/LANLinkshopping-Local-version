@@ -21,6 +21,42 @@ export class AudioQueuePlayer {
     this.nextStartTime = 0
     this.expectedSeq = 1
     this.isDestroyed = false
+    /**
+     * 缺片等待计时器与宽限期。
+     *
+     * <p>严格保序的代价是：若某个 sequenceId 的分片永久丢失（合成失败 / 发送失败），
+     * 队列会一直等它，后续分片全部卡住不播。宽限期到期后跳过缺口，
+     * 宁可少一句也要把后面的内容播完。
+     */
+    this.gapTimer = null
+    this.gapGraceMs = 3000
+  }
+
+  /** 清掉缺片计时器（正常播放、打断、销毁都要清，避免野回调） */
+  clearGapTimer() {
+    if (this.gapTimer) {
+      clearTimeout(this.gapTimer)
+      this.gapTimer = null
+    }
+  }
+
+  /**
+   * 队首不是期望序号时启动宽限计时；到期仍未补齐则跳过缺口继续播。
+   *
+   * @param {{onGapSkip?: (skippedTo:number) => void}} [opts]
+   */
+  armGapTimer() {
+    if (this.gapTimer || this.isDestroyed) return
+    this.gapTimer = setTimeout(() => {
+      this.gapTimer = null
+      if (this.isDestroyed || this.isPlaying || this.queue.length === 0) return
+      const head = this.queue[0]
+      if (head.sequenceId === this.expectedSeq) return
+      // 跳到队首序号：接受「中间少一句」，保证后续能继续播
+      console.warn('[audio-queue-player] 分片缺口超时，跳过 seq', this.expectedSeq, '->', head.sequenceId)
+      this.expectedSeq = head.sequenceId
+      this.playNext()
+    }, this.gapGraceMs)
   }
 
   async ensureContext() {
@@ -60,8 +96,18 @@ export class AudioQueuePlayer {
       // 按 sequenceId 升序重排，防御网络乱序
       this.queue.sort((a, b) => a.sequenceId - b.sequenceId)
 
-      if (!this.isPlaying) {
+      // 关键：只有队首正是期望序号时才能开播。
+      //
+      // 后端用 16 线程并发合成 TTS，分片完成顺序与 sequenceId 无关
+      // （实测到达顺序 [3,4,1,5,2]）。原实现是「push → sort → 只要空闲就取队首」，
+      // 于是第一个到达的 seq=3 立刻开播，用户听到的是前后颠倒的答复。
+      // 现在改为等待 expectedSeq 就位再播；缺片时保持等待（不播放错序内容）。
+      if (!this.isPlaying && this.queue.length > 0 && this.queue[0].sequenceId === this.expectedSeq) {
+        this.clearGapTimer()
         this.playNext()
+      } else if (!this.isPlaying && this.queue.length > 0) {
+        // 队首不是期望序号：起一个宽限计时，防止某片永久丢失导致整轮卡死
+        this.armGapTimer()
       }
     } catch (e) {
       console.warn('[audio-queue-player] 音频解码失败:', e)
@@ -77,8 +123,19 @@ export class AudioQueuePlayer {
       return
     }
 
+    // 队首不是期望序号：说明前面的分片还没到，等待后续 enqueue 触发。
+    // 这比「先播能播的」重要得多——错序播报会让用户听到语义颠倒的客服答复。
+    if (this.queue[0].sequenceId !== this.expectedSeq) {
+      this.isPlaying = false
+      // 若后续分片永远不来（合成/发送失败），宽限到期后跳过缺口，避免整轮卡死
+      this.armGapTimer()
+      return
+    }
+
     const item = this.queue.shift()
+    this.expectedSeq = item.sequenceId + 1
     this.isPlaying = true
+    this.clearGapTimer()
 
     const source = this.audioCtx.createBufferSource()
     source.buffer = item.audioBuffer
@@ -110,6 +167,7 @@ export class AudioQueuePlayer {
    * 立即打断当前正在播放的音频，并彻底清空待播放队列。
    */
   clear() {
+    this.clearGapTimer()
     if (this.currentSource) {
       try {
         this.currentSource.onended = null

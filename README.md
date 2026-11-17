@@ -20,7 +20,7 @@
 [![Twitter / X](https://img.shields.io/badge/X-@Orion__Yves__Jude-000000?logo=x&logoColor=white)](https://x.com/Orion_Yves_Jude)
 [![Facebook](https://img.shields.io/badge/Facebook-Jason_Ouyang-1877F2?logo=facebook&logoColor=white)](https://www.facebook.com/profile.php?id=61590596057471)
 
-[功能特性](#-功能特性与业务矩阵) · [系统架构](#-系统架构与技术全景) · [开发文档](#-开发者工程手册与调试指南) · [快速开始](#-快速开始与环境部署) · [核心接口](#-核心接口速览) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证说明)
+[功能特性](#-核心业务与高阶微中台能力矩阵) · [系统架构](#-系统架构与技术全景) · [架构理念](#2--核心架构理念与设计哲学-architectural-philosophy--design-doctrine) · [交互式架构图](./architecture-overview.html) · [开发文档](#-开发者工程手册与调试指南) · [快速开始](#-快速开始与环境部署) · [核心接口](#-核心-api-接口速览统一前缀-api) · [Twitter (X)](https://x.com/Orion_Yves_Jude) · [Facebook](https://www.facebook.com/profile.php?id=61590596057471) · [联系与声明](#-联系方式与原创声明) · [许可证](#-许可证说明)
 
 **[English](./README.en.md)** · 简体中文
 
@@ -39,50 +39,148 @@
 
 ## 🏛️ 系统架构与技术全景
 
-### 总体架构拓扑图
+### 1. 现代化工业全栈架构拓扑图 (Architecture Topology)
+
+> 🌐 **交互式全景架构图（Archify 可视化呈现）**：  
+> 本系统架构已通过项目内置的 `archify` 工业架构制图引擎完成自动化构建与验证（通过 `validate`、`deliver`、`check` 以及实际无头浏览器 `browser-check` 100% 门禁校验）。支持**深浅色主题自由切换、物理实时动效流动、高亮路径追溯与 24 个核心节点/7 大安全边界探索**。可在浏览器中直接打开预览：[`architecture-overview.html`](file:///D:/Desktop/LANLinkShopping/Shopping/architecture-overview.html)（本地源码定义见 [`.archify/architecture-overview/candidate.json`](file:///D:/Desktop/LANLinkShopping/Shopping/.archify/architecture-overview/candidate.json)）。
 
 ```mermaid
 flowchart TD
-    subgraph Client["表现层 (Presentation Layer)"]
-        WebDesktop["桌面端 Web (Vue 3 + Vite 6 + Ant Design Vue)"]
-        WebMobile["移动端 H5 浏览器 (自适应低饱和度主题)"]
-        AppleUI["Apple 拟态流体交互体系 (Dock / 灵动岛 / 3D 轮播)"]
-    end
-    subgraph Gateway["网关与安全接入层 (Gateway)"]
-        NginxIngress["Nginx 静态加速与反向代理 (Port: 5173 / 5174)"]
-        SecGuard["安全防线 (CSRF 双提交 / TOTP 2FA / 阶梯限流 / AES-256-GCM)"]
-    end
-    subgraph BizHub["核心业务与高阶中台层 (Business Mid-Platform)"]
-        BizCore["交易主线 (鉴权 / 商户 / 商品 / 购物车 / 下单支付 / 营销券包 / 售后 / 直播)"]
-        BizHigh["高阶中台 (技术服务 / 物流 GIS / 订阅采购 / 信用白条 / 合规惩戒 / 退店治理 / 风控与 A/B)"]
-    end
-    subgraph MidLayer["事务性中间件层 (Middleware)"]
-        OutboxMQ["Transactional Outbox + RabbitMQ 4.0 (唯一键去重 / q.notify.dlq 死信兜底)"]
-        MinIOS3["MinIO S3 对象存储 (私有桶后端只读中转)"]
-    end
-    subgraph AIHub["AI 与多智能体中枢 (AI Hub)"]
-        AiGateway["FastAPI AI 网关 + llama.cpp 双模型 Router (Qwen2.5-7B / Qwen2.5-VL 热切换)"]
-        DifyWorkflow["Dify 多智能体工作流 + MCP 工具桥 (lanlink_kb_search)"]
-    end
-    subgraph DataHub["数据与存储中枢 (Data Layer)"]
-        MySQLStore["MySQL 8.0 (InnoDB 事务强一致)"]
-        RedisHNSW["Redis Stack 7.4 (HNSW 向量索引 + 缓存 + 限流)"]
-    end
-    subgraph Observability["可观测性与韧性 (Observability)"]
-        ObsSuite["Prometheus / Grafana / 混沌演练 / 守护看门狗"]
+    subgraph Client["1. 表现层 · 现代化工业人机交互 (Presentation Tier)"]
+        WebDesktop["桌面端 Web 生产力中台 (Vue 3 + Vite 6 + AntD 4.x)"]
+        WebMobile["移动端 H5 敏捷商城 (自适应流体布局)"]
+        AppleUI["Apple HIG 物理流体拟态体系 (Dock / 灵动岛 / FluidTabs / GlowCard / 3D轮播)"]
     end
 
-    Client --> Gateway
-    Gateway --> BizHub
-    BizHub --> MidLayer
-    MidLayer --> BizHub
-    BizHub --> AIHub
-    AIHub --> DataHub
-    BizHub --> DataHub
-    BizHub -.-> Observability
+    subgraph Ingress["2. 接入层 · 零信任安全防护网 (Security Ingress)"]
+        NginxProxy["Nginx 高性能反向代理 (动静分离 / 静态资源加速)"]
+        SecurityGateway["Spring Boot 安全网关 (GATEWAY_STRICT_ROLE / CSRF双提交 / TOTP 2FA / 令牌桶限流)"]
+    end
+
+    subgraph BizHub["3. 核心业务与高阶微中台层 (Business Mid-Platform)"]
+        TradeCore["实体交易核心主线 (鉴权 / 商户入驻审核-实缴≥10万 / 24行业商品 / 购物车 / 下单支付 / 营销大促 / 直播)"]
+        IndustryHub["工业赋能高阶中台 (技术合同里程碑 / 成果TRL鉴定 / 专家咨询 / 中试预约 / 物流GIS轨迹调度 / 周期订阅)"]
+        FinanceLedger["金融合规与出金中枢 (银行存管流水 / 无二清对公提现台账 / 订单评价聚合 / 商户退店六道门禁)"]
+    end
+
+    subgraph Middleware["4. 异步管道与中间件层 (Middleware & Async Pipeline)"]
+        OutboxWorker["Transactional Outbox 投递工作器 (本地事务消息表 / 强一致保证)"]
+        RabbitMQCluster["RabbitMQ 4.0 消息总线 (Topic交换机 / 消费端唯一键去重 / q.notify.dlq 死信兜底)"]
+        MinIOS3["MinIO S3 对象存储 (私有桶凭据隔离 / 后端临时签名防盗链中转)"]
+        MailpitSandbox["Mailpit 邮件沙箱 (本地验证码拦截与通知调试)"]
+    end
+
+    subgraph AIHub["5. AI 与多智能体枢纽 (AI & Multi-Agent Hub)"]
+        FastApiGW["FastAPI AI 网关 (8090端口 / OpenAI标准API / Tool Calling / 流式语音边界探测)"]
+        LlamaRouter["llama.cpp 双模型 Router (Qwen2.5-7B 文本 + Qwen2.5-VL 视觉热切换 / 显存感知调度器)"]
+        RagEngine["LightRAG / Redis Stack HNSW (BGE-M3 1024维密集嵌入 / 知识库CDC重建)"]
+        SQLBotEngine["SQLBot 智能问数中枢 (Text-to-SQL 容器内网8000隔离 / 只读数据沙箱)"]
+        DifyOrchestrator["Dify 多智能体工作流 (采购意图理解 / 寻源比价 / 售后协同)"]
+        McpBridge["标准 MCP 工具桥 (lanlink_kb_search / lanlink_ask_data)"]
+    end
+
+    subgraph DataStore["6. 数据持久化与缓存中枢 (Data Persistence Tier)"]
+        MySQLPrimary["MySQL 8.0 核心主库 (InnoDB 行级排他锁 / 事务 ACID 保证)"]
+        RedisCluster["Redis Stack 7.4 (HNSW 向量索引 / 两级语义缓存 / 分布式限流计数)"]
+    end
+
+    subgraph SRE["7. 全链路可观测性与系统韧性 (Observability & Chaos Engineering)"]
+        PrometheusObs["Prometheus (指标周期抓取 / SLA规则评估)"]
+        AlertManagerObs["Alertmanager (钉钉/飞书 Webhook 实时告警)"]
+        GrafanaDashboard["Grafana 综合监控大屏 (QPS / P99时延 / GPU显存及温度)"]
+        ChaosWatchdog["守护看门狗与混沌演练 (自愈探针 / 故障注入测试)"]
+    end
+
+    %% 核心链路拓扑
+    Client -->|"HTTPS / WSS"| Ingress
+    Ingress -->|"RESTful / 鉴权拦截"| BizHub
+    Ingress -.->|"WebSocket 流式语音 / SSE"| AIHub
+    
+    BizHub -->|"Transactional Outbox 原子写入"| Middleware
+    Middleware -->|"AMQP 异步广播 / 死信重试"| BizHub
+    BizHub -->|"私有合同与售后多媒体存证"| MinIOS3
+    
+    BizHub -->|"SQL 强一致读写 (排他行锁)"| MySQLPrimary
+    BizHub -->|"高频热点缓存 / 分布式限流"| RedisCluster
+    
+    BizHub <-->|"MCP RPC / 知识库问答"| AIHub
+    AIHub -->|"两级语义缓存 (SHA-256 + 向量相似度)"| RedisCluster
+    SQLBotEngine -->|"Text-to-SQL 只读安全查询 (sqlbot_ro)"| MySQLPrimary
+    
+    BizHub -.->|"Metrics 暴露"| SRE
+    AIHub -.->|"推理吞吐与显存监控"| SRE
 ```
 
-### 全技术栈清单速览
+---
+
+### 2. 💡 核心架构理念与设计哲学 (Architectural Philosophy & Design Doctrine)
+
+系统在演进过程中秉承现代软件工程最高标准，针对工业互联网与企业级交易的严苛要求，沉淀了七大不可妥协的架构设计哲学：
+
+#### 理念一：聚合型工业一体化微中台（Aggregated Unified Industrial Mid-Platform）
+- **工业痛点破局**：传统工业品交易与产业生态中，“实体大宗生产资料采买”与“技术服务/科研成果转化”长期严重割裂。大宗精密设备买卖后，后续安装调试、专家诊断、中试验证与周期性维保缺乏履约闭环；高校科研院所成果因缺乏 TRL 鉴定与中试基准深陷“死亡之谷”；大宗技术合同缺乏阶段验收约束导致“交付即扯皮”。
+- **架构闭环设计**：
+  - **一体多元双核驱动**：商城大宗采购（24 大实体行业、阶梯批发价、价格日 K 线）与工业技术服务（[`module/techservice/`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/)）深度聚合；
+  - **数字化合同与资金存管联动**：构建全生命周期电子合同状态机（[`TechContractService`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/service/TechContractService.java)），将工程周期按 30%-40%-30% 划分为独立里程碑，买方资金存管至第三方托管流水（[`TechEscrowLedger`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/entity/TechEscrowLedger.java)），阶段验收单（`TechAcceptance`）签章生效后触发逐期解冻放款；
+  - **产学研生态闭环**：专家付费在线问诊（`TechExpertService`）、共享中试基地工位预约（`TechPilotService`）、科技成果 TRL 1~9 级就绪度鉴定报告（`TechAppraisalService`）与设备全生命周期维保档案（`TechHostingService`）反哺商城备件消耗。
+- **工程权衡（Trade-offs）**：采用 DDD 领域驱动设计的**高内聚模块化单体（Modular Monolith）**，坚决避免过早微服务化带来的网络 RPC 时延、分布式事务损耗与多容器显存内耗；各域在 `module.*` 内自闭环，仅通过强契约接口与事件总线通信，保留平滑拆分微服务的架构弹性。
+
+#### 理念二：异步解耦与事务外发强最终一致性（Transactional Outbox & Event-Driven Decoupling）
+- **工业痛点破局**：商品数据变更同步 AI 向量库、订单支付触发下游通知或履约等场景中，若在本地数据库事务中直接发起外部 RPC 或 MQ 投递，极易因模型推理慢、网络抖动或显存锁死导致数据库连接池雪崩，甚至引发分布式双写不一致。
+- **架构实现**：
+  - **Transactional Outbox 模式**：业务实体变更与本地消息表（如 `t_ai_kb_outbox`、`t_order_outbox`）在同一个本地数据库事务中原子提交，杜绝半事务悬挂；
+  - **数据库级原子合并防抖**：采用 `INSERT ... ON DUPLICATE KEY UPDATE` 配合 `pending_key` 唯一键，商户对同一商品的连续高频修改原子收敛为单条待同步任务；
+  - **租约锁与指数退避**：守护工作线程（`KbOutboxWorker`）按批次（Batch Size=5）获取分布式租约排他锁，外部 AI 推理失败执行带 Jitter 的指数退避重试（上限 8 次），最终失败入死信队列（`q.notify.dlq`）触发人工介入。
+- **工程权衡**：以秒级最终一致性换取核心交易链路的绝对零阻塞与系统吞吐量最大化。
+
+#### 理念三：端云协同与消费级算力极限适配哲学（Hardware-Aware Adaptive Edge-Cloud AI）
+- **工业痛点破局**：在边缘工业网关或私有化交付中，算力常受限于单张消费级显卡（如 RTX 4070 Laptop 8GB 显存 / 24GB 内存）。盲目常驻多个 7B 大模型必导致 CUDA OOM；全量上云又受制于企业核心涉密数据外泄与高昂 Token 费用；频繁切换模型会引发剧烈的显存抖动（Model Thrashing）。
+- **架构实现**：
+  - **硬件感知自适应调度（`HardwareScheduler`）**：实时探测 GPU 显存与负载（2s 缓存防系统调用抖动），以 6650MB (Text)、7300MB (VL)、5550MB (CPU Assist) 与 250MB 安全冗余建立物理基线；
+  - **llama.cpp 双模型 Router 动态热切换**：确保显存中任意时刻仅驻留单一模型，在 Qwen2.5-7B（工业文本/客服）与 Qwen2.5-VL（工业图纸/质检多模态）间平滑切换；
+  - **CPU 卸载与滞回阈值防颠簸**：显存紧张时平滑降级至 `qwen2.5-7b-cpu-assist`（3/29 层卸载至 CPU，速度保持在纯 GPU 的 85% 以上），并设置 120s 冷却期与 500MB 滞回缓冲（Hysteresis）；
+  - **两级语义向量缓存（`SemanticCache`）**：Tier 1 SHA-256 精确哈希（<0.5ms）+ Tier 2 RediSearch HNSW 向量近似匹配（Cosine 相似度 $\ge 0.96$），拦截重复性工业咨询；
+  - **RAG 服务极致轻量化**：剥离重度依赖，镜像骤降至 334MB，重度文档解析下沉至 Java 宿主层。
+- **工程权衡**：通过算法调度与内存排布优化，在 8GB 消费级显卡上榨取出媲美数据中心集群级的大模型多模态问答与语义检索能力。
+
+#### 理念四：零信任金融合规边界与“防二清”账面治理（Zero-Trust Financial Boundary & Anti-Second-Clearing）
+- **工业痛点破局**：无支付牌照的平台私设资金池极易触碰“非法大商户二清”刑事合规红线；而在并发提现与大促退款中，MySQL 默认快照读极易导致“同一笔资金被重复提现或退款”的毁灭性资损。
+- **架构实现**：
+  - **严守防二清红线**：平台绝不沉淀资金池。大宗技术服务款项全链路登记银行第三方存管/托管流水（[`TechEscrowLedger`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/techservice/entity/TechEscrowLedger.java)）；商户资金提现采用“线下对公银行转账 + 平台仅记账面台账”口径，杜绝资金代收代付；
+  - **行级排他锁与当前读**：资金核心操作强置 `SELECT ... FOR UPDATE` 行级悲观排他锁（`lockMerchant()`），彻底击穿 MySQL REPEATABLE READ 快照读盲区，强制执行最新当前读，并发提现必定严格串行化，断言“一成功一拒绝”；
+  - **单向追加式财务流水（Append-Only Ledger）**：`t_finance_ledger` 冻结与解冻全部采用单向递增追加写入，落库严格校验前置与后置余额（`balance_after`），与业务事务同生共死；
+  - **金融级 JWE 信封加密**：银行账号仅落前 4 后 4 掩码，明文全密文落库采用 RSA-2048 + AES-256-GCM JWE 强加密。
+- **工程权衡**：在资金敏感链路上容忍毫秒级行锁排队，换取零资金损失与银行级合规审计保证。
+
+#### 理念五：时空 GIS 拓扑与工业级供应链透明度（Spatio-Temporal Logistics GIS & Supply Chain Observability）
+- **工业痛点破局**：大宗工业物资运输动辄跨省长途、重型件、特种车。国内 WGS84、GCJ02 与 BD09 坐标系碎片化导致轨迹漂移 100~700 米，在途运输陷入“信息黑盒”，纸质回单结算周期漫长。
+- **架构实现**：
+  - **无偏坐标双向转换引擎（[`coordTransform.js`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/utils/coordTransform.js)）**：基于克拉索夫斯基椭球体非线性回归算法，实现高精双向互转；严格秉承“库内洁净不污染，地图消费端动态投影”原则；
+  - **全国干线拓扑推演**：利用大圆距离（Haversine Formula）结合全国公路实际绕行修正因子，智能测算干线物理里程并推演中转节点时序；
+  - **分级异常看门狗（`TrackingExceptionService`）**：在途节点停留 >24h 触发黄灯催件预警，>48h 标红并自动向运营客服派发加急工单；签收 24h 未复核电子回单（e-POD）自动阻断运费打款；
+  - **账期对账单自动化**：签收复核完毕后自动汇总服务商运费、理赔金与燃油附加费，形成透明对账闭环。
+- **工程权衡**：空间几何变换下沉至前端浏览器计算，无需后端额外引入沉重的 PostGIS 空间数据库插件。
+
+#### 理念六：严格最小特权模型与全链路深度纵深防御（Defense-in-Depth & Strict Role Governance）
+- **工业痛点破局**：智能体与 API 网关交互中，恶意请求可能通过篡改 Header 冒充内部角色调用高危写工具；Text-to-SQL 智能问数可能被注入恶意提权命令；违规商户可能在被追偿前突击下架逃逸。
+- **架构实现**：
+  - **严格网关角色模式（`GATEWAY_STRICT_ROLE=1`）**：网关服务端维护权威 `KEY_ROLE_MAP`，调用方必须携带专属已绑定角色密钥（`service` / `buyer` / `support` / `finance` / `fulfillment`），未绑定密钥严禁采纳自报角色，默认 Fail-Closed 仅开放只读工具；
+  - **OpenAPI 模式物理剥离**：未授权访问 `/v1/ai/openapi.json` 时，网关在序列化层物理剔除三大高危写工具（建草稿、财务过审、审批签发），攻击者无法探测内部写契约；
+  - **SQLBot 物理隔离安全沙箱**：容器编排（[`docker-compose.sqlbot.yml`](file:///d:/Desktop/LANLinkShopping/Shopping/docker-compose.sqlbot.yml)）坚决不向宿主机映射 8000/8001 端口，限死在 `shopping_default` 隔离网桥；数据库配置只读受限账号 `sqlbot_ro`（仅授予 SELECT 权限）；调用显式注入 `extra_body = {"use_kb": false}` 杜绝 RAG 提示词二次污染；
+  - **商户退店六道硬门禁（[`module/merchantexit/`](file:///d:/Desktop/LANLinkShopping/Shopping/backend/src/main/java/com/lanlink/shopping/module/merchantexit/)）**：深度对齐《电子商务法》第十六条，构建 30 天法定公示期软关闭流程，实施在途订单、未决售后、未结清款项、在售商品、欠款保证金、完成期时间窗六重硬卡点，彻底封堵恶意商户逃逸漏洞。
+- **工程权衡**：多层防线物理隔离与权限锁死，构筑零信任纵深防御堡垒。
+
+#### 理念七：工业级人体工学与 Apple 拟态交互美学（Industrial Ergonomics & Apple HIG Fluid Aesthetics）
+- **工业痛点破局**：传统工业管理软件常陷入冰冷死板、表格压抑、缺乏交互引导的“地狱体验”；跨平台滥用系统 Emoji 造成严重的字体渲染差异与乱码；传统语音客服必须全文生成后才发声，首字延迟高且无法打断。
+- **架构实现**：
+  - **Apple HIG 拟态流体交互体系（[`components/ui/`](file:///d:/Desktop/LANLinkShopping/Shopping/frontend/src/components/ui/)）**：自研 macOS 拟态物理流体 Dock（弹簧物理缩放）、iPhone 灵动岛交互胶囊（业务状态弹性平滑变形展收）、带惯性阻尼的 FluidAnimatedTabs、光标跟随的 GlowBorderCard 流光边框与 RadarPulseBadge 呼吸徽章；
+  - **全站纯矢量 Lucide SVG 资产治理**：彻底驱逐非标 Emoji 符号，100% 收敛至纯矢量 `lucide-vue-next` (v0.577.0) 图标库，由全局 CSS 语义设计令牌统一渲染，跨系统视觉零歧义；
+  - **全双工流式语音交互闭环**：基于 WebSocket（`/api/support/stream-voice`）构建流式语音通信；首创智能切句算法（`SentenceBoundaryDetector`，首句 6/10 字符极速合成，防饥饿 30 字符截断，智能避开 URL/版本号虚假标点），支持 4ms 极速打断（Barge-in），实现行云流水般的工业人机智能交互。
+- **工程权衡**：依托现代 GPU CSS3 硬件渲染与矢量图形学，将消费电子级旗舰交互体验注入严肃严谨的工业生产力场景。
+
+---
+
+### 3. 全技术栈清单速览
 
 | 维度 | 技术选型 | 版本/规范 | 架构作用与定位 |
 |------|---------|-----------|----------------|
@@ -192,7 +290,27 @@ Docker 托管 llama.cpp 双模型 Router：按请求意图热切换 **Qwen2.5-7B
 
 ### 18. SQLBot 智能问数集成（LLM + RAG Text-to-SQL，2026-11）
 
-集成 [dataease/SQLBot](https://github.com/dataease/SQLBot) 作为平台智能问数引擎：自然语言直接生成 SQL 并执行（LLM + RAG），容器编排见 [`docker-compose.sqlbot.yml`](file:///d:/Desktop/LANLinkShopping/Shopping/docker-compose.sqlbot.yml)（UI `8000` / 自带 MCP `8001`）；LLM 接线指向本地 AI 网关并关闭网关侧 RAG 模板改写，防止污染 Text-to-SQL 提示词；数据源经专用只读账号 `sqlbot_ro` 同步 6 张核心业务表元数据；网关注册 `lanlink_ask_data` MCP 工具，外部大模型经 `/v1/chat/completions` 即可对话式查询平台业务数据；语义缓存对 sql_gen 类请求关闭写入，连续 10/10 验收达标。
+集成 [dataease/SQLBot](https://github.com/dataease/SQLBot) 作为平台智能问数引擎：自然语言直接生成 SQL 并执行（LLM + RAG），容器编排见 [`docker-compose.sqlbot.yml`](file:///d:/Desktop/LANLinkShopping/Shopping/docker-compose.sqlbot.yml)。UI `8000` / 自带 MCP `8001` **默认不映射宿主端口**，仅 `shopping_default` 内网可达；网关用服务名 `http://sqlbot:8000` 调用，排障时 `docker exec` 进容器访问 `127.0.0.1:8000/8001`。LLM 接线指向本地 AI 网关并关闭网关侧 RAG 模板改写，防止污染 Text-to-SQL 提示词；SQLBot 使用根 `.env` 的 `SQLBOT_GATEWAY_KEY`（独立、绑定 `support` 只读角色的网关 key），不得复用 `AI_GATEWAY_API_KEY`——SQLBot 管理端可明文读回 `ai_model.api_key`。数据源使用专用只读账号 `sqlbot_ro`（仅 `SELECT lanlink_shopping.*`，密码为 `SQLBOT_DB_PASSWORD`）；网关注册 `lanlink_ask_data` MCP 工具，外部大模型经 `/v1/chat/completions` 即可对话式查询平台业务数据；语义缓存对 sql_gen 类请求关闭写入。管理员密码只存根 `.env` 的 `SQLBOT_PASSWORD`，首次部署后必须通过 `POST /api/v1/login/change-pwd` 改掉镜像默认密码（写入 SQLBot 的 PostgreSQL，重启不丢）。
+
+SQLBot 的模型/数据源配置存在它自己的 PostgreSQL 里（bind mount），Docker Desktop 异常重启后可能整体丢失，表现为登录成功但问数 500 `The system default model has not been set`。恢复用 `python scripts/sqlbot_restore.py`；该脚本检测到宿主 `8000` 不可达时会自动 `docker cp` 自己进 `sqlbot` 容器执行，不要求重新开放宿主端口。
+
+### 19. 网关严格角色模式与密钥绑定（2026-11）
+
+`GATEWAY_STRICT_ROLE=1`：未绑定角色的 key 不再采纳任何客户端自报角色（`X-Agent-Role` / `?role=` / JSON-RPC `params.role`），只能拿到只读工具。这是「拿到网关 key 就能自称 buyer 调写工具」的收口点。
+
+开启前提是每个调用方都有**自己的、已绑定角色的 key**，不能继续用「一把主 key + 切请求头」：
+
+| key | 绑定角色 | 用途 |
+|:---|:---|:---|
+| `AI_GATEWAY_API_KEY` | `service` | 后端内部 AI 调用（客服 MCP 编排、知识库、媒体感知、TTS） |
+| `GATEWAY_BUYER_KEY` | `buyer` | 买家侧集成（含建采购草稿） |
+| `GATEWAY_SUPPORT_KEY` / `SQLBOT_GATEWAY_KEY` | `support` | 客服只读 / SQLBot 只读问数 |
+| `GATEWAY_FINANCE_KEY` | `finance` | 财务审核与审批签发 |
+| `GATEWAY_FULFILLMENT_KEY` | `fulfillment` | 物流追踪与 SLA 监控 |
+
+`service` 是本次新增的内部服务角色：只读工具 + `web_search` / `fetch_page`，**不含** 3 个写工具（建草稿 / 过审 / 审批签发）。用 `support` 代替会让后端知识库编排静默丢失外网检索能力。
+
+上线记录与验证矩阵见 [`docs/architecture-audit/_parts/strict-role-rollout.md`](file:///d:/Desktop/LANLinkShopping/Shopping/docs/architecture-audit/_parts/strict-role-rollout.md)。
 
 ---
 
@@ -214,8 +332,8 @@ Docker 托管 llama.cpp 双模型 Router：按请求意图热切换 **Qwen2.5-7B
 | **18123** | llama.cpp 推理底座 | `127.0.0.1` | GGUF 双模型推理（容器内 8123） |
 | **1025** | Mailpit SMTP | `127.0.0.1` | 本地测试邮件投递 |
 | **8081** | Mailpit Web 邮箱 | `127.0.0.1` | 本地邮件收件箱（验证码拦截） |
-| **8000** | SQLBot 智能问数 UI + API | `127.0.0.1` | 对话式数据分析（见能力矩阵第 18 节） |
-| **8001** | SQLBot MCP 服务 | `127.0.0.1` | SQLBot 自带 MCP（SSE 传输） |
+| **8000** | SQLBot 智能问数 UI + API | 仅容器网络 | 不映射宿主端口；网关走 `sqlbot:8000`（见能力矩阵第 18 节） |
+| **8001** | SQLBot MCP 服务 | 仅容器网络 | 不映射宿主端口；排障用 `docker exec` |
 | **9093** | Alertmanager Web UI | `127.0.0.1` | 告警管理控制台（静默 / 通知状态） |
 | **3000** | 批量导入 Workflow | `127.0.0.1` | 大宗商品与采购单批量导入 |
 
