@@ -3,6 +3,10 @@
 .tech-shell { width: 100%; max-width: 1200px; margin: 0 auto; }
 .tech-num { font-variant-numeric: tabular-nums; }
 
+/* ---------- Hero：对齐 AboutUs「关于我们」的静态垂直浅蓝底 + 静态液态玻璃质感 ----------
+   底色改为 AboutUs 同款 5 段垂直渐变（#F2F9FF → #E0F2FE → #BAE6FD → #E0F2FE → #F2F9FF），
+   并移除斜向 128deg 流动动画（llGradShift）与两团漂移光斑 blob——
+   斜向渐变+流动在浅蓝大底上会产生被反复反馈的"光栅扫过"观感（AboutUs 同问题，已在其侧修过）。 */
 .tech-hero {
   position: relative;
   overflow: hidden;
@@ -10,44 +14,24 @@
   padding: clamp(28px, 4vw, 56px);
   margin-bottom: 22px;
   color: var(--ll-brand-base); /* #13233A：浅天蓝底上的深字 */
-  background: linear-gradient(128deg, #F2F9FF 0%, #DBEAFE 30%, #C9E2F6 55%, #E3F1FD 80%, #F2F9FF 100%);
-  /* 底色流动：background-size 独立声明防简写覆盖（单层 linear，可直接单值放大） */
-  background-size: 300% 300%;
-  animation: llGradShift 16s ease infinite;
-  box-shadow: 0 24px 70px rgba(30, 110, 184, 0.14);
+  background: linear-gradient(180deg,
+    #F2F9FF 0%,
+    #E0F2FE 30%,
+    #BAE6FD 55%,
+    #E0F2FE 80%,
+    #F2F9FF 100%);
+  border: 1px solid #C9E2F6;
+  box-shadow: 0 26px 70px rgba(30, 110, 184, 0.14);
 }
-.tech-hero::before,
-.tech-hero::after {
-  content: '';
-  position: absolute;
-  width: 420px;
-  height: 420px;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(40px);
-  opacity: 0.45;
-  will-change: transform;
-}
-.tech-hero::before {
-  top: -190px;
-  right: -80px;
-  /* --ll-sky-blob-1（组 A 令牌）：原 rgba(125,211,252,.32) 的加深配方值；fallback 兜底旧观感 */
-  background: radial-gradient(circle, var(--ll-sky-blob-1, rgba(125, 211, 252, 0.5)), transparent 68%);
-  animation: llBlobV 24s ease-in-out infinite alternate;
-}
-.tech-hero::after {
-  bottom: -240px;
-  left: -120px;
-  background: radial-gradient(circle, var(--ll-sky-blob-4, rgba(186, 230, 253, 0.5)), transparent 70%);
-  animation: llBlobC 32s -10s ease-in-out infinite alternate;
-}
+/* 漂移光斑已移除：与斜向流动渐变同属"光栅扫过"观感来源（AboutUs 同问题已在其侧修过），
+   静态底色更干净。以下保留原选择器占位以防模板引用 tech-hero-grid::after 时报 orphan。 */
 .tech-hero-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-/* 网格线与径向淡出 mask 收进 ::before：mask 按 CSS 规范会覆盖元素整个子树，
-   收到背景伪元素上才是真正的"mask 只作用背景层"，::after 光斑不被衰减。 */
+/* 网格线与径向淡出 mask 收进 ::before：mask 按 CSS 规范会覆盖元素整个子树。
+   光斑层（::after 及原 ::before/::after blob）已随静态底色改造整体移除。 */
 .tech-hero-grid::before {
   content: '';
   position: absolute;
@@ -59,24 +43,6 @@
   background-size: 48px 48px;
   -webkit-mask-image: radial-gradient(circle at 28% 18%, #000 0%, transparent 72%);
   mask-image: radial-gradient(circle at 28% 18%, #000 0%, transparent 72%);
-}
-/* 第三团光斑：挂 grid 空闲伪元素，
-   越界部分由 .tech-hero 的 overflow:hidden 正常裁剪。 */
-.tech-hero-grid::after {
-  content: '';
-  position: absolute;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  left: 55%;
-  bottom: -90px;
-  --blob-c: var(--ll-sky-blob-2, rgba(147, 197, 253, 0.5));
-  background: radial-gradient(circle, var(--blob-c), transparent 70%);
-  filter: blur(40px);
-  opacity: 0.45;
-  pointer-events: none;
-  animation: llBlobV 28s -18s ease-in-out infinite alternate;
-  will-change: transform;
 }
 .tech-hero-sm { padding: clamp(22px, 3.2vw, 38px); border-radius: 22px; }
 .tech-hero-sm h1 { font-size: clamp(26px, 3.2vw, 40px); }
@@ -137,13 +103,14 @@
     inset 0 4px 20px rgba(255, 255, 255, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
-/* 非交互面扫光：llDaySheen 循环版（6s）；用 clip-path 收边，
-   不加 overflow:hidden 以免裁掉 ::after 的底部反光沿。 */
+/* 静态液态玻璃：保留玻璃双层面 + blur/saturate + inset 反光沿，
+   移除 6s 循环扫光（llDaySheen）——静态质感对齐 AboutUs hero 的玻璃用法。
+   玻璃面本身（padding-box 白浊 + border-box 渐变描边 + backdrop-filter）全部保留。 */
 .tech-hero-stat::before {
   content: '';
   position: absolute;
   inset: 0;
-  z-index: -1; /* backdrop-filter 已建立层叠上下文：扫光夹在玻璃面与文字之间 */
+  z-index: -1; /* backdrop-filter 已建立层叠上下文：高光层夹在玻璃面与文字之间 */
   border-radius: var(--ll-glass-day-radius, 16px);
   clip-path: inset(0 round var(--ll-glass-day-radius, 16px));
   background: linear-gradient(115deg,
@@ -153,7 +120,6 @@
     transparent 60%);
   background-size: 200% 200%;
   background-position: 0% 50%;
-  animation: llDaySheen 6s ease-in-out infinite;
   pointer-events: none;
 }
 /* 底部反光沿：略越界的伪元素承载三条白色 inset 阴影，贴卡片底边 */
@@ -638,10 +604,10 @@ html[data-theme='dark'] .tech-logo-pill span { background: rgba(255, 255, 255, 0
   50% { box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.04); }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* 底色流动（llGradShift）停帧 */
+  /* 底色已改静态渐变（无动画），此处兜底保留 */
   .tech-hero { animation: none !important; }
   .tech-timeline li.current .dot { animation: none; }
-  /* 光斑降频（34s 缓漂）而非整体关闭 */
+  /* 光斑/扫光已随静态液态玻璃改造移除，以下为历史兜底保留（空操作） */
   .tech-hero::before,
   .tech-hero::after { animation-duration: 34s; }
   .tech-hero-grid::after { animation: none; }
