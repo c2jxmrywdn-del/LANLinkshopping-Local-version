@@ -444,7 +444,10 @@ cd frontend && npm install && npm run dev                         # 前端 5174
 
 <div align="center">
 
-**特别感谢**：[Microsoft Agent-Lightning](https://github.com/microsoft/agent-lightning) · **Qwen 大模型团队** · [21st.dev](https://21st.dev) · [SQLBot（dataease）](https://github.com/dataease/SQLBot)（本平台对话式数据分析能力基于 SQLBot 构建）
+**特别感谢**：[Microsoft Agent-Lightning](https://github.com/microsoft/agent-lightning) · **Qwen 大模型团队** · [21st.dev](https://21st.dev) · [SQLBot（dataease）](https://github.com/dataease/SQLBot)（本平台对话式数据分析能力基于 SQLBot 构建）· [MinIO](https://github.com/minio/minio)（本平台对象存储服务） · [MinIO Java SDK（minio-java）](https://github.com/minio/minio-java)（适用于 Java 的 MinIO 客户端 SDK）
+
+
+
 
 Made with ❤️ for Modern B2B E-Commerce & Open Innovation · 2026
 
