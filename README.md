@@ -429,7 +429,7 @@ cd frontend && npm install && npm run dev                         # 前端 5174
 
 ## 📬 联系方式与原创声明
 
-本项目由 **Jason Ouyang（欧阳）** 独立构思、架构设计与编码开发：GitHub [@c2jxmrywdn-del](https://github.com/c2jxmrywdn-del) · 邮箱 [3514485358@qq.com](mailto:3514485358@qq.com) · X [@Orion_Yves_Jude](https://x.com/Orion_Yves_Jude) · Facebook [Jason Ouyang](https://www.facebook.com/profile.php?id=61590596057471) · WhatsApp [OuyangJason](https://wa.me/OuyangJason?s=t) / 微信 `O19111295446` · 开源主页 [LANLinkshopping-Local-version](https://github.com/c2jxmrywdn-del/LANLinkshopping-Local-version)。
+本项目由 **Jason Ouyang（欧阳）** 独立构思、架构设计与编码开发：GitHub [@c2jxmrywdn-del](https://github.com/c2jxmrywdn-del) · 邮箱 [Lalaouyang98@gmail](mailto:Lalaouyang98@gmail) · X [@Orion_Yves_Jude](https://x.com/Orion_Yves_Jude) · Facebook [Jason Ouyang](https://www.facebook.com/profile.php?id=61590596057471) · WhatsApp [OuyangJason](https://wa.me/OuyangJason?s=t) / 微信 `O19111295446` · 开源主页 [LANLinkshopping-Local-version](https://github.com/c2jxmrywdn-del/LANLinkshopping-Local-version)。
 
 > [!CAUTION]
 > **知识产权与维权警告**：本项目（架构设计、功能闭环、UI/UX 视觉体系、前后端与 AI 代码、接口与数据库结构及文档）均为作者拥有独立知识产权的原创毕业设计成果，仅限个人技术学习、学术交流与毕业设计演示用途。未经作者书面授权，严禁任何商业化营利使用（付费课程 / 外包交付 / SaaS 售卖 / 商业包装）、署名篡改、去除版权信息或冒用为独立原创成果（含毕设答辩、竞赛评奖）。作者已对研发历程与提交历史全网公证固证，保留律师函、平台举证下架与依法诉讼等一切维权措施。
