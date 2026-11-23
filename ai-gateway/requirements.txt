@@ -11,4 +11,4 @@ redis>=5.0
 # 工具 fetch_page 的正文提取（过滤广告/导航；musllinux 轮子已实测齐备）
 trafilatura>=1.12
 # 资讯管线 robots.txt 解析（RFC 9309；Allow 长匹配/通配符/Crawl-delay）
-protego>=0.4
+protego>=0.7.0
