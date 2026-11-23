@@ -1,6 +1,6 @@
 # 国内网络环境使用阿里云 PyPI 镜像加速（与 ai-gateway/requirements.txt 同惯例）。
 --index-url https://mirrors.aliyun.com/pypi/simple/
-# 官方 mcp-server-fetch(>=2026.6.4，即带 timeout_ms schema 与私网/逐跳守卫的版本)
+# 官方 mcp-server-fetch(>=2026.11.18，即带 timeout_ms schema 与私网/逐跳守卫的版本)
 # 依赖 MCP SDK 2.x（mcp>=2.3,<3），因此这里不能用 1.x——与 fetch server 版本绑定，
 # 而不是与网关（requirements 不含 mcp，见 B9：SDK 只进桥镜像）。
 # 2.x 核心改用 httpx2，但桥是独立镜像，不与网关既有 httpx 生态形成双包。
